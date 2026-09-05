@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-05 (handoff ricevuto; passo 6b confermato)
+**Ultimo aggiornamento:** 2026-09-05 (PR #3 aperta; passo 7a concluso)
 
 ## Fatto
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
@@ -26,6 +26,7 @@
 - **Verifica di qualità dal vivo (parziale)**: run `daily` #2 `33998180166` su `main` ha entrambi i job (`run`, `deploy`) in success; artefatti presenti `github-pages` (135333 byte) e `run-log-2` (2432 byte). Il download degli zip dal blob Actions e la pagina Pages non sono raggiungibili dal sandbox (EOF/SSL), quindi la verifica è stata fatta sui metadati GitHub, sul commit dati e sul build locale.
 - **Esito dati live**: `fixtures.parquet` ha 2364 righe e tutti i 7 id configurati; FotMob è `ok` per 7/7 leghe, Understat è presente solo per le 5 leghe coperte, mentre ESPN ha restituito HTTP 403 sull'endpoint standings per tutte le 7 (la run non si è bloccata). Le predizioni sono 48 per ITA1/ENG1/ESP1/GER1/FRA1; NED1/POR1 non hanno storico sufficiente/disponibile nel run. Probabilità senza null e somme coerenti. Build locale riuscito (2364 fixture, 158 pagine partita); Accuratezza mostra onestamente che non ci sono ancora previsioni pre-partita valutabili, perché il primo run ha predetto solo gare future.
 - [x] **Passo 7a — resilienza del run**: ESPN standings e scoreboard sono ora isolati (un 403 della classifica non impedisce il recupero degli eventi) con test offline; inoltre `fda predict` isola gli errori/storici insufficienti per lega, così NED1 non interrompe il tentativo su POR1 e sulle altre leghe. Commit `d8063c1` + `0bcde50`; suite locale: **20 passed**; workflow `tests` sul branch: run `33999155759` **Success** in 44s.
+- **PR #3 aperta verso `main`**: https://github.com/uamisjd/football-deep-analyzer/pull/3; in attesa di review/merge e di un nuovo `daily` con le versioni Node 24.
 - **Passo 7 — estensione/rifinitura (in corso)**: assicurare un percorso storico/predittivo per NED1/POR1 senza inventare dati, report pre/post in italiano e rifinitura di Accuratezza dopo le prime gare previste. Procedere per piccoli passi verificati.
 
 ## Nota
