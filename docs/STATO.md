@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-06 (passo 4 completato)
+**Ultimo aggiornamento:** 2026-09-06 (passo 5 completato)
 
 ## Fatto
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
@@ -15,8 +15,10 @@
 
 - [x] **Passo 4 — storage + collect**: `store.py` (Parquet versionati in `data/processed/` + viste DuckDB, upsert per chiave, tipi UTC stabili) e `collect.py` (per lega: calendario → dettagli partite oggi ±3 gg, finite una sola volta, future a ogni run → Understat → ESPN; fonti isolate, esiti in `source_status`). 13 test verdi (incluso un run completo offline). Comandi `fda collect [ITA1 ...]`, `fda db [SQL]`.
 
+- [x] **Passo 5 — modelli**: `sources/history.py` (CSV storici datahub/football-data → schema unico, quote di chiusura se presenti), `teams.py` (nomi canonici tra fonti, ~300 alias per le 7 leghe), `models/predict.py` (Dixon-Coles pesato nel tempo + Elo + ensemble 70/30 con griglia coerente; mercati 1X2, risultati esatti, O/U, BTTS, doppia chance, clean sheet; RPS). Backtest onesto Serie A 2025/26 (train 300 → test 80): RPS ensemble 0,212 vs Elo 0,218 vs naive 0,244. 18 test verdi. Comando `fda predict [ITA1 ...]`.
+
 ## In corso
-- Passo 5 (modelli Dixon-Coles + Elo su storico datahub → tabella `predictions`).
+- Passo 6 (sito statico + workflow GitHub Actions + Pages). **Alla fine del passo 6 avviserò: è il momento di fare Create PR** (serve `main` per cron e Pages).
 
 ## Nota
 - Dal sandbox dell'agente la rete verso FotMob è bloccata: i comandi `fotmob-*` vanno provati in GitHub Actions o sul PC. I parser sono coperti dai test offline.
@@ -26,7 +28,7 @@
 2. ~~Client FotMob~~ ✅
 3. ~~Client ESPN + Understat~~ ✅
 4. ~~Storage + collect~~ ✅
-5. Modello Dixon-Coles + Elo su datahub CSV → tabella previsioni.
+5. ~~Modelli DC + Elo~~ ✅
 6. Generatore sito statico (pagina Oggi + pagina Partita) + workflow GitHub Actions + GitHub Pages.
 7. Estensione alle 7 leghe, report pre/post in italiano, pagina Accuratezza.
 

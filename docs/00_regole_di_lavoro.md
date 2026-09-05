@@ -12,6 +12,7 @@ Queste regole valgono per tutta la durata del progetto. Sono nate dopo un blocco
 6. **Risposte brevi.** Spiegazioni lunghe → in un file `docs/`; in chat solo il riassunto e il link.
 7. **Niente lavori pesanti nella chat.** Backfill di stagioni, scaricamento di centinaia di partite, backtest: si eseguono in GitHub Actions o con uno script lanciato in background, e in chat si guarda solo il log finale.
 8. **Commit piccoli e frequenti** con messaggio chiaro, sul branch di lavoro.
+9. **Avviso esplicito per la PR.** L'agente lavora sul branch `arena/...`; il ramo `main` riceve il lavoro solo tramite pull request. È compito dell'agente **dire chiaramente quando è il momento giusto di fare "Create PR"** (frase fissa: *"👉 È il momento di fare Create PR"*) e perché. Regola: la PR serve quando su `main` deve "girare" qualcosa (workflow GitHub Actions con cron, GitHub Pages) o quando un blocco di lavoro è concluso e funzionante; non serve per i passi intermedi (il lavoro è già al sicuro con i push sul branch).
 
 ## B. Cosa fare se la chat si blocca (per te)
 

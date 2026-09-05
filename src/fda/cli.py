@@ -179,3 +179,63 @@ def db_cmd(query: str = typer.Argument(None, help="Query SQL opzionale sulle tab
         console.print(store.summary().to_string(index=False) if not store.summary().empty
                       else "database vuoto: esegui `fda collect`")
     store.close()
+
+
+@app.command("predict")
+def predict_cmd(
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
+    seasons_back: int = typer.Option(3, help="Stagioni storiche da scaricare oltre a quella corrente"),
+    days_ahead: int = typer.Option(7, help="Prevedi le partite nei prossimi N giorni"),
+) -> None:
+    """Addestra Dixon-Coles + Elo (storico datahub + risultati FotMob correnti) e salva `predictions`."""
+    import warnings
+    from datetime import datetime, timedelta, timezone
+
+    import pandas as pd
+
+    from .config import leagues, season_start_year
+    from .models.predict import predict_matches
+    from .sources.history import HistoryClient
+    from .store import Store
+    from .teams import canonical
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    store = Store()
+    hc = HistoryClient()
+    fixtures = store.read("fixtures")
+    now = datetime.now(timezone.utc)
+    yr = season_start_year()
+    total = 0
+    for lg in leagues(league_keys or None):
+        hist = hc.seasons(lg, range(yr - seasons_back, yr))
+        # risultati della stagione corrente dal calendario FotMob già raccolto
+        cur = pd.DataFrame()
+        if not fixtures.empty:
+            cur = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "finished")]
+            cur = pd.DataFrame({"date": pd.to_datetime(cur.utc_kickoff).dt.tz_localize(None),
+                                "season": season(), "league_key": lg.key,
+                                "home": cur.home_name, "away": cur.away_name,
+                                "home_goals": cur.home_goals.astype(int), "away_goals": cur.away_goals.astype(int)})
+        hist = pd.concat([hist, cur], ignore_index=True) if not hist.empty else cur
+        if hist.empty:
+            console.print(f"[red]{lg.name}: nessuno storico disponibile[/red]")
+            continue
+        hist["home"] = hist["home"].map(canonical)
+        hist["away"] = hist["away"].map(canonical)
+        upcoming = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "scheduled")
+                            & (fixtures.utc_kickoff <= now + timedelta(days=days_ahead))] if not fixtures.empty else pd.DataFrame()
+        if upcoming.empty:
+            console.print(f"{lg.name}: storico {len(hist)} partite, nessuna partita in programma nei prossimi {days_ahead} giorni")
+            continue
+        up = pd.DataFrame({"match_id": upcoming.match_id, "league_key": lg.key, "utc_kickoff": upcoming.utc_kickoff,
+                           "home": upcoming.home_name.map(canonical), "away": upcoming.away_name.map(canonical)})
+        pred, dc, _ = predict_matches(hist, up)
+        n = store.upsert("predictions", pred)
+        total += n
+        console.print(f"{lg.name}: storico {len(hist)} partite → {n} previsioni "
+                      f"(home adv {dc.model.get_params().get('home_advantage', 0):.3f})")
+        for r in pred.head(4).itertuples(index=False):
+            console.print(f"  {r.utc_kickoff:%d/%m %H:%M} {r.home}-{r.away}: {r.p_home:.0%}/{r.p_draw:.0%}/{r.p_away:.0%} "
+                          f"λ {r.lambda_home:.2f}-{r.lambda_away:.2f} O2.5 {r.p_over25:.0%}")
+    console.print(f"previsioni salvate: {total} | richieste storico={hc.http.stats.requests}")
+    store.close()
