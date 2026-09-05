@@ -133,3 +133,49 @@ def espn_today_cmd(league_key: str = typer.Argument("ITA1"), day: str = typer.Op
     rows = ec.parse_standings(lg.espn_code, ec.standings_raw(lg.espn_code))
     console.print("classifica (prime 5): " + " | ".join(f"{r.rank}. {r.team_name} {r.points}" for r in rows[:5]))
     console.print(f"richieste={ec.http.stats.requests} cache={ec.http.stats.cache_hits}")
+
+
+@app.command("collect")
+def collect_cmd(
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
+    past_days: int = typer.Option(3, help="Giorni indietro per i dettagli partita"),
+    future_days: int = typer.Option(3, help="Giorni avanti per i dettagli partita"),
+    max_matches: int = typer.Option(40, help="Massimo partite per campionato per run"),
+) -> None:
+    """Raccolta dati (calendario, dettagli partite, Understat, ESPN) → data/processed/*.parquet."""
+    from .collect import collect_all
+    from .store import Store
+
+    store = Store()
+    reports = collect_all(league_keys or None, store=store, past_days=past_days,
+                          future_days=future_days, max_matches=max_matches)
+    table = Table(title="Raccolta dati")
+    for col in ("Lega", "Calendario", "Partite scaricate", "Saltate", "Understat", "ESPN", "Richieste", "Errori"):
+        table.add_column(col)
+    for r in reports:
+        table.add_row(r.league, str(r.fixtures), str(r.matches_fetched), str(r.matches_skipped),
+                      str(r.understat_rows), str(r.espn_events),
+                      " ".join(f"{k}={v}" for k, v in r.requests.items()),
+                      f"[red]{len(r.errors)}[/red]" if r.errors else "0")
+    console.print(table)
+    for r in reports:
+        for e in r.errors[:5]:
+            console.print(f"  [red]{r.league}[/red] {e[:160]}")
+    console.print(store.summary().to_string(index=False))
+    store.close()
+    if any(r.errors for r in reports) and all(r.fixtures == 0 for r in reports):
+        raise typer.Exit(code=1)      # tutto fallito → il run in Actions deve risultare rosso
+
+
+@app.command("db")
+def db_cmd(query: str = typer.Argument(None, help="Query SQL opzionale sulle tabelle Parquet")) -> None:
+    """Riepilogo del database (o esecuzione di una query SQL)."""
+    from .store import Store
+
+    store = Store()
+    if query:
+        console.print(store.sql(query).head(50).to_string(index=False))
+    else:
+        console.print(store.summary().to_string(index=False) if not store.summary().empty
+                      else "database vuoto: esegui `fda collect`")
+    store.close()
