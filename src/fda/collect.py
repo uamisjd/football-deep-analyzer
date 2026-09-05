@@ -119,16 +119,22 @@ def collect_league(
         report.understat_rows = _safe("understat", _understat, report) or 0
 
     # 4) ESPN -------------------------------------------------------------------------------
-    def _espn() -> int:
+    # Standings e scoreboard sono indipendenti: un 403 sulla classifica non deve impedire
+    # di usare gli eventi giornalieri (la fonte resta comunque segnalata in source_status).
+    def _standings() -> None:
         rows = ec.parse_standings(lg.espn_code, ec.standings_raw(lg.espn_code))
         store.upsert("espn_standings", espn_dicts(rows))
+
+    def _scoreboards() -> int:
         total = 0
         for d in (today - timedelta(days=1), today, today + timedelta(days=1)):
             events, stats = ec.parse_scoreboard(lg.espn_code, ec.scoreboard_raw(lg.espn_code, d))
             total += store.upsert("espn_events", espn_dicts(events))
             store.upsert("espn_team_stats", espn_dicts(stats))
         return total
-    report.espn_events = _safe("espn", _espn, report) or 0
+
+    _safe("espn standings", _standings, report)
+    report.espn_events = _safe("espn scoreboard", _scoreboards, report) or 0
 
     report.requests = {"fotmob": fm.http.stats.requests, "understat": uc.http.stats.requests,
                        "espn": ec.http.stats.requests}
