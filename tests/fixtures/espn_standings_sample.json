@@ -1,0 +1,10 @@
+{"children": [{"standings": {"entries": [
+  {"team": {"id": "104", "displayName": "AS Roma"}, "note": {"description": "Champions League"},
+   "stats": [{"name": "rank", "value": 1}, {"name": "gamesPlayed", "value": 3}, {"name": "wins", "value": 3},
+             {"name": "ties", "value": 0}, {"name": "losses", "value": 0}, {"name": "pointsFor", "value": 8},
+             {"name": "pointsAgainst", "value": 1}, {"name": "pointDifferential", "value": 7}, {"name": "points", "value": 9}]},
+  {"team": {"id": "110", "displayName": "Internazionale"},
+   "stats": [{"name": "rank", "value": 2}, {"name": "gamesPlayed", "value": 3}, {"name": "wins", "value": 3},
+             {"name": "ties", "value": 0}, {"name": "losses", "value": 0}, {"name": "pointsFor", "value": 8},
+             {"name": "pointsAgainst", "value": 3}, {"name": "pointDifferential", "value": 5}, {"name": "points", "value": 9}]}
+]}}]}

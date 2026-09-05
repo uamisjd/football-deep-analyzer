@@ -88,3 +88,48 @@ def fotmob_match_cmd(match_id: int) -> None:
                   f"formazione={len(b.lineup)} eventi={len(b.events)} indisponibili={len(unav)} h2h={len(b.h2h_matches)}")
     for p in unav[:8]:
         console.print(f"  OUT {p.player_name} ({p.team_id}) {p.unavailability_type} → {p.expected_return}")
+
+
+@app.command("understat-table")
+def understat_table_cmd(league_key: str = typer.Argument("ITA1")) -> None:
+    """Tabella xG di stagione da Understat (solo 5 grandi leghe)."""
+    from .config import league, season_start_year
+    from .sources.understat import UnderstatClient, team_season_table
+
+    lg = league(league_key)
+    if not lg.has_understat:
+        console.print(f"{lg.name}: Understat non disponibile (xG solo da FotMob)")
+        raise typer.Exit(code=0)
+    uc = UnderstatClient()
+    raw = uc.league_raw(lg.understat_slug, season_start_year())
+    rows = team_season_table(uc.parse_team_matches(lg.understat_slug, season_start_year(), raw))
+    table = Table(title=f"{lg.name} {season_start_year()} — xG (Understat)")
+    for col in ("Squadra", "G", "Pt", "xPt", "xG", "xGA", "xGD", "PPDA"):
+        table.add_column(col, justify="right" if col != "Squadra" else "left")
+    for r in rows:
+        table.add_row(r["team_name"], str(r["played"]), str(r["pts"]), f"{r['xpts']:.1f}",
+                      f"{r['xg']:.2f}", f"{r['xga']:.2f}", f"{r['xgd']:+.2f}",
+                      "—" if r["ppda"] is None else f"{r['ppda']:.1f}")
+    console.print(table)
+    console.print(f"richieste={uc.http.stats.requests} cache={uc.http.stats.cache_hits}")
+
+
+@app.command("espn-today")
+def espn_today_cmd(league_key: str = typer.Argument("ITA1"), day: str = typer.Option(None, help="YYYY-MM-DD")) -> None:
+    """Partite del giorno + classifica da ESPN (fonte di riserva)."""
+    from datetime import date
+
+    from .config import league
+    from .sources.espn import EspnClient
+
+    lg = league(league_key)
+    ec = EspnClient()
+    d = date.fromisoformat(day) if day else None
+    events, _ = ec.parse_scoreboard(lg.espn_code, ec.scoreboard_raw(lg.espn_code, d))
+    console.print(f"{lg.name} — {len(events)} partite {d or 'oggi'}")
+    for e in events[:12]:
+        score = f"{e.home_goals}-{e.away_goals}" if e.home_goals is not None else "vs"
+        console.print(f"  {e.utc_kickoff:%d/%m %H:%M} UTC  {e.home_name} {score} {e.away_name}  [{e.status}]")
+    rows = ec.parse_standings(lg.espn_code, ec.standings_raw(lg.espn_code))
+    console.print("classifica (prime 5): " + " | ".join(f"{r.rank}. {r.team_name} {r.points}" for r in rows[:5]))
+    console.print(f"richieste={ec.http.stats.requests} cache={ec.http.stats.cache_hits}")

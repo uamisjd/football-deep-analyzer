@@ -1,0 +1,19 @@
+{"events": [
+ {"id": "401875620", "date": "2026-09-05T14:30Z",
+  "competitions": [{"date": "2026-09-05T14:30Z", "attendance": 12650,
+    "status": {"type": {"name": "STATUS_FULL_TIME", "state": "post", "completed": true, "shortDetail": "FT"}},
+    "venue": {"fullName": "Goffertstadion", "address": {"city": "Nijmegen"}},
+    "competitors": [
+      {"id": "147", "homeAway": "home", "score": "1", "form": "LWLLW", "team": {"id": "147", "displayName": "NEC Nijmegen"},
+       "statistics": [{"name": "appearances", "displayValue": "0"}, {"name": "possessionPct", "displayValue": "62.5"},
+                      {"name": "totalShots", "displayValue": "12"}, {"name": "shotsOnTarget", "displayValue": "2"}]},
+      {"id": "142", "homeAway": "away", "score": "3", "form": "WDWDW", "team": {"id": "142", "displayName": "Feyenoord Rotterdam"},
+       "statistics": [{"name": "possessionPct", "displayValue": "37.5"}, {"name": "totalShots", "displayValue": "15"}]}]}]},
+ {"id": "401875621", "date": "2026-09-06T12:15Z",
+  "competitions": [{"date": "2026-09-06T12:15Z",
+    "status": {"type": {"name": "STATUS_SCHEDULED", "state": "pre", "completed": false, "shortDetail": "9/6 - 2:15 PM CEST"}},
+    "venue": {"fullName": "Johan Cruijff ArenA", "address": {"city": "Amsterdam"}},
+    "competitors": [
+      {"id": "139", "homeAway": "home", "score": "0", "team": {"id": "139", "displayName": "Ajax Amsterdam"}},
+      {"id": "148", "homeAway": "away", "score": "0", "team": {"id": "148", "displayName": "PSV Eindhoven"}}]}]}
+]}

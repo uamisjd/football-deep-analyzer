@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-06 (passo 2 completato)
+**Ultimo aggiornamento:** 2026-09-06 (passo 3 completato)
 
 ## Fatto
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
@@ -11,8 +11,10 @@
 
 - [x] **Passo 2 — client FotMob** (`src/fda/sources/fotmob.py`): `fixtures`, `matchDetails`, `teams`, `playerData`, `matches?date`; parser → record piatti (MatchInfo con arbitro/stadio/meteo/xG/H2H, Shot, TeamMatchStat per periodo, PlayerMatchStat, LineupPlayer con indisponibili+rientro, eventi, momentum). Test su JSON campione (9 verdi). Comandi `fda fotmob-fixtures ITA1`, `fda fotmob-match <id>`.
 
+- [x] **Passo 3 — Understat + ESPN**: `sources/understat.py` (endpoint JSON con cookie+XHR, senza soccerdata/seleniumbase; partite con xG, righe squadra-partita con xPTS/PPDA/deep, giocatori; `team_season_table`) e `sources/espn.py` (scoreboard con statistiche, classifiche, boxscore, arbitri). 11 test verdi. Comandi `fda understat-table ITA1`, `fda espn-today ITA1`.
+
 ## In corso
-- Passo 3 (ESPN + Understat).
+- Passo 4 (storage DuckDB + comando `collect`).
 
 ## Nota
 - Dal sandbox dell'agente la rete verso FotMob è bloccata: i comandi `fotmob-*` vanno provati in GitHub Actions o sul PC. I parser sono coperti dai test offline.
@@ -20,7 +22,7 @@
 ## Prossimo passo (Fase 0 — un turno per riga)
 1. ~~Scaffolding repo~~ ✅
 2. ~~Client FotMob~~ ✅
-3. Client ESPN (scoreboard, standings) + Understat via soccerdata.
+3. ~~Client ESPN + Understat~~ ✅
 4. Storage DuckDB + script `collect` (una lega, oggi ±3 giorni).
 5. Modello Dixon-Coles + Elo su datahub CSV → tabella previsioni.
 6. Generatore sito statico (pagina Oggi + pagina Partita) + workflow GitHub Actions + GitHub Pages.
