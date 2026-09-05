@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Stato fonti{% endblock %}
+{% block content %}
+<h1>Stato fonti e database</h1>
+<div class="grid">
+<div class="card"><h2>Ultimi run per fonte</h2>
+<table><tr><th>Fonte</th><th>Ultimo run</th><th class="r">Richieste</th><th>Esito</th></tr>
+{% for r in sources %}<tr><td>{{ r.source }}</td><td class="mut">{{ r.run_at }}</td><td class="r">{{ r.requests }}</td><td>{% if r.ok %}<span style="color:var(--acc)">OK</span>{% else %}<span style="color:var(--bad)">ERRORE</span> <span class="small mut">{{ r.error }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="4" class="mut">Nessun run registrato.</td></tr>{% endfor %}
+</table></div>
+<div class="card"><h2>Tabelle</h2>
+<table><tr><th>Tabella</th><th class="r">Righe</th><th class="r">KB</th></tr>
+{% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows }}</td><td class="r">{{ t.kb }}</td></tr>{% endfor %}
+</table></div>
+</div>
+{% endblock %}

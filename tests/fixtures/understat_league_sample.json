@@ -1,0 +1,28 @@
+{
+ "dates": [
+  {"id": "30001", "isResult": true, "h": {"id": "72", "title": "Napoli", "short_title": "NAP"},
+   "a": {"id": "78", "title": "Inter", "short_title": "INT"}, "goals": {"h": "1", "a": "1"},
+   "xG": {"h": "1.23456", "a": "0.98765"}, "datetime": "2026-08-30 16:30:00", "forecast": {"w": "0.35", "d": "0.30", "l": "0.35"}},
+  {"id": "30002", "isResult": false, "h": {"id": "78", "title": "Inter", "short_title": "INT"},
+   "a": {"id": "72", "title": "Napoli", "short_title": "NAP"}, "goals": {"h": null, "a": null},
+   "xG": {"h": null, "a": null}, "datetime": "2026-09-05 16:00:00", "forecast": {"w": "0.5", "d": "0.25", "l": "0.25"}}
+ ],
+ "teams": {
+  "72": {"id": "72", "title": "Napoli", "history": [
+    {"h_a": "h", "xG": 1.23456, "xGA": 0.98765, "npxG": 1.23456, "npxGA": 0.98765, "ppda": {"att": 200, "def": 20},
+     "ppda_allowed": {"att": 300, "def": 20}, "deep": 8, "deep_allowed": 4, "scored": 1, "missed": 1, "xpts": 1.5,
+     "result": "d", "date": "2026-08-30 16:30:00", "wins": 0, "draws": 1, "loses": 0, "pts": 1, "npxGD": 0.24691},
+    {"h_a": "a", "xG": 2.0, "xGA": 0.5, "npxG": 2.0, "npxGA": 0.5, "ppda": {"att": 120, "def": 15},
+     "ppda_allowed": {"att": 150, "def": 10}, "deep": 10, "deep_allowed": 2, "scored": 2, "missed": 0, "xpts": 2.4,
+     "result": "w", "date": "2026-08-22 18:45:00", "pts": 3, "npxGD": 1.5}]},
+  "78": {"id": "78", "title": "Inter", "history": [
+    {"h_a": "a", "xG": 0.98765, "xGA": 1.23456, "npxG": 0.98765, "npxGA": 1.23456, "ppda": {"att": 300, "def": 20},
+     "ppda_allowed": {"att": 200, "def": 20}, "deep": 4, "deep_allowed": 8, "scored": 1, "missed": 1, "xpts": 1.2,
+     "result": "d", "date": "2026-08-30 16:30:00", "pts": 1, "npxGD": -0.24691}]}
+ },
+ "players": [
+  {"id": "1001", "player_name": "Rasmus Højlund", "games": "3", "time": "250", "goals": "2", "xG": "1.8", "assists": "0",
+   "xA": "0.2", "shots": "9", "key_passes": "3", "yellow_cards": "0", "red_cards": "0", "position": "F",
+   "team_title": "Napoli", "npg": "2", "npxG": "1.8", "xGChain": "2.1", "xGBuildup": "0.4"}
+ ]
+}

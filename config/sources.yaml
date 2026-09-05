@@ -1,0 +1,55 @@
+# Fonti dati e budget di richieste (rispetto delle fonti = regola di progetto).
+# rate_limit_s: pausa minima tra due richieste alla stessa fonte.
+# cache_ttl_h: per quante ore un dato in cache è considerato valido (0 = mai riusare per dati "vivi").
+
+fotmob:
+  base_url: "https://www.fotmob.com/api/data"
+  rate_limit_s: 1.0
+  max_requests_per_run: 600
+  headers:
+    User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+    Accept: "application/json"
+    Referer: "https://www.fotmob.com/"
+  cache_ttl_h:
+    fixtures: 6
+    matchDetails_finished: 87600     # partite finite: praticamente per sempre (10 anni)
+    matchDetails_upcoming: 3
+    teams: 24
+    playerData: 168
+
+espn:
+  base_url: "https://site.api.espn.com/apis"
+  rate_limit_s: 0.5
+  cache_ttl_h:
+    scoreboard: 1
+    standings: 6
+    summary_finished: 87600
+
+understat:
+  base_url: "https://understat.com"
+  rate_limit_s: 2.0
+  cache_ttl_h:
+    league: 12
+
+datahub:
+  # mirror GitHub di football-data.co.uk (senza quote), aggiornato quotidianamente
+  raw_base: "https://raw.githubusercontent.com/datasets/football-datasets/main/datasets"
+  cache_ttl_h: 24
+
+footballdata:
+  base_url: "https://www.football-data.co.uk/mmz4281"
+  cache_ttl_h: 24
+
+clubelo:
+  base_url: "http://api.clubelo.com"
+  cache_ttl_h: 24
+
+openmeteo:
+  base_url: "https://api.open-meteo.com/v1/forecast"
+  cache_ttl_h: 3
+
+oddsapi:
+  base_url: "https://api.the-odds-api.com/v4"
+  api_key_env: "ODDS_API_KEY"        # secret di GitHub Actions, mai nel codice
+  monthly_credits: 500
+  snapshots_per_day: 2

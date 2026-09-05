@@ -1,0 +1,81 @@
+{
+ "general": {"matchId": "5749666", "matchRound": "3", "leagueId": 55, "leagueName": "Serie A",
+             "homeTeam": {"name": "Inter", "id": 8636}, "awayTeam": {"name": "Napoli", "id": 9875},
+             "coverageLevel": "xG", "matchTimeUTCDate": "2026-09-05T16:00:00.000Z", "started": true, "finished": true},
+ "header": {"teams": [{"name": "Inter", "id": 8636, "score": 3}, {"name": "Napoli", "id": 9875, "score": 2}],
+            "status": {"utcTime": "2026-09-05T16:00:00.000Z", "finished": true, "started": true, "cancelled": false,
+                       "scoreStr": "3 - 2", "reason": {"short": "FT"}}},
+ "content": {
+  "matchFacts": {
+   "infoBox": {"Stadium": {"name": "Giuseppe Meazza", "city": "Milano", "lat": 45.478, "long": 9.124, "capacity": 75817},
+               "Referee": {"text": "Simone Sozza", "id": 1001,
+                           "stats": [{"type": "matches", "value": 33, "valueType": "total"},
+                                     {"type": "yellowCards", "value": 3.76, "valueType": "perMatch"},
+                                     {"type": "redCards", "value": 2, "valueType": "total"},
+                                     {"type": "penalties", "value": 18, "valueType": "total"},
+                                     {"type": "fouls", "value": 24.45, "valueType": "perMatch"}]},
+               "Attendance": 75423},
+   "events": {"events": [
+     {"type": "Goal", "time": 50, "isHome": false, "player": {"id": 415539, "name": "Matteo Politano"}, "homeScore": 0, "awayScore": 0},
+     {"type": "Substitution", "time": 62, "isHome": true, "player": {"id": null}, "swap": [{"id": "940829", "name": "Carlos Augusto"}, {"id": "605224", "name": "Federico Dimarco"}]},
+     {"type": "Card", "time": 68, "isHome": true, "player": {"id": 690230, "name": "Lautaro Martínez"}, "card": "Yellow"},
+     {"type": "Half", "time": 90}]},
+   "momentum": {"main": {"data": [{"minute": 1, "value": 0}, {"minute": 2, "value": 35}]}},
+   "insights": [{"type": "team", "teamId": 8636, "playerId": null, "text": "Haven't lost in 19 matches"}]
+  },
+  "stats": {"Periods": {
+   "All": {"stats": [
+     {"title": "Top stats", "key": "top_stats", "stats": [
+       {"title": "Ball possession", "key": "BallPossesion", "stats": [63, 37], "type": "graph"},
+       {"title": "Expected goals (xG)", "key": "expected_goals", "stats": ["3.86", "2.43"], "type": "text"},
+       {"title": "Accurate passes", "key": "accurate_passes", "stats": ["486 (89%)", "265 (78%)"], "type": "text"},
+       {"title": "xGOT", "key": "expected_goals_on_target", "stats": ["3.20", "1.95"], "type": "text"}]},
+     {"title": "Shots", "key": "shots", "stats": [
+       {"title": "Shots", "key": "shots", "stats": [null, null], "type": "title"},
+       {"title": "Total shots", "key": "total_shots", "stats": [29, 16], "type": "text"}]}]},
+   "FirstHalf": {"stats": [{"title": "Top stats", "key": "top_stats", "stats": [
+       {"title": "Expected goals (xG)", "key": "expected_goals", "stats": ["1.50", "0.80"], "type": "text"}]}]}}},
+  "shotmap": {"shots": [
+    {"id": 2964787545, "eventType": "Goal", "teamId": 8636, "playerId": 690230, "playerName": "Lautaro Martínez",
+     "x": 102.72, "y": 32.47, "min": 56, "minAdded": null, "isBlocked": false, "isOnTarget": true,
+     "expectedGoals": 0.88, "expectedGoalsOnTarget": 0.99, "shotType": "RightFoot", "situation": "ThrowInSetPiece",
+     "period": "SecondHalf", "isOwnGoal": false, "isFromInsideBox": true, "keeperId": 577912},
+    {"id": 2964689735, "eventType": "AttemptSaved", "teamId": 8636, "playerId": 362212, "playerName": "Piotr Zielinski",
+     "x": 80.68, "y": 46.45, "min": 2, "minAdded": null, "isBlocked": true, "isOnTarget": true,
+     "expectedGoals": 0.0079, "expectedGoalsOnTarget": 0, "shotType": "LeftFoot", "situation": "RegularPlay",
+     "period": "FirstHalf", "isOwnGoal": false, "isFromInsideBox": false, "keeperId": null}]},
+  "playerStats": {"415539": {"name": "Matteo Politano", "id": 415539, "teamId": 9875, "isGoalkeeper": false,
+    "stats": [{"title": "Top stats", "key": "top_stats", "stats": {
+      "FotMob rating": {"key": "rating_title", "stat": {"value": 7.47, "type": "double"}},
+      "Minutes played": {"key": "minutes_played", "stat": {"value": 62, "type": "integer"}},
+      "Expected goals (xG)": {"key": "expected_goals", "stat": {"value": 0.56, "type": "double"}},
+      "Accurate passes": {"key": "accurate_passes", "stat": {"value": 18, "total": 23, "type": "fractionWithPercentage"}},
+      "Shotmap": {"key": null, "stat": {"value": 1, "type": "boolean"}}}}]}},
+  "lineup": {"matchId": 5749666, "lineupType": "official",
+   "homeTeam": {"id": 8636, "name": "Inter", "rating": 7.3, "formation": "3-5-2",
+     "starters": [{"id": 690230, "age": 29, "name": "Lautaro Martínez", "positionId": 105, "usualPlayingPositionId": 3,
+                   "shirtNumber": "10", "countryCode": "ARG", "marketValue": 80000000, "isCaptain": true,
+                   "performance": {"rating": 9.1, "seasonRating": 8.2}}],
+     "subs": [{"id": 611223, "age": 30, "name": "Benjamin Pavard", "usualPlayingPositionId": 1, "shirtNumber": "28",
+               "countryCode": "FRA", "marketValue": 12644205, "performance": {"seasonRating": 7.44}}],
+     "unavailable": [{"id": 894803, "age": 26, "name": "Djed Spence", "countryCode": "ENG", "marketValue": 27967317,
+                      "unavailability": {"injuryId": 101, "type": "injury", "expectedReturn": "Back in training"}}],
+     "coach": {"id": 27692, "age": 45, "name": "Cristian Chivu", "countryCode": "ROU"},
+     "averageStarterAge": 27.2, "totalStarterMarketValue": 303886692},
+   "awayTeam": {"id": 9875, "name": "Napoli", "rating": 6.4, "formation": "4-3-3",
+     "starters": [{"id": 415539, "age": 33, "name": "Matteo Politano", "positionId": 103, "usualPlayingPositionId": 2,
+                   "shirtNumber": "21", "countryCode": "ITA", "marketValue": 3651391,
+                   "performance": {"rating": 7.5, "seasonRating": 6.72}}],
+     "subs": [],
+     "unavailable": [{"id": 843099, "age": 29, "name": "Scott McTominay", "countryCode": "SCO", "marketValue": 32766403,
+                      "unavailability": {"injuryId": 1, "type": "injury", "expectedReturn": "Mid October 2026"}}],
+     "coach": {"id": 129745, "age": 59, "name": "Massimiliano Allegri", "countryCode": "ITA"},
+     "averageStarterAge": 29.1, "totalStarterMarketValue": 109500000}},
+  "h2h": {"summary": [10, 12, 9], "matches": [
+    {"time": {"utcTime": "2027-01-31T19:45:00.000Z"}, "league": {"name": "Serie A"}, "home": {"name": "Napoli", "id": "9875"},
+     "away": {"name": "Inter", "id": "8636"}, "status": {"utcTime": "2027-01-31T19:45:00.000Z", "started": false, "finished": false}},
+    {"time": {"utcTime": "2026-03-01T19:45:00.000Z"}, "league": {"name": "Serie A"}, "home": {"name": "Napoli", "id": "9875"},
+     "away": {"name": "Inter", "id": "8636"}, "status": {"utcTime": "2026-03-01T19:45:00.000Z", "finished": true, "scoreStr": "1 - 1"}}]},
+  "weather": {"temperature": 25, "windSpeed": 2, "precipChance": 7, "description": "Partly Cloudy"}
+ }
+}

@@ -1,0 +1,19 @@
+# Test a ogni push/PR: garantisce che main resti sempre funzionante.
+name: tests
+on:
+  push:
+    paths-ignore: ["data/**", "docs/**", "site/**", "*.md"]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -q -e ".[dev]"
+      - run: python -m pytest -q
