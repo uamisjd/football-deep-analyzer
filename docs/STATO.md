@@ -41,7 +41,7 @@
 5. ~~Modelli DC + Elo~~ ✅
 6. ~~Sito statico + workflow + Pages~~ ✅
 6b. ~~Primo run dal vivo in Actions e correzioni ai collettori~~ ✅
-7. Upgrade Node 24 e verifica qualità dei dati/sito; poi estensione e rifinitura dei report/accuratezza.
+7. ~~Upgrade Node 24~~ ✅; 7b. rendere disponibile lo storico NED1/POR1 e verificare le prime valutazioni reali, poi report/Accuratezza.
 
 ## Decisioni aperte
 - Nessuna bloccante. (Telegram bot e protezione accesso: fasi successive.)
