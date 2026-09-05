@@ -1,0 +1,8 @@
+[
+ {"id": "5749645", "home": {"id": "8636", "name": "Inter", "score": 4}, "away": {"id": "6504", "name": "Monza", "score": 1},
+  "status": {"utcTime": "2026-08-22T16:30:00Z", "finished": true, "started": true, "cancelled": false, "scoreStr": "4 - 1", "reason": {"short": "FT"}}},
+ {"id": "5749669", "home": {"id": "8600", "name": "Udinese", "score": 0}, "away": {"id": "8543", "name": "Lazio", "score": 0},
+  "status": {"utcTime": "2026-09-07T18:45:00Z", "finished": false, "started": false, "cancelled": false}},
+ {"id": "5749700", "home": {"id": "8686", "name": "Roma", "score": 0}, "away": {"id": "8564", "name": "Milan", "score": 0},
+  "status": {"utcTime": "2026-09-20T18:45:00Z", "finished": false, "started": false, "cancelled": true}}
+]
