@@ -45,8 +45,8 @@ jobs:
           cache: pip
           cache-dependency-path: pyproject.toml
 
-      - name: Installa il pacchetto
-        run: pip install -q -e .
+      - name: Installa il pacchetto (con dipendenze dev per i test)
+        run: pip install -q -e ".[dev]"
 
       - name: Test rapidi (parser offline)
         run: python -m pytest -q -x tests/test_fotmob.py tests/test_understat_espn.py tests/test_config.py
