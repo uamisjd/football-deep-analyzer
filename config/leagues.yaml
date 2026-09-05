@@ -1,0 +1,102 @@
+# Configurazione dei campionati seguiti.
+# Gli id sono stati verificati il 5-6 settembre 2026 (stagione 2026/2027 attiva su tutti).
+# Aggiungere un campionato = aggiungere una voce qui; nessun codice da toccare.
+
+season: "2026/2027"          # formato FotMob; per Understat si usa l'anno di inizio (2026)
+timezone_display: "Europe/Rome"
+
+leagues:
+  - key: ITA1
+    name: "Serie A"
+    country: ITA
+    priority: 1
+    fotmob_id: 55
+    espn_code: "ita.1"
+    understat_slug: "Serie_A"
+    footballdata_code: "I1"
+    datahub_dir: "serie-a"
+    clubelo_country: "ITA"
+    teams: 20
+
+  - key: ENG1
+    name: "Premier League"
+    country: ENG
+    priority: 2
+    fotmob_id: 47
+    espn_code: "eng.1"
+    understat_slug: "EPL"
+    footballdata_code: "E0"
+    datahub_dir: "premier-league"
+    clubelo_country: "ENG"
+    teams: 20
+
+  - key: ESP1
+    name: "LaLiga"
+    country: ESP
+    priority: 3
+    fotmob_id: 87
+    espn_code: "esp.1"
+    understat_slug: "La_Liga"
+    footballdata_code: "SP1"
+    datahub_dir: "la-liga"
+    clubelo_country: "ESP"
+    teams: 20
+
+  - key: GER1
+    name: "Bundesliga"
+    country: GER
+    priority: 4
+    fotmob_id: 54
+    espn_code: "ger.1"
+    understat_slug: "Bundesliga"
+    footballdata_code: "D1"
+    datahub_dir: "bundesliga"
+    clubelo_country: "GER"
+    teams: 18
+
+  - key: FRA1
+    name: "Ligue 1"
+    country: FRA
+    priority: 5
+    fotmob_id: 53
+    espn_code: "fra.1"
+    understat_slug: "Ligue_1"
+    footballdata_code: "F1"
+    datahub_dir: "ligue-1"
+    clubelo_country: "FRA"
+    teams: 18
+
+  - key: NED1
+    name: "Eredivisie"
+    country: NED
+    priority: 6
+    fotmob_id: 57
+    espn_code: "ned.1"
+    understat_slug: null          # Understat non copre l'Eredivisie: xG solo da FotMob
+    footballdata_code: "N1"
+    datahub_dir: null             # datahub non ha il mirror: CSV direttamente da football-data.co.uk
+    clubelo_country: "NED"
+    teams: 18
+
+  - key: POR1
+    name: "Liga Portugal"
+    country: POR
+    priority: 7
+    fotmob_id: 61
+    espn_code: "por.1"
+    understat_slug: null
+    footballdata_code: "P1"
+    datahub_dir: null
+    clubelo_country: "POR"
+    teams: 18
+
+# Coppe: per ora solo calendario (servono per la congestione delle squadre), nessuna analisi dedicata.
+cups_calendar_only:
+  - key: UCL
+    name: "Champions League"
+    fotmob_id: 42
+    espn_code: "uefa.champions"
+  - key: UEL
+    name: "Europa League"
+    fotmob_id: 73
+    espn_code: "uefa.europa"

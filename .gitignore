@@ -1,0 +1,22 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+
+# Dati grezzi e cache HTTP: NON versionati (troppo grandi, rigenerabili).
+data/raw/
+data/cache/
+*.log
+
+# Dati elaborati: versionati (data/processed, data/*.duckdb) — vedi docs/03.
+# Sito generato
+site/_build/
+
+# Segreti
+.env
