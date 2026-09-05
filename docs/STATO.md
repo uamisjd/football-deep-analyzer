@@ -22,7 +22,7 @@
 - [x] **Correzione PR #2**: merge su `main` nel commit `968f2d7`; lo step di installazione di `daily.yml` usa `pip install -e ".[dev]"`, così `pytest` è disponibile nel workflow.
 
 ## In corso
-- **Upgrade GitHub Actions a Node 24**: verifica live su Marketplace/API completata il 2026-09-05. Le versioni latest risultano `checkout@v7.0.1`, `setup-python@v7.0.0`, `upload-artifact@v7.0.1`, `upload-pages-artifact@v5.0.0` e `deploy-pages@v5.0.1`; i ref richiesti nel passaggio (`setup-python@v5`, `upload-artifact@v5`, `upload-pages-artifact@v4`) usano ancora Node 20 o dipendenze Node 20. Verranno quindi usati i latest major compatibili con Node 24, mantenendo i ref non deprecati e verificando i workflow.
+- [x] **Upgrade GitHub Actions a Node 24**: verifica live su Marketplace/API completata il 2026-09-05. Le versioni latest risultano `checkout@v7.0.1`, `setup-python@v7.0.0`, `upload-artifact@v7.0.1`, `upload-pages-artifact@v5.0.0` e `deploy-pages@v5.0.1`; i ref richiesti nel passaggio (`setup-python@v5`, `upload-artifact@v5`, `upload-pages-artifact@v4`) usano ancora Node 20 o dipendenze Node 20. Workflow aggiornati ai latest major compatibili (`daily.yml` e `tests.yml`) nel commit `0c906ce`; test locali: **19 passed**.
 - **Verifica di qualità dal vivo**: run `daily` su `main`, artefatti `run-log-*`, dati in `data/processed`, copertura coerente delle 7 leghe e pagina Accuratezza in Pages.
 - **Passo 7 — estensione/rifinitura**: estensione stabile alle 7 leghe, report pre/post partita in italiano e rifinitura di Accuratezza con i dati reali. Procedere per piccoli passi verificati.
 
