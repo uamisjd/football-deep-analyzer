@@ -1,0 +1,12 @@
+{% macro row(m) -%}
+<div class="matchrow">
+  <div class="mut small">{{ m.utc_kickoff.strftime('%H:%M') }}<br><span class="tag">{{ m.league_name }}</span></div>
+  <div class="home"><a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }}</a></div>
+  <div class="score">{% if m.home_goals is not none %}{{ m.home_goals }} - {{ m.away_goals }}{% else %}{{ m.utc_kickoff.strftime('%d/%m') }}{% endif %}</div>
+  <div><a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.away_name }}</a></div>
+  <div class="probs">{% if m.prediction %}
+    <div class="bar"><span class="h" style="width:{{ (m.prediction.p_home*100)|round }}%">{{ (m.prediction.p_home*100)|round|int }}</span><span class="d" style="width:{{ (m.prediction.p_draw*100)|round }}%">{{ (m.prediction.p_draw*100)|round|int }}</span><span class="a" style="width:{{ (m.prediction.p_away*100)|round }}%">{{ (m.prediction.p_away*100)|round|int }}</span></div>
+    λ {{ '%.2f'|format(m.prediction.lambda_home) }}–{{ '%.2f'|format(m.prediction.lambda_away) }} · O2.5 {{ (m.prediction.p_over25*100)|round|int }}%
+  {% else %}<span class="mut">previsione non disponibile</span>{% endif %}</div>
+</div>
+{%- endmacro %}

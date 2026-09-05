@@ -21,5 +21,6 @@ site/_build/
 # Segreti
 .env
 
-# Sito generato da `fda build` (pubblicato via Actions → Pages)
-site/
+# Sito generato da `fda build` (pubblicato via Actions → Pages) — SOLO alla radice,
+# non il pacchetto sorgente src/fda/site/
+/site/

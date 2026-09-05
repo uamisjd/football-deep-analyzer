@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Accuratezza del modello{% endblock %}
+{% block content %}
+<h1>Accuratezza</h1>
+<p class="mut">Ogni previsione viene salvata prima della partita e valutata dopo. RPS (Ranked Probability Score): 0 = perfetto,
+0,25 ≈ tirare a caso con le frequenze medie; i bookmaker si attestano intorno a 0,19–0,20. Brier multiclasse: più basso è, meglio è.</p>
+{% if summary %}
+<div class="card"><h2>Riepilogo</h2>
+<table><tr><th>Campionato</th><th class="r">Partite valutate</th><th class="r">RPS</th><th class="r">Brier</th><th class="r">Esito più probabile azzeccato</th><th class="r">RPS naive</th></tr>
+{% for r in summary %}<tr><td>{{ r.league }}</td><td class="r">{{ r.n }}</td><td class="r">{{ '%.4f'|format(r.rps) }}</td><td class="r">{{ '%.4f'|format(r.brier) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ '%.4f'|format(r.naive) }}</td></tr>{% endfor %}
+</table></div>
+{% else %}<div class="card">Nessuna previsione ancora valutata: servono partite giocate dopo la prima previsione.</div>{% endif %}
+{% if recent %}
+<div class="card"><h2>Ultime partite valutate</h2>
+<table><tr><th>Data</th><th>Partita</th><th class="c">Risultato</th><th class="r">1 / X / 2 previsti</th><th class="r">Prob. esito reale</th></tr>
+{% for r in recent %}<tr><td class="mut">{{ r.date }}</td><td><a href="{{ root }}partite/{{ r.match_id }}.html">{{ r.home }} - {{ r.away }}</a></td><td class="c">{{ r.hg }}-{{ r.ag }}</td>
+<td class="r">{{ (r.p_home*100)|round|int }} / {{ (r.p_draw*100)|round|int }} / {{ (r.p_away*100)|round|int }}</td><td class="r">{{ (r.p_real*100)|round|int }}%</td></tr>{% endfor %}
+</table></div>
+{% endif %}
+{% endblock %}

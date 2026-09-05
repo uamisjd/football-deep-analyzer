@@ -1,0 +1,14 @@
+{% extends "base.html" %}{% import "_matchlist.html" as ml %}
+{% block title %}{{ title }} — Football Deep Analyzer{% endblock %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p class="mut">{{ subtitle }}</p>
+{% for day, items in days %}
+<div class="card">
+  <h2>{{ day }}</h2>
+  {% for m in items %}{{ ml.row(m) }}{% endfor %}
+</div>
+{% else %}
+<div class="card">Nessuna partita nel periodo per i campionati seguiti.</div>
+{% endfor %}
+{% endblock %}
