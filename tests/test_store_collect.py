@@ -73,6 +73,11 @@ class FakeEspn(EspnClient):
         return _load("espn_standings_sample.json")
 
 
+class FakeEspnNoStandings(FakeEspn):
+    def standings_raw(self, code):
+        raise RuntimeError("standings temporarily unavailable")
+
+
 def test_collect_league_offline(tmp_path):
     st = Store(tmp_path / "processed")
     rep = collect_league(
@@ -103,4 +108,17 @@ def test_collect_league_offline(tmp_path):
     assert status["ok"].all() and len(status) == 6
     # i datetime sono salvati in UTC
     assert str(pd.read_parquet(st.path("fixtures"))["utc_kickoff"].dt.tz) == "UTC"
+    st.close()
+
+
+def test_collect_uses_espn_scoreboard_when_standings_fail(tmp_path):
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspnNoStandings(), today=date(2026, 9, 6),
+    )
+    assert any("espn standings" in error for error in rep.errors)
+    assert rep.espn_events > 0
+    assert not st.read("espn_events").empty
     st.close()
