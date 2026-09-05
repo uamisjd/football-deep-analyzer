@@ -32,14 +32,32 @@ def test_store_upsert_and_sql(tmp_path):
     st.close()
 
 
+def _remap_ids(obj, mapping):
+    """Sostituisce gli id squadra (chiavi id/teamId) nel JSON campione per renderlo coerente col calendario."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k in ("id", "teamId") and str(v) in mapping:
+                obj[k] = type(v)(mapping[str(v)]) if isinstance(v, (int, str)) else v
+            else:
+                _remap_ids(v, mapping)
+    elif isinstance(obj, list):
+        for v in obj:
+            _remap_ids(v, mapping)
+    return obj
+
+
 class FakeFotMob(FotMobClient):
+    # partita campione (Inter 8636 - Napoli 9875) → squadre del calendario campione
+    TEAM_MAP = {5749645: ("8636", "6504"), 5749669: ("8600", "8543")}
+
     def fixtures_raw(self, league_id, season_str=None):
         return _load("fotmob_fixtures_sample.json")
 
     def match_details_raw(self, match_id, finished_hint=None):
         raw = _load("fotmob_match_sample.json")
         raw["general"]["matchId"] = str(match_id)
-        return raw
+        home, away = self.TEAM_MAP.get(match_id, ("8636", "9875"))
+        return _remap_ids(raw, {"8636": home, "9875": away})
 
 
 class FakeUnderstat(UnderstatClient):

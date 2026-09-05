@@ -20,3 +20,6 @@ site/_build/
 
 # Segreti
 .env
+
+# Sito generato da `fda build` (pubblicato via Actions → Pages)
+site/

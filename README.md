@@ -22,3 +22,13 @@ pip install -e ".[dev]"
 fda leagues        # elenca i 7 campionati configurati
 pytest -q          # test
 ```
+
+## Come funziona (in breve)
+
+`fda daily` = `collect` (FotMob, Understat, ESPN → `data/processed/*.parquet`) → `predict` (Dixon-Coles + Elo) → `build` (sito in `site/`).
+GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), committa i dati e pubblica il sito su GitHub Pages.
+
+### Attivazione (una volta sola, dal ramo `main`)
+1. Settings → Pages → *Build and deployment* → Source: **GitHub Actions**.
+2. Actions → *daily* → **Run workflow** (primo run manuale; poi parte da solo con il cron).
+3. Opzionale: Settings → Secrets → `ODDS_API_KEY` (The Odds API, piano gratuito) per la sezione quote.

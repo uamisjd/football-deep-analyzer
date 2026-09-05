@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-06 (passo 5 completato)
+**Ultimo aggiornamento:** 2026-09-06 (passo 6 completato — in attesa di PR/merge su main)
 
 ## Fatto
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
@@ -17,8 +17,10 @@
 
 - [x] **Passo 5 — modelli**: `sources/history.py` (CSV storici datahub/football-data → schema unico, quote di chiusura se presenti), `teams.py` (nomi canonici tra fonti, ~300 alias per le 7 leghe), `models/predict.py` (Dixon-Coles pesato nel tempo + Elo + ensemble 70/30 con griglia coerente; mercati 1X2, risultati esatti, O/U, BTTS, doppia chance, clean sheet; RPS). Backtest onesto Serie A 2025/26 (train 300 → test 80): RPS ensemble 0,212 vs Elo 0,218 vs naive 0,244. 18 test verdi. Comando `fda predict [ITA1 ...]`.
 
+- [x] **Passo 6 — sito + automazione**: `site/analysis.py` (contesto analitico e frasi in italiano da regole esplicite), template Jinja2 (Oggi, Prossime, Risultati, pagina partita pre/post, Accuratezza con RPS/Brier, Stato fonti), `site/build.py`, comandi `fda build` e `fda daily` (collect → predict → build). Workflow `.github/workflows/daily.yml` (cron 5 volte al giorno + manuale, commit dei Parquet, deploy Pages) e `tests.yml`. 19 test verdi.
+
 ## In corso
-- Passo 6 (sito statico + workflow GitHub Actions + Pages). **Alla fine del passo 6 avviserò: è il momento di fare Create PR** (serve `main` per cron e Pages).
+- **Attivazione**: serve il merge su `main` (PR) e poi, su GitHub: Settings → Pages → Source = "GitHub Actions"; Actions → daily → "Run workflow" per il primo run dal vivo. Primo run = prima prova reale dei collettori: possibili aggiustamenti (passo 6b).
 
 ## Nota
 - Dal sandbox dell'agente la rete verso FotMob è bloccata: i comandi `fotmob-*` vanno provati in GitHub Actions o sul PC. I parser sono coperti dai test offline.
@@ -29,7 +31,8 @@
 3. ~~Client ESPN + Understat~~ ✅
 4. ~~Storage + collect~~ ✅
 5. ~~Modelli DC + Elo~~ ✅
-6. Generatore sito statico (pagina Oggi + pagina Partita) + workflow GitHub Actions + GitHub Pages.
+6. ~~Sito statico + workflow + Pages~~ ✅ (da attivare con la PR)
+6b. Primo run dal vivo in Actions e correzioni ai collettori.
 7. Estensione alle 7 leghe, report pre/post in italiano, pagina Accuratezza.
 
 ## Decisioni aperte

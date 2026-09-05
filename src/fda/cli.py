@@ -239,3 +239,32 @@ def predict_cmd(
                           f"λ {r.lambda_home:.2f}-{r.lambda_away:.2f} O2.5 {r.p_over25:.0%}")
     console.print(f"previsioni salvate: {total} | richieste storico={hc.http.stats.requests}")
     store.close()
+
+
+@app.command("build")
+def build_cmd() -> None:
+    """Genera il sito statico in site/ (pagine Oggi, Prossime, Risultati, partite, Accuratezza, Stato)."""
+    from .site.build import SITE_DIR, SiteBuilder
+    from .store import Store
+
+    store = Store()
+    res = SiteBuilder(store=store).build()
+    console.print(f"sito generato in {SITE_DIR}: {res}")
+    store.close()
+
+
+@app.command("daily")
+def daily_cmd(
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
+    skip_predict: bool = typer.Option(False, help="Salta i modelli (solo raccolta + sito)"),
+) -> None:
+    """Run giornaliero completo: collect → predict → build. È ciò che esegue GitHub Actions."""
+    from typer.testing import CliRunner  # noqa: F401  (import di controllo)
+
+    collect_cmd(league_keys=league_keys, past_days=3, future_days=3, max_matches=40)
+    if not skip_predict:
+        try:
+            predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
+        except Exception as exc:  # i modelli non devono bloccare la pubblicazione dei dati
+            console.print(f"[red]predict fallito: {exc}[/red]")
+    build_cmd()
