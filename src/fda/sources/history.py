@@ -1,8 +1,11 @@
 """Storico risultati (football-data.co.uk) per addestrare e validare i modelli.
 
-Fonte primaria: mirror GitHub `datasets/football-datasets` (CSV per stagione, senza quote),
-raggiungibile da GitHub Actions via raw.githubusercontent.com. Fonte secondaria (con quote di
-chiusura): football-data.co.uk `mmz4281/{YYYY}/{CODE}.csv` quando è online.
+Fonte primaria: mirror GitHub con CSV per stagione raggiungibili da GitHub Actions via
+raw.githubusercontent.com. Il mirror `datasets/football-datasets` (senza quote) copre solo le 5
+grandi leghe; per le altre (NED1/POR1) ogni lega può dichiarare `datahub_base` che punta a un
+mirror dedicato con la stessa struttura `season-XXXX.csv` (vedi config/leagues.yaml). Fonte
+secondaria (con quote di chiusura): football-data.co.uk `mmz4281/{YYYY}/{CODE}.csv` quando è
+online (spesso irraggiungibile dagli IP cloud).
 Le colonne vengono normalizzate in uno schema unico:
   date, season, league_key, home, away, home_goals, away_goals, [odds_home, odds_draw, odds_away]
 """
@@ -52,7 +55,10 @@ class HistoryClient:
     def datahub_csv(self, lg: League, start_year: int) -> pd.DataFrame | None:
         if not lg.datahub_dir:
             return None
-        url = f"{self.datahub['raw_base']}/{lg.datahub_dir}/season-{season_code(start_year)}.csv"
+        # Alcune leghe (NED1/POR1) non sono nel mirror principale datasets/football-datasets:
+        # `datahub_base` punta a un mirror GitHub dedicato con la stessa struttura season-XXXX.csv.
+        base = lg.datahub_base or self.datahub["raw_base"]
+        url = f"{base}/{lg.datahub_dir}/season-{season_code(start_year)}.csv"
         try:
             text = self.http.get_text(url, ttl_h=float(self.datahub.get("cache_ttl_h", 24)))
         except SourceError as exc:

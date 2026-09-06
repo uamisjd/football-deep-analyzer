@@ -14,6 +14,15 @@ def test_understat_coverage():
     assert not league("POR1").has_understat
 
 
+def test_datahub_mirror_coverage():
+    # NED1/POR1 non sono nel mirror datasets/football-datasets: puntano a un mirror dedicato.
+    assert league("ITA1").datahub_dir == "serie-a" and league("ITA1").datahub_base is None
+    assert league("NED1").datahub_dir == "eredivisie"
+    assert league("POR1").datahub_dir == "primeira-liga"
+    assert league("NED1").datahub_base.startswith("https://raw.githubusercontent.com/")
+    assert league("POR1").datahub_base == league("NED1").datahub_base
+
+
 def test_season():
     assert season() == "2026/2027"
     assert season_start_year() == 2026

@@ -74,7 +74,8 @@ leagues:
     espn_code: "ned.1"
     understat_slug: null          # Understat non copre l'Eredivisie: xG solo da FotMob
     footballdata_code: "N1"
-    datahub_dir: null             # datahub non ha il mirror: CSV direttamente da football-data.co.uk
+    datahub_dir: "eredivisie"     # mirror GitHub (football-data.co.uk) dedicato a N1
+    datahub_base: "https://raw.githubusercontent.com/huhao930422-debug/football-odds-mirror/main/data"
     clubelo_country: "NED"
     teams: 18
 
@@ -86,7 +87,8 @@ leagues:
     espn_code: "por.1"
     understat_slug: null
     footballdata_code: "P1"
-    datahub_dir: null
+    datahub_dir: "primeira-liga"  # mirror GitHub (football-data.co.uk) dedicato a P1
+    datahub_base: "https://raw.githubusercontent.com/huhao930422-debug/football-odds-mirror/main/data"
     clubelo_country: "POR"
     teams: 18
 
