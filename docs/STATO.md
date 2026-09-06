@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-05 (PR #3 aperta; passo 7a concluso)
+**Ultimo aggiornamento:** 2026-09-06 (PR #3 mergiata in `main`; run `daily` #3 verificato; passo 7b avviato — PR #4 aperta)
 
 ## Fatto
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
@@ -20,18 +20,18 @@
 - [x] **Passo 6 — sito + automazione**: `site/analysis.py` (contesto analitico e frasi in italiano da regole esplicite), template Jinja2 (Oggi, Prossime, Risultati, pagina partita pre/post, Accuratezza con RPS/Brier, Stato fonti), `site/build.py`, comandi `fda build` e `fda daily` (collect → predict → build). Workflow `.github/workflows/daily.yml` (cron 5 volte al giorno + manuale, commit dei Parquet, deploy Pages) e `tests.yml`. 19 test verdi.
 - [x] **Passo 6b — primo run dal vivo**: su `main`, run `daily` #2 (2026-09-06, come da handoff) concluso **Success** in 3m17s: collettori → modelli → build sito → commit dati → deploy GitHub Pages. Artefatto `github-pages` di 132 KB; Pages usa source = **GitHub Actions**. Restano solo gli avvisi non bloccanti sulla deprecazione Node.js 20.
 - [x] **Correzione PR #2**: merge su `main` nel commit `968f2d7`; lo step di installazione di `daily.yml` usa `pip install -e ".[dev]"`, così `pytest` è disponibile nel workflow.
+- [x] **PR #3 mergiata su `main`** nel commit `3359fdc` (workflow con versioni Node 24).
+- [x] **Run `daily` #3 su `main` verificato** (id `33999756428`, head `3359fdc`): job `run` **Success** 3m08s + `deploy` **Success** 10s; commit dati `43b848c` pushato; artefatti `github-pages` (135358 B) e `run-log-3`; deployment Pages riuscito. `predictions` 48 → **96** righe (ITA1 20, ENG1 18, ESP1 22, GER1 18, FRA1 18), probabilità coerenti e senza null, tutte gare `scheduled`. FotMob ok 7/7; Understat per le 5 leghe coperte; ESPN standings ancora **403 isolato** (non blocca). Suite locale 20 passed. (Blob di log Actions e pagina Pages non raggiungibili dal sandbox — verifica su metadati/commit/dati.)
 
 ## In corso
-- [x] **Upgrade GitHub Actions a Node 24**: verifica live su Marketplace/API completata il 2026-09-05. Le versioni latest risultano `checkout@v7.0.1`, `setup-python@v7.0.0`, `upload-artifact@v7.0.1`, `upload-pages-artifact@v5.0.0` e `deploy-pages@v5.0.1`; i ref richiesti nel passaggio (`setup-python@v5`, `upload-artifact@v5`, `upload-pages-artifact@v4`) usano ancora Node 20 o dipendenze Node 20. Workflow aggiornati ai latest major compatibili (`daily.yml` e `tests.yml`) nel commit `0c906ce`; test locali: **19 passed**.
-- **Verifica di qualità dal vivo (parziale)**: run `daily` #2 `33998180166` su `main` ha entrambi i job (`run`, `deploy`) in success; artefatti presenti `github-pages` (135333 byte) e `run-log-2` (2432 byte). Il download degli zip dal blob Actions e la pagina Pages non sono raggiungibili dal sandbox (EOF/SSL), quindi la verifica è stata fatta sui metadati GitHub, sul commit dati e sul build locale.
-- **Esito dati live**: `fixtures.parquet` ha 2364 righe e tutti i 7 id configurati; FotMob è `ok` per 7/7 leghe, Understat è presente solo per le 5 leghe coperte, mentre ESPN ha restituito HTTP 403 sull'endpoint standings per tutte le 7 (la run non si è bloccata). Le predizioni sono 48 per ITA1/ENG1/ESP1/GER1/FRA1; NED1/POR1 non hanno storico sufficiente/disponibile nel run. Probabilità senza null e somme coerenti. Build locale riuscito (2364 fixture, 158 pagine partita); Accuratezza mostra onestamente che non ci sono ancora previsioni pre-partita valutabili, perché il primo run ha predetto solo gare future.
-- [x] **Passo 7a — resilienza del run**: ESPN standings e scoreboard sono ora isolati (un 403 della classifica non impedisce il recupero degli eventi) con test offline; inoltre `fda predict` isola gli errori/storici insufficienti per lega, così NED1 non interrompe il tentativo su POR1 e sulle altre leghe. Commit `d8063c1` + `0bcde50`; suite locale: **20 passed**; workflow `tests` sul branch: run `33999155759` **Success** in 44s.
-- **PR #3 aperta verso `main`**: https://github.com/uamisjd/football-deep-analyzer/pull/3; in attesa di review/merge e di un nuovo `daily` con le versioni Node 24.
-- **Passo 7 — estensione/rifinitura (in corso)**: assicurare un percorso storico/predittivo per NED1/POR1 senza inventare dati, report pre/post in italiano e rifinitura di Accuratezza dopo le prime gare previste. Procedere per piccoli passi verificati.
+- [x] **Passo 7a — resilienza del run**: ESPN standings e scoreboard isolati; `fda predict` isola errori/storici per lega. Commit `d8063c1` + `0bcde50`; suite locale 20 passed; workflow `tests`: Success.
+- **Passo 7b — storico NED1/POR1 (avviato)**: il mirror `datasets/football-datasets` non copre Eredivisie/Liga Portugal e `football-data.co.uk` è irraggiungibile dagli IP cloud (root cause: nei run #2/#3 NED1/POR1 avevano partite in programma ma 0 predizioni). Risolto puntando NED1 (`eredivisie`) e POR1 (`primeira-liga`) a un mirror `raw.githubusercontent.com` dedicato con la stessa struttura `season-XXXX.csv` (campo per-lega `datahub_base`), + alias squadra alle grafie N1/P1 (`For Sittard`→`Fortuna Sittard`, `Estrela`→`Estrela da Amadora`). Commit `85b515f`.
+- **Verifica passo 7b**: suite locale **23 passed** (3 nuovi test); simulazione offline con CSV reali del mirror + calendario FotMob → NED1 **11** e POR1 **9** predizioni (tutte le partite in programma; le promosse ADO Den Haag/Cambuur/Académico Viseu/Marítimo ricevono prior dagli esiti di stagione in corso via FotMob). Workflow `tests` sul branch e check PR: **Success**.
+- **PR #4 aperta verso `main`**: https://github.com/uamisjd/football-deep-analyzer/pull/4; in attesa di review/merge. La verifica live end-to-end avverrà sul prossimo `daily` di `main` dopo il merge (dispatch su branch non-default non consentito dal token del sandbox; blob Actions irraggiungibile dal sandbox). Dopo la conferma live: report pre/post in italiano e rifinitura di Accuratezza con le prime gare reali.
 
 ## Nota
-- Dal sandbox dell'agente la rete verso FotMob può essere bloccata: i comandi `fotmob-*` vanno provati in GitHub Actions o sul PC. I parser sono coperti dai test offline.
-- Il checkout locale va riallineato/verificato con i riferimenti remoti prima delle modifiche ai workflow: il handoff indica `main` a `968f2d7`, mentre il ref locale può essere fermo a un commit dati precedente.
+- Dal sandbox dell'agente la rete verso FotMob, `football-data.co.uk` e `raw.githubusercontent.com` può essere bloccata (si raggiungono solo `github.com` e `api.github.com`): le verifiche di rete vanno fatte in GitHub Actions o sul PC. I parser sono coperti dai test offline.
+- Il mirror dedicato NED1/POR1 è configurato solo in `config/leagues.yaml` (campo per-lega `datahub_base`): facile da cambiare se il mirror diventasse irraggiungibile.
 - Le quote The Odds API sono opzionali: vengono usate solo se `ODDS_API_KEY` è configurata.
 
 ## Prossimo passo (Fase 0/7 — un turno per riga)
@@ -42,7 +42,9 @@
 5. ~~Modelli DC + Elo~~ ✅
 6. ~~Sito statico + workflow + Pages~~ ✅
 6b. ~~Primo run dal vivo in Actions e correzioni ai collettori~~ ✅
-7. ~~Upgrade Node 24~~ ✅; 7b. rendere disponibile lo storico NED1/POR1 e verificare le prime valutazioni reali, poi report/Accuratezza.
+7. ~~Upgrade Node 24~~ ✅
+7b. storico NED1/POR1 (in corso, PR #4) → confermare su un `daily` di `main` post-merge, poi report pre/post in italiano e rifinitura di Accuratezza con le prime gare reali.
 
 ## Decisioni aperte
-- Nessuna bloccante. (Telegram bot e protezione accesso: fasi successive.)
+- **Fonte storica NED1/POR1** (deciso 2026-09-06): mirror GitHub `raw.githubusercontent.com` di football-data.co.uk dedicato (via `datahub_base` per-lega), scelto perché il mirror datahub copre solo 5 leghe e `football-data.co.uk` diretto è irraggiungibile dagli IP cloud.
+- Nessuna altra bloccante. (Telegram bot e protezione accesso: fasi successive.)

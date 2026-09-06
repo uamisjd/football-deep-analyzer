@@ -98,7 +98,8 @@ ALIASES: dict[str, str] = {
     "az": "AZ Alkmaar", "twente": "FC Twente", "fc twente": "FC Twente", "utrecht": "FC Utrecht", "fc utrecht": "FC Utrecht",
     "nec nijmegen": "NEC Nijmegen", "nijmegen": "NEC Nijmegen", "nec": "NEC Nijmegen", "go ahead eagles": "Go Ahead Eagles",
     "groningen": "FC Groningen", "fc groningen": "FC Groningen", "sparta rotterdam": "Sparta Rotterdam",
-    "heerenveen": "SC Heerenveen", "sc heerenveen": "SC Heerenveen", "fortuna sittard": "Fortuna Sittard",
+    "heerenveen": "SC Heerenveen", "sc heerenveen": "SC Heerenveen",
+    "fortuna sittard": "Fortuna Sittard", "for sittard": "Fortuna Sittard",   # grafia football-data
     "heracles": "Heracles Almelo", "heracles almelo": "Heracles Almelo", "pec zwolle": "PEC Zwolle", "zwolle": "PEC Zwolle",
     "willem ii": "Willem II", "excelsior": "Excelsior", "volendam": "FC Volendam", "fc volendam": "FC Volendam",
     "telstar": "Telstar", "waalwijk": "RKC Waalwijk", "rkc waalwijk": "RKC Waalwijk", "almere city": "Almere City",
@@ -109,7 +110,9 @@ ALIASES: dict[str, str] = {
     "vitoria guimaraes": "Vitória SC", "vitória sc": "Vitória SC", "famalicao": "Famalicão", "famalicão": "Famalicão",
     "casa pia": "Casa Pia", "estoril": "Estoril Praia", "estoril praia": "Estoril Praia", "arouca": "Arouca",
     "rio ave": "Rio Ave", "gil vicente": "Gil Vicente", "moreirense": "Moreirense", "santa clara": "Santa Clara",
-    "nacional": "Nacional", "cd nacional": "Nacional", "estrela": "Estrela Amadora", "estrela amadora": "Estrela Amadora",
+    "nacional": "Nacional", "cd nacional": "Nacional",
+    "estrela": "Estrela da Amadora", "estrela amadora": "Estrela da Amadora",  # nome FotMob attuale
+    "estrela da amadora": "Estrela da Amadora",
     "avs": "AVS", "boavista": "Boavista", "farense": "Farense", "alverca": "Alverca", "tondela": "Tondela",
     "vizela": "Vizela", "chaves": "Chaves", "portimonense": "Portimonense",
 }
