@@ -219,3 +219,43 @@ def test_season_compare(tmp_path):
     assert ma.season_compare(None, None) is None     # nessuna classifica → nessuna card
     assert ma.season_compare(ma.standing("Udinese"), ma.standing("Lazio")) is None
     st.close()
+
+
+def test_nan_rating_not_rendered(tmp_path):
+    """Fix: rating NaN nei giocatori della formazione non deve apparire come 'nan' nel template."""
+    st = Store(tmp_path / "processed")
+    st.upsert("lineup", [
+        {"match_id": 999, "team_id": 1, "player_id": 10, "player_name": "Player A",
+         "role": "starter", "shirt_number": 1, "rating": 7.5, "season_rating": 7.0,
+         "position_id": 1, "usual_position_id": 1, "age": 25, "country": "IT",
+         "market_value_eur": 10_000_000, "is_captain": False,
+         "unavailability_type": None, "expected_return": None},
+        {"match_id": 999, "team_id": 1, "player_id": 11, "player_name": "Player B",
+         "role": "starter", "shirt_number": 2,
+         "rating": float("nan"), "season_rating": float("nan"),
+         "position_id": 2, "usual_position_id": 2, "age": 28, "country": "BR",
+         "market_value_eur": 5_000_000, "is_captain": False,
+         "unavailability_type": None, "expected_return": None},
+        {"match_id": 999, "team_id": 1, "player_id": 12, "player_name": "Player C",
+         "role": "starter", "shirt_number": float("nan"), "rating": None, "season_rating": None,
+         "position_id": 3, "usual_position_id": 3, "age": 22, "country": "FR",
+         "market_value_eur": 3_000_000, "is_captain": True,
+         "unavailability_type": None, "expected_return": None},
+    ])
+    ma = MatchAnalysis(st)
+    starters = ma.starters(999, 1)
+    assert len(starters) == 3
+    # Player A: rating normale
+    assert starters[0]["rating"] == 7.5
+    assert starters[0]["num"] == 1
+    # Player B: rating NaN → None
+    assert starters[1]["rating"] is None
+    assert starters[1]["season_rating"] is None
+    # Player C: shirt_number NaN → None
+    assert starters[2]["num"] is None
+    # Verifica che it_dec gestisca NaN
+    from fda.site.build import it_dec
+    assert it_dec(float("nan")) == ""
+    assert it_dec(None) == ""
+    assert it_dec(3.5) == "3,50"
+    st.close()

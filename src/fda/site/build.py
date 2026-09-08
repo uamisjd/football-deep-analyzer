@@ -48,8 +48,11 @@ def it_dec(v, nd: int = 2, plus: bool = False) -> str:
     """Numero → stringa con virgola decimale italiana: 3.86 → '3,86' (plus=True → '+0,038')."""
     if v is None:
         return ""
-    s = f"{float(v):.{nd}f}".replace(".", ",")
-    return f"+{s}" if plus and float(v) >= 0 else s
+    fv = float(v)
+    if pd.isna(fv):
+        return ""
+    s = f"{fv:.{nd}f}".replace(".", ",")
+    return f"+{s}" if plus and fv >= 0 else s
 
 
 def it_from_utc(ts, tz) -> str:
