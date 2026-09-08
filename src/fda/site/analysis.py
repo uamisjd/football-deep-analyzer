@@ -104,6 +104,20 @@ def _return_it(s: str | None) -> str | None:
     return t
 
 
+def _it2(v: float) -> str:
+    """3.5 → '3,50' (virgola decimale italiana)."""
+    return f"{float(v):.2f}".replace(".", ",")
+
+
+def _signed_int(v: Any) -> str:
+    """+6 / -3 / 0 (differenza reti con segno)."""
+    try:
+        d = int(v)
+    except (TypeError, ValueError):
+        return "—"
+    return f"+{d}" if d > 0 else str(d)
+
+
 class MatchAnalysis:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -177,6 +191,87 @@ class MatchAnalysis:
             if not rows.empty:
                 return rows.iloc[0].to_dict()
         return None
+
+    # ---- confronto di stagione (tabella di lega) -----------------------------------------------
+    @staticmethod
+    def _cmp_row(label: str, h: str, a: str, key_h: float | None = None,
+                 key_a: float | None = None, higher: bool = True) -> dict[str, Any]:
+        """Riga della card «Confronto di stagione»; evidenzia il lato migliore se confrontabile."""
+        best = None
+        if key_h is not None and key_a is not None and key_h != key_a:
+            best = "h" if (key_h > key_a) == higher else "a"
+        return {"label": label, "h": h, "a": a, "best": best}
+
+    def _league_averages(self, st: dict[str, Any]) -> dict[str, float] | None:
+        """Media gol fatti/subiti per gara nel campionato, dalla stessa tabella della classifica."""
+        for df in (self.fm_standings, self.standings):
+            if df.empty or "played" not in df.columns or "goals_for" not in df.columns:
+                continue
+            rows = df
+            if "league_code" in df.columns:
+                code = st.get("league_code")
+                rows = df[df.league_code == code] if code else df.iloc[0:0]
+            played = pd.to_numeric(rows["played"], errors="coerce").sum()
+            if played > 0:
+                return {"gf": pd.to_numeric(rows["goals_for"], errors="coerce").sum() / played,
+                        "ga": pd.to_numeric(rows["goals_against"], errors="coerce").sum() / played}
+        return None
+
+    def season_compare(self, home_st: dict[str, Any] | None,
+                       away_st: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Card «Confronto di stagione»: classifica di entrambe le squadre (FotMob, riserva ESPN).
+
+        Renderizzata anche con una sola squadra disponibile (l'altra mostra «—»);
+        None se nessuna delle due ha classifica (la card non compare).
+        """
+        if not home_st and not away_st:
+            return None
+        try:
+            def side(st: dict[str, Any] | None) -> dict[str, Any] | None:
+                if not st:
+                    return None
+                p = float(st["played"])
+                if p <= 0:
+                    return None
+                pts, gf, ga = float(st["points"]), float(st["goals_for"]), float(st["goals_against"])
+                return {"rank": int(st["rank"]), "p": p, "ppg": pts / p, "gf_pg": gf / p,
+                        "ga_pg": ga / p, "diff": int(st["goal_diff"]),
+                        "pts_s": f"{pts:.0f} in {p:.0f} gare", "wdl": f"{int(st['wins'])}-{int(st['draws'])}-{int(st['losses'])}"}
+
+            dash = "—"
+            h, a = side(home_st), side(away_st)
+            rows = [
+                self._cmp_row("Posizione", str(h["rank"]) if h else dash, str(a["rank"]) if a else dash,
+                              key_h=h and h["rank"], key_a=a and a["rank"], higher=False),
+                self._cmp_row("Punti", h["pts_s"] if h else dash, a["pts_s"] if a else dash,
+                              key_h=h and h["ppg"], key_a=a and a["ppg"]),
+                self._cmp_row("Punti/gara", _it2(h["ppg"]) if h else dash, _it2(a["ppg"]) if a else dash,
+                              key_h=h and h["ppg"], key_a=a and a["ppg"]),
+                self._cmp_row("Risultati (V-N-P)", h["wdl"] if h else dash, a["wdl"] if a else dash),
+                self._cmp_row("Gol fatti/gara", _it2(h["gf_pg"]) if h else dash, _it2(a["gf_pg"]) if a else dash,
+                              key_h=h and h["gf_pg"], key_a=a and a["gf_pg"]),
+                self._cmp_row("Gol subiti/gara", _it2(h["ga_pg"]) if h else dash, _it2(a["ga_pg"]) if a else dash,
+                              key_h=h and h["ga_pg"], key_a=a and a["ga_pg"], higher=False),
+                self._cmp_row("Differenza reti", _signed_int(h["diff"]) if h else dash,
+                              _signed_int(a["diff"]) if a else dash,
+                              key_h=h and h["diff"], key_a=a and a["diff"]),
+            ]
+            avg = self._league_averages(home_st or away_st)
+            if avg and avg["gf"] > 0 and avg["ga"] > 0:
+                rows += [
+                    self._cmp_row("Attacco (× media campionato)", _it2(h["gf_pg"] / avg["gf"]) if h else dash,
+                                  _it2(a["gf_pg"] / avg["gf"]) if a else dash,
+                                  key_h=h and h["gf_pg"] / avg["gf"], key_a=a and a["gf_pg"] / avg["gf"]),
+                    self._cmp_row("Difesa (× media campionato)", _it2(h["ga_pg"] / avg["ga"]) if h else dash,
+                                  _it2(a["ga_pg"] / avg["ga"]) if a else dash,
+                                  key_h=h and h["ga_pg"] / avg["ga"], key_a=a and a["ga_pg"] / avg["ga"], higher=False),
+                ]
+                note = "Attacco e difesa rapportati alla media gol del campionato: attacco più alto e difesa più bassa è meglio."
+            else:
+                note = "Dalla classifica della stagione in corso."
+            return {"rows": rows, "note": note}
+        except (KeyError, TypeError, ValueError, ZeroDivisionError):
+            return None
 
     # ---- assenze ------------------------------------------------------------------------------
     def unavailable(self, match_id: int, team_id: int) -> list[dict[str, Any]]:
@@ -289,31 +384,50 @@ class MatchAnalysis:
         pos = sum(1 for p in pts if p["v"] > 0)
         return {"points": pts, "pos_share": pos / len(pts), "n": len(pts)}
 
-    def h2h_list(self, match_id: int, home_id: int, away_id: int, home_name: str, away_name: str,
-                 kickoff: pd.Timestamp, n: int = 5) -> list[dict[str, Any]]:
-        """Ultimi n precedenti fra le due squadre (solo gare giocate prima di questa)."""
+    def _h2h_core(self, match_id: int, home_id: int, away_id: int, kickoff: pd.Timestamp,
+                  n: int = 5) -> list[dict[str, Any]]:
+        """Ultime n gare precedenti fra le due squadre, valide (squadre attuali, gol presenti)."""
         if self.h2h_df.empty:
             return []
-        names = {home_id: home_name, away_id: away_name}
         h = self.h2h_df[self.h2h_df.match_id == match_id].dropna(subset=["utc", "home_goals", "away_goals"])
         h = h[pd.to_datetime(h.utc, utc=True) < kickoff].sort_values("utc", ascending=False).head(n)
         out = []
         for r in h.itertuples(index=False):
-            if int(r.home_id) not in names or int(r.away_id) not in names:
+            if int(r.home_id) not in (home_id, away_id) or int(r.away_id) not in (home_id, away_id):
                 continue  # riga anomala (terza squadra): scartata
-            hg, ag = int(r.home_goals), int(r.away_goals)
+            out.append({"home_id": int(r.home_id), "away_id": int(r.away_id), "utc": pd.Timestamp(r.utc),
+                        "hg": int(r.home_goals), "ag": int(r.away_goals), "league": r.league})
+        return out
+
+    def h2h_list(self, match_id: int, home_id: int, away_id: int, home_name: str, away_name: str,
+                 kickoff: pd.Timestamp, n: int = 5) -> list[dict[str, Any]]:
+        """Ultimi n precedenti fra le due squadre (solo gare giocate prima di questa)."""
+        names = {home_id: home_name, away_id: away_name}
+        out = []
+        for r in self._h2h_core(match_id, home_id, away_id, kickoff, n):
+            hg, ag = r["hg"], r["ag"]
             # esito dal punto di vista della squadra di casa ATTUALE (home_id del match in corso)
             if hg == ag:
                 res = "N"
             else:
                 # vittoria della casa attuale: se era in casa ha vinto chi ha più gol in casa,
                 # se era in trasferta ha vinto chi ha più gol in trasferta
-                cur_home_was_home = int(r.home_id) == home_id
+                cur_home_was_home = r["home_id"] == home_id
                 res = "V" if (hg > ag) == cur_home_was_home else "P"
-            out.append({"date": pd.Timestamp(r.utc).strftime("%d/%m/%Y"), "league": r.league,
-                        "home": names[int(r.home_id)], "away": names[int(r.away_id)],
+            out.append({"date": r["utc"].strftime("%d/%m/%Y"), "league": r["league"],
+                        "home": names[r["home_id"]], "away": names[r["away_id"]],
                         "score": f"{hg}-{ag}", "res": res})
         return out
+
+    def h2h_stats(self, match_id: int, home_id: int, away_id: int, kickoff: pd.Timestamp,
+                  n: int = 5) -> dict[str, float] | None:
+        """Sintesi sui precedenti mostrati: gol/gara e frequenza «entrambe a segno»."""
+        rows = self._h2h_core(match_id, home_id, away_id, kickoff, n)
+        if not rows:
+            return None
+        return {"n": len(rows),
+                "gpg": sum(r["hg"] + r["ag"] for r in rows) / len(rows),
+                "btts": sum(1 for r in rows if r["hg"] > 0 and r["ag"] > 0) / len(rows)}
 
     # ---- previsione ---------------------------------------------------------------------------------
     def prediction(self, match_id: int) -> dict[str, Any] | None:
@@ -446,6 +560,7 @@ class MatchAnalysis:
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
             "home_xg": self.season_xg(f["home_name"], home_id), "away_xg": self.season_xg(f["away_name"], away_id),
             "home_standing": self.standing(f["home_name"]), "away_standing": self.standing(f["away_name"]),
+            "season_compare": self.season_compare(self.standing(f["home_name"]), self.standing(f["away_name"])),
             "home_unavailable": self.unavailable(match_id, home_id), "away_unavailable": self.unavailable(match_id, away_id),
             "home_starters": self.starters(match_id, home_id), "away_starters": self.starters(match_id, away_id),
             "lineup_type": _val(info, "lineup_type"),
@@ -460,6 +575,7 @@ class MatchAnalysis:
                         "precip": _val(info, "weather_precip_chance")},
             "h2h": (_val(info, "h2h_home_wins"), _val(info, "h2h_draws"), _val(info, "h2h_away_wins")),
             "h2h_list": self.h2h_list(match_id, home_id, away_id, f["home_name"], f["away_name"], kickoff),
+            "h2h_stats": self.h2h_stats(match_id, home_id, away_id, kickoff),
             "momentum": self.momentum(match_id) if status == "finished" else None,
             "prediction": self.prediction(match_id),
             "home_xg_match": _val(info, "home_xg"), "away_xg_match": _val(info, "away_xg"),

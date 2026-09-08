@@ -45,6 +45,10 @@ def _seed(tmp_path):
     # affluenza sulla partita finita (nel parquet arriva come float, es. 57000.0)
     mi = st.read("match_info")
     mi.loc[mi.match_id == 5749645, "attendance"] = 57000
+    # la gara futura campione: senza arbitro né meteo → copre i segnaposto «da definire»
+    for col in ("referee_name", "weather_desc"):
+        if col in mi.columns:
+            mi.loc[mi.match_id == 5749669, col] = None
     st.write("match_info", mi)
     # momentum deterministico: Monza preme nei primi 25', poi domina Inter (12/18 minuti = 67%)
     mom = [{"match_id": 5749645, "minute": float(m), "value": float(v)} for m, v in [
@@ -131,7 +135,10 @@ def test_site_build_end_to_end(tmp_path):
     assert not any(g in post for g in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
     assert "(ora italiana)" in post and " UTC ·" not in post
     assert "spettatori 57.000" in post and "57.000.0" not in post   # formato intero italiano
-    assert "Classifica:" in post and "<b>1°</b> con 9 punti" in post   # classifica FotMob (Inter 1°)
+    # card Confronto di stagione (tabella FotMob): Inter in tabella, Monza no → lato «—», nessun evidenziato
+    assert "Confronto di stagione" in post and "Punti/gara" in post
+    assert "9 in 3 gare" in post and "3,00" in post and "media gol del campionato" in post
+    assert "—</td>" in post and 'class="best"' not in post
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
     assert post.count("<svg") == 3          # 2 cartine + 1 momentum
@@ -147,9 +154,14 @@ def test_site_build_end_to_end(tmp_path):
     i01 = post.find("Monza <b>0-3</b> Inter")
     assert 'class="pill V"' in post[i01:i01 + 400]    # Inter (casa attuale) vinse in trasferta
     assert 'class="pill N"' in post                   # Monza 1-1 Inter → pareggio
+    assert "50% dei casi" in post                     # precedenti: entrambe a segno 1 su 2
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre
+    # pre-partita: niente card Confronto (Udinese/Lazio fuori tabella campione), segnaposto onesti
+    assert "Confronto di stagione" not in pre
+    assert "da definire" in pre and "da definire" not in post
+    assert "2,50 gol/gara" in pre and "gol/gara" in post
     assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
@@ -171,4 +183,22 @@ def test_site_build_end_to_end(tmp_path):
         assert "UTC" not in html, page
         assert "(ora italiana)" in html, page
     assert "noindex" in (out / "index.html").read_text(encoding="utf-8")
+    st.close()
+
+
+def test_season_compare(tmp_path):
+    """Card Confronto di stagione: righe, evidenzia il migliore, degrada con una squadra sola."""
+    st = _seed(tmp_path)
+    ma = MatchAnalysis(st)
+    h, a = ma.standing("Inter"), ma.standing("Milan")
+    cmp = ma.season_compare(h, a)
+    rows = {r["label"]: r for r in cmp["rows"]}
+    assert rows["Posizione"]["best"] == "h"          # Inter 1° vs Milan 3°
+    assert rows["Gol subiti/gara"]["best"] == "h"    # 0,67 vs 1,33
+    assert rows["Difesa (× media campionato)"]["best"] == "h"
+    assert rows["Punti/gara"]["h"] == "3,00"         # 9 punti in 3 gare
+    one = ma.season_compare(h, None)                 # una sola squadra: lato avversario «—»
+    assert all(r["best"] is None for r in one["rows"]) and any(r["a"] == "—" for r in one["rows"])
+    assert ma.season_compare(None, None) is None     # nessuna classifica → nessuna card
+    assert ma.season_compare(ma.standing("Udinese"), ma.standing("Lazio")) is None
     st.close()
