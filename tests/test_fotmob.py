@@ -24,6 +24,27 @@ def test_parse_fixtures(client):
     assert fx[0].league_id == 55 and fx[0].season == "2026/2027"
 
 
+def test_parse_league_table_list_form(client):
+    raw = json.loads((FIX / "fotmob_leagues_sample.json").read_text())
+    rows = client.parse_league_table("ITA1", raw)
+    assert [(r.rank, r.team_name, r.points) for r in rows] == [
+        (1, "Inter", 9), (2, "Napoli", 7), (3, "Milan", 6)]
+    assert rows[0].team_id == 8636
+    assert (rows[0].goals_for, rows[0].goals_against, rows[0].goal_diff) == (8, 2, 6)
+    assert rows[1].played == 3 and (rows[1].wins, rows[1].draws, rows[1].losses) == (2, 1, 0)
+    assert all(r.league_code == "ITA1" for r in rows)
+
+
+def test_parse_league_table_dict_form_and_tolerance(client):
+    raw = json.loads((FIX / "fotmob_leagues_dict_sample.json").read_text())
+    rows = client.parse_league_table("ENG1", raw)
+    assert [(r.rank, r.team_name) for r in rows] == [(1, "Arsenal"), (2, "Liverpool")]
+    assert rows[0].goal_diff == 46            # goalConDiff assente → calcolato da scoresStr
+    assert all(r.team_id for r in rows)       # riga senza id scartata
+    assert client.parse_league_table("ENG1", {}) == []
+    assert client.parse_league_table("ENG1", {"table": []}) == []
+
+
 def test_parse_match_bundle(client):
     raw = json.loads((FIX / "fotmob_match_sample.json").read_text())
     b = client.parse_match(raw)

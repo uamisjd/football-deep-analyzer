@@ -12,6 +12,7 @@ fotmob:
     Referer: "https://www.fotmob.com/"
   cache_ttl_h:
     fixtures: 6
+    leagues: 6
     matchDetails_finished: 87600     # partite finite: praticamente per sempre (10 anni)
     matchDetails_upcoming: 3
     teams: 24

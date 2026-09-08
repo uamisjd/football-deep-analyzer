@@ -59,6 +59,9 @@ class FakeFotMob(FotMobClient):
         home, away = self.TEAM_MAP.get(match_id, ("8636", "9875"))
         return _remap_ids(raw, {"8636": home, "9875": away})
 
+    def league_raw(self, league_id, season_str=None):
+        return _load("fotmob_leagues_sample.json")
+
 
 class FakeUnderstat(UnderstatClient):
     def league_raw(self, slug, season):
@@ -78,6 +81,11 @@ class FakeEspnNoStandings(FakeEspn):
         raise RuntimeError("standings temporarily unavailable")
 
 
+class FakeFotMobNoTable(FakeFotMob):
+    def league_raw(self, league_id, season_str=None):
+        raise RuntimeError("leagues temporarily unavailable")
+
+
 def test_collect_league_offline(tmp_path):
     st = Store(tmp_path / "processed")
     rep = collect_league(
@@ -89,6 +97,10 @@ def test_collect_league_offline(tmp_path):
     assert rep.fixtures == 3
     assert rep.matches_fetched == 2          # la partita cancellata è esclusa
     assert rep.understat_rows > 0 and rep.espn_events > 0
+    assert rep.standings == 3                # tabella FotMob raccolta
+    tab = st.read("fotmob_standings")
+    assert tab.loc[tab.team_name == "Inter", "points"].item() == 9
+    assert tab.loc[tab.team_name == "Inter", "rank"].item() == 1
 
     info = st.read("match_info")
     assert set(info.match_id) == {5749645, 5749669}
@@ -108,6 +120,53 @@ def test_collect_league_offline(tmp_path):
     assert status["ok"].all() and len(status) == 6
     # i datetime sono salvati in UTC
     assert str(pd.read_parquet(st.path("fixtures"))["utc_kickoff"].dt.tz) == "UTC"
+    st.close()
+
+
+def test_collect_continues_when_league_table_fails(tmp_path):
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMobNoTable(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert any("fotmob standings" in e for e in rep.errors)
+    assert rep.fixtures == 3 and rep.matches_fetched == 2
+    assert st.read("fotmob_standings").empty
+    st.close()
+
+
+def test_collect_backfills_season_finished_without_understat(tmp_path):
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("NED1"), st,     # finestra default ±3 gg: la finita del 22/08 è fuori
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep.errors == []
+    assert rep.matches_fetched == 1        # Udinese-Lazio in finestra
+    assert rep.matches_backfilled == 1     # Inter-Monza 22/08 recuperata fuori finestra
+    mi = st.read("match_info")
+    assert mi.loc[mi.match_id == 5749645, "home_xg"].notna().item()
+    # secondo run: la finita è già in archivio, niente da recuperare
+    rep2 = collect_league(
+        league("NED1"), st,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep2.matches_backfilled == 0 and rep2.matches_fetched == 1
+    st.close()
+
+
+def test_collect_no_backfill_with_understat(tmp_path):
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("ITA1"), st,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep.matches_backfilled == 0
+    assert 5749645 not in set(st.read("match_info").match_id)
     st.close()
 
 

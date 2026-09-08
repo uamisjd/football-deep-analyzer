@@ -115,6 +115,7 @@ class MatchAnalysis:
         self.events = store.read("events")
         self.preds = store.read("predictions")
         self.us_team = store.read("understat_team_matches")
+        self.fm_standings = store.read("fotmob_standings")
         self.standings = store.read("espn_standings")
         self.momentum_df = store.read("momentum")
         self.h2h_df = store.read("h2h")
@@ -167,11 +168,15 @@ class MatchAnalysis:
         return None
 
     def standing(self, team_name: str) -> dict[str, Any] | None:
-        if self.standings.empty:
-            return None
+        """Classifica: prima FotMob (fonte primaria), poi ESPN come riserva."""
         canon = canonical(team_name)
-        rows = self.standings[self.standings.team_name.map(canonical) == canon]
-        return None if rows.empty else rows.iloc[0].to_dict()
+        for df in (self.fm_standings, self.standings):
+            if df.empty or "team_name" not in df.columns:
+                continue
+            rows = df[df.team_name.map(canonical) == canon]
+            if not rows.empty:
+                return rows.iloc[0].to_dict()
+        return None
 
     # ---- assenze ------------------------------------------------------------------------------
     def unavailable(self, match_id: int, team_id: int) -> list[dict[str, Any]]:

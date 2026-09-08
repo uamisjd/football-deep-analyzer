@@ -39,6 +39,7 @@ TABLE_KEYS: dict[str, list[str]] = {
     "espn_events": ["espn_id"],
     "espn_team_stats": ["espn_event_id", "team_id", "key"],
     "espn_standings": ["league_code", "team_id"],
+    "fotmob_standings": ["league_code", "team_id"],
     "predictions": ["match_id", "model", "made_at"],
     "odds_snapshots": ["match_id", "bookmaker", "market", "taken_at"],
     "source_status": ["run_at", "source"],

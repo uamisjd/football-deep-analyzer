@@ -6,6 +6,7 @@ import pandas as pd
 
 from fda.collect import collect_league
 from fda.config import league
+from fda.site.analysis import MatchAnalysis
 from fda.site.build import SiteBuilder
 from fda.store import Store
 from tests.test_store_collect import FakeEspn, FakeFotMob, FakeUnderstat
@@ -77,6 +78,40 @@ def _seed(tmp_path):
     return st
 
 
+def test_standing_prefers_fotmob_with_espn_fallback(tmp_path):
+    st = Store(tmp_path / "processed")
+    st.upsert("espn_standings", [{"league_code": "ITA1", "team_id": 1, "team_name": "Inter",
+                                  "rank": 5, "played": 3, "points": 4}])
+    st.upsert("fotmob_standings", [{"league_code": "ITA1", "team_id": 8636, "team_name": "Inter",
+                                    "rank": 1, "played": 3, "points": 9}])
+    assert MatchAnalysis(st).standing("Inter")["points"] == 9
+    # senza FotMob: riserva ESPN; senza nulla: None
+    st2 = Store(tmp_path / "processed2")
+    st2.upsert("espn_standings", [{"league_code": "ITA1", "team_id": 1, "team_name": "Inter",
+                                   "rank": 5, "played": 3, "points": 4}])
+    assert MatchAnalysis(st2).standing("Inter")["points"] == 4
+    assert MatchAnalysis(st2).standing("Squadra Inesistente") is None
+    st.close()
+    st2.close()
+
+
+def test_season_xg_fotmob_fallback(tmp_path):
+    st = Store(tmp_path / "processed")
+    st.upsert("match_info", [
+        {"match_id": 1, "status": "finished", "home_id": 8636, "away_id": 9875,
+         "home_xg": 2.0, "away_xg": 1.0},
+        {"match_id": 2, "status": "finished", "home_id": 9875, "away_id": 8636,
+         "home_xg": 0.5, "away_xg": 1.5},
+        {"match_id": 3, "status": "scheduled", "home_id": 8636, "away_id": 8564,
+         "home_xg": None, "away_xg": None},
+    ])
+    xg = MatchAnalysis(st).season_xg("Inter", 8636)
+    assert xg["source"] == "FotMob" and xg["played"] == 2
+    assert (xg["xg"], xg["xga"]) == (3.5, 1.5)
+    assert MatchAnalysis(st).season_xg("Squadra Inesistente", 0) is None
+    st.close()
+
+
 def test_site_build_end_to_end(tmp_path):
     st = _seed(tmp_path)
     out = tmp_path / "site"
@@ -96,6 +131,7 @@ def test_site_build_end_to_end(tmp_path):
     assert not any(g in post for g in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
     assert "(ora italiana)" in post and " UTC ·" not in post
     assert "spettatori 57.000" in post and "57.000.0" not in post   # formato intero italiano
+    assert "Classifica:" in post and "<b>1°</b> con 9 punti" in post   # classifica FotMob (Inter 1°)
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
     assert post.count("<svg") == 3          # 2 cartine + 1 momentum
