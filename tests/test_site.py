@@ -200,6 +200,11 @@ def test_site_build_end_to_end(tmp_path):
     assert "Momentum della partita" in post
     assert "Momentum a favore di <b>Inter</b> nel 65% dei minuti" in post
     assert 'fill="#f2555a"' in post and 'fill-opacity="0.75"' in post  # barre negative/positive
+    # Migliori in campo: split per squadra, rating con virgola, minuti e rating stagionale
+    assert "Migliori in campo" in post
+    assert ">9,1</td>" in post and "stagione 8,20" in post      # Lautaro (Inter)
+    assert ">7,5</td>" in post and "· 62'" in post              # Politano (Monza)
+    assert "stagione 6,72" in post
     # ultimi precedenti reali (tabella h2h): sia pre che post, con V/N/P dalla prospettiva della casa attuale
     assert "Ultimi precedenti" in post and "Monza <b>1-1</b> Inter" in post
     assert "Monza <b>0-3</b> Inter" in post
@@ -292,6 +297,45 @@ def test_season_compare(tmp_path):
     assert all(r["best"] is None for r in one["rows"]) and any(r["a"] == "—" for r in one["rows"])
     assert ma.season_compare(None, None) is None     # nessuna classifica → nessuna card
     assert ma.season_compare(ma.standing("Udinese"), ma.standing("Lazio")) is None
+    st.close()
+
+
+def test_top_players_per_team_with_goals(tmp_path):
+    """Migliori in campo: split per squadra, gol/assist/minuti uniti, unavailable esclusi."""
+    import pandas as pd
+
+    st = Store(tmp_path / "processed")
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1",
+         "role": "starter", "rating": 8.5, "season_rating": 7.1},
+        {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2",
+         "role": "sub", "rating": 7.0, "season_rating": 6.5},
+        {"match_id": 1, "team_id": 20, "player_id": 201, "player_name": "B1",
+         "role": "starter", "rating": 9.0, "season_rating": 8.0},
+        {"match_id": 1, "team_id": 20, "player_id": 202, "player_name": "B2",
+         "role": "unavailable", "rating": 9.9, "season_rating": 9.9},  # fuori: non sceso in campo
+    ]))
+    st.write("player_stats", pd.DataFrame([
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1",
+         "key": "goals", "value": 1.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1",
+         "key": "assists", "value": 2.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1",
+         "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 1, "team_id": 20, "player_id": 201, "player_name": "B1",
+         "key": "minutes_played", "value": 60.0, "total": None},
+    ]))
+    ma = MatchAnalysis(st)
+    tp = ma.top_players(1, 10, 20)
+    assert [p["name"] for p in tp["home"]] == ["A1", "A2"]
+    assert tp["home"][0]["goals"] == 1 and tp["home"][0]["assists"] == 2
+    assert tp["home"][0]["minutes"] == 90 and tp["home"][0]["season_rating"] == 7.1
+    # B1: gol/assist assenti → 0 (non inventati), minuti presenti, B2 (unavailable) escluso
+    assert [p["name"] for p in tp["away"]] == ["B1"]
+    assert tp["away"][0]["goals"] == 0 and tp["away"][0]["assists"] == 0
+    assert tp["away"][0]["minutes"] == 60
+    # match senza rating → liste vuote, nessun crash
+    assert ma.top_players(999, 10, 20) == {"home": [], "away": []}
     st.close()
 
 

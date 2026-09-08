@@ -127,6 +127,7 @@ class MatchAnalysis:
         self.info = store.read("match_info")
         self.lineup = store.read("lineup")
         self.team_stats = store.read("team_stats")
+        self.player_stats = store.read("player_stats")
         self.shots = store.read("shots")
         self.events = store.read("events")
         self.preds = store.read("predictions")
@@ -392,12 +393,52 @@ class MatchAnalysis:
                         "swap_out": swap[1][1] if swap and len(swap) > 1 else None})
         return out
 
-    def top_players(self, match_id: int, n: int = 3) -> list[dict[str, Any]]:
+    def top_players(self, match_id: int, home_id: int, away_id: int,
+                    n: int = 3) -> dict[str, list[dict[str, Any]]]:
+        """Top giocatori per squadra (rating partita FotMob) con gol, assist e minuti della gara.
+
+        Restituisce ``{"home": [...], "away": [...]}``: per ciascuna squadra i migliori ``n``
+        titolari/subentrati per rating, arricchiti con gol/assist/minuti dalle statistiche
+        partita (``player_stats``). I giocatori non scesi in campo (ruolo diverso da
+        starter/sub) sono esclusi; se il rating manca la lista resta vuota (nessun dato inventato).
+        """
+        out: dict[str, list[dict[str, Any]]] = {"home": [], "away": []}
         if self.lineup.empty:
-            return []
-        rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.role.isin(["starter", "sub"]))
-                           & self.lineup.rating.notna()].sort_values("rating", ascending=False).head(n)
-        return [{"name": r.player_name, "team_id": int(r.team_id), "rating": float(r.rating)} for r in rows.itertuples(index=False)]
+            return out
+        rated = self.lineup[(self.lineup.match_id == match_id)
+                            & (self.lineup.role.isin(["starter", "sub"]))
+                            & self.lineup.rating.notna()]
+        if rated.empty:
+            return out
+
+        stat_of: dict[tuple[int, str], float] = {}
+        if not self.player_stats.empty:
+            ps = self.player_stats[self.player_stats.match_id == match_id]
+            for row in ps.itertuples(index=False):
+                stat_of[(int(row.player_id), str(row.key))] = row.value
+
+        def _num(player_id: int, key: str) -> float | None:
+            v = stat_of.get((player_id, key))
+            return float(v) if v is not None and pd.notna(v) else None
+
+        def _rows(team_id: int) -> list[dict[str, Any]]:
+            sel = rated[rated.team_id == team_id].sort_values("rating", ascending=False).head(n)
+            players = []
+            for r in sel.itertuples(index=False):
+                minutes = _num(int(r.player_id), "minutes_played")
+                players.append({
+                    "name": r.player_name,
+                    "rating": float(r.rating),
+                    "goals": int(_num(int(r.player_id), "goals") or 0),
+                    "assists": int(_num(int(r.player_id), "assists") or 0),
+                    "minutes": int(minutes) if minutes is not None else None,
+                    "season_rating": float(r.season_rating) if pd.notna(r.season_rating) else None,
+                })
+            return players
+
+        out["home"] = _rows(home_id)
+        out["away"] = _rows(away_id)
+        return out
 
     def shot_summary(self, match_id: int, team_id: int) -> dict[str, Any]:
         if self.shots.empty:
@@ -641,7 +682,8 @@ class MatchAnalysis:
             "home_xgot_match": _val(info, "home_xgot"), "away_xgot_match": _val(info, "away_xgot"),
             "key_stats": self.key_stats(match_id, home_id, away_id) if status == "finished" else [],
             "timeline": self.timeline(match_id) if status == "finished" else [],
-            "top_players": self.top_players(match_id) if status == "finished" else [],
+            "top_players": self.top_players(match_id, home_id, away_id) if status == "finished"
+                           else {"home": [], "away": []},
             "home_shots": self.shot_summary(match_id, home_id) if status == "finished" else {},
             "away_shots": self.shot_summary(match_id, away_id) if status == "finished" else {},
             "home_shotmap": self.shot_map(match_id, home_id) if status == "finished" else [],

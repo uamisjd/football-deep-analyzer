@@ -102,7 +102,29 @@
       <tr><td>Grandi occasioni (xG ≥ 0,30)</td><td class="r">{{ c.home_shots.big_chances }}</td><td class="r">{{ c.away_shots.big_chances }}</td></tr>
       <tr><td>Tiri dall'area</td><td class="r">{{ c.home_shots.inside_box }}</td><td class="r">{{ c.away_shots.inside_box }}</td></tr>
     </table>
-    {% if c.top_players %}<p class="small mut" style="margin-top:10px">Migliori in campo (rating FotMob): {% for tp in c.top_players %}{{ tp.name }} {{ tp.rating|dec(1) }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% if c.top_players and (c.top_players.home or c.top_players.away) %}
+<div class="card">
+  <h2>Migliori in campo</h2>
+  <p class="small mut">Top 3 per squadra per rating di partita (FotMob), con gol, assist, minuti e rating di stagione.</p>
+  <div class="grid">
+  {% for name, players in ((c.home_name, c.top_players.home), (c.away_name, c.top_players.away)) %}
+    <div class="card" style="margin:0">
+      <h3 style="margin:0 0 8px">{{ name }}</h3>
+      {% if players %}
+      <table>
+        {% for p in players %}
+        <tr>
+          <td class="r" style="width:38px;font-weight:600">{{ p.rating|dec(1) }}</td>
+          <td>{{ p.name }}{% if p.goals or p.assists %} <span class="small">· {{ p.goals }} gol{% if p.assists %}, {{ p.assists }} assist{% endif %}</span>{% endif %}{% if p.minutes is not none %} <span class="mut small">· {{ p.minutes }}'</span>{% endif %}{% if p.season_rating is not none %} <span class="mut small">· stagione {{ p.season_rating|dec(2) }}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="mut small">Nessun rating disponibile.</p>{% endif %}
+    </div>
+  {% endfor %}
   </div>
 </div>
 {% endif %}

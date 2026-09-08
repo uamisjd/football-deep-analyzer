@@ -40,8 +40,9 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 2. ~~**Monte Carlo stagione**~~ ✅ (fase 2): pagina **`stagione.html` «Proiezioni»** con punti attesi, media posizione, % titolo/top-4/retrocessione per le 7 leghe (simulazione DC+Elo, regole retrocessione per lega incluse i playoff).
 3. **Seguire Accuratezza** via via che le gare previste si risolvono (incluse le NED1/POR1 di questa settimana): le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega).
 4. **Verifica dal vivo del meteo Open-Meteo** (dopo il merge di PR #16): al primo run `daily` attesa tabella `weather_forecast` popolata e schede «(previsione Open-Meteo)» sui futuri oltre le ~48h.
-5. **Pulizia ruff** (opzionale): 257 segnalazioni pre-esistenti `E501`/`E741` su `main` (CI esegue solo pytest, non blocca) — un turno con `ruff --fix` + revisione.
-6. Poi la roadmap (`01` §8): **B5** collegare o rimuovere il client SofaScore (codice inerte), **fase 3** schede giocatore, **fase 4** quote The Odds API (serve `ODDS_API_KEY`), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
+5. **Pulizia ruff** (opzionale): 254 segnalazioni pre-esistenti `E501`/`E741` su `main` (CI esegue solo pytest, non blocca) — un turno con `ruff --fix` + revisione.
+6. ~~**Card post-partita «Migliori in campo» per squadra**~~ ✅ (sessione `arena/01a082c6`, in attesa di PR/merge): top 3 per squadra per rating partita con gol, assist, minuti e rating di stagione — avvio della **fase 3** (schede giocatore). Prossimo passo della fase 3: schede giocatore vere (radar/percentili/xG per 90, infortuni).
+7. Poi la roadmap (`01` §8): **B5** collegare o rimuovere il client SofaScore (codice inerte), **fase 3** schede giocatore (prosegue), **fase 4** quote The Odds API (serve `ODDS_API_KEY`), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
 
 ## 4. Cosa fare appena entri (checklist rapida)
 
