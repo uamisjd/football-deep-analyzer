@@ -33,10 +33,17 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 3. Prossimi passi (in ordine — da `docs/STATO.md`)
 
-1. **Monte Carlo stagione** (fase 2 della roadmap in `01` §8): simulare il resto del campionato con i parametri DC/Elo già calibrati → probabilità titolo / top-4 / retrocessione per le 7 leghe (nuova pagina del sito). È il prossimo pezzo «profondo».
-2. **Seguire Accuratezza** via via che le gare previste si risolvono (incluse le 22 NED1/POR1 di questa settimana): le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega).
-3. **Pulizia ruff** (opzionale): 47 segnalazioni pre-esistenti su `main` (ruff 0.16 più severo del vincolo storico `ruff>=0.5`; CI esegue solo pytest) — un turno dedicato con `ruff --fix` + revisione.
-4. Poi la roadmap (`01` §8): shot map/indisponibili già fatti; restano **fase 3** schede giocatore, **fase 4** quote The Odds API (serve il secret `ODDS_API_KEY`), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
+> 🎯 **Direttiva utente (2026-09-08, prioritaria su tutto)**: «tutti i contenuti delle partite devono essere accurati, precisi, profondi e di qualità» — le schede di **tutte** le partite ancora da giocare (tutte le 7 leghe) devono essere **piene di contenuti e servizi**, nessuna lega di serie B. Le schede NED1/POR1 sono state segnalate **scarse**: riportarle **alla pari** delle big-5 è il **primo obiettivo della prossima sessione**.
+
+1. **Parità di profondità delle schede partita** (richiesta utente, con diagnosi già misurata il 2026-09-08 sui dati del run `6a31d39`):
+   - **Classifica assente su TUTTE le leghe**: `espn_standings` è vuota (ESPN standings 403 cronico) → la riga «Classifica: X° con Y punti» non compare mai. Fix: aggiungere la **tabella di lega FotMob** come fonte primaria delle classifiche (il client FotMob esiste già; endpoint tabella da mappare) e popolare `espn_standings` o una tabella equivalente.
+   - **Stagione xG magra su NED1/POR1**: «Stagione (FotMob, 1 gare)» vs «Understat, 3-4 gare» delle big-5 — Understat non copre Eredivisie/Liga Portugal. Fix: xG di stagione per squadra da FotMob (tabella lega o team details) così NED1/POR1 raggiungono la parità.
+   - **Arbitro a volte assente**: FotMob lo assegna solo a ridosso della gara (es. Moreirense–Benfica senza referee 2 giorni prima) — si riempie da sola coi run daily; valutare testo esplicito «da definire».
+   - Contenuti già presenti e funzionanti su tutte le leghe: previsione completa (1X2, gol attesi, quote eque, O/U, BTTS, doppia chance, clean sheet, risultati esatti), formazione probabile, indisponibili con rientro, meteo, forma, riposo, H2H conteggio + ultimi precedenti, momentum/cartina tiri post-partita.
+2. **Monte Carlo stagione** (fase 2 della roadmap in `01` §8): simulare il resto del campionato con i parametri DC/Elo già calibrati → probabilità titolo / top-4 / retrocessione per le 7 leghe (nuova pagina del sito). È il prossimo pezzo «profondo».
+3. **Seguire Accuratezza** via via che le gare previste si risolvono (incluse le 22 NED1/POR1 di questa settimana): le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega).
+4. **Pulizia ruff** (opzionale): 47 segnalazioni pre-esistenti su `main` (ruff 0.16 più severo del vincolo storico `ruff>=0.5`; CI esegue solo pytest) — un turno dedicato con `ruff --fix` + revisione.
+5. Poi la roadmap (`01` §8): restano **fase 3** schede giocatore, **fase 4** quote The Odds API (serve il secret `ODDS_API_KEY`), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
 
 ## 4. Cosa fare appena entri (checklist rapida)
 
@@ -49,7 +56,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 5. Paletti di qualità (nuovi — riassunto, dettaglio in `00` sez. B)
 
-Massima accuratezza, precisione, profondità e qualità su ogni deliverable: numeri sempre **verificabili e misurati**; distinguere in modo esplicito *verificato dal vivo* / *verificato offline* / *presunto*; non dichiarare "fatto" ciò che è solo "in attesa"; test verdi + ruff pulito prima delle PR; documenti in italiano brevi e linkati.
+Massima accuratezza, precisione, profondità e qualità su ogni deliverable: numeri sempre **verificabili e misurati**; distinguere in modo esplicito *verificato dal vivo* / *verificato offline* / *presunto*; non dichiarare "fatto" ciò che è solo "in attesa"; test verdi + ruff pulito prima delle PR; documenti in italiano brevi e linkati. **Direttiva utente (2026-09-08)**: le **schede di ogni partita** devono essere piene di contenuti accurati, precisi, profondi e di qualità — **parità completa tra le 7 leghe**, nessuna lega trattata "di serie B" (v. sez. 3, punto 1).
 
 ## 6. Dove sta il lavoro — albero essenziale
 
