@@ -53,6 +53,8 @@ L'agente lavora sul branch `arena/...` e il lavoro è già al sicuro grazie ai p
 - [ ] messaggio PR chiaro che riassume cosa fa e il motivo;
 - [ ] la PR parte dal branch di lavoro corretto (`arena/...`) verso `main`.
 
+**Verifica dell'ordine di lavoro — PRIMA del merge (regola permanente, vale in ogni sessione).** Prima di dichiarare che è il momento di fare il merge, l'agente deve **sempre verificare l'ordine di come fare le cose**: controllare in `docs/STATO.md` («prossimo passo», «decisioni aperte»), nel briefing di sessione e nelle richieste dell'utente se c'è **altro lavoro importante da fare o aggiungere al progetto che deve entrare su `main` nello stesso giro** della PR aperta (per esempio un fix, una direttiva, una regola, un contenuto richiesto poco prima del merge). Se c'è, va aggiunto e pushato **prima** di dare il via libera al merge: finché la PR è aperta un commit in più è immediato; **dopo il merge** quel lavoro richiederebbe una nuova sessione (nuovo branch `arena/...`, nuova PR, nuovo ciclo di check) e diventa molto più difficile e costoso. Solo quando si è verificato che non resta nulla di importante da aggiungere si pronuncia la frase fissa qui sotto. (Esempio reale: la sezione F di queste regole e la regola presente sono state aggiunte alla PR #14 dopo l'apertura, prima del merge.)
+
 **Dopo la PR aperta**: l'agente monitora i check (tests). Quando sono verdi e la PR è mergeable, l'agente **lo comunica e indica il momento del merge** con la frase fissa:
 > *"👉 Tutto verde: è il momento di fare Merge (PR #N)."*
 
