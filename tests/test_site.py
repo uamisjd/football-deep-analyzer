@@ -1,8 +1,5 @@
-import json
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
-
-import pandas as pd
 
 from fda.collect import collect_league
 from fda.config import league
@@ -50,6 +47,11 @@ def _seed(tmp_path, espn_cls=FakeEspn):
         if col in mi.columns:
             mi.loc[mi.match_id == 5749669, col] = None
     st.write("match_info", mi)
+    # meteo previsionale Open-Meteo come fallback per la futura senza meteo FotMob
+    st.upsert("weather_forecast", [
+        {"match_id": 5749669, "lat": 45.4, "lon": 9.1, "hour": "2026-09-07T19:00",
+         "temp_c": 21.0, "precip_prob": 60.0, "code": 61, "desc": "pioggia debole"},
+    ])
     # momentum deterministico: Monza preme nei primi 25', poi domina Inter (12/18 minuti = 67%)
     mom = [{"match_id": 5749645, "minute": float(m), "value": float(v)} for m, v in [
         (5, -30), (10, -40), (15, -35), (20, -25), (25, -20), (30, 0),
@@ -217,6 +219,8 @@ def test_site_build_end_to_end(tmp_path):
     # pre-partita: niente card Confronto (Udinese/Lazio fuori tabella campione), segnaposto onesti
     assert "Confronto di stagione" not in pre
     assert "da definire" in pre and "da definire" not in post
+    # meteo fallback Open-Meteo: descrizione + fonte dichiarata (FotMob assente)
+    assert "pioggia debole" in pre and "(previsione Open-Meteo)" in pre
     assert "2,50 gol/gara" in pre and "gol/gara" in post
     assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
@@ -328,4 +332,47 @@ def test_nan_rating_not_rendered(tmp_path):
     assert it_dec(float("nan")) == ""
     assert it_dec(None) == ""
     assert it_dec(3.5) == "3,50"
+    st.close()
+
+
+def test_starters_exclude_unavailable_players(tmp_path):
+    """Un giocatore elencato sia titolare sia indisponibile non compare tra i titolari."""
+    st = Store(tmp_path / "processed")
+    base = {"match_id": 999, "team_id": 1, "shirt_number": 1, "rating": 7.0, "season_rating": 7.0,
+            "position_id": 1, "usual_position_id": 1, "age": 25, "country": "IT",
+            "market_value_eur": 1_000_000, "is_captain": False,
+            "unavailability_type": None, "expected_return": None}
+    st.upsert("lineup", [
+        {**base, "player_id": 10, "player_name": "Titolare Sano", "role": "starter"},
+        {**base, "player_id": 11, "player_name": "Titolare Infortunato", "role": "starter",
+         "shirt_number": 2},
+        {**base, "player_id": 11, "player_name": "Titolare Infortunato", "role": "unavailable",
+         "rating": None, "season_rating": None, "shirt_number": 2,
+         "unavailability_type": "injury", "expected_return": "Early October 2026"},
+    ])
+    ma = MatchAnalysis(st)
+    assert [s["name"] for s in ma.starters(999, 1)] == ["Titolare Sano"]
+    assert [u["name"] for u in ma.unavailable(999, 1)] == ["Titolare Infortunato"]
+    st.close()
+
+
+def test_weather_fallback_openmeteo(tmp_path):
+    """Meteo: FotMob primario; se assente, previsione Open-Meteo (con fonte dichiarata)."""
+    st = Store(tmp_path / "processed")
+    st.upsert("match_info", [
+        {"match_id": 1, "status": "scheduled", "weather_desc": "Sunny", "weather_temp_c": 27.0,
+         "weather_precip_chance": 10.0, "stadium_lat": 45.4, "stadium_lon": 9.1},
+        {"match_id": 2, "status": "scheduled", "weather_desc": None, "weather_temp_c": None,
+         "weather_precip_chance": None, "stadium_lat": 41.9, "stadium_lon": 12.4},
+    ])
+    st.upsert("weather_forecast", [
+        {"match_id": 2, "lat": 41.9, "lon": 12.4, "hour": "2026-09-09T19:00",
+         "temp_c": 21.0, "precip_prob": 60.0, "code": 61, "desc": "pioggia debole"},
+    ])
+    ma = MatchAnalysis(st)
+    assert ma._weather(1, "Sunny", 27.0, 10.0) == {"desc": "soleggiato", "temp": 27.0,
+                                                    "precip": 10.0, "source": "FotMob"}
+    w2 = ma._weather(2, None, None, None)
+    assert w2 == {"desc": "pioggia debole", "temp": 21.0, "precip": 60.0, "source": "Open-Meteo"}
+    assert ma._weather(3, None, None, None)["desc"] is None      # né FotMob né previsione
     st.close()

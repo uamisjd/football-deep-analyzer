@@ -9,7 +9,6 @@ che la fonte non ha ancora reso disponibile.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import timedelta
 from typing import Any
 
 import pandas as pd

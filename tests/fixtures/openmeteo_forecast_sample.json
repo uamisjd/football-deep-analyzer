@@ -1,0 +1,11 @@
+{
+  "latitude": 41.93,
+  "longitude": 12.45,
+  "timezone": "UTC",
+  "hourly": {
+    "time": ["2026-09-09T18:00", "2026-09-09T19:00", "2026-09-09T20:00"],
+    "temperature_2m": [22.5, 21.0, 20.0],
+    "precipitation_probability": [10, 60, 70],
+    "weather_code": [2, 61, 63]
+  }
+}

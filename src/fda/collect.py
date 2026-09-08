@@ -19,13 +19,19 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
 from typing import Any, Callable
 
+import pandas as pd
+
 from .config import League, leagues, season_start_year
 from .sources.espn import EspnClient, to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
+from .sources.openmeteo import OpenMeteoClient
 from .sources.understat import UnderstatClient, to_dicts as us_dicts
 from .store import Store
 
 log = logging.getLogger(__name__)
+
+# Orizzonte del meteo previsionale Open-Meteo (giorni futuri coperti come fallback).
+WEATHER_HORIZON_DAYS = 7
 
 
 @dataclass
@@ -74,6 +80,7 @@ def collect_league(
     fotmob: FotMobClient | None = None,
     understat: UnderstatClient | None = None,
     espn: EspnClient | None = None,
+    openmeteo: OpenMeteoClient | None = None,
     today: date | None = None,
 ) -> CollectReport:
     now = datetime.now(timezone.utc)
@@ -82,6 +89,7 @@ def collect_league(
     fm = fotmob or FotMobClient()
     uc = understat or UnderstatClient()
     ec = espn or EspnClient()
+    om = openmeteo            # None = passo meteo disattivato (es. test offline senza rete)
 
     # 1) calendario -------------------------------------------------------------------------
     fixtures = _safe("fotmob", lambda: fm.parse_fixtures(lg.fotmob_id, fm.fixtures_raw(lg.fotmob_id)), report)
@@ -175,17 +183,54 @@ def collect_league(
     _safe("espn standings", _standings, report)
     report.espn_events = _safe("espn scoreboard", _scoreboards, report) or 0
 
+    # 5) meteo previsionale Open-Meteo (fallback: riempie il vuoto FotMob sui futuri) ------
+    def _weather() -> int:
+        if om is None:
+            return 0
+        horizon = today + timedelta(days=WEATHER_HORIZON_DAYS)
+        upcoming = [f for f in fixtures
+                    if f.status == "scheduled" and f.utc_kickoff
+                    and today <= f.utc_kickoff.date() <= horizon]
+        if not upcoming:
+            return 0
+        mi = store.read("match_info")
+        if mi.empty or not {"stadium_lat", "stadium_lon", "weather_desc"}.issubset(mi.columns):
+            return 0
+        coords = mi.set_index("match_id")[["stadium_lat", "stadium_lon", "weather_desc"]]
+        rows = []
+        for f in upcoming:
+            if f.match_id not in coords.index:
+                continue
+            lat, lon, fotmob_weather = coords.loc[f.match_id]
+            if lat is None or lon is None or pd.isna(lat) or pd.isna(lon):
+                continue
+            # FotMob resta la fonte primaria: se ha già il meteo non serve il fallback
+            if isinstance(fotmob_weather, str) and fotmob_weather.strip():
+                continue
+            fc = om.forecast(float(lat), float(lon), f.utc_kickoff)
+            if not fc:
+                continue
+            rows.append({"match_id": f.match_id, "lat": float(lat), "lon": float(lon),
+                         "hour": fc.get("hour"), "temp_c": fc.get("temp_c"),
+                         "precip_prob": fc.get("precip_prob"), "code": fc.get("code"),
+                         "desc": fc.get("desc"), "fetched_at": now})
+        return store.upsert("weather_forecast", rows) if rows else 0
+
+    _safe("openmeteo forecast", _weather, report)
+
     report.requests = {"fotmob": fm.http.stats.requests, "understat": uc.http.stats.requests,
                        "espn": ec.http.stats.requests}
+    if om is not None:
+        report.requests["openmeteo"] = om.http.stats.requests
     store.upsert("source_status", report.as_status_rows())
     return report
 
 
 def collect_all(keys: list[str] | None = None, store: Store | None = None, **kw: Any) -> list[CollectReport]:
     store = store or Store()
-    fm, uc, ec = FotMobClient(), UnderstatClient(), EspnClient()   # client condivisi: rate limit unico
+    fm, uc, ec, om = FotMobClient(), UnderstatClient(), EspnClient(), OpenMeteoClient()
     reports = []
     for lg in leagues(keys):
         log.info("== %s ==", lg.name)
-        reports.append(collect_league(lg, store, fotmob=fm, understat=uc, espn=ec, **kw))
+        reports.append(collect_league(lg, store, fotmob=fm, understat=uc, espn=ec, openmeteo=om, **kw))
     return reports

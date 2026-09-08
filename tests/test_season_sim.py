@@ -61,3 +61,11 @@ def test_simulate_league_missing_team_neutral():
     assert "Nuova" in set(df.team)          # simulata comunque, con λ neutre
     assert df.p_title.sum() == 1.0
     assert (df.loc[df.team == "Nuova", "played"] == 3).all()
+
+
+def test_rel_counts_include_playoffs():
+    """POR1 (2 dirette + playoff), NED1 (2 dirette + playoff) e FRA1 (barrage) = 3 posti a rischio."""
+    from fda.models.season_sim import REL_COUNTS
+    assert REL_COUNTS["POR1"] == 3   # prima era 2: mancava la 16ª al playoff
+    assert REL_COUNTS["NED1"] == 3 and REL_COUNTS["FRA1"] == 3
+    assert REL_COUNTS["ITA1"] == 3

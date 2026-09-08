@@ -5,7 +5,7 @@
 <p class="small mut">Monte Carlo su {{ n_sims }} stagioni simulate per lega — Dixon-Coles + Elo (ensemble 70/30)
   sui punteggi delle gare restanti, differenza reti simulata per i tie-break. Aggiornato: {{ updated }}.
   Le squadre senza storico sufficiente (neopromosse) usano parametri neutri di lega.
-  «Retro» segue le regole di ogni campionato (POR1: 2 retrocessioni dirette; NED1: 2 dirette + playoff; le altre: 3).</p>{% endif %}
+  «Retro» segue le regole di ogni campionato (POR1: 2 retrocessioni dirette + 1 playoff; NED1: 2 dirette + 1 playoff; FRA1: 2 dirette + 1 barrage; le altre: 3 dirette).</p>{% endif %}
 {% for lg in leagues %}
 <div class="card">
   <h2>{{ lg.name }} <span class="tag">{{ lg.key }}</span></h2>

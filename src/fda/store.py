@@ -41,6 +41,7 @@ TABLE_KEYS: dict[str, list[str]] = {
     "season_sim": ["league_key", "team"],
     "espn_standings": ["league_code", "team_id"],
     "fotmob_standings": ["league_code", "team_id"],
+    "weather_forecast": ["match_id"],
     "predictions": ["match_id", "model", "made_at"],
     "odds_snapshots": ["match_id", "bookmaker", "market", "taken_at"],
     "source_status": ["run_at", "source"],

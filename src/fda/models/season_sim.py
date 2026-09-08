@@ -22,9 +22,10 @@ from .predict import MODEL_VERSION, DixonColesModel, EloModel, ensemble
 
 log = logging.getLogger(__name__)
 
-# quante squadre retrocedono per lega (dirette + playoff: NED1 ha 2 dirette + playoff,
-# FRA1 ha 2 dirette + barrage → conteggi armonizzati, nota esplicita sul sito)
-REL_COUNTS: dict[str, int] = {"ITA1": 3, "ESP1": 3, "ENG1": 3, "GER1": 3, "FRA1": 3, "NED1": 3, "POR1": 2}
+# Quante squadre sono a rischio retrocessione per lega (posti "rossi": dirette + playoff).
+# NED1: 2 dirette + 1 playoff · FRA1: 2 dirette + 1 barrage · POR1: 2 dirette + 1 playoff (16ª)
+# → tutte a 3; le altre big-5 a 3 dirette. Nota esplicita sul sito.
+REL_COUNTS: dict[str, int] = {"ITA1": 3, "ESP1": 3, "ENG1": 3, "GER1": 3, "FRA1": 3, "NED1": 3, "POR1": 3}
 TOP_N = 4
 
 

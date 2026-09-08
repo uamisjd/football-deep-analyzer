@@ -300,7 +300,9 @@ def daily_cmd(
     """Run giornaliero completo: collect → predict → build. È ciò che esegue GitHub Actions."""
     from typer.testing import CliRunner  # noqa: F401  (import di controllo)
 
-    collect_cmd(league_keys=league_keys, past_days=3, future_days=3,
+    # future_days=7: i dettagli (incluse le coordinate stadio) sono raccolti per l'intera
+    # settimana "prossime", così il meteo previsionale Open-Meteo può colmare il vuoto FotMob.
+    collect_cmd(league_keys=league_keys, past_days=3, future_days=7,
                 max_matches=40, max_backfill=40)
     if not skip_predict:
         try:

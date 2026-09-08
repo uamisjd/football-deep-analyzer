@@ -135,6 +135,7 @@ class MatchAnalysis:
         self.standings = store.read("espn_standings")
         self.momentum_df = store.read("momentum")
         self.h2h_df = store.read("h2h")
+        self.weather_forecast = store.read("weather_forecast")
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
@@ -321,8 +322,14 @@ class MatchAnalysis:
     def starters(self, match_id: int, team_id: int) -> list[dict[str, Any]]:
         if self.lineup.empty:
             return []
+        # FotMob elenca a volte lo stesso giocatore sia come titolare sia come
+        # indisponibile: lo escludiamo dai titolari per non contraddire l'infermeria.
+        unav = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
+                           & (self.lineup.role == "unavailable")]
+        unav_ids = set(unav.player_id.dropna())
         rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
-                           & (self.lineup.role == "starter")]
+                           & (self.lineup.role == "starter")
+                           & (~self.lineup.player_id.isin(unav_ids))]
         out = []
         for r in rows.itertuples(index=False):
             rating = r.rating if not pd.isna(r.rating) else None
@@ -331,6 +338,18 @@ class MatchAnalysis:
             out.append({"name": r.player_name, "num": num, "rating": rating,
                         "season_rating": season_rating, "captain": bool(r.is_captain)})
         return out
+
+    def _weather(self, match_id: int, desc: Any, temp: Any, precip: Any) -> dict[str, Any]:
+        """Meteo della gara: FotMob primario, Open-Meteo (previsionale) come fallback."""
+        if desc:
+            return {"desc": _weather_it(desc), "temp": temp, "precip": precip, "source": "FotMob"}
+        if not self.weather_forecast.empty:
+            row = self.weather_forecast[self.weather_forecast.match_id == match_id]
+            if not row.empty:
+                d = row.iloc[0].to_dict()
+                return {"desc": _val(d, "desc"), "temp": _val(d, "temp_c"),
+                        "precip": _val(d, "precip_prob"), "source": "Open-Meteo"}
+        return {"desc": None, "temp": None, "precip": None, "source": None}
 
     # ---- statistiche post-partita ----------------------------------------------------------------
     def key_stats(self, match_id: int, home_id: int, away_id: int) -> list[dict[str, Any]]:
@@ -611,8 +630,8 @@ class MatchAnalysis:
                         "reds": _val(info, "referee_reds_total")},
             "stadium": {"name": _val(info, "stadium_name"), "city": _val(info, "stadium_city"),
                         "attendance": _val(info, "attendance")},
-            "weather": {"desc": _weather_it(_val(info, "weather_desc")), "temp": _val(info, "weather_temp_c"),
-                        "precip": _val(info, "weather_precip_chance")},
+            "weather": self._weather(match_id, _val(info, "weather_desc"),
+                                     _val(info, "weather_temp_c"), _val(info, "weather_precip_chance")),
             "h2h": (_val(info, "h2h_home_wins"), _val(info, "h2h_draws"), _val(info, "h2h_away_wins")),
             "h2h_list": self.h2h_list(match_id, home_id, away_id, f["home_name"], f["away_name"], kickoff),
             "h2h_stats": self.h2h_stats(match_id, home_id, away_id, kickoff),
