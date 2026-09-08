@@ -69,3 +69,43 @@ E spiega in una riga perché è sicuro. **Il merge lo esegue SEMPRE l'utente, MA
 - **Riuso prima di scrivere**: librerie esistenti (penaltyblog, soccerdata, mplsoccer) prima di codice proprio.
 - **Onestà sui numeri**: ogni previsione viene registrata e valutata pubblicamente (RPS/Brier); niente "accuratezza" dichiarata senza misura.
 - **Rispetto delle fonti**: limiti di richieste per fonte, cache, nessun aggiramento di CAPTCHA o protezioni.
+
+## F. Parità di qualità delle schede partita (direttiva permanente)
+
+**Principio.** Tutte le 7 leghe (big-5 + NED1/POR1) sono **alla pari**: nessun contenuto della scheda partita è facoltativo o «di serie B» per lega. Una scheda è completa solo se contiene tutti i contenuti obbligatori qui sotto; quando la fonte primaria non copre una lega si usa il fallback indicato e, solo se nessuna fonte ha il dato, si mostra un segnaposto onesto («Arbitro da definire», «previsione pubblicata a ridosso della gara»), mai un dato vuoto o inventato.
+
+### Contenuti obbligatori pre-partita (12)
+
+| # | Contenuto | Fonte primaria | Fallback / note |
+|---|-----------|----------------|-----------------|
+| 1 | **Previsione del modello** (1X2, gol attesi, quote eque, O/U, BTTS, doppia chance, clean sheet, risultati esatti) | Dixon-Coles + Elo (ensemble 70/30) su storico mirror + stagione in corso FotMob | — (senza storico sufficiente la previsione manca: il run lo segnala) |
+| 2 | **Forma recente** (ultime 5 con V/N/P e gol) | FotMob — `fixtures` (gare finite) | — |
+| 3 | **xG di stagione** (xG/xGA a partita) | Understat (dove copre la lega) | FotMob — partite finite (leghe senza Understat, es. NED1/POR1) |
+| 4 | **xPTS vs punti reali** | Understat (colonne `xpts`/`pts`) | FotMob — Poisson dalle λ = xG delle gare finite (`_poisson_xpts`) |
+| 5 | **PPDA** | Understat | — (riga assente per le squadre senza dati Understat) |
+| 6 | **Confronto di stagione** (posizione, punti/gara, V-N-P, GF/GC per gara, attacco/difesa × media campionato) | Classifica FotMob (`fotmob_standings`) | Classifica ESPN (`espn_standings`) come riserva |
+| 7 | **Indisponibili** (con tipo e rientro previsto) | FotMob — lineup (ruolo `unavailable`) | — |
+| 8 | **Formazione probabile** (ufficiale a ridosso della gara) | FotMob — lineup (`starter`, `lineupType`) | — |
+| 9 | **Riposo** (giorni dall'ultima gara) | FotMob — `fixtures` | — |
+| 10 | **Arbitro** (nome, medie gialli/rigori) | FotMob — matchDetails (designazione a ridosso della gara) | segnaposto «da definire» finché non è assegnato |
+| 11 | **Meteo previsto** | FotMob — matchDetails (previsione a ridosso della gara) | segnaposto onesto finché non è pubblicato |
+| 12 | **Precedenti H2H** (conteggio V/N/P + ultimi 5 reali con data/esito + gol/gara e % entrambe a segno) | FotMob — `h2h` in matchDetails | — |
+
+### Contenuti obbligatori post-partita (6)
+
+| # | Contenuto | Fonte | Note |
+|---|-----------|-------|------|
+| 1 | **Lettura della partita** | narrativa automatica dai dati (`narrative`) | esito vs xG, modello vs esito, forma/momentum |
+| 2 | **Statistiche chiave** | FotMob — `team_stats` | possesso, tiri, xG/xGOT, passaggi riusciti, angoli, falli, cartellini |
+| 3 | **Cronaca essenziale** | FotMob — `events` | gol, carte e sostituzioni minuto per minuto |
+| 4 | **Tiri e occasioni** | FotMob — `shots` | riepilogo per squadra: tiri, xG totale, in porta, grandi occasioni, gol |
+| 5 | **Cartina dei tiri (SVG)** | FotMob — `shots` (coordinate 105×68) | un mezzo campo SVG per squadra, pallini dimensionati sull'xG |
+| 6 | **Momentum della partita (SVG)** | FotMob — `momentum` | barre ±100 minuto per minuto con marker dei gol |
+
+### Checklist obbligatoria prima di ogni PR
+
+- [ ] **`fda build` senza errori** sui dati correnti del repo (tutte le pagine generate).
+- [ ] **Audit automatico** delle pagine generate: nessun residuo inglese/UTC, decimali con virgola, SVG ben formati, valori coerenti con i dati.
+- [ ] **Confronto big-5 vs NED1/POR1**: su un campione di partite delle 7 leghe, tutti i 12 contenuti pre e i 6 post sono presenti (o con segnaposto onesto) — nessuna lega sguarnita.
+- [ ] **Zero «nan»**: nessuna pagina contiene `nan`/`NaN` derivato da dati mancanti.
+- [ ] **Test verdi + ruff pulito** sul codice nuovo (0 nuove segnalazioni, es. `ruff check --select F,E`).
