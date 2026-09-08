@@ -104,9 +104,15 @@ def collect_league(
             bundle = _safe(f"fotmob parse {f.match_id}", lambda: fm.parse_match(raw), report)
             if not bundle:
                 return False
-            for table, rows in bundle_to_dicts(bundle).items():
-                store.upsert(table, rows)
-            return True
+
+            def _save() -> bool:
+                for table, rows in bundle_to_dicts(bundle).items():
+                    store.upsert(table, rows)
+                return True
+
+            # anche il salvataggio è isolato: una partita con righe anomale non deve
+            # uccidere il run (regressione: run daily 2026-09-08 14:31 UTC morto su NED1)
+            return _safe(f"fotmob save {f.match_id}", _save, report) is not None
 
         window.sort(key=lambda f: f.utc_kickoff)
         for f in window[:max_matches]:

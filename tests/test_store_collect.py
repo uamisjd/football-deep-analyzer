@@ -136,6 +136,38 @@ def test_collect_continues_when_league_table_fails(tmp_path):
     st.close()
 
 
+def test_collect_survives_bad_match_save(tmp_path, monkeypatch):
+    """Una partita che esplode durante il salvataggio non deve fermare il run.
+
+    Regressione del run `daily` 2026-09-08 14:31 UTC su main: il collect moriva su
+    NED1 nel nuovo backfill perché `bundle_to_dicts` + `store.upsert` erano fuori
+    da `_safe`, e la pipe senza pipefail mascherava il fallimento.
+    """
+    import fda.collect as coll
+
+    real_btd = coll.bundle_to_dicts
+
+    def boom_on_one(bundle):
+        rows = real_btd(bundle)
+        if bundle.info.match_id == 5749669:  # la seconda partita in finestra
+            raise ValueError("riga anomala nel bundle (simula il crash del run 14:31 UTC)")
+        return rows
+
+    monkeypatch.setattr(coll, "bundle_to_dicts", boom_on_one)
+    st = Store(tmp_path / "processed")
+    rep = coll.collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    # il run arriva in fondo: errore isolato sulla partita guasta, il resto è raccolto
+    assert any("fotmob save 5749669" in e and "ValueError" in e for e in rep.errors)
+    assert rep.matches_fetched == 1
+    assert rep.standings == 3 and rep.understat_rows > 0 and rep.espn_events > 0
+    assert set(st.read("match_info").match_id) == {5749645}   # l'altra partita è salva
+    st.close()
+
+
 def test_collect_backfills_season_finished_without_understat(tmp_path):
     st = Store(tmp_path / "processed")
     rep = collect_league(
