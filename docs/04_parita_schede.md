@@ -34,9 +34,9 @@ Avvertenze per il parser (difensivo): le due fonti divergono sul nodo `table` (*
 
 ## 3. Fix B — xG di stagione per NED1/POR1
 
-- Opzione 1 (se disponibile): xG di squadra dalla risposta `leagues` (da verificare nella mappatura).
-- Opzione 2 (fallback certo): per le leghe senza Understat, `collect` scarica i `matchDetails` di **tutte** le finite di stagione (non solo la finestra ±3 gg): ogni finita si scarica una sola volta (cache 10 anni) e il fallback FotMob in `season_xg()` diventa completo. Costo una tantum ~30 richieste/lega a inizio stagione, poi solo le nuove finite.
-- `season_xg()` resta invariato come interfaccia (sorgente dichiarata: «FotMob, N gare»).
+**Decisione (2026-09-08): opzione 2** — la risposta `leagues` non contiene xG di squadra, quindi per le leghe senza Understat `collect` scarica i `matchDetails` di **tutte** le finite di stagione (non solo la finestra ±3 gg): ogni finita si scarica una sola volta (cache 10 anni) e il fallback FotMob in `season_xg()` diventa completo. Scelta perché riusa endpoint già verificati dal vivo (`fixtures` + `matchDetails`); l'alternativa `teamseasonstats?teamId=&tournamentId=` ha struttura non documentata. `season_xg()` resta invariato come interfaccia (sorgente dichiarata: «FotMob, N gare»).
+
+**Implementato (2026-09-08, verificato offline)**: passo 2b in `collect_league` — finite fuori finestra recuperate dalle più recenti, tetto `max_backfill=40`/run, blocco fetch estratto in `_fetch()` riusato da finestra e backfill; contatore `matches_backfilled` nel report e in `fda collect` («N+M storiche»), opzione `--max-backfill`. Test: NED1 recupera 1 fuori finestra + 1 in finestra (0 al secondo run), ITA1 invariata, `season_xg()` FotMob su 2 finite (3,5/1,5). Suite 36 passed, ruff 47 = baseline.
 
 ## 4. Verifiche
 
@@ -45,4 +45,4 @@ Avvertenze per il parser (difensivo): le due fonti divergono sul nodo `table` (*
 
 ## Prossimo passo
 
-Fix A completato offline (parser + collect + standing con fallback + comando `fda fotmob-table` + test). Ora Fix B: in `collect`, per le leghe senza Understat scaricare i `matchDetails` di tutte le finite di stagione (oltre la finestra ±3 gg) così `season_xg()` diventa completo su NED1/POR1. Poi verifica dal vivo in Actions (run `daily`: `fotmob_standings` 7/7 leghe + stagione xG completa).
+Fix A + Fix B completati offline. Ora: verifica dal vivo in Actions — serve un run `daily` su `main` (via PR + merge utente, poi dispatch manuale dalla UI come il 2026-09-08): atteso `fotmob_standings` popolata 7/7 leghe, `match_info` NED1/POR1 con tutte le finite (stagione xG «FotMob, N gare» completa nelle schede), `source_status` senza errori nuovi.

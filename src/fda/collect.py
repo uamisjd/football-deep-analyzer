@@ -4,6 +4,8 @@ Per ogni campionato:
   1. calendario stagionale (FotMob fixtures) → tabella `fixtures`
   2. dettagli delle partite nella finestra [oggi-past_days, oggi+future_days]:
      finite → una sola volta (poi cache lunga); future → ad ogni run (formazioni/indisponibili/meteo)
+     2b. solo per le leghe senza Understat: backfill dei dettagli di tutte le finite di
+     stagione (ognuna una sola volta) → xG di stagione FotMob completo
   3. Understat (se coperto) → xG/xPTS/PPDA di stagione
   4. ESPN → classifica + partite del giorno (riserva e controllo incrociato)
 Ogni fonte è isolata: se una fallisce, le altre continuano e l'esito finisce in `source_status`.
@@ -19,7 +21,7 @@ from typing import Any, Callable
 
 from .config import League, leagues, season_start_year
 from .sources.espn import EspnClient, to_dicts as espn_dicts
-from .sources.fotmob import FotMobClient, bundle_to_dicts
+from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
 from .sources.understat import UnderstatClient, to_dicts as us_dicts
 from .store import Store
 
@@ -33,6 +35,7 @@ class CollectReport:
     fixtures: int = 0
     matches_fetched: int = 0
     matches_skipped: int = 0
+    matches_backfilled: int = 0
     standings: int = 0
     understat_rows: int = 0
     espn_events: int = 0
@@ -64,6 +67,7 @@ def collect_league(
     past_days: int = 3,
     future_days: int = 3,
     max_matches: int = 40,
+    max_backfill: int = 40,
     fotmob: FotMobClient | None = None,
     understat: UnderstatClient | None = None,
     espn: EspnClient | None = None,
@@ -90,24 +94,40 @@ def collect_league(
         existing = store.read("match_info")
         if not existing.empty and "status" in existing.columns:
             already = set(existing.loc[existing["status"] == "finished", "match_id"].astype(int))
+        def _fetch(f: Fixture) -> bool:
+            """Scarica e salva i dettagli di una partita. Ritorna True se salvata."""
+            raw = _safe(f"fotmob match {f.match_id}",
+                        lambda: fm.match_details_raw(f.match_id, finished_hint=f.status == "finished"),
+                        report)
+            if not raw:
+                return False
+            bundle = _safe(f"fotmob parse {f.match_id}", lambda: fm.parse_match(raw), report)
+            if not bundle:
+                return False
+            for table, rows in bundle_to_dicts(bundle).items():
+                store.upsert(table, rows)
+            return True
+
         window.sort(key=lambda f: f.utc_kickoff)
         for f in window[:max_matches]:
             if f.status == "finished" and f.match_id in already:
                 report.matches_skipped += 1
                 continue
-            raw = _safe(f"fotmob match {f.match_id}",
-                        lambda f=f: fm.match_details_raw(f.match_id, finished_hint=f.status == "finished"),
-                        report)
-            if not raw:
-                continue
-            bundle = _safe(f"fotmob parse {f.match_id}", lambda raw=raw: fm.parse_match(raw), report)
-            if not bundle:
-                continue
-            for table, rows in bundle_to_dicts(bundle).items():
-                store.upsert(table, rows)
-            report.matches_fetched += 1
+            if _fetch(f):
+                report.matches_fetched += 1
 
-    # 2b) tabella di lega (FotMob `leagues`: fonte primaria delle classifiche) ----------------
+        # 2b) backfill finite di stagione (solo leghe senza Understat: xG FotMob completo) --
+        # Ogni finita si scarica una sola volta (poi è in `already`); le più recenti prima.
+        if not lg.has_understat:
+            old = [f for f in fixtures
+                   if f.status == "finished" and f.utc_kickoff and f.utc_kickoff < lo
+                   and f.match_id not in already]
+            old.sort(key=lambda f: f.utc_kickoff, reverse=True)
+            for f in old[:max_backfill]:
+                if _fetch(f):
+                    report.matches_backfilled += 1
+
+    # 2c) tabella di lega (FotMob `leagues`: fonte primaria delle classifiche) ----------------
     def _table() -> int:
         rows = fm.parse_league_table(lg.key, fm.league_raw(lg.fotmob_id))
         if not rows:

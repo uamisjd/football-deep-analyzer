@@ -136,6 +136,40 @@ def test_collect_continues_when_league_table_fails(tmp_path):
     st.close()
 
 
+def test_collect_backfills_season_finished_without_understat(tmp_path):
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("NED1"), st,     # finestra default ±3 gg: la finita del 22/08 è fuori
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep.errors == []
+    assert rep.matches_fetched == 1        # Udinese-Lazio in finestra
+    assert rep.matches_backfilled == 1     # Inter-Monza 22/08 recuperata fuori finestra
+    mi = st.read("match_info")
+    assert mi.loc[mi.match_id == 5749645, "home_xg"].notna().item()
+    # secondo run: la finita è già in archivio, niente da recuperare
+    rep2 = collect_league(
+        league("NED1"), st,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep2.matches_backfilled == 0 and rep2.matches_fetched == 1
+    st.close()
+
+
+def test_collect_no_backfill_with_understat(tmp_path):
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("ITA1"), st,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep.matches_backfilled == 0
+    assert 5749645 not in set(st.read("match_info").match_id)
+    st.close()
+
+
 def test_collect_uses_espn_scoreboard_when_standings_fail(tmp_path):
     st = Store(tmp_path / "processed")
     rep = collect_league(

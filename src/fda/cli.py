@@ -159,6 +159,7 @@ def collect_cmd(
     past_days: int = typer.Option(3, help="Giorni indietro per i dettagli partita"),
     future_days: int = typer.Option(3, help="Giorni avanti per i dettagli partita"),
     max_matches: int = typer.Option(40, help="Massimo partite per campionato per run"),
+    max_backfill: int = typer.Option(40, help="Massimo storiche recuperate (leghe senza Understat)"),
 ) -> None:
     """Raccolta dati (calendario, dettagli partite, Understat, ESPN) → data/processed/*.parquet."""
     from .collect import collect_all
@@ -166,12 +167,13 @@ def collect_cmd(
 
     store = Store()
     reports = collect_all(league_keys or None, store=store, past_days=past_days,
-                          future_days=future_days, max_matches=max_matches)
+                          future_days=future_days, max_matches=max_matches, max_backfill=max_backfill)
     table = Table(title="Raccolta dati")
     for col in ("Lega", "Calendario", "Partite scaricate", "Saltate", "Understat", "ESPN", "Richieste", "Errori"):
         table.add_column(col)
     for r in reports:
-        table.add_row(r.league, str(r.fixtures), str(r.matches_fetched), str(r.matches_skipped),
+        fetched = str(r.matches_fetched) + (f"+{r.matches_backfilled} storiche" if r.matches_backfilled else "")
+        table.add_row(r.league, str(r.fixtures), fetched, str(r.matches_skipped),
                       str(r.understat_rows), str(r.espn_events),
                       " ".join(f"{k}={v}" for k, v in r.requests.items()),
                       f"[red]{len(r.errors)}[/red]" if r.errors else "0")

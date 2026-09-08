@@ -95,6 +95,23 @@ def test_standing_prefers_fotmob_with_espn_fallback(tmp_path):
     st2.close()
 
 
+def test_season_xg_fotmob_fallback(tmp_path):
+    st = Store(tmp_path / "processed")
+    st.upsert("match_info", [
+        {"match_id": 1, "status": "finished", "home_id": 8636, "away_id": 9875,
+         "home_xg": 2.0, "away_xg": 1.0},
+        {"match_id": 2, "status": "finished", "home_id": 9875, "away_id": 8636,
+         "home_xg": 0.5, "away_xg": 1.5},
+        {"match_id": 3, "status": "scheduled", "home_id": 8636, "away_id": 8564,
+         "home_xg": None, "away_xg": None},
+    ])
+    xg = MatchAnalysis(st).season_xg("Inter", 8636)
+    assert xg["source"] == "FotMob" and xg["played"] == 2
+    assert (xg["xg"], xg["xga"]) == (3.5, 1.5)
+    assert MatchAnalysis(st).season_xg("Squadra Inesistente", 0) is None
+    st.close()
+
+
 def test_site_build_end_to_end(tmp_path):
     st = _seed(tmp_path)
     out = tmp_path / "site"
