@@ -15,7 +15,22 @@
 - Fonte primaria: endpoint FotMob `leagues?id={fotmob_id}` (il client ha già `league_raw()`, oggi inutilizzato) → nuova tabella `fotmob_standings` (chiave: lega + squadra; campi: posizione, giocate, vinte, pareggiate, perse, gol fatti/subiti, punti).
 - `analysis.standing()` legge prima FotMob, con fallback a `espn_standings` se mai tornerà a funzionare.
 - Costo: 1 richiesta per lega a run (7 totali, dentro il budget 600).
-- Struttura JSON dell'endpoint da mappare da documentazione pubblica (repo `pseudo-r/Public-FotMob-API`, `tommhe14/fotmob-wrapper`, leggibili via api.github.com dal sandbox) + fixture campione e test offline; conferma del formato reale in Actions (`source_status` + commit dati).
+
+### Struttura risposta `leagues` (mappata il 2026-09-08 da documentazione pubblica — DA VERIFICARE DAL VIVO)
+
+Fonti: `pseudo-r/Public-FotMob-API` (`docs/endpoints/leagues.md`, stato VERIFIED) e `tommhe14/fotmob-wrapper` (`FotMob.standings()` → `/data/tltable?leagueId=`, `get_league()` → `/data/leagues?id=`). Nota: il wrapper conferma che il path `/api/data/leagues` (stesso `base_url` del nostro client, senza header `x-mas`) è quello giusto; parametro `season` opzionale (default = stagione corrente).
+
+```json
+{
+  "details": {"id": 47, "name": "Premier League", "selectedSeason": "2023/2024"},
+  "table": [{"data": {"leagueId": 47, "table": {"all": [
+    {"idx": 1, "name": "Arsenal", "id": 9825, "played": 28, "wins": 20,
+     "draws": 4, "losses": 4, "scoresStr": "70-24", "goalConDiff": 46, "pts": 64}
+  ]}}}]
+}
+```
+
+Avvertenze per il parser (difensivo): le due fonti divergono sul nodo `table` (**lista** con `[0].data.table.all` vs **dict** con `table.data.table.all`) → gestire entrambe le forme; anche `table.home`/`table.away` disponibili (non servono). Campi riga: `idx` = posizione, `scoresStr` = "golFatti-golSubiti", `goalConDiff` = differenza reti, `pts` = punti. Nessun xG di squadra nella risposta → per il Fix B serve un'altra strada (v. sotto). Fallback candidato se `leagues` non dovesse rispondere: endpoint dedicato `tltable?leagueId={id}` (usato dal wrapper; struttura risposta non documentata → solo se serve).
 
 ## 3. Fix B — xG di stagione per NED1/POR1
 
@@ -30,4 +45,4 @@
 
 ## Prossimo passo
 
-Mappare la risposta dell'endpoint FotMob `leagues` dalla documentazione pubblica e scrivere fixture + parser + test offline (Fix A).
+Scrivere fixture JSON campione (entrambe le forme del nodo `table`) + `parse_league_table()` in `fotmob.py` + test offline (Fix A).
