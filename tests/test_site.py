@@ -41,6 +41,22 @@ def _seed(tmp_path):
     fx.loc[fx.match_id == 5749645, "utc_kickoff"] = now - timedelta(days=1)
     fx.loc[fx.match_id == 5749669, "utc_kickoff"] = now + timedelta(days=1)
     st.write("fixtures", fx)
+    # affluenza sulla partita finita (nel parquet arriva come float, es. 57000.0)
+    mi = st.read("match_info")
+    mi.loc[mi.match_id == 5749645, "attendance"] = 57000
+    st.write("match_info", mi)
+    # momentum deterministico: Monza preme nei primi 25', poi domina Inter (12/18 minuti = 67%)
+    mom = [{"match_id": 5749645, "minute": float(m), "value": float(v)} for m, v in [
+        (5, -30), (10, -40), (15, -35), (20, -25), (25, -20), (30, 0),
+        (35, 20), (40, 35), (45, 45), (50, 30), (55, 55), (60, 65), (65, 40), (70, 50), (75, 60), (80, 45), (85, 70), (90, 35)]]
+    st.upsert("momentum", mom)
+    # un precedente non pari per coprire V e P (il campione ha solo un 1-1)
+    st.upsert("h2h", [
+        {"match_id": 5749645, "utc": "2025-09-15T18:45:00+00:00", "league": "Serie A",
+         "home_id": 6504, "away_id": 8636, "home_goals": 0, "away_goals": 3},   # Monza 0-3 Inter → V per Inter
+        {"match_id": 5749669, "utc": "2025-10-20T18:45:00+00:00", "league": "Serie A",
+         "home_id": 8543, "away_id": 8600, "home_goals": 2, "away_goals": 1},   # Lazio 2-1 Udinese → P per Udinese
+    ])
     # una previsione fatta prima della partita finita e una per la futura
     st.upsert("predictions", [
         {"match_id": 5749645, "league_key": "ITA1", "home": "Inter", "away": "Monza", "model": "ensemble",
@@ -72,17 +88,51 @@ def test_site_build_end_to_end(tmp_path):
 
     post = (out / "partite/5749645.html").read_text(encoding="utf-8")
     assert "Lettura della partita" in post and "Simone Sozza" in post
-    assert "xG 3.86 - 2.43" in post and "Cronaca essenziale" in post
+    assert "xG 3,86 - 2,43" in post and "Cronaca essenziale" in post
     assert "Lautaro Martínez" in post and "Politano" in post
     assert "Il modello assegnava 62%" in post          # valutazione a posteriori
+    # data in italiano con ora locale (niente weekday inglese né etichetta UTC fuorviante)
+    assert any(g in post for g in ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"))
+    assert not any(g in post for g in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+    assert "(ora italiana)" in post and " UTC ·" not in post
+    assert "spettatori 57.000" in post and "57.000.0" not in post   # formato intero italiano
+    # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
+    assert "Cartina dei tiri" in post
+    assert post.count("<svg") == 3          # 2 cartine + 1 momentum
+    assert "xG 0,88" in post                       # gol di Lautaro Martínez, decimale italiano
+    assert "Nessun tiro registrato" in post        # pannello Monza vuoto
+    # momentum (SVG a barre + marker gol): 18 punti seed + 2 del campione; Inter dominante (13/20 = 65%)
+    assert "Momentum della partita" in post
+    assert "Momentum a favore di <b>Inter</b> nel 65% dei minuti" in post
+    assert 'fill="#f2555a"' in post and 'fill-opacity="0.75"' in post  # barre negative/positive
+    # ultimi precedenti reali (tabella h2h): sia pre che post, con V/N/P dalla prospettiva della casa attuale
+    assert "Ultimi precedenti" in post and "Monza <b>1-1</b> Inter" in post
+    assert "Monza <b>0-3</b> Inter" in post
+    i01 = post.find("Monza <b>0-3</b> Inter")
+    assert 'class="pill V"' in post[i01:i01 + 400]    # Inter (casa attuale) vinse in trasferta
+    assert 'class="pill N"' in post                   # Monza 1-1 Inter → pareggio
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre
-    assert "Indisponibili" in pre and "McTominay" in pre and "Mid October 2026" in pre
+    assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
+    assert "(ora italiana)" in pre
+    assert "Ultimi precedenti" in pre and "Lazio <b>1-1</b> Udinese" in pre
+    assert "Lazio <b>2-1</b> Udinese" in pre
+    i21 = pre.find("Lazio <b>2-1</b> Udinese")
+    assert 'class="pill P"' in pre[i21:i21 + 400]   # Udinese (casa attuale) perse in trasferta
+    assert "Momentum" not in pre                   # solo per partite giocate
 
     acc = (out / "accuratezza.html").read_text(encoding="utf-8")
     assert "Riepilogo" in acc and "Serie A" in acc     # una partita valutata
+    assert "Δ vs naive" in acc and "Calibrazione" in acc and "Frequenza osservata" in acc
+    assert "✓" in acc          # Inter 4-1 Monza: top=1 (62%) azzeccato
+    assert "0,087" in acc      # RPS della singola previsione 0.62/0.21/0.17 con esito 1
+    # sito italiano: nessun residuo UTC/inglese, orari in ora italiana
+    for page in ("index.html", "partite/5749645.html", "partite/5749669.html", "accuratezza.html"):
+        html = (out / page).read_text(encoding="utf-8")
+        assert "UTC" not in html, page
+        assert "(ora italiana)" in html, page
     assert "noindex" in (out / "index.html").read_text(encoding="utf-8")
     st.close()

@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 
 SITE_DIR = REPO_ROOT / "site"
 TEMPLATES = Path(__file__).parent / "templates"
+OUTCOME_LABELS = ("1", "X", "2")
 ITALIAN_DAYS = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
 ITALIAN_MONTHS = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
                   "settembre", "ottobre", "novembre", "dicembre"]
@@ -32,6 +33,34 @@ def day_label(d) -> str:
     return f"{ITALIAN_DAYS[d.weekday()]} {d.day} {ITALIAN_MONTHS[d.month]} {d.year}"
 
 
+def it_datetime(ts) -> str:
+    """Timestamp (già nel fuso display) → 'domenica 06/09/2026, 15:30'."""
+    t = pd.Timestamp(ts)
+    return f"{ITALIAN_DAYS[t.weekday()]} {t.day:02d}/{t.month:02d}/{t.year}, {t.hour:02d}:{t.minute:02d}"
+
+
+def it_thousands(x) -> str:
+    """Numero (anche float, es. 57000.0 dal Parquet) → '57.000' con separatore italiano."""
+    return f"{int(float(x)):,}".replace(",", ".")
+
+
+def it_dec(v, nd: int = 2, plus: bool = False) -> str:
+    """Numero → stringa con virgola decimale italiana: 3.86 → '3,86' (plus=True → '+0,038')."""
+    if v is None:
+        return ""
+    s = f"{float(v):.{nd}f}".replace(".", ",")
+    return f"+{s}" if plus and float(v) >= 0 else s
+
+
+def it_from_utc(ts, tz) -> str:
+    """Timestamp UTC → '08/09/2026 15:36' nel fuso display (Europe/Rome)."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        t = t.tz_localize("UTC")
+    t = t.tz_convert(tz)
+    return f"{t.day:02d}/{t.month:02d}/{t.year} {t.hour:02d}:{t.minute:02d}"
+
+
 class SiteBuilder:
     def __init__(self, store: Store | None = None, out_dir: Path | None = None) -> None:
         self.store = store or Store()
@@ -39,6 +68,10 @@ class SiteBuilder:
         self.tz = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
         self.env = Environment(loader=FileSystemLoader(str(TEMPLATES)),
                                autoescape=select_autoescape(["html"]), trim_blocks=True, lstrip_blocks=True)
+        self.env.filters["it_dt"] = it_datetime
+        self.env.filters["it_num"] = it_thousands
+        self.env.filters["dec"] = it_dec
+        self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.now = datetime.now(timezone.utc)
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
@@ -111,7 +144,7 @@ class SiteBuilder:
 
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")
-        summary, recent = [], []
+        summary, recent, calib = [], [], []
         if not preds.empty:
             fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id"]]
             # la previsione valida è l'ultima fatta PRIMA del calcio d'inizio
@@ -122,22 +155,31 @@ class SiteBuilder:
                 p["outcome"] = [outcome_index(int(h), int(a)) for h, a in zip(p.home_goals, p.away_goals)]
                 probs = p[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
                 p["p_real"] = probs[np.arange(len(p)), p["outcome"].to_numpy()]
+                p["top"] = [OUTCOME_LABELS[i] for i in probs.argmax(1)]
+                p["hit"] = probs.argmax(1) == p["outcome"].to_numpy()
+                p["rps"] = _rps_rows(probs, p["outcome"].to_numpy())
                 p["league"] = p.league_id.map(self.league_names)
                 for lg_name, g in list(p.groupby("league")) + [("Tutti", p)]:
                     pr = g[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
                     oc = g["outcome"].to_numpy()
                     onehot = np.eye(3)[oc]
                     naive = np.tile([0.45, 0.27, 0.28], (len(g), 1))
-                    summary.append({"league": lg_name, "n": len(g), "rps": _rps(pr, oc), "brier": float(((pr - onehot) ** 2).sum(1).mean()),
-                                    "hit": float((pr.argmax(1) == oc).mean()), "naive": _rps(naive, oc)})
+                    rps, rps_naive = _rps(pr, oc), _rps(naive, oc)
+                    summary.append({"league": lg_name, "n": len(g), "rps": rps, "brier": float(((pr - onehot) ** 2).sum(1).mean()),
+                                    "hit": float((pr.argmax(1) == oc).mean()), "naive": rps_naive, "delta": rps - rps_naive})
                 summary.sort(key=lambda r: (r["league"] == "Tutti", r["league"]))
+                # calibrazione: probabilità media prevista vs frequenza osservata (tutte le gare valutate)
+                oc_all = p["outcome"].to_numpy()
+                calib = [{"label": lbl, "prev": float(probs[:, i].mean()), "obs": float((oc_all == i).mean())}
+                         for i, lbl in enumerate(("1 · vittoria in casa", "X · pareggio", "2 · vittoria in trasferta"))]
                 fxn = fx.set_index("match_id")
                 for r in p.sort_values("utc_kickoff_fx" if "utc_kickoff_fx" in p.columns else "utc_kickoff", ascending=False).head(40).itertuples(index=False):
                     recent.append({"date": pd.Timestamp(getattr(r, "utc_kickoff_fx", r.utc_kickoff)).tz_convert(self.tz).strftime("%d/%m"),
                                    "match_id": int(r.match_id), "home": fxn.loc[r.match_id, "home_name"],
                                    "away": fxn.loc[r.match_id, "away_name"], "hg": int(r.home_goals), "ag": int(r.away_goals),
-                                   "p_home": r.p_home, "p_draw": r.p_draw, "p_away": r.p_away, "p_real": r.p_real})
-        self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent)
+                                   "p_home": r.p_home, "p_draw": r.p_draw, "p_away": r.p_away, "p_real": r.p_real,
+                                   "top": r.top, "hit": bool(r.hit), "rps": float(r.rps)})
+        self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")
@@ -172,3 +214,10 @@ def _rps(probs: np.ndarray, outcomes: np.ndarray) -> float:
     onehot = np.eye(3)[outcomes]
     cp, co = probs.cumsum(1), onehot.cumsum(1)
     return float((((cp - co) ** 2).sum(1) / 2).mean())
+
+
+def _rps_rows(probs: np.ndarray, outcomes: np.ndarray) -> np.ndarray:
+    """RPS per singola gara (array 1-D, lunghezza = numero di gare)."""
+    onehot = np.eye(3)[outcomes]
+    cp, co = probs.cumsum(1), onehot.cumsum(1)
+    return ((cp - co) ** 2).sum(1) / 2

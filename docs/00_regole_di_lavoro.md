@@ -56,7 +56,7 @@ L'agente lavora sul branch `arena/...` e il lavoro è già al sicuro grazie ai p
 **Dopo la PR aperta**: l'agente monitora i check (tests). Quando sono verdi e la PR è mergeable, l'agente **lo comunica e indica il momento del merge** con la frase fissa:
 > *"👉 Tutto verde: è il momento di fare Merge (PR #N)."*
 
-E spiega in una riga perché è sicuro. L'agente può eseguire il merge quando ha l'autorizzazione/frutto dell'accordo di lavoro (es. è già prassi nel progetto mergiare PR verdi senza ulteriore conferma); altrimenti lo lascia decidere all'utente. Dopo il merge: aggiorna STATO.md con il commit di merge e indica il prossimo passo.
+E spiega in una riga perché è sicuro. **Il merge lo esegue SEMPRE l'utente, MAI l'agente** (decisione del 2026-09-08): dopo la frase fissa l'agente si ferma e aspetta — non preme mai "Merge pull request" (né via UI né via `gh pr merge`), nemmeno se la prassi precedente era diversa. Dopo il merge eseguito dall'utente: l'agente aggiorna STATO.md con il commit di merge e indica il prossimo passo.
 
 ## E. Regole di progetto (dalle tue decisioni)
 

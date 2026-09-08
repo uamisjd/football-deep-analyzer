@@ -8,6 +8,7 @@ Jinja2 rendono in HTML.
 from __future__ import annotations
 
 import ast
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,7 +25,8 @@ def _pct(p: float | None) -> str:
 
 
 def _f(x: Any, nd: int = 2) -> str:
-    return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}"
+    """Numero per il testo narrativo: virgola decimale italiana ('3,12'; '—' se manca)."""
+    return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}".replace(".", ",")
 
 
 def _first(df: pd.DataFrame) -> dict[str, Any]:
@@ -43,6 +45,65 @@ def _val(d: dict, key: str, default=None):
     return default if v is None or (isinstance(v, float) and pd.isna(v)) else v
 
 
+# FotMob fornisce le condizioni meteo in inglese: mappa minima per il sito in italiano
+_WEATHER_IT = {
+    "sunny": "soleggiato", "clear": "sereno", "mostly clear": "per lo più sereno", "fair": "bel tempo",
+    "mostly sunny": "per lo più soleggiato",
+    "partly cloudy": "parzialmente nuvoloso", "mostly cloudy": "per lo più nuvoloso",
+    "cloudy": "nuvoloso", "overcast": "coperto", "rain": "pioggia", "light rain": "pioggia debole",
+    "heavy rain": "pioggia intensa", "drizzle": "pioggia leggera", "showers": "rovesci",
+    "rain showers": "rovesci di pioggia", "showers in the vicinity": "rovesci nelle vicinanze",
+    "thunderstorm": "temporale", "thunderstorms": "temporali", "thunder in the vicinity": "temporali nelle vicinanze",
+    "snow": "neve", "light snow": "neve debole", "heavy snow": "neve abbondante", "sleet": "nevischio",
+    "fog": "nebbia", "foggy": "nebbioso", "mist": "foschia", "haze": "foschia",
+    "windy": "ventoso", "wind": "ventoso",
+}
+
+
+def _weather_it(desc: str | None) -> str | None:
+    if not isinstance(desc, str) or not desc.strip():
+        return desc
+    t = desc.strip()
+    low = t.lower()
+    if low in _WEATHER_IT:
+        return _WEATHER_IT[low]
+    if "/" in low:  # varianti combinate di FotMob, es. "Partly Cloudy/Wind"
+        parts = [p.strip() for p in low.split("/")]
+        if all(p in _WEATHER_IT for p in parts):
+            return " e ".join(_WEATHER_IT[p] for p in parts)
+    return t
+
+
+# Rientri previsti degli indisponibili (campo expectedReturn di FotMob, in inglese)
+_MONTHS_IT = {"january": "gennaio", "february": "febbraio", "march": "marzo", "april": "aprile",
+              "may": "maggio", "june": "giugno", "july": "luglio", "august": "agosto",
+              "september": "settembre", "october": "ottobre", "november": "novembre", "december": "dicembre"}
+_RETURN_IT = {
+    "day to day": "giorno per giorno", "doubtful": "in dubbio", "unknown": "non nota",
+    "about 1-2 weeks": "circa 1-2 settimane", "about 2-4 weeks": "circa 2-4 settimane",
+    "about a week": "circa una settimana", "a few days": "pochi giorni", "a few weeks": "poche settimane",
+    "back in training": "rientrato agli allenamenti", "out for season": "fuori per tutta la stagione",
+    "out for tournament": "fuori per tutto il torneo", "suspended": "squalificato",
+}
+_RETURN_PART_IT = {"early": "inizio", "mid": "metà", "late": "fine"}
+
+
+def _return_it(s: str | None) -> str | None:
+    """'Mid October 2026' → 'metà ottobre 2026'; forme note tradotte, il resto invariato."""
+    if not isinstance(s, str) or not s.strip():
+        return s
+    t = s.strip()
+    if t.lower() in _RETURN_IT:
+        return _RETURN_IT[t.lower()]
+    m = re.match(r"^(Early|Mid|Late)\s+([A-Za-z]+)\s+(\d{4})$", t)
+    if m and m.group(2).lower() in _MONTHS_IT:
+        return f"{_RETURN_PART_IT[m.group(1).lower()]} {_MONTHS_IT[m.group(2).lower()]} {m.group(3)}"
+    m = re.match(r"^([A-Za-z]+)\s+(\d{4})$", t)
+    if m and m.group(1).lower() in _MONTHS_IT:
+        return f"{_MONTHS_IT[m.group(1).lower()]} {m.group(2)}"
+    return t
+
+
 class MatchAnalysis:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -55,6 +116,8 @@ class MatchAnalysis:
         self.preds = store.read("predictions")
         self.us_team = store.read("understat_team_matches")
         self.standings = store.read("espn_standings")
+        self.momentum_df = store.read("momentum")
+        self.h2h_df = store.read("h2h")
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
@@ -118,7 +181,7 @@ class MatchAnalysis:
                            & (self.lineup.role == "unavailable")]
         rows = rows.sort_values("market_value_eur", ascending=False, na_position="last")
         return [{"name": r.player_name, "type": _val(r._asdict(), "unavailability_type", "indisponibile"),
-                 "ret": _val(r._asdict(), "expected_return"), "value": _val(r._asdict(), "market_value_eur"),
+                 "ret": _return_it(_val(r._asdict(), "expected_return")), "value": _val(r._asdict(), "market_value_eur"),
                  "pos": POSITION_NAMES.get(int(r.usual_position_id) if pd.notna(r.usual_position_id) else 0, "")}
                 for r in rows.itertuples(index=False)]
 
@@ -186,7 +249,66 @@ class MatchAnalysis:
         big = s[s.xg >= 0.3]
         return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(s.is_on_target.fillna(False).sum()),
                 "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": int(len(big)),
+                "goals": int((s.event_type == "Goal").sum()),
                 "best": _first(s.sort_values("xg", ascending=False)[["player_name", "xg", "minute", "event_type"]])}
+
+    def shot_map(self, match_id: int, team_id: int) -> list[dict[str, Any]]:
+        """Tiri di una squadra pronti per l'SVG: mezzo campo offensivo 105×68 m → 420×272 px (porta a destra)."""
+        if self.shots.empty:
+            return []
+        s = self.shots[(self.shots.match_id == match_id) & (self.shots.team_id == team_id)].dropna(subset=["x", "y"])
+        out = []
+        for r in s.itertuples(index=False):
+            xg = float(r.xg) if pd.notna(r.xg) else 0.0
+            goal = r.event_type == "Goal"
+            on_target = bool(r.is_on_target) if pd.notna(r.is_on_target) else False
+            blocked = bool(r.is_blocked) if pd.notna(r.is_blocked) else False
+            kind = "goal" if goal else "target" if on_target else "blocked" if blocked else "miss"
+            out.append({"px": round(min(max((float(r.x) - 52.5) * 8.0, 4.0), 412.0), 1),
+                        "py": round(min(max(float(r.y) * 4.0, 8.0), 264.0), 1),
+                        "r": round(2.5 + 8.5 * xg ** 0.5, 1),
+                        "xg": xg, "kind": kind, "player": r.player_name,
+                        "minute": int(r.minute) if pd.notna(r.minute) else None})
+        out.sort(key=lambda d: -d["xg"])  # i tiri più piccoli vengono disegnati sopra
+        return out
+
+    def momentum(self, match_id: int) -> dict[str, Any] | None:
+        """Serie momentum per l'SVG: valore FotMob -100..100 (positivo = preme la squadra di casa)."""
+        if self.momentum_df.empty:
+            return None
+        m = self.momentum_df[self.momentum_df.match_id == match_id].dropna(subset=["value"])
+        if m.empty:
+            return None
+        m = m.sort_values("minute")
+        pts = [{"minute": float(r.minute), "v": float(r.value)} for r in m.itertuples(index=False)]
+        pos = sum(1 for p in pts if p["v"] > 0)
+        return {"points": pts, "pos_share": pos / len(pts), "n": len(pts)}
+
+    def h2h_list(self, match_id: int, home_id: int, away_id: int, home_name: str, away_name: str,
+                 kickoff: pd.Timestamp, n: int = 5) -> list[dict[str, Any]]:
+        """Ultimi n precedenti fra le due squadre (solo gare giocate prima di questa)."""
+        if self.h2h_df.empty:
+            return []
+        names = {home_id: home_name, away_id: away_name}
+        h = self.h2h_df[self.h2h_df.match_id == match_id].dropna(subset=["utc", "home_goals", "away_goals"])
+        h = h[pd.to_datetime(h.utc, utc=True) < kickoff].sort_values("utc", ascending=False).head(n)
+        out = []
+        for r in h.itertuples(index=False):
+            if int(r.home_id) not in names or int(r.away_id) not in names:
+                continue  # riga anomala (terza squadra): scartata
+            hg, ag = int(r.home_goals), int(r.away_goals)
+            # esito dal punto di vista della squadra di casa ATTUALE (home_id del match in corso)
+            if hg == ag:
+                res = "N"
+            else:
+                # vittoria della casa attuale: se era in casa ha vinto chi ha più gol in casa,
+                # se era in trasferta ha vinto chi ha più gol in trasferta
+                cur_home_was_home = int(r.home_id) == home_id
+                res = "V" if (hg > ag) == cur_home_was_home else "P"
+            out.append({"date": pd.Timestamp(r.utc).strftime("%d/%m/%Y"), "league": r.league,
+                        "home": names[int(r.home_id)], "away": names[int(r.away_id)],
+                        "score": f"{hg}-{ag}", "res": res})
+        return out
 
     # ---- previsione ---------------------------------------------------------------------------------
     def prediction(self, match_id: int) -> dict[str, Any] | None:
@@ -263,7 +385,7 @@ class MatchAnalysis:
             if y is not None:
                 tone = "molto severo" if y >= 5 else "severo" if y >= 4.2 else "permissivo" if y <= 3.2 else "nella media"
                 s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita ({tone})"
-                         + (f", {ref['pens']} rigori in {ref['matches']} gare." if ref.get("pens") is not None else "."))
+                         + (f", {int(ref['pens'])} rigori in {int(ref['matches'])} gare." if ref.get("pens") is not None else "."))
         w = ctx.get("weather")
         if w and w.get("desc"):
             extra = ""
@@ -289,6 +411,14 @@ class MatchAnalysis:
                 ph = p["p_home"] if hg > ag else p["p_draw"] if hg == ag else p["p_away"]
                 s.append(f"Il modello assegnava {_pct(ph)} all'esito verificatosi"
                          + (" (esito atteso)." if ph >= 0.4 else " (sorpresa)." if ph < 0.25 else "."))
+            mom = ctx.get("momentum")
+            if mom and mom["n"] >= 10:
+                if mom["pos_share"] >= 0.60:
+                    s.append(f"Momentum quasi sempre dalla parte di {h}: "
+                             f"pressione a proprio favore nel {_pct(mom['pos_share'])} dei minuti.")
+                elif mom["pos_share"] <= 0.40:
+                    s.append(f"Momentum quasi sempre dalla parte di {a}: "
+                             f"pressione a proprio favore nel {_pct(1 - mom['pos_share'])} dei minuti.")
         return s
 
     # ---- contesto completo ----------------------------------------------------------------------------
@@ -321,9 +451,11 @@ class MatchAnalysis:
                         "reds": _val(info, "referee_reds_total")},
             "stadium": {"name": _val(info, "stadium_name"), "city": _val(info, "stadium_city"),
                         "attendance": _val(info, "attendance")},
-            "weather": {"desc": _val(info, "weather_desc"), "temp": _val(info, "weather_temp_c"),
+            "weather": {"desc": _weather_it(_val(info, "weather_desc")), "temp": _val(info, "weather_temp_c"),
                         "precip": _val(info, "weather_precip_chance")},
             "h2h": (_val(info, "h2h_home_wins"), _val(info, "h2h_draws"), _val(info, "h2h_away_wins")),
+            "h2h_list": self.h2h_list(match_id, home_id, away_id, f["home_name"], f["away_name"], kickoff),
+            "momentum": self.momentum(match_id) if status == "finished" else None,
             "prediction": self.prediction(match_id),
             "home_xg_match": _val(info, "home_xg"), "away_xg_match": _val(info, "away_xg"),
             "home_xgot_match": _val(info, "home_xgot"), "away_xgot_match": _val(info, "away_xgot"),
@@ -332,6 +464,8 @@ class MatchAnalysis:
             "top_players": self.top_players(match_id) if status == "finished" else [],
             "home_shots": self.shot_summary(match_id, home_id) if status == "finished" else {},
             "away_shots": self.shot_summary(match_id, away_id) if status == "finished" else {},
+            "home_shotmap": self.shot_map(match_id, home_id) if status == "finished" else [],
+            "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
             "generated_at": datetime.now(timezone.utc),
         }
         ctx["narrative"] = self.narrative(ctx)
