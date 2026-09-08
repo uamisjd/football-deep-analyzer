@@ -6,6 +6,7 @@ import pandas as pd
 
 from fda.collect import collect_league
 from fda.config import league
+from fda.site.analysis import MatchAnalysis
 from fda.site.build import SiteBuilder
 from fda.store import Store
 from tests.test_store_collect import FakeEspn, FakeFotMob, FakeUnderstat
@@ -75,6 +76,23 @@ def _seed(tmp_path):
          "dc_attack_away": 1.1, "dc_defence_away": 0.95, "dc_home_advantage": 0.25},
     ])
     return st
+
+
+def test_standing_prefers_fotmob_with_espn_fallback(tmp_path):
+    st = Store(tmp_path / "processed")
+    st.upsert("espn_standings", [{"league_code": "ITA1", "team_id": 1, "team_name": "Inter",
+                                  "rank": 5, "played": 3, "points": 4}])
+    st.upsert("fotmob_standings", [{"league_code": "ITA1", "team_id": 8636, "team_name": "Inter",
+                                    "rank": 1, "played": 3, "points": 9}])
+    assert MatchAnalysis(st).standing("Inter")["points"] == 9
+    # senza FotMob: riserva ESPN; senza nulla: None
+    st2 = Store(tmp_path / "processed2")
+    st2.upsert("espn_standings", [{"league_code": "ITA1", "team_id": 1, "team_name": "Inter",
+                                   "rank": 5, "played": 3, "points": 4}])
+    assert MatchAnalysis(st2).standing("Inter")["points"] == 4
+    assert MatchAnalysis(st2).standing("Squadra Inesistente") is None
+    st.close()
+    st2.close()
 
 
 def test_site_build_end_to_end(tmp_path):

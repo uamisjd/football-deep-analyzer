@@ -90,6 +90,24 @@ def fotmob_match_cmd(match_id: int) -> None:
         console.print(f"  OUT {p.player_name} ({p.team_id}) {p.unavailability_type} → {p.expected_return}")
 
 
+@app.command("fotmob-table")
+def fotmob_table_cmd(league_key: str = typer.Argument("ITA1")) -> None:
+    """Scarica la tabella di lega da FotMob e stampa la classifica."""
+    from .config import league
+    from .sources.fotmob import FotMobClient
+
+    lg = league(league_key)
+    fm = FotMobClient()
+    raw = fm.league_raw(lg.fotmob_id)
+    fm.save_raw(f"table_{lg.key}", raw)
+    rows = fm.parse_league_table(lg.key, raw)
+    console.print(f"{lg.name}: {len(rows)} squadre in classifica")
+    for r in rows:
+        console.print(f"  {r.rank or '-':>2}° {r.team_name} — {r.points} pt in {r.played} gare "
+                      f"({r.wins}V {r.draws}N {r.losses}P, gol {r.goals_for}:{r.goals_against})")
+    console.print(f"richieste={fm.http.stats.requests} cache={fm.http.stats.cache_hits}")
+
+
 @app.command("understat-table")
 def understat_table_cmd(league_key: str = typer.Argument("ITA1")) -> None:
     """Tabella xG di stagione da Understat (solo 5 grandi leghe)."""

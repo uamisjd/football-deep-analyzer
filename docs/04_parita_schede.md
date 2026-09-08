@@ -45,4 +45,4 @@ Avvertenze per il parser (difensivo): le due fonti divergono sul nodo `table` (*
 
 ## Prossimo passo
 
-Scrivere fixture JSON campione (entrambe le forme del nodo `table`) + `parse_league_table()` in `fotmob.py` + test offline (Fix A).
+Fix A completato offline (parser + collect + standing con fallback + comando `fda fotmob-table` + test). Ora Fix B: in `collect`, per le leghe senza Understat scaricare i `matchDetails` di tutte le finite di stagione (oltre la finestra ±3 gg) così `season_xg()` diventa completo su NED1/POR1. Poi verifica dal vivo in Actions (run `daily`: `fotmob_standings` 7/7 leghe + stagione xG completa).

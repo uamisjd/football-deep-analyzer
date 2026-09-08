@@ -33,6 +33,7 @@ class CollectReport:
     fixtures: int = 0
     matches_fetched: int = 0
     matches_skipped: int = 0
+    standings: int = 0
     understat_rows: int = 0
     espn_events: int = 0
     errors: list[str] = field(default_factory=list)
@@ -105,6 +106,15 @@ def collect_league(
             for table, rows in bundle_to_dicts(bundle).items():
                 store.upsert(table, rows)
             report.matches_fetched += 1
+
+    # 2b) tabella di lega (FotMob `leagues`: fonte primaria delle classifiche) ----------------
+    def _table() -> int:
+        rows = fm.parse_league_table(lg.key, fm.league_raw(lg.fotmob_id))
+        if not rows:
+            raise ValueError("tabella vuota o formato inatteso")
+        return store.upsert("fotmob_standings", [asdict(r) for r in rows])
+
+    report.standings = _safe("fotmob standings", _table, report) or 0
 
     # 3) Understat --------------------------------------------------------------------------
     if lg.has_understat:
