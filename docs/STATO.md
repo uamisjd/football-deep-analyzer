@@ -1,8 +1,9 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-08 (PR #4 mergiata in `main` `a3c5bf7`; Accuratezza live con gare reali; attesa verifica live NED1/POR1 su un `daily` di `main`)
+**Ultimo aggiornamento:** 2026-09-08 (sessione nuova su branch `arena/01a0807f-...`: aggiunti paletti di qualità + briefing per le nuove sessioni, in attesa di PR/merge su `main`; PR #4 `a3c5bf7` in `main` con Accuratezza live; ancora in attesa la verifica live NED1/POR1 su un `daily` di `main`)
 
 ## Fatto
+- [x] **Processo/handoff — paletti di qualità + briefing nuove sessioni** (in lavorazione, branch `arena/01a0807f-...`): riscritta la sezione B (paletti di qualità: accuratezza/precisione/profondità/qualità), aggiunta la sezione D (policy esplicita su **quando fare Create PR e quando Merge**, con frasi fisse e checklist), e creato `docs/BRIEFING_NUOVA_SESSIONE.md` (porta d'ingresso con architettura, stato, prossimi passi, mappa file e limitazioni, così un agente nuovo non ripete verifiche già fatte). **Da mergiare su `main` perché le nuove sessioni ripartano aggiornate** (regola D.3).
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
 - [x] Decisioni utente registrate (7 campionati, automazione giornaliera, uso personale, quote sì, solo fonti GitHub Actions) — `03_decisioni_e_funzionamento.md`
 - [x] Regole anti-blocco chat — `00_regole_di_lavoro.md`
@@ -47,6 +48,7 @@
 6b. ~~Primo run dal vivo in Actions e correzioni ai collettori~~ ✅
 7. ~~Upgrade Node 24~~ ✅
 7b. storico NED1/POR1 (merge PR #4 in `main` ✅) → confermare NED1/POR1 sul primo `daily` di `main` post-merge, poi report pre/post in italiano e rifinitura di Accuratezza con le prime gare reali (già 19 gare valutate).
+7c. **Processo/handoff** (IN CORSO, branch `arena/01a0807f-...`): paletti di qualità in `00` sez. B + policy PR/merge in sez. D + `BRIEFING_NUOVA_SESSIONE.md`. → **Create PR e merge su `main`** (per le nuove sessioni), poi prossimo passo "Conferma live NED1/POR1".
 
 ## Decisioni aperte
 - **Fonte storica NED1/POR1** (deciso 2026-09-06): mirror GitHub `raw.githubusercontent.com` di football-data.co.uk dedicato (via `datahub_base` per-lega), scelto perché il mirror datahub copre solo 5 leghe e `football-data.co.uk` diretto è irraggiungibile dagli IP cloud.
