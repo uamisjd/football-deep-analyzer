@@ -79,6 +79,17 @@ def _seed(tmp_path):
          "w_dc": 0.7, "elo_home": 1500.0, "elo_away": 1560.0, "dc_attack_home": 0.9, "dc_defence_home": 1.0,
          "dc_attack_away": 1.1, "dc_defence_away": 0.95, "dc_home_advantage": 0.25},
     ])
+    # proiezioni di stagione (campione per la pagina Proiezioni)
+    st.upsert("season_sim", [
+        {"league_key": "ITA1", "team": t, "played": pl, "points": pt, "exp_points": e, "pos_mean": m,
+         "p_title": t1, "p_top4": t4, "p_rel": rl, "n_sims": 10000, "n_train": 960,
+         "model_version": "test", "made_at": now}
+        for t, pl, pt, e, m, t1, t4, rl in [
+            ("Inter", 3, 9, 84.2, 1.4, 0.61, 0.95, 0.0),
+            ("Milan", 3, 6, 74.8, 2.6, 0.24, 0.86, 0.01),
+            ("Napoli", 3, 7, 71.3, 3.1, 0.12, 0.74, 0.03),
+            ("Monza", 3, 0, 30.1, 17.9, 0.0, 0.02, 0.66),
+        ]])
     return st
 
 
@@ -122,7 +133,7 @@ def test_site_build_end_to_end(tmp_path):
     res = SiteBuilder(store=st, out_dir=out).build()
     assert res["matches"] == 2
     for name in ("index.html", "prossime.html", "risultati.html", "accuratezza.html", "stato.html",
-                 "robots.txt", ".nojekyll", "partite/5749645.html", "partite/5749669.html"):
+                 "stagione.html", "robots.txt", ".nojekyll", "partite/5749645.html", "partite/5749669.html"):
         assert (out / name).exists(), name
 
     post = (out / "partite/5749645.html").read_text(encoding="utf-8")
@@ -155,6 +166,12 @@ def test_site_build_end_to_end(tmp_path):
     assert 'class="pill V"' in post[i01:i01 + 400]    # Inter (casa attuale) vinse in trasferta
     assert 'class="pill N"' in post                   # Monza 1-1 Inter → pareggio
     assert "50% dei casi" in post                     # precedenti: entrambe a segno 1 su 2
+
+    stag = (out / "stagione.html").read_text(encoding="utf-8")
+    assert "Proiezioni di stagione" in stag and "Serie A" in stag and "Inter" in stag
+    assert "84,2" in stag and "61,0%" in stag and "66,0%" in stag   # virgola decimale italiana
+    assert "10.000" not in stag  # niente formattazioni inglesi
+    assert "Top-4" in stag and "Retro" in stag and "Media pos." in stag
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre

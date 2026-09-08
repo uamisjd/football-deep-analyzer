@@ -142,6 +142,26 @@ class SiteBuilder:
             n += 1
         return n
 
+    def build_stagione(self) -> None:
+        """Pagina «Proiezioni di stagione» dalla tabella `season_sim` (vuota → segnaposto)."""
+        sim = self.store.read("season_sim")
+        if sim.empty:
+            self._render("stagione.html", "stagione.html", title="Proiezioni di stagione",
+                         n_sims=None, updated=None, leagues=[],
+                         subtitle="Le proiezioni arrivano dopo il primo run con `fda simulate`.")
+            return
+        names = {l.key: l.name for l in leagues(None)}
+        blocks = []
+        for key, grp in sim.groupby("league_key"):
+            rows = grp.sort_values("exp_points", ascending=False)
+            blocks.append({"key": str(key), "name": names.get(str(key), str(key)),
+                           "rows": rows.to_dict("records")})
+        order = {k: i for i, k in enumerate(["ITA1", "ENG1", "ESP1", "GER1", "FRA1", "NED1", "POR1"])}
+        blocks.sort(key=lambda b: order.get(b["key"], 99))
+        self._render("stagione.html", "stagione.html", title="Proiezioni di stagione",
+                     n_sims=sim["n_sims"].max(), updated=it_from_utc(sim["made_at"].max(), self.tz),
+                     leagues=blocks)
+
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")
         summary, recent, calib = [], [], []
@@ -206,6 +226,7 @@ class SiteBuilder:
         ids = self.build_indexes(fx)
         n = self.build_match_pages(ids)
         self.build_accuracy(fx)
+        self.build_stagione()
         self.build_status()
         return {"matches": n, "fixtures": int(len(fx))}
 
