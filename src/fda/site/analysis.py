@@ -116,6 +116,8 @@ class MatchAnalysis:
         self.preds = store.read("predictions")
         self.us_team = store.read("understat_team_matches")
         self.standings = store.read("espn_standings")
+        self.momentum_df = store.read("momentum")
+        self.h2h_df = store.read("h2h")
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
@@ -270,6 +272,44 @@ class MatchAnalysis:
         out.sort(key=lambda d: -d["xg"])  # i tiri più piccoli vengono disegnati sopra
         return out
 
+    def momentum(self, match_id: int) -> dict[str, Any] | None:
+        """Serie momentum per l'SVG: valore FotMob -100..100 (positivo = preme la squadra di casa)."""
+        if self.momentum_df.empty:
+            return None
+        m = self.momentum_df[self.momentum_df.match_id == match_id].dropna(subset=["value"])
+        if m.empty:
+            return None
+        m = m.sort_values("minute")
+        pts = [{"minute": float(r.minute), "v": float(r.value)} for r in m.itertuples(index=False)]
+        pos = sum(1 for p in pts if p["v"] > 0)
+        return {"points": pts, "pos_share": pos / len(pts), "n": len(pts)}
+
+    def h2h_list(self, match_id: int, home_id: int, away_id: int, home_name: str, away_name: str,
+                 kickoff: pd.Timestamp, n: int = 5) -> list[dict[str, Any]]:
+        """Ultimi n precedenti fra le due squadre (solo gare giocate prima di questa)."""
+        if self.h2h_df.empty:
+            return []
+        names = {home_id: home_name, away_id: away_name}
+        h = self.h2h_df[self.h2h_df.match_id == match_id].dropna(subset=["utc", "home_goals", "away_goals"])
+        h = h[pd.to_datetime(h.utc, utc=True) < kickoff].sort_values("utc", ascending=False).head(n)
+        out = []
+        for r in h.itertuples(index=False):
+            if int(r.home_id) not in names or int(r.away_id) not in names:
+                continue  # riga anomala (terza squadra): scartata
+            hg, ag = int(r.home_goals), int(r.away_goals)
+            # esito dal punto di vista della squadra di casa ATTUALE (home_id del match in corso)
+            if hg == ag:
+                res = "N"
+            else:
+                # vittoria della casa attuale: se era in casa ha vinto chi ha più gol in casa,
+                # se era in trasferta ha vinto chi ha più gol in trasferta
+                cur_home_was_home = int(r.home_id) == home_id
+                res = "V" if (hg > ag) == cur_home_was_home else "P"
+            out.append({"date": pd.Timestamp(r.utc).strftime("%d/%m/%Y"), "league": r.league,
+                        "home": names[int(r.home_id)], "away": names[int(r.away_id)],
+                        "score": f"{hg}-{ag}", "res": res})
+        return out
+
     # ---- previsione ---------------------------------------------------------------------------------
     def prediction(self, match_id: int) -> dict[str, Any] | None:
         if self.preds.empty:
@@ -371,6 +411,14 @@ class MatchAnalysis:
                 ph = p["p_home"] if hg > ag else p["p_draw"] if hg == ag else p["p_away"]
                 s.append(f"Il modello assegnava {_pct(ph)} all'esito verificatosi"
                          + (" (esito atteso)." if ph >= 0.4 else " (sorpresa)." if ph < 0.25 else "."))
+            mom = ctx.get("momentum")
+            if mom and mom["n"] >= 10:
+                if mom["pos_share"] >= 0.60:
+                    s.append(f"Momentum quasi sempre dalla parte di {h}: "
+                             f"pressione a proprio favore nel {_pct(mom['pos_share'])} dei minuti.")
+                elif mom["pos_share"] <= 0.40:
+                    s.append(f"Momentum quasi sempre dalla parte di {a}: "
+                             f"pressione a proprio favore nel {_pct(1 - mom['pos_share'])} dei minuti.")
         return s
 
     # ---- contesto completo ----------------------------------------------------------------------------
@@ -406,6 +454,8 @@ class MatchAnalysis:
             "weather": {"desc": _weather_it(_val(info, "weather_desc")), "temp": _val(info, "weather_temp_c"),
                         "precip": _val(info, "weather_precip_chance")},
             "h2h": (_val(info, "h2h_home_wins"), _val(info, "h2h_draws"), _val(info, "h2h_away_wins")),
+            "h2h_list": self.h2h_list(match_id, home_id, away_id, f["home_name"], f["away_name"], kickoff),
+            "momentum": self.momentum(match_id) if status == "finished" else None,
             "prediction": self.prediction(match_id),
             "home_xg_match": _val(info, "home_xg"), "away_xg_match": _val(info, "away_xg"),
             "home_xgot_match": _val(info, "home_xgot"), "away_xgot_match": _val(info, "away_xgot"),
