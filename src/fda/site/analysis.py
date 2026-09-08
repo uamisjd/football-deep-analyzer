@@ -290,8 +290,14 @@ class MatchAnalysis:
             return []
         rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
                            & (self.lineup.role == "starter")]
-        return [{"name": r.player_name, "num": r.shirt_number, "rating": r.rating, "season_rating": r.season_rating,
-                 "captain": bool(r.is_captain)} for r in rows.itertuples(index=False)]
+        out = []
+        for r in rows.itertuples(index=False):
+            rating = r.rating if not pd.isna(r.rating) else None
+            season_rating = r.season_rating if not pd.isna(r.season_rating) else None
+            num = r.shirt_number if not pd.isna(r.shirt_number) else None
+            out.append({"name": r.player_name, "num": num, "rating": rating,
+                        "season_rating": season_rating, "captain": bool(r.is_captain)})
+        return out
 
     # ---- statistiche post-partita ----------------------------------------------------------------
     def key_stats(self, match_id: int, home_id: int, away_id: int) -> list[dict[str, Any]]:
