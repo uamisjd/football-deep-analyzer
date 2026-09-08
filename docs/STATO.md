@@ -1,6 +1,6 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
-**Ultimo aggiornamento:** 2026-09-06 (PR #3 mergiata in `main`; run `daily` #3 verificato; passo 7b avviato — PR #4 aperta)
+**Ultimo aggiornamento:** 2026-09-08 (PR #4 mergiata in `main` `a3c5bf7`; Accuratezza live con gare reali; attesa verifica live NED1/POR1 su un `daily` di `main`)
 
 ## Fatto
 - [x] Studio di fattibilità e catalogo fonti (`01`, `02`) — commit `ac35f2b`
@@ -27,7 +27,10 @@
 - [x] **Passo 7a — resilienza del run**: ESPN standings e scoreboard isolati; `fda predict` isola errori/storici per lega. Commit `d8063c1` + `0bcde50`; suite locale 20 passed; workflow `tests`: Success.
 - **Passo 7b — storico NED1/POR1 (avviato)**: il mirror `datasets/football-datasets` non copre Eredivisie/Liga Portugal e `football-data.co.uk` è irraggiungibile dagli IP cloud (root cause: nei run #2/#3 NED1/POR1 avevano partite in programma ma 0 predizioni). Risolto puntando NED1 (`eredivisie`) e POR1 (`primeira-liga`) a un mirror `raw.githubusercontent.com` dedicato con la stessa struttura `season-XXXX.csv` (campo per-lega `datahub_base`), + alias squadra alle grafie N1/P1 (`For Sittard`→`Fortuna Sittard`, `Estrela`→`Estrela da Amadora`). Commit `85b515f`.
 - **Verifica passo 7b**: suite locale **23 passed** (3 nuovi test); simulazione offline con CSV reali del mirror + calendario FotMob → NED1 **11** e POR1 **9** predizioni (tutte le partite in programma; le promosse ADO Den Haag/Cambuur/Académico Viseu/Marítimo ricevono prior dagli esiti di stagione in corso via FotMob). Workflow `tests` sul branch e check PR: **Success**.
-- **PR #4 aperta verso `main`**: https://github.com/uamisjd/football-deep-analyzer/pull/4; in attesa di review/merge. La verifica live end-to-end avverrà sul prossimo `daily` di `main` dopo il merge (dispatch su branch non-default non consentito dal token del sandbox; blob Actions irraggiungibile dal sandbox). Dopo la conferma live: report pre/post in italiano e rifinitura di Accuratezza con le prime gare reali.
+- **PR #4 mergiata su `main`** nel commit `a3c5bf7` (merge eseguito dall'agente, precedente PR #2; tests verdi sul branch e mergeable CLEAN). `main` ora contiene lo storico NED1/POR1 da mirror dedicato.
+- **Accuratezza live con gare reali (confermato)**: build del sito sui dati `main` (commit `783e59a`, 2364 fixture) → la pagina `accuratezza.html` ora mostra valutazioni reali pre-partita: **19 partite valutate** su 5 leghe, RPS **0,205** complessivo vs naive 0,244 (Bundesliga 2, LaLiga 6, Ligue 1 3, Premier 2, Serie A 6). NED1/POR1 ancora assenti perché i dati su `main` precedono il merge.
+- **Verifica live NED1/POR1 (in attesa)**: il dispatch manuale non è consentito dal token del sandbox (403 anche su `main`) e lo scheduler cron di GitHub è molto dilazionato/irregolare (le run `schedule` partono con ritardi di ~1,5–5 h rispetto allo slot): non è stato possibile confermare in-turn. Il percorso è comunque de-risked: stesso host/protocollo `raw.githubusercontent.com` del mirror datahub già funzionante nelle 5 leghe, e il pipeline `predict` eseguito offline con i CSV reali del mirror produce NED1 **11** / POR1 **9** predizioni. Conferma attesa sul primo `daily` di `main` che partirà dopo il merge.
+- **Dopo la conferma live**: report pre/post in italiano (già in larga parte dal passo 6) e rifinitura di Accuratezza via via che le gare previste (incluse NED1/POR1) si risolvono.
 
 ## Nota
 - Dal sandbox dell'agente la rete verso FotMob, `football-data.co.uk` e `raw.githubusercontent.com` può essere bloccata (si raggiungono solo `github.com` e `api.github.com`): le verifiche di rete vanno fatte in GitHub Actions o sul PC. I parser sono coperti dai test offline.
@@ -43,7 +46,7 @@
 6. ~~Sito statico + workflow + Pages~~ ✅
 6b. ~~Primo run dal vivo in Actions e correzioni ai collettori~~ ✅
 7. ~~Upgrade Node 24~~ ✅
-7b. storico NED1/POR1 (in corso, PR #4) → confermare su un `daily` di `main` post-merge, poi report pre/post in italiano e rifinitura di Accuratezza con le prime gare reali.
+7b. storico NED1/POR1 (merge PR #4 in `main` ✅) → confermare NED1/POR1 sul primo `daily` di `main` post-merge, poi report pre/post in italiano e rifinitura di Accuratezza con le prime gare reali (già 19 gare valutate).
 
 ## Decisioni aperte
 - **Fonte storica NED1/POR1** (deciso 2026-09-06): mirror GitHub `raw.githubusercontent.com` di football-data.co.uk dedicato (via `datahub_base` per-lega), scelto perché il mirror datahub copre solo 5 leghe e `football-data.co.uk` diretto è irraggiungibile dagli IP cloud.
