@@ -1,5 +1,7 @@
 # BRIEFING NUOVA SESSIONE — leggi questo per primo
 
+> ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
+
 > **Ultimo aggiornamento:** 2026-09-08 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto.
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
@@ -24,8 +26,8 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
 
 - **Fase 0–7b concluse e su `main`** (PR #1–#5 mergiate): scaffolding, client FotMob, client ESPN+Understat, storage+collect, modelli (Dixon-Coles+Elo, RPS Serie A ~0,205–0,212), sito+workflow+Pages, primo run dal vivo OK (run #2/#3 Success, Accuratezza live con 19+ gare reali), resilienza del run, storico NED1/POR1 da mirror dedicato.
-- **`main` HEAD:** `69224a8` (merge PR #5). Branch di lavoro attuale: `arena/01a0807f-football-deep-analyzer`.
-- **Ultimo aggiornamento STATO.md**: 2026-09-08 (PR #4 in main `a3c5bf7`, Accuratezza live; attesa verifica live NED1/POR1 sul primo `daily` di `main` post-merge).
+- **`main` HEAD:** `91f7109` (merge PR #8). Branch di lavoro della sessione corrente: `arena/01a08091-football-deep-analyzer` (ogni sessione Arena ha il proprio branch `arena/...`, indicato nel messaggio di inizio sessione).
+- **Ultimo aggiornamento STATO.md**: 2026-09-08 10:32 UTC (controllo live NED1/POR1 post PR #4: nessun `daily` post-merge ancora partito, slot 10:00 in ritardo; attesa finestra conferma).
 
 ## 3. Prossimi passi (in ordine — da `docs/STATO.md`)
 
