@@ -25,15 +25,18 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
 
-- **Fase 0–7b concluse e su `main`** (PR #1–#5 mergiate): scaffolding, client FotMob, client ESPN+Understat, storage+collect, modelli (Dixon-Coles+Elo, RPS Serie A ~0,205–0,212), sito+workflow+Pages, primo run dal vivo OK (run #2/#3 Success, Accuratezza live con 19+ gare reali), resilienza del run, storico NED1/POR1 da mirror dedicato.
-- **`main` HEAD:** `91f7109` (merge PR #8). Branch di lavoro della sessione corrente: `arena/01a08091-football-deep-analyzer` (ogni sessione Arena ha il proprio branch `arena/...`, indicato nel messaggio di inizio sessione).
-- **Ultimo aggiornamento STATO.md**: 2026-09-08 10:32 UTC (controllo live NED1/POR1 post PR #4: nessun `daily` post-merge ancora partito, slot 10:00 in ritardo; attesa finestra conferma).
+- **Fase 0–7b CONCLUSA E VALIDATA DAL VIVO** (PR #1–#9 mergiate): scaffolding, client FotMob, client ESPN+Understat, storage+collect, modelli (Dixon-Coles+Elo, backtest RPS 0,212), sito+workflow+Pages, run dal vivo OK, resilienza, storico NED1/POR1 da mirror dedicato **confermato in produzione** (run `34232722943` del 2026-09-08: NED1 11 / POR1 11 predizioni, `n_train=960`, commit dati `6a31d39`).
+- **PR #9 (2026-09-08) porta su `main`**: policy «il merge lo esegue SEMPRE l'utente» (sez. D + avviso in cima qui), Accuratezza con Δ vs naive/calibrazione/RPS per gara, cartina dei tiri SVG nei post-partita, card Momentum (barre + marker gol), ultimi precedenti reali V/N/P, **italianizzazione completa** (ora italiana ovunque, virgole decimali, meteo e rientri tradotti), script `scripts/verify_ned_por.py`. Commit di merge in `git log` (HEAD di `main`).
+- **Accuratezza oggi**: 19 gare valutate su 5 leghe, RPS **0,205** vs naive 0,244 (il modello batte la base in ogni lega); le 22 gare NED1/POR1 previste questa settimana porteranno le prime valutazioni su Eredivisie/Liga Portugal.
+- **Branch di lavoro**: ogni sessione Arena ha il proprio branch `arena/...` (indicato nel messaggio di inizio sessione); mai lavorare su `main`.
+- **Ultimo aggiornamento STATO.md**: 2026-09-08 13:50 UTC (chiusura passo 7b + handoff nuova sessione).
 
 ## 3. Prossimi passi (in ordine — da `docs/STATO.md`)
 
-1. **Confermare live NED1/POR1** sul primo `daily` di `main` post-merge (il mirror dedicato è de-risked offline: NED1 11 / POR1 9 predizioni; il cron è dilazionato e il dispatch manuale dà 403 dal token del sandbox — la conferma arriva da sola quando un run `schedule` parte su `main`).
-2. **Rifinire i report pre/post in italiano** e **Accuratezza** via via che le gare previste (incluse NED1/POR1) si risolvono.
-3. Poi riprendere la roadmap (`01` §8): fasi **2 → 5** non ancora coperte a fondo (shot map, indisponibili+diffidati, arbitro/meteo/viaggi, notizie RSS, valori, Monte Carlo stagione → fase 2; schede giocatore → fase 3; quote The Odds API → fase 4; notifiche Telegram → fase 5).
+1. **Monte Carlo stagione** (fase 2 della roadmap in `01` §8): simulare il resto del campionato con i parametri DC/Elo già calibrati → probabilità titolo / top-4 / retrocessione per le 7 leghe (nuova pagina del sito). È il prossimo pezzo «profondo».
+2. **Seguire Accuratezza** via via che le gare previste si risolvono (incluse le 22 NED1/POR1 di questa settimana): le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega).
+3. **Pulizia ruff** (opzionale): 47 segnalazioni pre-esistenti su `main` (ruff 0.16 più severo del vincolo storico `ruff>=0.5`; CI esegue solo pytest) — un turno dedicato con `ruff --fix` + revisione.
+4. Poi la roadmap (`01` §8): shot map/indisponibili già fatti; restano **fase 3** schede giocatore, **fase 4** quote The Odds API (serve il secret `ODDS_API_KEY`), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
 
 ## 4. Cosa fare appena entri (checklist rapida)
 
@@ -66,10 +69,13 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 ## 7. Limitazioni note (per non ri-verificare a vuoto)
 
-- **Dal sandbox dell'agente** sono raggiungibili solo `github.com` e `api.github.com`: FotMob, Understat, ESPN, `football-data.co.uk` e il mirror `raw.githubusercontent.com` possono essere **bloccati**. Le verifiche "dal vivo" si fanno in GitHub Actions o sul PC dell'utente; i parser sono coperti da test offline.
-- **Dispatch manuale** del workflow: il token del bot dà **403** anche su `main` → non si può forzare un run live in-turno; si aspetta il cron (dilazionato/irregolare).
-- **football-data.co.uk diretto** irraggiungibile dagli IP cloud → si usa il mirror datahub (5 leghe) + mirror dedicato per NED1/POR1 (campo `datahub_base` in `leagues.yaml`).
+- **Dal sandbox dell'agente** sono raggiungibili `github.com` e `api.github.com` (e **PyPI**: `pip install -e ".[dev]"` funziona). FotMob, Understat, ESPN, `football-data.co.uk`, il mirror `raw.githubusercontent.com` e i **blob Azure degli artifact Actions** sono bloccati → le verifiche "dal vivo" si fanno sui commit dati (`git show origin/main:data/...`, vedi `scripts/verify_ned_por.py`) o in GitHub Actions/PC utente; i parser sono coperti da test offline.
+- **Cron GitHub molto dilazionati** (fino a ~5 h; gli slot possono saltare del tutto). **Dispatch manuale**: il token dell'agente dà 403, ma **dall'utente via UI GitHub funziona** (Actions → daily → Run workflow su `main`): è la scorciatoia quando serve un run subito (usata con successo il 2026-09-08).
+- **football-data.co.uk diretto** irraggiungibile dagli IP cloud → mirror datahub (5 leghe) + mirror dedicato per NED1/POR1 (campo `datahub_base` in `leagues.yaml`), confermato funzionante in produzione.
+- **ESPN standings**: 403 cronico e isolato (loggato in `source_status`, non blocca il run; scoreboard/classifiche ESPN restano ok dove raggiungibili).
+- **Preview del sito dal sandbox**: dopo `fda build` (scrive in `site/`, gitignored) si serve con `python3 -m http.server 3000 --bind 0.0.0.0 --directory site` (via start_process) → l'utente vede il sito modificato nel browser prima del merge.
 - La sezione **quote** usa The Odds API solo se è impostato il secret `ODDS_API_KEY` (opzionale).
+- I **diffidati** non sono implementati: FotMob non li espone nei dati raccolti (ruoli lineup: starter/sub/unavailable/coach — verificato 2026-09-08).
 
 ## 8. Decisioni aperte / prossime scelte che spettano all'utente
 
