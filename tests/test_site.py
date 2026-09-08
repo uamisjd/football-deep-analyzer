@@ -9,7 +9,7 @@ from fda.config import league
 from fda.site.analysis import MatchAnalysis
 from fda.site.build import SiteBuilder
 from fda.store import Store
-from tests.test_store_collect import FakeEspn, FakeFotMob, FakeUnderstat
+from tests.test_store_collect import FakeEspn, FakeEspnNoStandings, FakeFotMob, FakeUnderstat
 
 FIX = Path(__file__).parent / "fixtures"
 
@@ -31,10 +31,10 @@ class FakeFotMobPre(FakeFotMob):
         return raw
 
 
-def _seed(tmp_path):
+def _seed(tmp_path, espn_cls=FakeEspn):
     st = Store(tmp_path / "processed")
     collect_league(league("ITA1"), st, past_days=30, future_days=30,
-                   fotmob=FakeFotMobPre(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(), espn=FakeEspn(),
+                   fotmob=FakeFotMobPre(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(), espn=espn_cls(),
                    today=date(2026, 9, 6))
     # sposta le partite campione attorno a "oggi" così finiscono nelle pagine
     now = datetime.now(timezone.utc)
@@ -173,6 +173,10 @@ def test_site_build_end_to_end(tmp_path):
 
     post = (out / "partite/5749645.html").read_text(encoding="utf-8")
     assert "Lettura della partita" in post and "Simone Sozza" in post
+    # riga arbitro: contatori interi, mai float («18 rigori», non «18.0 rigori»)
+    assert "18 rigori" in post and "18.0 rigori" not in post
+    assert "2 rossi" in post and "2.0 rossi" not in post
+    assert "(33 gare)" in post and "(33.0 gare)" not in post
     assert "xG 3,86 - 2,43" in post and "Cronaca essenziale" in post
     assert "Lautaro Martínez" in post and "Politano" in post
     assert "Il modello assegnava 62%" in post          # valutazione a posteriori
@@ -235,6 +239,37 @@ def test_site_build_end_to_end(tmp_path):
         assert "UTC" not in html, page
         assert "(ora italiana)" in html, page
     assert "noindex" in (out / "index.html").read_text(encoding="utf-8")
+
+    # stato fonti: tutte le fonti OK → nessun ERRORE (regressione rumore ESPN standings)
+    stato = (out / "stato.html").read_text(encoding="utf-8")
+    assert "Ultimi run per fonte" in stato and "OK" in stato
+    assert ">ERRORE<" not in stato and "AVVISO" not in stato
+    st.close()
+
+
+def test_status_page_warns_espn_standings(tmp_path):
+    """ESPN standings 403 (cronico, coperto da FotMob) → AVVISO, non ERRORE."""
+    st = _seed(tmp_path, espn_cls=FakeEspnNoStandings)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    stato = (out / "stato.html").read_text(encoding="utf-8")
+    assert "AVVISO" in stato and "espn standings" in stato
+    assert ">ERRORE<" not in stato                 # nessun'altra fonte fallisce nel seed
+    st.close()
+
+
+def test_timeline_added_is_int(tmp_path):
+    """Il minuto di recupero nella cronaca è intero: `45+1'`, non `45+1.0'`."""
+    st = Store(tmp_path / "processed")
+    st.upsert("events", [
+        {"match_id": 99, "type": "Goal", "minute": 45, "minute_added": 1.0, "is_home": True,
+         "player_id": 1, "player_name": "X", "home_score": 1, "away_score": 0},
+        {"match_id": 99, "type": "Goal", "minute": 90, "minute_added": 0.0, "is_home": False,
+         "player_id": 2, "player_name": "Y", "home_score": 1, "away_score": 1},
+    ])
+    tl = MatchAnalysis(st).timeline(99)
+    assert tl[0]["added"] == 1 and isinstance(tl[0]["added"], int)   # 1.0 → 1
+    assert tl[1]["added"] is None or tl[1]["added"] == 0             # 0.0 non mostrato come recupero
     st.close()
 
 

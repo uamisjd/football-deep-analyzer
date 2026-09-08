@@ -213,9 +213,14 @@ class SiteBuilder:
         rows = []
         if not st.empty:
             last = st.sort_values("run_at").groupby("source").tail(1).sort_values("source")
-            rows = [{"source": r.source, "run_at": pd.Timestamp(r.run_at).tz_convert(self.tz).strftime("%d/%m %H:%M"),
-                     "requests": int(r.requests), "ok": bool(r.ok), "error": (r.error or "")[:120] if isinstance(r.error, str) else ""}
-                    for r in last.itertuples(index=False)]
+            rows = []
+            for r in last.itertuples(index=False):
+                err = (r.error or "") if isinstance(r.error, str) else ""
+                rows.append({"source": r.source,
+                             "run_at": pd.Timestamp(r.run_at).tz_convert(self.tz).strftime("%d/%m %H:%M"),
+                             "requests": int(r.requests), "ok": bool(r.ok),
+                             "warn": bool(getattr(r, "warn", False)) or "espn standings" in err,
+                             "error": err[:120]})
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []
         by_state = {s: sum(1 for a in self.audit_rows for i in a["items"] if i["state"] == s)
                     for s in ("presente", "atteso", "mancante")}

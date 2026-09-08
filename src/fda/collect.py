@@ -46,8 +46,11 @@ class CollectReport:
         rows = []
         for src, n in self.requests.items():
             err = next((e for e in self.errors if e.startswith(src)), None)
+            # ESPN standings risponde 403 cronico: è coperto dalla classifica FotMob (fonte
+            # primaria), quindi viene registrato come AVVISO e non come errore bloccante.
+            warn = err is not None and err.startswith("espn standings")
             rows.append({"run_at": self.run_at, "source": f"{src}:{self.league}", "requests": n,
-                         "ok": err is None, "error": err})
+                         "ok": err is None, "warn": warn, "error": err})
         return rows
 
 

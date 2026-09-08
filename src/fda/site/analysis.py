@@ -364,7 +364,8 @@ class MatchAnalysis:
                     swap = ast.literal_eval(swap)
                 except (ValueError, SyntaxError):
                     swap = None
-            out.append({"type": r.type, "minute": _val(d, "minute"), "added": _val(d, "minute_added"),
+            added = _val(d, "minute_added")
+            out.append({"type": r.type, "minute": _val(d, "minute"), "added": int(added) if added is not None else None,
                         "home": bool(_val(d, "is_home", False)), "player": _val(d, "player_name"),
                         "card": _val(d, "card"), "own_goal": bool(_val(d, "own_goal", False)),
                         "score": f"{_val(d, 'home_score', '')}-{_val(d, 'away_score', '')}" if r.type == "Goal" else None,
