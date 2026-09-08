@@ -12,7 +12,9 @@ import re
 from datetime import datetime, timezone
 from typing import Any
 
+import numpy as np
 import pandas as pd
+from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
@@ -161,6 +163,20 @@ class MatchAnalysis:
         return int((kickoff - prev.utc_kickoff.max()).total_seconds() // 86400)
 
     # ---- xG di stagione (Understat se c'è, altrimenti FotMob) ---------------------------------
+    @staticmethod
+    def _poisson_xpts(lh: float, la: float) -> tuple[float, float]:
+        """xPTS attesi di una partita dai soli xG (Poisson indipendente): (xPTS casa, trasferta).
+
+        Probabilità P(vittoria casa), P(pareggio), P(vittoria trasferta) dalle λ = xG delle due
+        squadre; xPTS = 3×P(vittoria) + P(pareggio). La coda oltre λ+12 gol è trascurabile.
+        """
+        g = np.arange(int(max(lh, la)) + 13)                 # gol possibili: 0..λ+12
+        pa = poisson.pmf(g, la)                             # gol della squadra in trasferta
+        p_draw = float((poisson.pmf(g, lh) * pa).sum())
+        p_home = float((poisson.sf(g, lh) * pa).sum())      # la casa segna più di k
+        p_away = float((poisson.cdf(g - 1, lh) * pa).sum()) # gol casa < k (cdf(-1) = 0)
+        return 3 * p_home + p_draw, 3 * p_away + p_draw
+
     def season_xg(self, team_name: str, team_id: int) -> dict[str, Any] | None:
         canon = canonical(team_name)
         if not self.us_team.empty:
@@ -177,8 +193,25 @@ class MatchAnalysis:
             xg = pd.concat([h.home_xg, a.away_xg]).dropna()
             xga = pd.concat([h.away_xg, a.home_xg]).dropna()
             if len(xg):
-                return {"source": "FotMob", "played": int(len(xg)), "xg": xg.sum(), "xga": xga.sum(),
-                        "xg_pm": xg.mean(), "xga_pm": xga.mean(), "xpts": None, "pts": None, "ppda": None}
+                xpts = pts = None
+                # xPTS e punti reali solo dalle partite finite con xG completo (entrambe le λ);
+                # senza i gol reali la riga xPTS resta assente (None) come prima.
+                if {"home_goals", "away_goals"} <= set(self.info.columns):
+                    ok = fin[(fin.home_id == team_id) | (fin.away_id == team_id)]
+                    ok = ok.dropna(subset=["home_xg", "away_xg", "home_goals", "away_goals"])
+                    if not ok.empty:
+                        xpts_total = pts_total = 0
+                        for r in ok.itertuples(index=False):
+                            xh, xa = self._poisson_xpts(float(r.home_xg), float(r.away_xg))
+                            team_home = int(r.home_id) == team_id
+                            xpts_total += xh if team_home else xa
+                            hg, ag = int(r.home_goals), int(r.away_goals)
+                            signed = hg - ag if team_home else ag - hg
+                            pts_total += 3 if signed > 0 else 1 if signed == 0 else 0
+                        xpts, pts = round(xpts_total, 1), int(pts_total)
+                return {"source": "FotMob", "played": int(len(xg)), "xg": xg.sum(),
+                        "xga": xga.sum(), "xg_pm": xg.mean(), "xga_pm": xga.mean(),
+                        "xpts": xpts, "pts": pts, "ppda": None}
         return None
 
     def standing(self, team_name: str) -> dict[str, Any] | None:

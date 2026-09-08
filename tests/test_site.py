@@ -127,6 +127,41 @@ def test_season_xg_fotmob_fallback(tmp_path):
     st.close()
 
 
+def test_season_xg_fotmob_calcola_xpts(tmp_path):
+    """Fallback FotMob: xPTS dalle λ = xG (Poisson) e punti reali dalle partite finite."""
+    st = Store(tmp_path / "processed")
+    st.upsert("match_info", [
+        {"match_id": 1, "status": "finished", "home_id": 8636, "away_id": 9875,
+         "home_xg": 2.0, "away_xg": 1.0, "home_goals": 3, "away_goals": 1},    # Inter in casa: V
+        {"match_id": 2, "status": "finished", "home_id": 9875, "away_id": 8636,
+         "home_xg": 0.5, "away_xg": 1.5, "home_goals": 0, "away_goals": 2},    # Inter in trasferta: V
+        {"match_id": 3, "status": "finished", "home_id": 8636, "away_id": 8564,
+         "home_xg": 1.0, "away_xg": 1.0, "home_goals": 1, "away_goals": 1},    # pareggio
+        {"match_id": 4, "status": "finished", "home_id": 9875, "away_id": 8636,
+         "home_xg": 2.0, "away_xg": 0.5, "home_goals": 3, "away_goals": 0},    # Inter in trasferta: P
+        {"match_id": 5, "status": "scheduled", "home_id": 8636, "away_id": 8564,
+         "home_xg": None, "away_xg": None, "home_goals": None, "away_goals": None},
+    ])
+    xg = MatchAnalysis(st).season_xg("Inter", 8636)
+    assert xg["source"] == "FotMob" and xg["played"] == 4
+    assert (xg["xg"], xg["xga"]) == (5.0, 4.5)
+    assert xg["pts"] == 7                 # 3+3+1+0 dalle partite finite
+    assert xg["xpts"] == 5.9              # Σ xPTS Poisson dalle λ = xG, arrotondato a 1 decimale
+    # metodo statico _poisson_xpts: valori attesi noti, simmetria su λ uguali
+    xh, xa = MatchAnalysis._poisson_xpts(2.0, 1.0)
+    assert (round(xh, 3), round(xa, 3)) == (2.029, 0.759)
+    xa_sym = MatchAnalysis._poisson_xpts(1.5, 1.5)
+    assert abs(xa_sym[0] - xa_sym[1]) < 1e-6                 # λ uguali → xPTS speculari uguali
+    # partite finite senza gol reali (colonne assenti): xPTS resta None, nessun crash
+    st2 = Store(tmp_path / "processed2")
+    st2.upsert("match_info", [{"match_id": 1, "status": "finished", "home_id": 8636, "away_id": 9875,
+                               "home_xg": 2.0, "away_xg": 1.0}])
+    xg2 = MatchAnalysis(st2).season_xg("Inter", 8636)
+    assert xg2["xpts"] is None and xg2["pts"] is None
+    st.close()
+    st2.close()
+
+
 def test_site_build_end_to_end(tmp_path):
     st = _seed(tmp_path)
     out = tmp_path / "site"
