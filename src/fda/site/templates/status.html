@@ -12,4 +12,14 @@
 {% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows }}</td><td class="r">{{ t.kb }}</td></tr>{% endfor %}
 </table></div>
 </div>
+<div class="card">
+<h2>Completezza schede future</h2>
+<p class="small mut">Un dato classificato «atteso» non è ancora pubblicato dalla fonte nella sua finestra normale (per esempio formazione ufficiale, arbitro o meteo). «Mancante» indica invece che dovrebbe già esserci.</p>
+<table><tr><th>Stato</th><th class="r">Campi</th></tr>
+<tr><td>Presente</td><td class="r">{{ audit_counts.presente }}</td></tr>
+<tr><td>Atteso dalla fonte</td><td class="r">{{ audit_counts.atteso }}</td></tr>
+<tr><td style="color:var(--bad)">Mancante</td><td class="r">{{ audit_counts.mancante }}</td></tr>
+</table>
+{% if audit %}<p class="small mut">Partite analizzate: {{ audit|length }} · {{ audit|selectattr('mancante', 'equalto', 0)|list|length }} senza campi scaduti.</p>{% endif %}
+</div>
 {% endblock %}

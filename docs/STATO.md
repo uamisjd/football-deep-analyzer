@@ -65,3 +65,10 @@
 - **Merge delle PR** (deciso 2026-09-08): **il merge lo esegue SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sez. D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa «👉 Tutto verde: è il momento di fare Merge (PR #N).», poi aspetta senza fare merge. (La decisione era stata registrata nel commit locale `9d39a21` della sessione precedente, mai pushato e andato perso alla chiusura → riapplicata sui docs in questa sessione.)
 - **Fonte storica NED1/POR1** (deciso 2026-09-06): mirror GitHub `raw.githubusercontent.com` di football-data.co.uk dedicato (via `datahub_base` per-lega), scelto perché il mirror datahub copre solo 5 leghe e `football-data.co.uk` diretto è irraggiungibile dagli IP cloud.
 - Nessuna altra bloccante. (Telegram bot e protezione accesso: fasi successive.)
+
+## Direttive utente persistenti — aggiunta 2026-09-08
+- Quote bookmaker: **non interessano all’utente**, non sono requisito editoriale e non vanno prioritarizzate.
+- Requisito principale: schede partita complete, accurate, profonde e con parità tra le 7 leghe; nessun dato realmente mancante quando la fonte dovrebbe averlo pubblicato.
+- Distinguere sempre `presente`, `atteso dalla fonte` e `mancante`; non inventare dati per riempire campi.
+- Fare ricerche approfondite su GitHub e altre fonti prima di scegliere integrazioni; annotare i risultati in `BRIEFING_NUOVA_SESSIONE.md` per gli agenti futuri.
+- Implementato audit automatico delle schede future in `src/fda/site/audit.py`, visualizzato in `stato.html`; test suite: 49 passed.

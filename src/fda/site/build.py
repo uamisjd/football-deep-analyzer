@@ -18,6 +18,7 @@ from ..config import REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import outcome_index
 from ..store import Store
 from .analysis import MatchAnalysis
+from .audit import audit_match
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +80,7 @@ class SiteBuilder:
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
         self.analysis = MatchAnalysis(self.store)
+        self.audit_rows: list[dict[str, Any]] = []
 
     # ---- helpers ------------------------------------------------------------------------------
     def _render(self, template: str, rel_path: str, **ctx: Any) -> None:
@@ -140,6 +142,8 @@ class SiteBuilder:
             if not ctx:
                 continue
             ctx["utc_kickoff"] = pd.Timestamp(ctx["utc_kickoff"]).tz_convert(self.tz)
+            if ctx["status"] != "finished":
+                self.audit_rows.append(audit_match(ctx))
             self._render("match.html", f"partite/{mid}.html", c=ctx,
                          league_name=self.league_names.get(ctx["league_id"], ""))
             n += 1
@@ -213,7 +217,10 @@ class SiteBuilder:
                      "requests": int(r.requests), "ok": bool(r.ok), "error": (r.error or "")[:120] if isinstance(r.error, str) else ""}
                     for r in last.itertuples(index=False)]
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []
-        self._render("status.html", "stato.html", sources=rows, tables=tables)
+        by_state = {s: sum(1 for a in self.audit_rows for i in a["items"] if i["state"] == s)
+                    for s in ("presente", "atteso", "mancante")}
+        self._render("status.html", "stato.html", sources=rows, tables=tables,
+                     audit=self.audit_rows, audit_counts=by_state)
 
     def build(self) -> dict[str, int]:
         if self.out.exists():
