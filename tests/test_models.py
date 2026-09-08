@@ -29,6 +29,19 @@ def test_team_aliases():
     assert same_team("Nott'm Forest", "Nottingham Forest")
 
 
+def test_ned_por_footballdata_spellings():
+    # grafie football-data.co.uk (mirror NED1/POR1) → nome FotMob
+    assert canonical("For Sittard") == canonical("Fortuna Sittard") == "Fortuna Sittard"
+    assert canonical("Estrela") == canonical("Estrela Amadora") == canonical("Estrela da Amadora") == "Estrela da Amadora"
+    # nomi usati nei CSV N1/P1 che devono convergere
+    assert canonical("Groningen") == canonical("FC Groningen")
+    assert canonical("Heerenveen") == canonical("SC Heerenveen")
+    assert canonical("Utrecht") == canonical("FC Utrecht")
+    assert canonical("Twente") == canonical("FC Twente")
+    assert canonical("Guimaraes") == canonical("Vitória de Guimarães")
+    assert canonical("Sp Braga") == canonical("Braga") == canonical("SC Braga")
+
+
 def test_history_normalize(hist):
     assert len(hist) == 380
     assert hist["date"].min().date().isoformat() == "2025-08-23"
@@ -37,6 +50,31 @@ def test_history_normalize(hist):
     assert hist["season"].iloc[0] == "2025/2026" and season_code(2025) == "2526"
     assert hist["home_goals"].dtype.kind == "i"
     assert "odds_home" not in hist.columns             # datahub non ha quote
+
+
+def test_history_uses_datahub_base_override():
+    # NED1 non è nel mirror datasets/football-datasets: datahub_base punta al mirror dedicato.
+    calls = {}
+
+    class _Stub:
+        def get_text(self, url, ttl_h=None):
+            calls["url"] = url
+            return "Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n" \
+                   "10/08/2025,Ajax,Feyenoord,2,1,H\n" \
+                   "11/08/2025,Feyenoord,Ajax,0,0,D\n"
+
+    ned = league("NED1")
+    hc = HistoryClient(client=_Stub())
+    df = hc.datahub_csv(ned, 2025)
+    assert df is not None and len(df) == 2
+    assert calls["url"] == f"{ned.datahub_base}/eredivisie/season-2526.csv"
+
+    # le 5 grandi leghe restano sul mirror datasets/football-datasets (nessun datahub_base)
+    ita = league("ITA1")
+    assert ita.datahub_base is None
+    hc2 = HistoryClient(client=_Stub())
+    hc2.datahub_csv(ita, 2025)
+    assert "datasets/football-datasets" in calls["url"] and calls["url"].endswith("/serie-a/season-2526.csv")
 
 
 def test_history_parses_footballdata_dates():

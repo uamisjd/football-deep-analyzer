@@ -31,6 +31,7 @@ class League:
     datahub_dir: str | None
     clubelo_country: str
     teams: int
+    datahub_base: str | None = None  # override del raw_base del mirror "datahub" per questa lega
 
     @property
     def has_understat(self) -> bool:
