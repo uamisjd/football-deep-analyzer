@@ -4,7 +4,7 @@
 <p class="mut small"><a href="{{ root }}index.html">← Oggi</a> · {{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %} ·
   {{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</p>
 <h1>{{ c.home_name }} <span class="mut">{% if c.home_goals is not none %}{{ c.home_goals }} - {{ c.away_goals }}{% else %}vs{% endif %}</span> {{ c.away_name }}</h1>
-{% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut">xG {{ '%.2f'|format(c.home_xg_match) }} - {{ '%.2f'|format(c.away_xg_match) }}{% if c.home_xgot_match is not none %} · xGOT {{ '%.2f'|format(c.home_xgot_match) }} - {{ '%.2f'|format(c.away_xgot_match) }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ c.stadium.attendance|it_num }}{% endif %}</p>{% endif %}
+{% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut">xG {{ c.home_xg_match|dec }} - {{ c.away_xg_match|dec }}{% if c.home_xgot_match is not none %} · xGOT {{ c.home_xgot_match|dec }} - {{ c.away_xgot_match|dec }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ c.stadium.attendance|it_num }}{% endif %}</p>{% endif %}
 
 <div class="card">
   <h2>{% if c.status == 'finished' %}Lettura della partita{% else %}Analisi pre-partita{% endif %}</h2>
@@ -19,20 +19,20 @@
     <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
     <div class="bar" style="height:30px;font-size:14px"><span class="h" style="width:{{ (p.p_home*100)|round }}%">1 · {{ (p.p_home*100)|round|int }}%</span><span class="d" style="width:{{ (p.p_draw*100)|round }}%">X · {{ (p.p_draw*100)|round|int }}%</span><span class="a" style="width:{{ (p.p_away*100)|round }}%">2 · {{ (p.p_away*100)|round|int }}%</span></div>
     <table style="margin-top:10px">
-      <tr><th>Gol attesi</th><td class="r">{{ '%.2f'|format(p.lambda_home) }}</td><td class="r">{{ '%.2f'|format(p.lambda_away) }}</td></tr>
-      <tr><th>Quota equa 1 / X / 2</th><td colspan="2" class="r">{{ p.fair_home }} / {{ p.fair_draw }} / {{ p.fair_away }}</td></tr>
+      <tr><th>Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
+      <tr><th>Quota equa 1 / X / 2</th><td colspan="2" class="r">{{ p.fair_home|dec }} / {{ p.fair_draw|dec }} / {{ p.fair_away|dec }}</td></tr>
       <tr><th>Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ (p.p_over15*100)|round|int }}% / {{ (p.p_over25*100)|round|int }}% / {{ (p.p_over35*100)|round|int }}%</td></tr>
       <tr><th>Entrambe a segno</th><td colspan="2" class="r">{{ (p.p_btts*100)|round|int }}%</td></tr>
       <tr><th>Doppia chance 1X / 12 / X2</th><td colspan="2" class="r">{{ (p.p_1x*100)|round|int }}% / {{ (p.p_12*100)|round|int }}% / {{ (p.p_x2*100)|round|int }}%</td></tr>
       <tr><th>Porta inviolata casa / trasferta</th><td colspan="2" class="r">{{ (p.p_home_clean_sheet*100)|round|int }}% / {{ (p.p_away_clean_sheet*100)|round|int }}%</td></tr>
     </table>
-    <p class="small mut">Dixon-Coles pesato nel tempo + Elo (peso DC {{ p.w_dc }}) · addestrato su {{ p.n_train }} partite · calcolato {{ p.made_at.strftime('%d/%m %H:%M') }} UTC</p>
+    <p class="small mut">Dixon-Coles pesato nel tempo + Elo (peso DC {{ p.w_dc }}) · addestrato su {{ p.n_train }} partite · calcolato {{ p.made_at|it_utc }} (ora italiana)</p>
   </div>
   <div class="card">
     <h2>Risultati esatti più probabili</h2>
-    <table>{% for score, prob in p.top_scores.items() %}<tr><td>{{ score }}</td><td class="r">{{ (prob*100)|round(1) }}%</td></tr>{% endfor %}</table>
+    <table>{% for score, prob in p.top_scores.items() %}<tr><td>{{ score }}</td><td class="r">{{ (prob*100)|dec(1) }}%</td></tr>{% endfor %}</table>
     {% if p.elo_home %}<p class="small mut" style="margin-top:10px">Elo: {{ c.home_name }} {{ p.elo_home|round|int }} · {{ c.away_name }} {{ p.elo_away|round|int }}<br>
-    Forza DC (attacco/difesa): {{ '%.2f'|format(p.dc_attack_home) }}/{{ '%.2f'|format(p.dc_defence_home) }} vs {{ '%.2f'|format(p.dc_attack_away) }}/{{ '%.2f'|format(p.dc_defence_away) }} · vantaggio casa {{ '%.2f'|format(p.dc_home_advantage) }}</p>{% endif %}
+    Forza DC (attacco/difesa): {{ p.dc_attack_home|dec }}/{{ p.dc_defence_home|dec }} vs {{ p.dc_attack_away|dec }}/{{ p.dc_defence_away|dec }} · vantaggio casa {{ p.dc_home_advantage|dec }}</p>{% endif %}
   </div>
 </div>
 {% endif %}
@@ -44,11 +44,11 @@
     {% set st = c[side ~ '_standing'] %}{% if st %}<p>Classifica: <b>{{ st.rank }}°</b> con {{ st.points }} punti in {{ st.played }} gare ({{ st.wins }}V {{ st.draws }}N {{ st.losses }}P, gol {{ st.goals_for }}:{{ st.goals_against }})</p>{% endif %}
     {% set f = c[side ~ '_form'] %}{% if f %}<p>Forma: {% for x in f %}<span class="pill {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}
       <span class="small mut">{% for x in f %}{{ x.gf }}-{{ x.ga }} {{ 'vs' if x.home else '@' }} {{ x.opponent }}{{ ', ' if not loop.last }}{% endfor %}</span></p>{% endif %}
-    {% set xg = c[side ~ '_xg'] %}{% if xg %}<p>Stagione ({{ xg.source }}, {{ xg.played }} gare): xG {{ '%.2f'|format(xg.xg_pm) }} / xGA {{ '%.2f'|format(xg.xga_pm) }} a partita{% if xg.xpts is not none %} · xPTS {{ '%.1f'|format(xg.xpts) }} vs {{ xg.pts }} punti reali{% endif %}{% if xg.ppda %} · PPDA {{ '%.1f'|format(xg.ppda) }}{% endif %}</p>{% endif %}
+    {% set xg = c[side ~ '_xg'] %}{% if xg %}<p>Stagione ({{ xg.source }}, {{ xg.played }} gare): xG {{ xg.xg_pm|dec }} / xGA {{ xg.xga_pm|dec }} a partita{% if xg.xpts is not none %} · xPTS {{ xg.xpts|dec(1) }} vs {{ xg.pts }} punti reali{% endif %}{% if xg.ppda %} · PPDA {{ xg.ppda|dec(1) }}{% endif %}</p>{% endif %}
     {% if c[side ~ '_rest'] is not none %}<p class="small mut">Riposo: {{ c[side ~ '_rest'] }} giorni dall'ultima gara</p>{% endif %}
     {% set un = c[side ~ '_unavailable'] %}{% if un %}<p><b>Indisponibili ({{ un|length }})</b></p><table>{% for u in un %}<tr><td>{{ u.name }}{% if u.pos %} <span class="mut small">{{ u.pos }}</span>{% endif %}</td><td class="mut small">{{ u.type }}</td><td class="mut small">{{ u.ret or '' }}</td></tr>{% endfor %}</table>{% endif %}
-    {% set stt = c[side ~ '_starters'] %}{% if stt %}<p style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · valore titolari €{{ '%.0f'|format(c[side ~ '_value']/1e6) }}M{% endif %}</p>
-      <p class="small">{% for s in stt %}{{ s.num or '' }} {{ s.name }}{% if s.captain %} (C){% endif %}{% if s.rating %} <span class="mut">{{ '%.1f'|format(s.rating) }}</span>{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
+    {% set stt = c[side ~ '_starters'] %}{% if stt %}<p style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · valore titolari €{{ (c[side ~ '_value']/1e6)|it_num }}M{% endif %}</p>
+      <p class="small">{% for s in stt %}{{ s.num or '' }} {{ s.name }}{% if s.captain %} (C){% endif %}{% if s.rating %} <span class="mut">{{ s.rating|dec(1) }}</span>{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</p>{% endif %}
   </div>
 {% endfor %}
 </div>
@@ -57,7 +57,7 @@
   <div class="card">
     <h2>Contesto</h2>
     <table>
-      {% if c.referee.name %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.yellows %} · {{ '%.2f'|format(c.referee.yellows) }} gialli/gara{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens }} rigori{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds }} rossi{% endif %}{% if c.referee.matches %} ({{ c.referee.matches }} gare){% endif %}</td></tr>{% endif %}
+      {% if c.referee.name %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.yellows %} · {{ c.referee.yellows|dec }} gialli/gara{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens }} rigori{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds }} rossi{% endif %}{% if c.referee.matches %} ({{ c.referee.matches }} gare){% endif %}</td></tr>{% endif %}
       {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}</td></tr>{% endif %}
       {% if c.h2h[0] is not none %}<tr><th>Precedenti</th><td>{{ c.h2h[0] }} vittorie {{ c.home_name }} · {{ c.h2h[1] }} pareggi · {{ c.h2h[2] }} vittorie {{ c.away_name }}</td></tr>{% endif %}
     </table>
@@ -82,11 +82,11 @@
   <div class="card"><h2>Tiri e occasioni</h2>
     <table><tr><th></th><th class="r">{{ c.home_name }}</th><th class="r">{{ c.away_name }}</th></tr>
       <tr><td>Tiri (in porta)</td><td class="r">{{ c.home_shots.n }} ({{ c.home_shots.on_target }})</td><td class="r">{{ c.away_shots.n }} ({{ c.away_shots.on_target }})</td></tr>
-      <tr><td>xG da tiri</td><td class="r">{{ '%.2f'|format(c.home_shots.xg or 0) }}</td><td class="r">{{ '%.2f'|format(c.away_shots.xg or 0) }}</td></tr>
+      <tr><td>xG da tiri</td><td class="r">{{ (c.home_shots.xg or 0)|dec }}</td><td class="r">{{ (c.away_shots.xg or 0)|dec }}</td></tr>
       <tr><td>Grandi occasioni (xG ≥ 0,30)</td><td class="r">{{ c.home_shots.big_chances }}</td><td class="r">{{ c.away_shots.big_chances }}</td></tr>
       <tr><td>Tiri dall'area</td><td class="r">{{ c.home_shots.inside_box }}</td><td class="r">{{ c.away_shots.inside_box }}</td></tr>
     </table>
-    {% if c.top_players %}<p class="small mut" style="margin-top:10px">Migliori in campo (rating FotMob): {% for tp in c.top_players %}{{ tp.name }} {{ '%.1f'|format(tp.rating) }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
+    {% if c.top_players %}<p class="small mut" style="margin-top:10px">Migliori in campo (rating FotMob): {% for tp in c.top_players %}{{ tp.name }} {{ tp.rating|dec(1) }}{{ ', ' if not loop.last }}{% endfor %}</p>{% endif %}
   </div>
 </div>
 {% endif %}
@@ -109,16 +109,16 @@
         <circle cx="332" cy="136" r="2.2" fill="#3b5068"/>
         <rect x="416" y="121.4" width="4" height="29.2" fill="#e6edf3" opacity="0.75"/>
         {% for s in shots %}
-        <circle cx="{{ s.px }}" cy="{{ s.py }}" r="{{ s.r }}"{% if s.kind == 'goal' %} fill="#4cc38a" fill-opacity="0.9" stroke="#4cc38a"{% elif s.kind == 'target' %} fill="#4c9dd3" fill-opacity="0.45" stroke="#4c9dd3"{% elif s.kind == 'blocked' %} fill="none" stroke="#f0b429" stroke-dasharray="3 2"{% else %} fill="none" stroke="#8b9bb0"{% endif %} stroke-width="1.6"><title>{{ s.player }} · {{ s.minute if s.minute is not none else '—' }}' · xG {{ '%.2f'|format(s.xg)|replace('.', ',') }} · {{ 'Gol' if s.kind == 'goal' else 'In porta' if s.kind == 'target' else 'Bloccato' if s.kind == 'blocked' else 'Fuori' }}</title></circle>
+        <circle cx="{{ s.px }}" cy="{{ s.py }}" r="{{ s.r }}"{% if s.kind == 'goal' %} fill="#4cc38a" fill-opacity="0.9" stroke="#4cc38a"{% elif s.kind == 'target' %} fill="#4c9dd3" fill-opacity="0.45" stroke="#4c9dd3"{% elif s.kind == 'blocked' %} fill="none" stroke="#f0b429" stroke-dasharray="3 2"{% else %} fill="none" stroke="#8b9bb0"{% endif %} stroke-width="1.6"><title>{{ s.player }} · {{ s.minute if s.minute is not none else '—' }}' · xG {{ s.xg|dec }} · {{ 'Gol' if s.kind == 'goal' else 'In porta' if s.kind == 'target' else 'Bloccato' if s.kind == 'blocked' else 'Fuori' }}</title></circle>
         {% endfor %}
         {% if not shots %}<text x="210" y="140" text-anchor="middle" fill="#8b9bb0" font-size="15">Nessun tiro registrato</text>{% endif %}
       </svg>
-      <p class="small mut" style="margin:8px 0 0">{% if summ %}{{ summ.n }} tiri · xG {{ '%.2f'|format(summ.xg or 0)|replace('.', ',') }} · {{ summ.goals }} gol{% else %}nessun tiro{% endif %}</p>
+      <p class="small mut" style="margin:8px 0 0">{% if summ %}{{ summ.n }} tiri · xG {{ (summ.xg or 0)|dec }} · {{ summ.goals }} gol{% else %}nessun tiro{% endif %}</p>
     </div>
   {% endfor %}
   </div>
   <p class="small mut" style="margin-top:10px">Legenda: <span style="color:#4cc38a">●</span> gol · <span style="color:#4c9dd3">●</span> in porta (parato) · <span style="color:#f0b429">◌</span> bloccato · <span style="color:#8b9bb0">◌</span> fuori.</p>
 </div>
 {% endif %}
-<p class="small mut">Pagina generata automaticamente il {{ c.generated_at.strftime('%d/%m/%Y %H:%M') }} UTC. Fonti: FotMob (statistiche, formazioni, arbitro, meteo), Understat (xG di stagione), ESPN (classifica).</p>
+<p class="small mut">Pagina generata automaticamente il {{ c.generated_at|it_utc }} (ora italiana). Fonti: FotMob (statistiche, formazioni, arbitro, meteo), Understat (xG di stagione), ESPN (classifica).</p>
 {% endblock %}

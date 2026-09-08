@@ -7,14 +7,14 @@
 {% if summary %}
 <div class="card"><h2>Riepilogo</h2>
 <table><tr><th>Campionato</th><th class="r">Partite valutate</th><th class="r">RPS</th><th class="r">Brier</th><th class="r">Esito più probabile azzeccato</th><th class="r">RPS naive</th><th class="r">Δ vs naive</th></tr>
-{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n }}</td><td class="r">{{ '%.4f'|format(r.rps) }}</td><td class="r">{{ '%.4f'|format(r.brier) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ '%.4f'|format(r.naive) }}</td><td class="r" style="color:{{ '#2e7d32' if r.delta < 0 else '#c62828' }}">{{ '%+.3f'|format(r.delta) }}</td></tr>{% endfor %}
+{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r" style="color:{{ '#2e7d32' if r.delta < 0 else '#c62828' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
 </table>
 <p class="small mut">Δ = RPS modello − RPS della base naive (probabilità fisse 45/27/28): negativo = il modello batte la base.
 Con poche gare valutate per campionato i valori restano indicativi: servono ~30 gare per lettura stabile.</p>
 </div>
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
 <table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th></tr>
-{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ '%.1f'|format(c.prev*100) }}%</td><td class="r">{{ '%.1f'|format(c.obs*100) }}%</td></tr>{% endfor %}
+{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}%</td></tr>{% endfor %}
 </table>
 <p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10.</p>
 </div>
@@ -24,7 +24,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 <table><tr><th>Data</th><th>Partita</th><th class="c">Risultato</th><th class="r">1 / X / 2 previsti</th><th class="c">Top</th><th class="r">RPS</th><th class="r">Prob. esito reale</th></tr>
 {% for r in recent %}<tr><td class="mut">{{ r.date }}</td><td><a href="{{ root }}partite/{{ r.match_id }}.html">{{ r.home }} - {{ r.away }}</a></td><td class="c">{{ r.hg }}-{{ r.ag }}</td>
 <td class="r">{{ (r.p_home*100)|round|int }} / {{ (r.p_draw*100)|round|int }} / {{ (r.p_away*100)|round|int }}</td><td class="c">{{ r.top }} {% if r.hit %}<span style="color:#2e7d32">✓</span>{% else %}<span style="color:#c62828">✗</span>{% endif %}</td>
-<td class="r">{{ '%.3f'|format(r.rps) }}</td><td class="r">{{ (r.p_real*100)|round|int }}%</td></tr>{% endfor %}
+<td class="r">{{ r.rps|dec(3) }}</td><td class="r">{{ (r.p_real*100)|round|int }}%</td></tr>{% endfor %}
 </table>
 <p class="small mut">Top = esito con la probabilità più alta secondo il modello (✓ se è quello poi verificatosi); RPS = errore della singola previsione.</p>
 </div>

@@ -76,7 +76,7 @@ def test_site_build_end_to_end(tmp_path):
 
     post = (out / "partite/5749645.html").read_text(encoding="utf-8")
     assert "Lettura della partita" in post and "Simone Sozza" in post
-    assert "xG 3.86 - 2.43" in post and "Cronaca essenziale" in post
+    assert "xG 3,86 - 2,43" in post and "Cronaca essenziale" in post
     assert "Lautaro Martínez" in post and "Politano" in post
     assert "Il modello assegnava 62%" in post          # valutazione a posteriori
     # data in italiano con ora locale (niente weekday inglese né etichetta UTC fuorviante)
@@ -92,7 +92,7 @@ def test_site_build_end_to_end(tmp_path):
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre
-    assert "Indisponibili" in pre and "McTominay" in pre and "Mid October 2026" in pre
+    assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
     assert "(ora italiana)" in pre
@@ -101,6 +101,11 @@ def test_site_build_end_to_end(tmp_path):
     assert "Riepilogo" in acc and "Serie A" in acc     # una partita valutata
     assert "Δ vs naive" in acc and "Calibrazione" in acc and "Frequenza osservata" in acc
     assert "✓" in acc          # Inter 4-1 Monza: top=1 (62%) azzeccato
-    assert "0.087" in acc      # RPS della singola previsione 0.62/0.21/0.17 con esito 1
+    assert "0,087" in acc      # RPS della singola previsione 0.62/0.21/0.17 con esito 1
+    # sito italiano: nessun residuo UTC/inglese, orari in ora italiana
+    for page in ("index.html", "partite/5749645.html", "partite/5749669.html", "accuratezza.html"):
+        html = (out / page).read_text(encoding="utf-8")
+        assert "UTC" not in html, page
+        assert "(ora italiana)" in html, page
     assert "noindex" in (out / "index.html").read_text(encoding="utf-8")
     st.close()

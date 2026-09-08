@@ -44,6 +44,23 @@ def it_thousands(x) -> str:
     return f"{int(float(x)):,}".replace(",", ".")
 
 
+def it_dec(v, nd: int = 2, plus: bool = False) -> str:
+    """Numero → stringa con virgola decimale italiana: 3.86 → '3,86' (plus=True → '+0,038')."""
+    if v is None:
+        return ""
+    s = f"{float(v):.{nd}f}".replace(".", ",")
+    return f"+{s}" if plus and float(v) >= 0 else s
+
+
+def it_from_utc(ts, tz) -> str:
+    """Timestamp UTC → '08/09/2026 15:36' nel fuso display (Europe/Rome)."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        t = t.tz_localize("UTC")
+    t = t.tz_convert(tz)
+    return f"{t.day:02d}/{t.month:02d}/{t.year} {t.hour:02d}:{t.minute:02d}"
+
+
 class SiteBuilder:
     def __init__(self, store: Store | None = None, out_dir: Path | None = None) -> None:
         self.store = store or Store()
@@ -53,6 +70,8 @@ class SiteBuilder:
                                autoescape=select_autoescape(["html"]), trim_blocks=True, lstrip_blocks=True)
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
+        self.env.filters["dec"] = it_dec
+        self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.now = datetime.now(timezone.utc)
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}

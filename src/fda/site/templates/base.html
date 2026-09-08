@@ -42,7 +42,7 @@ footer{max-width:1080px;margin:30px auto;padding:0 20px 30px;color:var(--mut);fo
     <a href="{{ root }}accuratezza.html">Accuratezza</a>
     <a href="{{ root }}stato.html">Stato fonti</a>
   </nav>
-  <span class="mut small" style="margin-left:auto">aggiornato {{ generated_at.strftime('%d/%m/%Y %H:%M') }} UTC</span>
+  <span class="mut small" style="margin-left:auto">aggiornato {{ generated_at|it_utc }} (ora italiana)</span>
 </header>
 <main>{% block content %}{% endblock %}</main>
 <footer>

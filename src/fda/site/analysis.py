@@ -8,6 +8,7 @@ Jinja2 rendono in HTML.
 from __future__ import annotations
 
 import ast
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -24,7 +25,8 @@ def _pct(p: float | None) -> str:
 
 
 def _f(x: Any, nd: int = 2) -> str:
-    return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}"
+    """Numero per il testo narrativo: virgola decimale italiana ('3,12'; '—' se manca)."""
+    return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}".replace(".", ",")
 
 
 def _first(df: pd.DataFrame) -> dict[str, Any]:
@@ -41,6 +43,65 @@ def _goals(info: dict, key: str, fixture: dict) -> int | None:
 def _val(d: dict, key: str, default=None):
     v = d.get(key, default)
     return default if v is None or (isinstance(v, float) and pd.isna(v)) else v
+
+
+# FotMob fornisce le condizioni meteo in inglese: mappa minima per il sito in italiano
+_WEATHER_IT = {
+    "sunny": "soleggiato", "clear": "sereno", "mostly clear": "per lo più sereno", "fair": "bel tempo",
+    "mostly sunny": "per lo più soleggiato",
+    "partly cloudy": "parzialmente nuvoloso", "mostly cloudy": "per lo più nuvoloso",
+    "cloudy": "nuvoloso", "overcast": "coperto", "rain": "pioggia", "light rain": "pioggia debole",
+    "heavy rain": "pioggia intensa", "drizzle": "pioggia leggera", "showers": "rovesci",
+    "rain showers": "rovesci di pioggia", "showers in the vicinity": "rovesci nelle vicinanze",
+    "thunderstorm": "temporale", "thunderstorms": "temporali", "thunder in the vicinity": "temporali nelle vicinanze",
+    "snow": "neve", "light snow": "neve debole", "heavy snow": "neve abbondante", "sleet": "nevischio",
+    "fog": "nebbia", "foggy": "nebbioso", "mist": "foschia", "haze": "foschia",
+    "windy": "ventoso", "wind": "ventoso",
+}
+
+
+def _weather_it(desc: str | None) -> str | None:
+    if not isinstance(desc, str) or not desc.strip():
+        return desc
+    t = desc.strip()
+    low = t.lower()
+    if low in _WEATHER_IT:
+        return _WEATHER_IT[low]
+    if "/" in low:  # varianti combinate di FotMob, es. "Partly Cloudy/Wind"
+        parts = [p.strip() for p in low.split("/")]
+        if all(p in _WEATHER_IT for p in parts):
+            return " e ".join(_WEATHER_IT[p] for p in parts)
+    return t
+
+
+# Rientri previsti degli indisponibili (campo expectedReturn di FotMob, in inglese)
+_MONTHS_IT = {"january": "gennaio", "february": "febbraio", "march": "marzo", "april": "aprile",
+              "may": "maggio", "june": "giugno", "july": "luglio", "august": "agosto",
+              "september": "settembre", "october": "ottobre", "november": "novembre", "december": "dicembre"}
+_RETURN_IT = {
+    "day to day": "giorno per giorno", "doubtful": "in dubbio", "unknown": "non nota",
+    "about 1-2 weeks": "circa 1-2 settimane", "about 2-4 weeks": "circa 2-4 settimane",
+    "about a week": "circa una settimana", "a few days": "pochi giorni", "a few weeks": "poche settimane",
+    "back in training": "rientrato agli allenamenti", "out for season": "fuori per tutta la stagione",
+    "out for tournament": "fuori per tutto il torneo", "suspended": "squalificato",
+}
+_RETURN_PART_IT = {"early": "inizio", "mid": "metà", "late": "fine"}
+
+
+def _return_it(s: str | None) -> str | None:
+    """'Mid October 2026' → 'metà ottobre 2026'; forme note tradotte, il resto invariato."""
+    if not isinstance(s, str) or not s.strip():
+        return s
+    t = s.strip()
+    if t.lower() in _RETURN_IT:
+        return _RETURN_IT[t.lower()]
+    m = re.match(r"^(Early|Mid|Late)\s+([A-Za-z]+)\s+(\d{4})$", t)
+    if m and m.group(2).lower() in _MONTHS_IT:
+        return f"{_RETURN_PART_IT[m.group(1).lower()]} {_MONTHS_IT[m.group(2).lower()]} {m.group(3)}"
+    m = re.match(r"^([A-Za-z]+)\s+(\d{4})$", t)
+    if m and m.group(1).lower() in _MONTHS_IT:
+        return f"{_MONTHS_IT[m.group(1).lower()]} {m.group(2)}"
+    return t
 
 
 class MatchAnalysis:
@@ -118,7 +179,7 @@ class MatchAnalysis:
                            & (self.lineup.role == "unavailable")]
         rows = rows.sort_values("market_value_eur", ascending=False, na_position="last")
         return [{"name": r.player_name, "type": _val(r._asdict(), "unavailability_type", "indisponibile"),
-                 "ret": _val(r._asdict(), "expected_return"), "value": _val(r._asdict(), "market_value_eur"),
+                 "ret": _return_it(_val(r._asdict(), "expected_return")), "value": _val(r._asdict(), "market_value_eur"),
                  "pos": POSITION_NAMES.get(int(r.usual_position_id) if pd.notna(r.usual_position_id) else 0, "")}
                 for r in rows.itertuples(index=False)]
 
@@ -284,7 +345,7 @@ class MatchAnalysis:
             if y is not None:
                 tone = "molto severo" if y >= 5 else "severo" if y >= 4.2 else "permissivo" if y <= 3.2 else "nella media"
                 s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita ({tone})"
-                         + (f", {ref['pens']} rigori in {ref['matches']} gare." if ref.get("pens") is not None else "."))
+                         + (f", {int(ref['pens'])} rigori in {int(ref['matches'])} gare." if ref.get("pens") is not None else "."))
         w = ctx.get("weather")
         if w and w.get("desc"):
             extra = ""
@@ -342,7 +403,7 @@ class MatchAnalysis:
                         "reds": _val(info, "referee_reds_total")},
             "stadium": {"name": _val(info, "stadium_name"), "city": _val(info, "stadium_city"),
                         "attendance": _val(info, "attendance")},
-            "weather": {"desc": _val(info, "weather_desc"), "temp": _val(info, "weather_temp_c"),
+            "weather": {"desc": _weather_it(_val(info, "weather_desc")), "temp": _val(info, "weather_temp_c"),
                         "precip": _val(info, "weather_precip_chance")},
             "h2h": (_val(info, "h2h_home_wins"), _val(info, "h2h_draws"), _val(info, "h2h_away_wins")),
             "prediction": self.prediction(match_id),
