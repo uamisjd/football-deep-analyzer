@@ -81,6 +81,27 @@ class FakeEspnNoStandings(FakeEspn):
         raise RuntimeError("standings temporarily unavailable")
 
 
+class FakeOpenMeteo:
+    """Previsione fissa, senza rete (per i test del passo meteo)."""
+
+    def __init__(self):
+        self.http = type("S", (), {"stats": type("T", (), {"requests": 1, "cache_hits": 0})()})()
+
+    def forecast(self, lat, lon, when):
+        return {"temp_c": 21.0, "precip_prob": 60.0, "desc": "pioggia debole", "code": 61,
+                "hour": f"{when:%Y-%m-%dT%H:00}"}
+
+
+class FakeFotMobNoWeather(FakeFotMob):
+    """Come FakeFotMob, ma la partita futura non ha ancora il meteo FotMob."""
+
+    def match_details_raw(self, match_id, finished_hint=None):
+        raw = super().match_details_raw(match_id, finished_hint)
+        if match_id == 5749669:  # la futura: meteo non ancora pubblicato da FotMob
+            raw["content"].pop("weather", None)
+        return raw
+
+
 class FakeFotMobNoTable(FakeFotMob):
     def league_raw(self, league_id, season_str=None):
         raise RuntimeError("leagues temporarily unavailable")
@@ -212,4 +233,47 @@ def test_collect_uses_espn_scoreboard_when_standings_fail(tmp_path):
     assert any("espn standings" in error for error in rep.errors)
     assert rep.espn_events > 0
     assert not st.read("espn_events").empty
+    st.close()
+
+
+def test_collect_openmeteo_weather_fallback(tmp_path):
+    """Passo meteo: previsione Open-Meteo solo per i futuri senza meteo FotMob e con coordinate."""
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMobNoWeather(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), openmeteo=FakeOpenMeteo(), today=date(2026, 9, 6),
+    )
+    assert rep.errors == []
+    wf = st.read("weather_forecast")
+    assert 5749669 in set(wf.match_id)          # futura (Udinese-Lazio) senza meteo FotMob
+    assert 5749645 not in set(wf.match_id)      # la finita non è un futura
+    assert wf.loc[wf.match_id == 5749669, "desc"].item() == "pioggia debole"
+    # richieste openmeteo registrate nel report
+    assert rep.requests["openmeteo"] >= 1
+    st.close()
+
+
+def test_collect_no_forecast_when_fotmob_weather_present(tmp_path):
+    """Se FotMob ha già il meteo non si chiama Open-Meteo (fonte primaria rispettata)."""
+    st = Store(tmp_path / "processed")
+    collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), openmeteo=FakeOpenMeteo(), today=date(2026, 9, 6),
+    )
+    assert st.read("weather_forecast").empty
+    st.close()
+
+
+def test_collect_skips_openmeteo_when_not_provided(tmp_path):
+    """Senza client Open-Meteo il passo meteo è disattivato (test offline, nessuna rete)."""
+    st = Store(tmp_path / "processed")
+    rep = collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert st.read("weather_forecast").empty
+    assert "openmeteo" not in rep.requests     # passo disattivato: nessuna fonte registrata
     st.close()

@@ -69,8 +69,8 @@
   <div class="card">
     <h2>Contesto</h2>
     <table>
-      {% if c.referee.name %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.yellows %} · {{ c.referee.yellows|dec }} gialli/gara{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens }} rigori{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds }} rossi{% endif %}{% if c.referee.matches %} ({{ c.referee.matches }} gare){% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
-      {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
+      {% if c.referee.name %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.yellows %} · {{ c.referee.yellows|dec }} gialli/gara{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} rigori{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} rossi{% endif %}{% if c.referee.matches %} ({{ c.referee.matches|int }} gare){% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
+      {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
       {% if c.h2h[0] is not none %}<tr><th>Precedenti</th><td>{{ c.h2h[0] }} vittorie {{ c.home_name }} · {{ c.h2h[1] }} pareggi · {{ c.h2h[2] }} vittorie {{ c.away_name }}</td></tr>{% endif %}
     </table>
     {% if c.h2h_list %}<p style="margin-top:10px"><b>Ultimi precedenti</b> <span class="small mut">(esito dal punto di vista di {{ c.home_name }})</span></p>
@@ -151,5 +151,5 @@
   {% elif c.momentum.pos_share <= 0.40 %}<p class="small">Momentum a favore di <b>{{ c.away_name }}</b> nel {{ ((1 - c.momentum.pos_share)*100)|round|int }}% dei minuti.</p>{% endif %}
 </div>
 {% endif %}
-<p class="small mut">Pagina generata automaticamente il {{ c.generated_at|it_utc }} (ora italiana). Fonti: FotMob (statistiche, formazioni, arbitro, meteo), Understat (xG di stagione), ESPN (classifica).</p>
+<p class="small mut">Pagina generata automaticamente il {{ c.generated_at|it_utc }} (ora italiana). Fonti: FotMob (statistiche, formazioni, indisponibili, arbitro, meteo, classifica), Understat (xG di stagione), football-data.co.uk (storico dei modelli).</p>
 {% endblock %}
