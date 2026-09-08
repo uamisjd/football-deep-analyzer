@@ -300,7 +300,8 @@ def daily_cmd(
     """Run giornaliero completo: collect → predict → build. È ciò che esegue GitHub Actions."""
     from typer.testing import CliRunner  # noqa: F401  (import di controllo)
 
-    collect_cmd(league_keys=league_keys, past_days=3, future_days=3, max_matches=40)
+    collect_cmd(league_keys=league_keys, past_days=3, future_days=3,
+                max_matches=40, max_backfill=40)
     if not skip_predict:
         try:
             predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
