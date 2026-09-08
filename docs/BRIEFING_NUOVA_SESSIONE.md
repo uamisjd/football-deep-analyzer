@@ -88,3 +88,17 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 - Niente di bloccante al momento (Telegram bot, protezione accesso e collettore locale sono fasi successive).
 - Da confermare col tempo: soglia/forma del monitoraggio Accuratezza (es. quanti match servono per una valutazione stabile per lega), e quando introdurre le coppe UCL/UEL per l'analisi dedicata (oggi solo calendario per la congestione).
+
+## Direttive utente persistenti (2026-09-08)
+- Le quote bookmaker non sono un requisito e non vanno prioritarizzate né mostrate come contenuto delle schede.
+- Obiettivo prioritario: nessun dato realmente mancante nelle schede; ogni partita deve avere la quantità corretta di contenuti, accurati, profondi e comparabili tra tutte le 7 leghe.
+- È richiesto un sistema che distingua tra dato assente, dato non ancora pubblicato dalla fonte e dato recuperato da fallback.
+- Prima di ogni modifica importante l’agente deve verificare ricerche web/GitHub e progetti open source riutilizzabili, annotando qui i risultati utili per le sessioni successive.
+- Suggerimenti e decisioni dell’utente vanno registrati in questo documento e in `docs/STATO.md`, così restano disponibili agli agenti futuri.
+
+### Ricerca fonti/progetti 2026-09-08
+- `probberechts/soccerdata`: scraper multi-fonte (ESPN, FBref, Football-Data, SofaScore, Understat, WhoScored, ClubElo); utile come riferimento per fallback e normalizzazione, non da importare alla cieca.
+- `oseymour/ScraperFC`: copre FBref, SofaScore, Transfermarkt, Understat e ClubElo; utile soprattutto per pattern di rate limiting/cache.
+- `tunjayoff/sofascore_scraper`: pipeline SofaScore con calendario, dettagli, statistiche, formazioni, incidenti e H2H; candidato per studiare gli endpoint di riserva.
+- `statsbomb/open-data`: eventi dettagliati e xG per competizioni selezionate, utile per validazione storica, non per copertura live delle 7 leghe.
+- Conclusione: nessuna fonte gratuita unica garantisce ogni campo; mantenere FotMob primaria, aggiungere fallback mirati e conservare fonte/timestamp/confidenza per ogni contenuto.
