@@ -4,6 +4,8 @@
 > **Metodo:** navigazione completa del sito generato (`site/`), ispezione del codice (`src/fda/`), query sui dati (`data/processed/*.parquet`), GitHub (PR/run), ricerca web mirata.
 > Ogni numero qui sotto è **misurato oggi**, non presunto.
 
+> ✅ **Stato di avanzamento (stessa sessione):** B1, B2, B3, B4, B6, B7 e M1 **implementati e committati** (commit `55539ca` per P0, `7b1a42c` per P1). Restano aperti: **B5** (collegare/rimuovere SofaScore), **M2/M3/M5** (roadmap) e la **pulizia ruff E501**. La verifica dal vivo di Open-Meteo e di `future_days=7` avverrà dopo il merge in Actions (dal sandbox `api.open-meteo.com` è irraggiungibile).
+
 ---
 
 ## 1. Sintesi: cosa funziona (misurato)
