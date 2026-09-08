@@ -228,21 +228,12 @@ def predict_cmd(
     total = 0
     for lg in leagues(league_keys or None):
         try:
-            hist = hc.seasons(lg, range(yr - seasons_back, yr))
-            # risultati della stagione corrente dal calendario FotMob già raccolto
-            cur = pd.DataFrame()
-            if not fixtures.empty:
-                cur = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "finished")]
-                cur = pd.DataFrame({"date": pd.to_datetime(cur.utc_kickoff).dt.tz_localize(None),
-                                    "season": season(), "league_key": lg.key,
-                                    "home": cur.home_name, "away": cur.away_name,
-                                    "home_goals": cur.home_goals.astype(int), "away_goals": cur.away_goals.astype(int)})
-            hist = pd.concat([hist, cur], ignore_index=True) if not hist.empty else cur
+            from .models.season_sim import build_hist
+
+            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr)
             if hist.empty:
                 console.print(f"[yellow]{lg.name}: nessuno storico disponibile, previsione saltata[/yellow]")
                 continue
-            hist["home"] = hist["home"].map(canonical)
-            hist["away"] = hist["away"].map(canonical)
             upcoming = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "scheduled")
                                 & (fixtures.utc_kickoff <= now + timedelta(days=days_ahead))] if not fixtures.empty else pd.DataFrame()
             if upcoming.empty:
@@ -261,6 +252,31 @@ def predict_cmd(
         except Exception as exc:  # una lega senza storico non deve interrompere le altre
             console.print(f"[yellow]{lg.name}: previsione saltata ({type(exc).__name__}: {exc})[/yellow]")
     console.print(f"previsioni salvate: {total} | richieste storico={hc.http.stats.requests}")
+    store.close()
+
+
+@app.command("simulate")
+def simulate_cmd(
+    # stesso stile degli altri comandi (typer richiede la chiamata nel default)
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
+    sims: int = typer.Option(10000, help="Numero di stagioni simulate per lega"),
+    seasons_back: int = typer.Option(3, help="Stagioni storiche oltre a quella corrente"),
+) -> None:
+    """Monte Carlo del resto di stagione → tabella `season_sim` (prob. titolo/top-4/retrocessione)."""
+    from .models.season_sim import simulate_all
+    from .store import Store
+
+    store = Store()
+    res = simulate_all(league_keys or None, store=store, n_sims=sims, seasons_back=seasons_back)
+    if res.empty:
+        console.print("[yellow]nessuna simulazione salvata (storico o calendario mancanti)[/yellow]")
+    else:
+        for lk, grp in res.groupby("league_key"):
+            top3 = grp.sort_values("exp_points", ascending=False).head(3)
+            console.print(f"{lk}: " + " · ".join(
+                f"{r.team} {r.exp_points:.0f}pt ({r.p_title:.0%} titolo, {r.p_rel:.0%} retro)"
+                for r in top3.itertuples()))
+        console.print(f"righe season_sim: {len(res)}")
     store.close()
 
 
@@ -290,4 +306,13 @@ def daily_cmd(
             predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
         except Exception as exc:  # i modelli non devono bloccare la pubblicazione dei dati
             console.print(f"[red]predict fallito: {exc}[/red]")
+        try:  # Monte Carlo stagione: fallisce in isolato, il sito esce comunque
+            from .models.season_sim import simulate_all
+            from .store import Store
+
+            store = Store()
+            simulate_all(league_keys or None, store=store, n_sims=10000)
+            store.close()
+        except Exception as exc:  # noqa: BLE001 — la simulazione non deve bloccare il sito
+            console.print(f"[red]simulate fallito: {exc}[/red]")
     build_cmd()

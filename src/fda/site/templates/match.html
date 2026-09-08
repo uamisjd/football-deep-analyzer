@@ -41,7 +41,6 @@
 {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
   <div class="card">
     <h2>{{ name }}</h2>
-    {% set st = c[side ~ '_standing'] %}{% if st %}<p>Classifica: <b>{{ st.rank }}°</b> con {{ st.points }} punti in {{ st.played }} gare ({{ st.wins }}V {{ st.draws }}N {{ st.losses }}P, gol {{ st.goals_for }}:{{ st.goals_against }})</p>{% endif %}
     {% set f = c[side ~ '_form'] %}{% if f %}<p>Forma: {% for x in f %}<span class="pill {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}
       <span class="small mut">{% for x in f %}{{ x.gf }}-{{ x.ga }} {{ 'vs' if x.home else '@' }} {{ x.opponent }}{{ ', ' if not loop.last }}{% endfor %}</span></p>{% endif %}
     {% set xg = c[side ~ '_xg'] %}{% if xg %}<p>Stagione ({{ xg.source }}, {{ xg.played }} gare): xG {{ xg.xg_pm|dec }} / xGA {{ xg.xga_pm|dec }} a partita{% if xg.xpts is not none %} · xPTS {{ xg.xpts|dec(1) }} vs {{ xg.pts }} punti reali{% endif %}{% if xg.ppda %} · PPDA {{ xg.ppda|dec(1) }}{% endif %}</p>{% endif %}
@@ -53,17 +52,31 @@
 {% endfor %}
 </div>
 
+{% if c.season_compare %}
+<div class="card">
+  <h2>Confronto di stagione</h2>
+  <table>
+    <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
+    {% for r in c.season_compare.rows %}
+    <tr><th>{{ r.label }}</th><td{% if r.best == 'h' %} class="best"{% endif %}>{{ r.h }}</td><td{% if r.best == 'a' %} class="best"{% endif %}>{{ r.a }}</td></tr>
+    {% endfor %}
+  </table>
+  <p class="small mut">{{ c.season_compare.note }}</p>
+</div>
+{% endif %}
+
 <div class="grid">
   <div class="card">
     <h2>Contesto</h2>
     <table>
-      {% if c.referee.name %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.yellows %} · {{ c.referee.yellows|dec }} gialli/gara{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens }} rigori{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds }} rossi{% endif %}{% if c.referee.matches %} ({{ c.referee.matches }} gare){% endif %}</td></tr>{% endif %}
-      {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}</td></tr>{% endif %}
+      {% if c.referee.name %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.yellows %} · {{ c.referee.yellows|dec }} gialli/gara{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens }} rigori{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds }} rossi{% endif %}{% if c.referee.matches %} ({{ c.referee.matches }} gare){% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
+      {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
       {% if c.h2h[0] is not none %}<tr><th>Precedenti</th><td>{{ c.h2h[0] }} vittorie {{ c.home_name }} · {{ c.h2h[1] }} pareggi · {{ c.h2h[2] }} vittorie {{ c.away_name }}</td></tr>{% endif %}
     </table>
     {% if c.h2h_list %}<p style="margin-top:10px"><b>Ultimi precedenti</b> <span class="small mut">(esito dal punto di vista di {{ c.home_name }})</span></p>
-    <table>{% for g in c.h2h_list %}<tr><td class="mut small" style="width:86px">{{ g.date }}</td><td class="small">{{ g.home }} <b>{{ g.score }}</b> {{ g.away }}</td><td class="mut small">{{ g.league }}</td><td class="r"><span class="pill {{ g.res }}" title="esito di {{ c.home_name }}">{{ g.res }}</span></td></tr>{% endfor %}</table>{% endif %}
-    </table>
+    <table>{% for g in c.h2h_list %}<tr><td class="mut small" style="width:86px">{{ g.date }}</td><td class="small">{{ g.home }} <b>{{ g.score }}</b> {{ g.away }}</td><td class="mut small">{{ g.league }}</td><td class="r"><span class="pill {{ g.res }}" title="esito di {{ c.home_name }}">{{ g.res }}</span></td></tr>{% endfor %}</table>
+    {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">Nei {{ c.h2h_stats.n }} precedenti mostrati: <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}% dei casi.</p>{% endif %}
+    {% endif %}
   </div>
   {% if c.key_stats %}
   <div class="card">

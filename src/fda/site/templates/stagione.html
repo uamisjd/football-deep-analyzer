@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Proiezioni di stagione</h1>
+{% if subtitle %}<p class="small mut">{{ subtitle }}</p>{% else %}
+<p class="small mut">Monte Carlo su {{ n_sims }} stagioni simulate per lega — Dixon-Coles + Elo (ensemble 70/30)
+  sui punteggi delle gare restanti, differenza reti simulata per i tie-break. Aggiornato: {{ updated }}.
+  Le squadre senza storico sufficiente (neopromosse) usano parametri neutri di lega.
+  «Retro» segue le regole di ogni campionato (POR1: 2 retrocessioni dirette; NED1: 2 dirette + playoff; le altre: 3).</p>{% endif %}
+{% for lg in leagues %}
+<div class="card">
+  <h2>{{ lg.name }} <span class="tag">{{ lg.key }}</span></h2>
+  <table>
+    <tr><th>Squadra</th><th class="r">PG</th><th class="r">Pt</th><th class="r">Pt attesi</th><th class="r">Media pos.</th>
+        <th class="r">1°</th><th class="r">Top-4</th><th class="r">Retro</th></tr>
+    {% for r in lg.rows %}
+    <tr><td>{{ r.team }}</td><td class="r">{{ r.played }}</td><td class="r"><b>{{ r.points|int }}</b></td>
+        <td class="r">{{ r.exp_points|dec(1) }}</td><td class="r">{{ r.pos_mean|dec(1) }}</td>
+        <td class="r">{{ (r.p_title * 100)|dec(1) }}%</td><td class="r">{{ (r.p_top4 * 100)|dec(1) }}%</td>
+        <td class="r">{{ (r.p_rel * 100)|dec(1) }}%</td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endfor %}
+{% endblock %}
