@@ -131,6 +131,7 @@ def test_site_build_end_to_end(tmp_path):
     assert not any(g in post for g in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
     assert "(ora italiana)" in post and " UTC ·" not in post
     assert "spettatori 57.000" in post and "57.000.0" not in post   # formato intero italiano
+    assert "Classifica:" in post and "<b>1°</b> con 9 punti" in post   # classifica FotMob (Inter 1°)
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
     assert post.count("<svg") == 3          # 2 cartine + 1 momentum
