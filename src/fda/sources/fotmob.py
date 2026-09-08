@@ -43,6 +43,25 @@ def _num(value: Any) -> float | None:
         return None
 
 
+def _int(value: Any) -> int | None:
+    if value is None or value == "":
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _scores(scores_str: Any) -> tuple[int | None, int | None]:
+    """'70-24' → (70, 24); qualsiasi formato inatteso → (None, None)."""
+    if not isinstance(scores_str, str):
+        return None, None
+    parts = scores_str.replace(" ", "").split("-")
+    if len(parts) != 2:
+        return None, None
+    return _int(parts[0]), _int(parts[1])
+
+
 # ------------------------------------------------------------------------------------------
 # Record piatti (schema stabile verso il resto del progetto)
 # ------------------------------------------------------------------------------------------
@@ -61,6 +80,23 @@ class Fixture:
     away_goals: int | None
     status: str          # scheduled | live | finished | cancelled | postponed
     source: str = "fotmob"
+
+
+@dataclass
+class FotMobStandingRow:
+    """Riga della tabella di lega (stessi campi di ESPN per riuso template/storage)."""
+    league_code: str
+    team_id: int
+    team_name: str
+    rank: int | None
+    played: int | None
+    wins: int | None
+    draws: int | None
+    losses: int | None
+    goals_for: int | None
+    goals_against: int | None
+    goal_diff: int | None
+    points: int | None
 
 
 @dataclass
@@ -278,6 +314,35 @@ class FotMobClient:
                 away_goals=None if ag is None else int(ag),
                 status=status,
             ))
+        return out
+
+    @staticmethod
+    def parse_league_table(league_code: str, raw: dict) -> list[FotMobStandingRow]:
+        """Tabella di lega da `leagues` (split `all`).
+
+        Il nodo `table` è documentato sia come lista (`[0].data.table.all`) che come
+        dict (`table.data.table.all`): si gestiscono entrambe le forme.
+        """
+        node = raw.get("table")
+        if isinstance(node, list):
+            node = node[0] if node else {}
+        data = ((node or {}).get("data") or {})
+        rows = ((data.get("table") or {}).get("all")) or []
+        out: list[FotMobStandingRow] = []
+        for r in rows:
+            if not isinstance(r, dict) or r.get("id") is None:
+                continue
+            gf, ga = _scores(r.get("scoresStr"))
+            gd = _int(r.get("goalConDiff"))
+            if gd is None and gf is not None and ga is not None:
+                gd = gf - ga
+            out.append(FotMobStandingRow(
+                league_code=league_code, team_id=int(r["id"]), team_name=r.get("name", ""),
+                rank=_int(r.get("idx")), played=_int(r.get("played")),
+                wins=_int(r.get("wins")), draws=_int(r.get("draws")), losses=_int(r.get("losses")),
+                goals_for=gf, goals_against=ga, goal_diff=gd, points=_int(r.get("pts")),
+            ))
+        out.sort(key=lambda x: (x.rank is None, x.rank or 0))
         return out
 
     def parse_match(self, raw: dict) -> MatchBundle:
