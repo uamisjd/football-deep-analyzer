@@ -186,7 +186,28 @@ class MatchAnalysis:
         big = s[s.xg >= 0.3]
         return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(s.is_on_target.fillna(False).sum()),
                 "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": int(len(big)),
+                "goals": int((s.event_type == "Goal").sum()),
                 "best": _first(s.sort_values("xg", ascending=False)[["player_name", "xg", "minute", "event_type"]])}
+
+    def shot_map(self, match_id: int, team_id: int) -> list[dict[str, Any]]:
+        """Tiri di una squadra pronti per l'SVG: mezzo campo offensivo 105×68 m → 420×272 px (porta a destra)."""
+        if self.shots.empty:
+            return []
+        s = self.shots[(self.shots.match_id == match_id) & (self.shots.team_id == team_id)].dropna(subset=["x", "y"])
+        out = []
+        for r in s.itertuples(index=False):
+            xg = float(r.xg) if pd.notna(r.xg) else 0.0
+            goal = r.event_type == "Goal"
+            on_target = bool(r.is_on_target) if pd.notna(r.is_on_target) else False
+            blocked = bool(r.is_blocked) if pd.notna(r.is_blocked) else False
+            kind = "goal" if goal else "target" if on_target else "blocked" if blocked else "miss"
+            out.append({"px": round(min(max((float(r.x) - 52.5) * 8.0, 4.0), 412.0), 1),
+                        "py": round(min(max(float(r.y) * 4.0, 8.0), 264.0), 1),
+                        "r": round(2.5 + 8.5 * xg ** 0.5, 1),
+                        "xg": xg, "kind": kind, "player": r.player_name,
+                        "minute": int(r.minute) if pd.notna(r.minute) else None})
+        out.sort(key=lambda d: -d["xg"])  # i tiri più piccoli vengono disegnati sopra
+        return out
 
     # ---- previsione ---------------------------------------------------------------------------------
     def prediction(self, match_id: int) -> dict[str, Any] | None:
@@ -332,6 +353,8 @@ class MatchAnalysis:
             "top_players": self.top_players(match_id) if status == "finished" else [],
             "home_shots": self.shot_summary(match_id, home_id) if status == "finished" else {},
             "away_shots": self.shot_summary(match_id, away_id) if status == "finished" else {},
+            "home_shotmap": self.shot_map(match_id, home_id) if status == "finished" else [],
+            "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
             "generated_at": datetime.now(timezone.utc),
         }
         ctx["narrative"] = self.narrative(ctx)

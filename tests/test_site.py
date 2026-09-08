@@ -84,6 +84,11 @@ def test_site_build_end_to_end(tmp_path):
     assert not any(g in post for g in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
     assert "(ora italiana)" in post and " UTC ·" not in post
     assert "spettatori 57.000" in post and "57.000.0" not in post   # formato intero italiano
+    # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
+    assert "Cartina dei tiri" in post
+    assert post.count("<svg") == 2
+    assert "xG 0,88" in post                       # gol di Lautaro Martínez, decimale italiano
+    assert "Nessun tiro registrato" in post        # pannello Monza vuoto
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre
