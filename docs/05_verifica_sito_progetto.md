@@ -39,10 +39,10 @@ Il narrativo usa già `int(...)`, il template no.
 Nella cronaca/timeline e nei marker gol compare `45+1.0'` invece di `45+1'`.
 **Fix:** in `src/fda/site/analysis.py`, `timeline()` riga ~367, castare `added` a `int` (il valore arriva da `minute_added` come float).
 
-### B3 — Attribuzione fonti non allineata
-- Il footer globale cita **«Open-Meteo»** come fonte, ma Open-Meteo **non è implementato** (esiste solo il blocco in `config/sources.yaml` e il riferimento nel footer; nessun client, nessun uso in `collect.py`). Il meteo mostrato arriva solo da FotMob.
-- In fondo a ogni pagina partita: *«Fonti: … ESPN (classifica)»*, ma la classifica è ormai **FotMob-primaria** (ESPN è solo fallback, e oggi fallisce).
-**Fix:** allineare i testi alle fonti reali (o implementare Open-Meteo, vedi M1).
+### B3 — Attribuzione fonti non allineata ✅ (risolto, commit `55539ca`)
+- ~~Il footer globale cita **«Open-Meteo»** come fonte, ma Open-Meteo **non è implementato**~~ → implementato (vedi M1) e ora citato correttamente.
+- ~~In fondo a ogni pagina partita: *«Fonti: … ESPN (classifica)»*, ma la classifica è ormai **FotMob-primaria**~~ → testo allineato: «FotMob (… classifica)».
+**Fix:** allineare i testi alle fonti reali.
 
 ### B4 — Rumore «ERRORE» su ESPN standings (7 righe ogni run)
 `stato.html` mostra 7 righe `espn:<lega>` con `ERRORE HTTP 403 …/standings` **a ogni run**. È cronico e noto; poiché la classifica FotMob è primaria e funziona, il 403 non ha impatto sui contenuti ma inquina la pagina «Stato fonti».
@@ -64,8 +64,8 @@ In più schede lo stesso giocatore compare sia tra gli **Indisponibili** sia nel
 
 ## 3. Miglioramenti / contenuti mancanti (roadmap, non ancora fatti)
 
-### M1 — Meteo previsionale Open-Meteo *(candidata prioritaria)*
-Oggi il meteo è solo da FotMob, pubblicato a ridosso della gara: per la maggior parte delle 73 partite future risulta «atteso». **Open-Meteo** (verificato: gratuito, senza chiave, previsioni orarie fino a **16 giorni**, ~10.000 richieste/giorno, licenza CC BY 4.0) riempirebbe il meteo per **tutte** le partite future. Le coordinate dello stadio sono già nei dati FotMob (`matchDetails`). Il blocco di config esiste già in `config/sources.yaml`. È il singolo intervento a maggior valore sul «vuoto» attuale.
+### M1 — Meteo previsionale Open-Meteo ✅ (implementato, commit `7b1a42c` — verifica dal vivo dopo il merge)
+Oggi il meteo è solo da FotMob, pubblicato a ridosso della gara: per la maggior parte delle 73 partite future risulta «atteso». **Open-Meteo** (verificato: gratuito, senza chiave, previsioni orarie fino a **16 giorni**, ~10.000 richieste/giorno, licenza CC BY 4.0) riempie il meteo per **tutte** le partite future. Le coordinate dello stadio sono già nei dati FotMob (`matchDetails`). Implementato: client `sources/openmeteo.py`, passo in `collect_league` (tabella `weather_forecast`), fallback solo se FotMob non ha ancora il meteo, `fda daily` con `future_days=7`.
 
 ### M2 — Diffidati (Fase 2)
 Non implementati: FotMob non li espone nei dati raccolti. Richiederebbe conteggio gialli stagionali da `events` + soglie di lega (5ª ammonizione, ecc.).
@@ -100,4 +100,4 @@ Notifiche Telegram, xG proprio su StatsBomb Open Data, collettore locale per fon
 
 ## Prossimo passo
 
-Consegnato questo report all'utente. Se conferma, si parte da **P0** (fix B1–B4 con test) in un unico giro, poi **P1** (M1 + B7 + B6), secondo la policy delle PR (`00_regole_di_lavoro.md` sez. D: merge sempre dell'utente).
+✅ **P0** (B1–B4) e **P1** (M1 + B7 + B6) completati e in PR #16. Restano, per sessioni future: **B5** (collegare o rimuovere il client SofaScore), **M2** diffidati, **M3** schede giocatore, **M5** Telegram/xG proprio, e la **pulizia ruff E501** (257 pre-esistenti, CI non bloccata). La verifica dal vivo di Open-Meteo e di `future_days=7` avverrà al primo run `daily` dopo il merge.

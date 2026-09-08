@@ -185,7 +185,7 @@ def collect_league(
 
     # 5) meteo previsionale Open-Meteo (fallback: riempie il vuoto FotMob sui futuri) ------
     def _weather() -> int:
-        if om is None:
+        if om is None or not fixtures:
             return 0
         horizon = today + timedelta(days=WEATHER_HORIZON_DAYS)
         upcoming = [f for f in fixtures
