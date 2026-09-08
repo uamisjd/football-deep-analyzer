@@ -2,9 +2,9 @@
 {% block title %}{{ c.home_name }} - {{ c.away_name }} — analisi{% endblock %}
 {% block content %}
 <p class="mut small"><a href="{{ root }}index.html">← Oggi</a> · {{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %} ·
-  {{ c.utc_kickoff.strftime('%A %d/%m/%Y %H:%M') }} UTC{% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</p>
+  {{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</p>
 <h1>{{ c.home_name }} <span class="mut">{% if c.home_goals is not none %}{{ c.home_goals }} - {{ c.away_goals }}{% else %}vs{% endif %}</span> {{ c.away_name }}</h1>
-{% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut">xG {{ '%.2f'|format(c.home_xg_match) }} - {{ '%.2f'|format(c.away_xg_match) }}{% if c.home_xgot_match is not none %} · xGOT {{ '%.2f'|format(c.home_xgot_match) }} - {{ '%.2f'|format(c.away_xgot_match) }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ '{:,}'.format(c.stadium.attendance).replace(',', '.') }}{% endif %}</p>{% endif %}
+{% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut">xG {{ '%.2f'|format(c.home_xg_match) }} - {{ '%.2f'|format(c.away_xg_match) }}{% if c.home_xgot_match is not none %} · xGOT {{ '%.2f'|format(c.home_xgot_match) }} - {{ '%.2f'|format(c.away_xgot_match) }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ c.stadium.attendance|it_num }}{% endif %}</p>{% endif %}
 
 <div class="card">
   <h2>{% if c.status == 'finished' %}Lettura della partita{% else %}Analisi pre-partita{% endif %}</h2>

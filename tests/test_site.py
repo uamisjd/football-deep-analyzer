@@ -41,6 +41,10 @@ def _seed(tmp_path):
     fx.loc[fx.match_id == 5749645, "utc_kickoff"] = now - timedelta(days=1)
     fx.loc[fx.match_id == 5749669, "utc_kickoff"] = now + timedelta(days=1)
     st.write("fixtures", fx)
+    # affluenza sulla partita finita (nel parquet arriva come float, es. 57000.0)
+    mi = st.read("match_info")
+    mi.loc[mi.match_id == 5749645, "attendance"] = 57000
+    st.write("match_info", mi)
     # una previsione fatta prima della partita finita e una per la futura
     st.upsert("predictions", [
         {"match_id": 5749645, "league_key": "ITA1", "home": "Inter", "away": "Monza", "model": "ensemble",
@@ -75,14 +79,23 @@ def test_site_build_end_to_end(tmp_path):
     assert "xG 3.86 - 2.43" in post and "Cronaca essenziale" in post
     assert "Lautaro Martínez" in post and "Politano" in post
     assert "Il modello assegnava 62%" in post          # valutazione a posteriori
+    # data in italiano con ora locale (niente weekday inglese né etichetta UTC fuorviante)
+    assert any(g in post for g in ("lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"))
+    assert not any(g in post for g in ("Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"))
+    assert "(ora italiana)" in post and " UTC ·" not in post
+    assert "spettatori 57.000" in post and "57.000.0" not in post   # formato intero italiano
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre
     assert "Indisponibili" in pre and "McTominay" in pre and "Mid October 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
+    assert "(ora italiana)" in pre
 
     acc = (out / "accuratezza.html").read_text(encoding="utf-8")
     assert "Riepilogo" in acc and "Serie A" in acc     # una partita valutata
+    assert "Δ vs naive" in acc and "Calibrazione" in acc and "Frequenza osservata" in acc
+    assert "✓" in acc          # Inter 4-1 Monza: top=1 (62%) azzeccato
+    assert "0.087" in acc      # RPS della singola previsione 0.62/0.21/0.17 con esito 1
     assert "noindex" in (out / "index.html").read_text(encoding="utf-8")
     st.close()
