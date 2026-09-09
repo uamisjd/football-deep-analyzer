@@ -43,7 +43,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 5. **Pulizia ruff** (opzionale): 254 segnalazioni pre-esistenti `E501`/`E741` su `main` (CI esegue solo pytest, non blocca) — un turno con `ruff --fix` + revisione.
 6. ~~**Card post-partita «Migliori in campo» per squadra**~~ ✅ (PR #17).
 7. ~~**Card pre-partita «Fatti rilevanti» (insights FotMob)**~~ ✅ (sessione `arena/01a08630`): traduzione a template, max 3, 0 inglese, 7/7 leghe.
-8. Poi la roadmap (`01` §8): **B5** SofaScore **da rimuovere** (decisione 2026-09-09, codice inerte — commit dedicato), **fase 3** schede giocatore (radar/percentili/xG per 90, infortuni), **fase 4** quote The Odds API (serve `ODDS_API_KEY`, non prioritario), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
+8. Poi la roadmap (`01` §8): ~~**B5** SofaScore~~ ✅ rimosso 2026-09-09 (codice mai collegato), **fase 3** schede giocatore (radar/percentili/xG per 90, infortuni), **fase 4** quote The Odds API (serve `ODDS_API_KEY`, non prioritario), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
 
 ## 4. Cosa fare appena entri (checklist rapida)
 
