@@ -111,6 +111,148 @@ def _it2(v: float) -> str:
     return f"{float(v):.2f}".replace(".", ",")
 
 
+# Fatti FotMob (`insights`): testi inglesi a template. Si traducono SOLO i pattern
+# oggettivi (streak, gol recenti, testa-a-testa, capocannoniere). Qualsiasi altra
+# frase — hype («most shots on target»), marketing, o forma sconosciuta — viene
+# scartata: sul sito non compare mai un testo non tradotto.
+_INSIGHT_EN_LEAK = re.compile(
+    r"\b(haven't|have scored|have (won|lost|kept|been|conceded)|clean sheet|"
+    r"their last|matches|meetings|attempts|competition|ranked|average)\b",
+    re.I,
+)
+
+
+def _n_partite(n: int) -> str:
+    return "1 partita" if n == 1 else f"{n} partite"
+
+
+def _n_incontri(n: int) -> str:
+    return "1 incontro" if n == 1 else f"{n} incontri"
+
+
+def _n_confronti(n: int) -> str:
+    return "1 confronto" if n == 1 else f"{n} confronti"
+
+
+def translate_insight(text: str) -> dict[str, Any] | None:
+    """Traduce un fatto FotMob. ``None`` = non mostrare (niente inglese a schermo).
+
+    Il testo restituito è il predicato (minuscolo): il template antepone la squadra.
+    """
+    if not isinstance(text, str):
+        return None
+    t = text.strip()
+    if not t:
+        return None
+
+    m = re.fullmatch(r"Have scored (\d+) goals in their last (\d+) matches", t)
+    if m:
+        n, k = int(m.group(1)), int(m.group(2))
+        if k == 1:
+            body = f"ha segnato {n} gol nell'ultima partita"
+        else:
+            body = f"ha segnato {n} gol nelle ultime {k} partite"
+        return {"text": body, "kind": "goals", "priority": 80}
+
+    m = re.fullmatch(r"Haven't scored in their last (\d+) matches", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"non segna da {_n_partite(n)}", "kind": "goals", "priority": 82}
+
+    m = re.fullmatch(r"Haven't lost in (\d+) matches", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"imbattuta da {_n_partite(n)}", "kind": "streak", "priority": 90}
+
+    m = re.fullmatch(r"Haven't won a match in (\d+) attempts", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"non vince da {_n_partite(n)}", "kind": "streak", "priority": 88}
+
+    m = re.fullmatch(r"Have lost their last (\d+) matches", t)
+    if m:
+        n = int(m.group(1))
+        if n == 1:
+            body = "ha perso l'ultima partita"
+        else:
+            body = f"ha perso le ultime {n} partite"
+        return {"text": body, "kind": "streak", "priority": 89}
+
+    m = re.fullmatch(r"Have won their last (\d+) matches", t)
+    if m:
+        n = int(m.group(1))
+        if n == 1:
+            body = "ha vinto l'ultima partita"
+        else:
+            body = f"ha vinto le ultime {n} partite"
+        return {"text": body, "kind": "streak", "priority": 91}
+
+    m = re.fullmatch(r"Haven't kept a clean sheet in (\d+) matches", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"non tiene la porta inviolata da {_n_partite(n)}",
+                "kind": "clean_sheet", "priority": 70}
+
+    m = re.fullmatch(
+        r"(.+) haven't lost to (.+) in their last (\d+) meetings \((\d+)W, (\d+)D\)\.", t)
+    if m:
+        opp, n, w, d = m.group(2), int(m.group(3)), int(m.group(4)), int(m.group(5))
+        return {"text": f"non perde contro {opp} da {_n_incontri(n)} ({w}V, {d}N)",
+                "kind": "h2h", "priority": 100}
+
+    m = re.fullmatch(r"(.+) have won the previous (\d+) matches against (.+)\.", t)
+    if m:
+        n, opp = int(m.group(2)), m.group(3)
+        if n == 1:
+            body = f"ha vinto la precedente partita contro {opp}"
+        else:
+            body = f"ha vinto le precedenti {n} partite contro {opp}"
+        return {"text": body, "kind": "h2h", "priority": 98}
+
+    m = re.fullmatch(
+        r"(.+) and (.+) have not drawn any of their last (\d+) matches against each other\.", t)
+    if m:
+        n = int(m.group(3))
+        return {"text": f"nessun pareggio negli ultimi {_n_confronti(n)} diretti",
+                "kind": "h2h", "priority": 92}
+
+    m = re.fullmatch(
+        r"(.+) and (.+) have drawn their last (\d+) matches against each other\.", t)
+    if m:
+        n = int(m.group(3))
+        if n == 1:
+            body = "ha pareggiato l'ultimo confronto diretto"
+        else:
+            body = f"ha pareggiato gli ultimi {n} confronti diretti"
+        return {"text": body, "kind": "h2h", "priority": 93}
+
+    m = re.fullmatch(r"(.+) is the competition's top scorer \((\d+)\)", t)
+    if m:
+        name, n = m.group(1).strip(), int(m.group(2))
+        if not name:
+            return None
+        return {"text": f"{name} è il capocannoniere del campionato ({n} gol)",
+                "kind": "scorer", "priority": 55}
+
+    return None
+
+
+def select_insights(rows: list[dict[str, Any]], n: int = 3) -> list[dict[str, Any]]:
+    """Sceglie al più ``n`` fatti: priorità alta, al più uno per (kind, squadra)."""
+    ranked = sorted(rows, key=lambda r: (-int(r["priority"]), r["team"], r["text"]))
+    picked: list[dict[str, Any]] = []
+    seen: set[tuple[str, int]] = set()
+    for r in ranked:
+        key = (str(r["kind"]), int(r["team_id"]))
+        if key in seen:
+            continue
+        seen.add(key)
+        picked.append(r)
+        if len(picked) >= n:
+            break
+    return picked
+
+
 def _signed_int(v: Any) -> str:
     """+6 / -3 / 0 (differenza reti con segno)."""
     try:
@@ -136,6 +278,7 @@ class MatchAnalysis:
         self.standings = store.read("espn_standings")
         self.momentum_df = store.read("momentum")
         self.h2h_df = store.read("h2h")
+        self.insights_df = store.read("insights")
         self.weather_forecast = store.read("weather_forecast")
 
     # ---- forma recente da calendario --------------------------------------------------------
@@ -571,6 +714,48 @@ class MatchAnalysis:
                         "score": f"{hg}-{ag}", "res": res})
         return out
 
+    def match_insights(self, match_id: int, home_id: int, away_id: int,
+                       home_name: str, away_name: str, n: int = 3) -> list[dict[str, Any]]:
+        """Fatti pre-partita: tradotti, filtrati, al più ``n``, mai in inglese.
+
+        Fonte: tabella ``insights`` (FotMob ``matchFacts.insights``). Si tengono
+        solo streak / gol recenti / testa-a-testa / capocannoniere. I testi non
+        traducibili e i fatti «hype» (most X in the competition) sono scartati.
+        """
+        if self.insights_df.empty or "text" not in self.insights_df.columns:
+            return []
+        rows = self.insights_df[self.insights_df.match_id == match_id]
+        if rows.empty:
+            return []
+        names = {int(home_id): home_name, int(away_id): away_name}
+        out: list[dict[str, Any]] = []
+        seen_text: set[str] = set()
+        for r in rows.itertuples(index=False):
+            d = r._asdict()
+            tid = _val(d, "team_id")
+            if tid is None or pd.isna(tid):
+                continue
+            try:
+                team_id = int(tid)
+            except (TypeError, ValueError):
+                continue
+            if team_id not in names:
+                continue
+            raw = _val(d, "text")
+            tr = translate_insight(raw if isinstance(raw, str) else "")
+            if not tr:
+                continue
+            body = tr["text"]
+            if _INSIGHT_EN_LEAK.search(body):
+                continue  # rete di sicurezza: mai inglese a schermo
+            if body in seen_text:
+                continue
+            seen_text.add(body)
+            out.append({"team": names[team_id], "team_id": team_id,
+                        "side": "home" if team_id == home_id else "away",
+                        "text": body, "kind": tr["kind"], "priority": tr["priority"]})
+        return select_insights(out, n=n)
+
     def h2h_stats(self, match_id: int, home_id: int, away_id: int, kickoff: pd.Timestamp,
                   n: int = 5) -> dict[str, float] | None:
         """Sintesi sui precedenti mostrati: gol/gara e frequenza «entrambe a segno»."""
@@ -717,6 +902,9 @@ class MatchAnalysis:
             "home_starters": self.starters(match_id, home_id), "away_starters": self.starters(match_id, away_id),
             "home_key_players": self.team_key_players(home_id),
             "away_key_players": self.team_key_players(away_id),
+            "insights": (self.match_insights(match_id, home_id, away_id,
+                                             f["home_name"], f["away_name"])
+                         if status != "finished" else []),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),
             "home_value": _val(info, "home_starters_value_eur"), "away_value": _val(info, "away_starters_value_eur"),

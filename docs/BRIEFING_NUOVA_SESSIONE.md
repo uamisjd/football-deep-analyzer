@@ -2,7 +2,7 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-09-08 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto.
+> **Ultimo aggiornamento:** 2026-09-09 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto.
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
 ---
@@ -30,7 +30,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 - **Accuratezza oggi**: 20 gare valutate su 7 leghe (incluse le prime NED1/POR1), RPS **0,205** vs naive 0,239 (il modello batte la base in ogni lega).
 - **PR #16 (2026-09-08 sera, in attesa di merge utente)**: verifica completa sito/progetto + fix P0/P1 — formato arbitro/recupero, attribuzione fonti, ESPN standings→AVVISO, **meteo previsionale Open-Meteo** (fallback sui futuri, `future_days=7`), formazione probabile pulita (niente indisponibili tra i titolari), playoff Liga Portugal. Suite **63 passed**, ruff F pulito.
 - **Branch di lavoro**: ogni sessione Arena ha il proprio branch `arena/...` (indicato nel messaggio di inizio sessione); mai lavorare su `main`.
-- **Ultimo aggiornamento STATO.md**: 2026-09-08 (sera) — sessione `arena/01a08295` (verifica + P0/P1).
+- **Ultimo aggiornamento STATO.md**: 2026-09-09 — sessione `arena/01a08630` (card «Fatti rilevanti» dagli insights FotMob). PR #16–#19 mergiate.
 
 ## 3. Prossimi passi (in ordine — da `docs/STATO.md`)
 
@@ -39,10 +39,11 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 1. ~~**Parità di profondità delle schede partita**~~ ✅ (PR #10–#15 + rifiniture in PR #16): classifica FotMob primaria (ESPN 403 isolato), xG/xPTS stagione NED1/POR1 da FotMob, segnaposti onesti per arbitro/meteo/formazioni, card «Confronto di stagione» su tutte le leghe, meteo previsionale Open-Meteo. Contenuti pre/post già presenti ovunque (previsione completa, formazione, indisponibili, forma, riposo, H2H, momentum, cartina tiri).
 2. ~~**Monte Carlo stagione**~~ ✅ (fase 2): pagina **`stagione.html` «Proiezioni»** con punti attesi, media posizione, % titolo/top-4/retrocessione per le 7 leghe (simulazione DC+Elo, regole retrocessione per lega incluse i playoff).
 3. **Seguire Accuratezza** via via che le gare previste si risolvono (incluse le NED1/POR1 di questa settimana): le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega).
-4. **Verifica dal vivo del meteo Open-Meteo** (dopo il merge di PR #16): al primo run `daily` attesa tabella `weather_forecast` popolata e schede «(previsione Open-Meteo)» sui futuri oltre le ~48h.
+4. ~~**Verifica dal vivo del meteo Open-Meteo**~~ ✅ chiusa 2026-09-09 (passo attivo, 0 richieste perché FotMob copre già i futuri ≤7 gg).
 5. **Pulizia ruff** (opzionale): 254 segnalazioni pre-esistenti `E501`/`E741` su `main` (CI esegue solo pytest, non blocca) — un turno con `ruff --fix` + revisione.
-6. ~~**Card post-partita «Migliori in campo» per squadra**~~ ✅ (sessione `arena/01a082c6`, in attesa di PR/merge): top 3 per squadra per rating partita con gol, assist, minuti e rating di stagione — avvio della **fase 3** (schede giocatore). Prossimo passo della fase 3: schede giocatore vere (radar/percentili/xG per 90, infortuni).
-7. Poi la roadmap (`01` §8): **B5** collegare o rimuovere il client SofaScore (codice inerte), **fase 3** schede giocatore (prosegue), **fase 4** quote The Odds API (serve `ODDS_API_KEY`), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
+6. ~~**Card post-partita «Migliori in campo» per squadra**~~ ✅ (PR #17).
+7. ~~**Card pre-partita «Fatti rilevanti» (insights FotMob)**~~ ✅ (sessione `arena/01a08630`): traduzione a template, max 3, 0 inglese, 7/7 leghe.
+8. Poi la roadmap (`01` §8): ~~**B5** SofaScore~~ ✅ rimosso 2026-09-09 (codice mai collegato), **fase 3** schede giocatore (radar/percentili/xG per 90, infortuni), **fase 4** quote The Odds API (serve `ODDS_API_KEY`, non prioritario), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
 
 ## 4. Cosa fare appena entri (checklist rapida)
 
@@ -94,6 +95,10 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 - È richiesto un sistema che distingua tra dato assente, dato non ancora pubblicato dalla fonte e dato recuperato da fallback.
 - Prima di ogni modifica importante l’agente deve verificare ricerche web/GitHub e progetti open source riutilizzabili, annotando qui i risultati utili per le sessioni successive.
 - Suggerimenti e decisioni dell’utente vanno registrati in questo documento e in `docs/STATO.md`, così restano disponibili agli agenti futuri.
+
+### Ricerca insights FotMob 2026-09-09
+- Catalogo misurato su 1274 righe / 211 match (`insights.parquet`): template inglesi fissi, non NL libero. Squadra: scored N in last K, haven't scored, haven't lost in N, haven't won in N attempts, lost/won last N, haven't kept a clean sheet, H2H (haven't lost to / won previous N / not drawn / drawn last N). Giocatore: top scorer, most big chances, most shots on target/match, ranked in saves / big chances.
+- Nessun traduttore OSS riusabile per questi template (Sportmonks Match Facts è a pagamento e strutturato). Scelta: mappa regex + drop dei non tradotti (mai inglese a schermo). Hype «most X in the competition» escluso di proposito.
 
 ### Ricerca fonti/progetti 2026-09-08
 - `probberechts/soccerdata`: scraper multi-fonte (ESPN, FBref, Football-Data, SofaScore, Understat, WhoScored, ClubElo); utile come riferimento per fallback e normalizzazione, non da importare alla cieca.

@@ -37,6 +37,16 @@
 </div>
 {% endif %}
 
+{% if c.status != 'finished' and c.insights %}
+<div class="card">
+  <h2>Fatti rilevanti</h2>
+  <p class="small mut">Streak, testa-a-testa e forma recente (FotMob), tradotti e filtrati. Massimo tre; i testi non traducibili non vengono mostrati.</p>
+  <ul class="narr">
+    {% for i in c.insights %}<li><b>{{ i.team }}</b>: {{ i.text }}</li>{% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if c.status != 'finished' and (c.home_key_players or c.away_key_players) %}
 <div class="card">
   <h2>Giocatori da tenere d'occhio</h2>
