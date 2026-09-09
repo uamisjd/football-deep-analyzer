@@ -8,7 +8,6 @@ radar, V/N/P del log partite e pagine costruite con segnaposto onesti.
 from __future__ import annotations
 
 import pandas as pd
-import pytest
 
 from fda.site.players import MIN_MINUTES, MIN_PEERS, POSITION_LABELS, PlayerCatalog
 from fda.store import Store

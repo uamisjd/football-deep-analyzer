@@ -283,7 +283,7 @@ class PlayerCatalog:
         peers = self._peers.get(sid, {}).get(self._peer_key(player_id))
         tot_s, p90_s = _fmt_pair(s, v, p90)
         return {"id": sid, "label": s.label, "total": tot_s, "per90": p90_s,
-                "pct": None if pct is None or pd.isna(pct) else int(round(float(pct))),
+                "pct": None if pct is None or pd.isna(pct) else round(float(pct)),
                 "peers": peers, "lower": s.lower}
 
     # ---- radar SVG -------------------------------------------------------------------------
