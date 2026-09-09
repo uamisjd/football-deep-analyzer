@@ -5,8 +5,12 @@
   <div class="score">{% if m.home_goals is not none %}{{ m.home_goals }} - {{ m.away_goals }}{% else %}{{ m.utc_kickoff.strftime('%d/%m') }}{% endif %}</div>
   <div><a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.away_name }}</a></div>
   <div class="probs">{% if m.prediction %}
-    <div class="bar"><span class="h" style="width:{{ (m.prediction.p_home*100)|round }}%">{{ (m.prediction.p_home*100)|round|int }}</span><span class="d" style="width:{{ (m.prediction.p_draw*100)|round }}%">{{ (m.prediction.p_draw*100)|round|int }}</span><span class="a" style="width:{{ (m.prediction.p_away*100)|round }}%">{{ (m.prediction.p_away*100)|round|int }}</span></div>
-    λ {{ m.prediction.lambda_home|dec }}–{{ m.prediction.lambda_away|dec }} · O2.5 {{ (m.prediction.p_over25*100)|round|int }}%
+    {% set ph = m.prediction.p_home %}{% set pd = m.prediction.p_draw %}{% set pa = m.prediction.p_away %}
+    {% set top = '1' if ph >= pd and ph >= pa else ('X' if pd >= pa else '2') %}
+    {% set top_p = ph if top == '1' else (pd if top == 'X' else pa) %}
+    <div class="bar"><span class="h" style="width:{{ (ph*100)|round }}%">{{ (ph*100)|round|int }}</span><span class="d" style="width:{{ (pd*100)|round }}%">{{ (pd*100)|round|int }}</span><span class="a" style="width:{{ (pa*100)|round }}%">{{ (pa*100)|round|int }}</span></div>
+    <span class="lean">Il modello punta su <b>{{ top }}</b> ({{ (top_p*100)|round|int }}%)</span>
+    <span class="mut"> · λ {{ m.prediction.lambda_home|dec }}–{{ m.prediction.lambda_away|dec }} · O2.5 {{ (m.prediction.p_over25*100)|round|int }}%</span>
   {% else %}<span class="mut">previsione non disponibile</span>{% endif %}</div>
 </div>
 {%- endmacro %}
