@@ -20,7 +20,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 ```
 
 - Il comando che fa tutto è `fda daily` = `collect → predict → build`.
-- Il sito è **statico**: `index.html` (Oggi), `prossime.html`, `risultati.html`, `partite/<id>.html`, `accuratezza.html` (RPS/Brier reali), `stato.html` (stato fonti). Report in italiano generati dai template `analysis.py` → `narrative`.
+- Il sito è **statico**: `index.html` (Oggi), `prossime.html`, `risultati.html`, `partite/<id>.html` (tutte le finite di stagione, archivio), `giocatori/` (hub + tabellone per lega + schede giocatore con percentili/radar, fase 3), `accuratezza.html` (RPS/Brier reali), `stagione.html` (proiezioni), `stato.html` (stato fonti). Report in italiano generati dai template `analysis.py` → `narrative`.
 - Il pacchetto è installabile: `pip install -e ".[dev]"`; entry point CLI `fda` (typer).
 
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
@@ -30,7 +30,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 - **Accuratezza oggi**: 20 gare valutate su 7 leghe (incluse le prime NED1/POR1), RPS **0,205** vs naive 0,239 (il modello batte la base in ogni lega).
 - **PR #16 (2026-09-08 sera, in attesa di merge utente)**: verifica completa sito/progetto + fix P0/P1 — formato arbitro/recupero, attribuzione fonti, ESPN standings→AVVISO, **meteo previsionale Open-Meteo** (fallback sui futuri, `future_days=7`), formazione probabile pulita (niente indisponibili tra i titolari), playoff Liga Portugal. Suite **63 passed**, ruff F pulito.
 - **Branch di lavoro**: ogni sessione Arena ha il proprio branch `arena/...` (indicato nel messaggio di inizio sessione); mai lavorare su `main`.
-- **Ultimo aggiornamento STATO.md**: 2026-09-09 — sessione `arena/01a08630` (card «Fatti rilevanti» dagli insights FotMob). PR #16–#19 mergiate.
+- **Ultimo aggiornamento STATO.md**: 2026-09-09 sera — sessione `arena/01a0864d` (**Fase 3 schede giocatore** + backfill tutte le leghe). PR #16–#19 mergiate; la PR della Fase 3 è in attesa di merge utente.
 
 ## 3. Prossimi passi (in ordine — da `docs/STATO.md`)
 
@@ -38,12 +38,12 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 1. ~~**Parità di profondità delle schede partita**~~ ✅ (PR #10–#15 + rifiniture in PR #16): classifica FotMob primaria (ESPN 403 isolato), xG/xPTS stagione NED1/POR1 da FotMob, segnaposti onesti per arbitro/meteo/formazioni, card «Confronto di stagione» su tutte le leghe, meteo previsionale Open-Meteo. Contenuti pre/post già presenti ovunque (previsione completa, formazione, indisponibili, forma, riposo, H2H, momentum, cartina tiri).
 2. ~~**Monte Carlo stagione**~~ ✅ (fase 2): pagina **`stagione.html` «Proiezioni»** con punti attesi, media posizione, % titolo/top-4/retrocessione per le 7 leghe (simulazione DC+Elo, regole retrocessione per lega incluse i playoff).
-3. **Seguire Accuratezza** via via che le gare previste si risolvono (incluse le NED1/POR1 di questa settimana): le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega).
+3. **Seguire Accuratezza** via via che le gare previste si risolvono: le valutazioni si calcolano da sole nei run daily; rifinire la pagina se emergono problemi (es. calibrazione per lega). Con il backfill esteso (2026-09-09) le gare valutabili cresceranno più in fretta.
 4. ~~**Verifica dal vivo del meteo Open-Meteo**~~ ✅ chiusa 2026-09-09 (passo attivo, 0 richieste perché FotMob copre già i futuri ≤7 gg).
 5. **Pulizia ruff** (opzionale): 254 segnalazioni pre-esistenti `E501`/`E741` su `main` (CI esegue solo pytest, non blocca) — un turno con `ruff --fix` + revisione.
 6. ~~**Card post-partita «Migliori in campo» per squadra**~~ ✅ (PR #17).
 7. ~~**Card pre-partita «Fatti rilevanti» (insights FotMob)**~~ ✅ (sessione `arena/01a08630`): traduzione a template, max 3, 0 inglese, 7/7 leghe.
-8. Poi la roadmap (`01` §8): ~~**B5** SofaScore~~ ✅ rimosso 2026-09-09 (codice mai collegato), **fase 3** schede giocatore (radar/percentili/xG per 90, infortuni), **fase 4** quote The Odds API (serve `ODDS_API_KEY`, non prioritario), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
+8. Poi la roadmap (`01` §8): ~~**B5** SofaScore~~ ✅ rimosso 2026-09-09 (codice mai collegato), ~~**fase 3** schede giocatore~~ ✅ 2026-09-09 (`arena/01a0864d`: hub + tabelloni per lega + 3.457 schede con percentili lega+ruolo, radar SVG, log partite — progetto `docs/07_fase3_giocatori.md`); resta opzionale la **fase 3b** arricchimento anagrafica da `playerData` (contratto, trofei, infortuni storici; ~3.300 giocatori / TTL 168h ≈ 80 richieste/run). Poi **fase 4** quote The Odds API (serve `ODDS_API_KEY`, non prioritario), **fase 5** notifiche Telegram. Nota: i **diffidati** non sono implementati — FotMob non li espone nei dati raccolti (verificato 2026-09-08).
 
 ## 4. Cosa fare appena entri (checklist rapida)
 
@@ -67,8 +67,9 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/01_studio_fattibilita.md` | Studio completo: fonti (con verdetto), architettura, modelli, rischi, roadmap (fasi 0→5), appendice con esempio reale di profondità. |
 | `docs/02_catalogo_fonti_dati.md` | Catalogo endpoint gratuiti verificati, limiti, id utili, schema minimo. |
 | `docs/03_decisioni_e_funzionamento.md` | Decisioni utente (7 leghe, uso personale, quote) + spiegazione automazione + verifiche tecniche salvate. |
+| `docs/07_fase3_giocatori.md` | Progetto fase 3 schede giocatore: dati misurati, metodologia, decisioni. |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file. |
-| `src/fda/` | Codice: `cli.py`, `config.py`, `collect.py`, `store.py`, `http.py`, `teams.py`, `sources/` (fotmob, espn, understat, history), `models/predict.py`, `site/` (build, analysis, templates). |
+| `src/fda/` | Codice: `cli.py`, `config.py`, `collect.py`, `store.py`, `http.py`, `teams.py`, `sources/` (fotmob, espn, understat, history), `models/` (predict, season_sim), `site/` (build, analysis, **players**, audit, fmt, templates). |
 | `config/leagues.yaml` | Le 7 leghe + coppe; aggiungere una lega = aggiungere una voce qui. |
 | `.github/workflows/daily.yml` | Cron 5x/giorno + dispatch manuale → `fda daily`, commit dati, Pages. |
 | `tests/` | 20+ test offline (parser su JSON campione, config, modelli, site, store/collect). |
@@ -95,6 +96,12 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 - È richiesto un sistema che distingua tra dato assente, dato non ancora pubblicato dalla fonte e dato recuperato da fallback.
 - Prima di ogni modifica importante l’agente deve verificare ricerche web/GitHub e progetti open source riutilizzabili, annotando qui i risultati utili per le sessioni successive.
 - Suggerimenti e decisioni dell’utente vanno registrati in questo documento e in `docs/STATO.md`, così restano disponibili agli agenti futuri.
+
+### Ricerca schede giocatore (fase 3) 2026-09-09 sera
+- **Metodologia radar/percentili**: prassi mplsoccer (`Radar` con `rank(pct=True)*100`, stesso principio del tutorial «Visualizing Striker Profiles»; `lower_is_better` per le stat capovolte) e DataMB (percentili «League and Position per 90», 7 metriche/ruolo). FBref: normalizzazione per-90 + soglie minime di minuti contro le distorsioni da campioni piccoli. Implementato tutto in SVG lato server (nessuna dipendenza nuova). Dettagli e misure in `docs/07_fase3_giocatori.md`.
+- **`playerData?id=`** (FotMob, doc `pseudo-r/Public-FotMob-API` `docs/endpoints/players.md`, VERIFIED): anagrafica, `recentMatches` con rating, `careerHistory`; il catalogo `02` aggiunge `mainLeague.stats`, infortuni, valore, trofei. Non usato nella fase 3 (il nucleo è coperto da `player_stats`/`lineup` già raccolti, parità 7/7); candidato naturale per la fase 3b. Client già pronto (`player_raw()`, TTL 168h in `sources.yaml`).
+- **Scoperta utile**: `player_stats` usa la semantica «chiave assente = 0 eventi» (verificato: `expected_goals` mai a 0,00 sui 1.272 che ce l'hanno) → le aggregazioni coalescono a 0 senza inventare nulla. `match_info.league_id` per NED1 riporta l'id stagione 937276 (non il canonico 57): la lega si risolve sempre da `fixtures`.
+- **Gap i18n trovato e chiuso**: `unavailability_type` («injury»/«suspension», 897+39 righe reali) non era tradotto nelle schede partita → `unavailability_it()` in `analysis.py`, riusata dalle schede giocatore.
 
 ### Ricerca insights FotMob 2026-09-09
 - Catalogo misurato su 1274 righe / 211 match (`insights.parquet`): template inglesi fissi, non NL libero. Squadra: scored N in last K, haven't scored, haven't lost in N, haven't won in N attempts, lost/won last N, haven't kept a clean sheet, H2H (haven't lost to / won previous N / not drawn / drawn last N). Giocatore: top scorer, most big chances, most shots on target/match, ranked in saves / big chances.
