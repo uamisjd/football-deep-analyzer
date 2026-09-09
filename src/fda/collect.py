@@ -133,16 +133,16 @@ def collect_league(
             if _fetch(f):
                 report.matches_fetched += 1
 
-        # 2b) backfill finite di stagione (solo leghe senza Understat: xG FotMob completo) --
-        # Ogni finita si scarica una sola volta (poi è in `already`); le più recenti prima.
-        if not lg.has_understat:
-            old = [f for f in fixtures
-                   if f.status == "finished" and f.utc_kickoff and f.utc_kickoff < lo
-                   and f.match_id not in already]
-            old.sort(key=lambda f: f.utc_kickoff, reverse=True)
-            for f in old[:max_backfill]:
-                if _fetch(f):
-                    report.matches_backfilled += 1
+        # 2b) backfill finite di stagione (TUTTE le leghe: parità 7/7 per le schede    --
+        # giocatore, fase 3 — docs/07). Ogni finita si scarica una sola volta (poi è in
+        # `already`); le più recenti prima.
+        old = [f for f in fixtures
+               if f.status == "finished" and f.utc_kickoff and f.utc_kickoff < lo
+               and f.match_id not in already]
+        old.sort(key=lambda f: f.utc_kickoff, reverse=True)
+        for f in old[:max_backfill]:
+            if _fetch(f):
+                report.matches_backfilled += 1
 
     # 2c) tabella di lega (FotMob `leagues`: fonte primaria delle classifiche) ----------------
     def _table() -> int:

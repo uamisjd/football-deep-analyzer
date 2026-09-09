@@ -189,7 +189,7 @@ def test_collect_survives_bad_match_save(tmp_path, monkeypatch):
     st.close()
 
 
-def test_collect_backfills_season_finished_without_understat(tmp_path):
+def test_collect_backfills_season_finished_ned1(tmp_path):
     st = Store(tmp_path / "processed")
     rep = collect_league(
         league("NED1"), st,     # finestra default ±3 gg: la finita del 22/08 è fuori
@@ -211,15 +211,26 @@ def test_collect_backfills_season_finished_without_understat(tmp_path):
     st.close()
 
 
-def test_collect_no_backfill_with_understat(tmp_path):
+def test_collect_backfills_season_finished_all_leagues(tmp_path):
+    """Dal 2026-09-09 il backfill vale per TUTTE le leghe (fase 3: schede giocatore
+    complete dall'1ª giornata, docs/07): anche ITA1 (che ha Understat) recupera le
+    finite fuori finestra, una sola volta."""
     st = Store(tmp_path / "processed")
     rep = collect_league(
         league("ITA1"), st,
         fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
         espn=FakeEspn(), today=date(2026, 9, 6),
     )
-    assert rep.matches_backfilled == 0
-    assert 5749645 not in set(st.read("match_info").match_id)
+    assert rep.errors == []
+    assert rep.matches_backfilled == 1     # Inter-Monza 22/08 recuperata fuori finestra
+    assert 5749645 in set(st.read("match_info").match_id)
+    # secondo run: la finita è già in archivio, niente da recuperare
+    rep2 = collect_league(
+        league("ITA1"), st,
+        fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), today=date(2026, 9, 6),
+    )
+    assert rep2.matches_backfilled == 0
     st.close()
 
 
