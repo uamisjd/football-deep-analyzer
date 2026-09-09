@@ -340,6 +340,58 @@ class MatchAnalysis:
                         "season_rating": season_rating, "captain": bool(r.is_captain)})
         return out
 
+    def team_key_players(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:
+        """Giocatori da tenere d'occhio di una squadra (card pre-partita).
+
+        Top ``n`` per rating di stagione (FotMob ``season_rating``, media stagionale
+        del ruolo), deduplicati per ``player_id``; arricchiti con gol/assist stagionali
+        sommati dalle statistiche partita (``player_stats``, una riga per partita/giocatore/
+        chiave: nessun doppione) e con la posizione. Nessun dato inventato: solo giocatori
+        con ``season_rating`` disponibile; se manca la lista resta vuota.
+        """
+        if self.lineup.empty:
+            return []
+        # Una riga per giocatore: prendi il season_rating più recente/rappresentativo.
+        rows = self.lineup[(self.lineup.team_id == team_id)
+                           & (self.lineup.role.isin(["starter", "sub"]))
+                           & self.lineup.season_rating.notna()]
+        if rows.empty:
+            return []
+        rows = rows.sort_values("season_rating").drop_duplicates(subset=["player_id"], keep="last")
+        # Statistiche di stagione per giocatore (gol/assist) su TUTTE le partite della squadra.
+        season_stats: dict[tuple[int, str], float] = {}
+        if not self.player_stats.empty:
+            team_matches = None
+            if not self.fixtures.empty:
+                team_matches = set(self.fixtures[self.fixtures.home_id == team_id].match_id) \
+                    | set(self.fixtures[self.fixtures.away_id == team_id].match_id)
+            ps = self.player_stats if team_matches is None else \
+                self.player_stats[self.player_stats.match_id.isin(team_matches)]
+            for row in ps.itertuples(index=False):
+                if int(row.team_id) != team_id:
+                    continue
+                v = row.value
+                if v is None or pd.isna(v):
+                    continue
+                k = (int(row.player_id), str(row.key))
+                season_stats[k] = season_stats.get(k, 0.0) + float(v)
+
+        def _season_num(player_id: int, key: str) -> float:
+            v = season_stats.get((player_id, key))
+            return float(v) if v is not None and pd.notna(v) else 0.0
+
+        out = []
+        for r in rows.itertuples(index=False):
+            out.append({
+                "name": r.player_name,
+                "pos": POSITION_NAMES.get(int(r.position_id) if pd.notna(r.position_id) else 0, ""),
+                "season_rating": float(r.season_rating),
+                "goals": int(_season_num(int(r.player_id), "goals")),
+                "assists": int(_season_num(int(r.player_id), "assists")),
+            })
+        return sorted(out, key=lambda p: p["season_rating"], reverse=True)[:n]
+
+
     def _weather(self, match_id: int, desc: Any, temp: Any, precip: Any) -> dict[str, Any]:
         """Meteo della gara: FotMob primario, Open-Meteo (previsionale) come fallback."""
         if desc:
@@ -663,6 +715,8 @@ class MatchAnalysis:
             "season_compare": self.season_compare(self.standing(f["home_name"]), self.standing(f["away_name"])),
             "home_unavailable": self.unavailable(match_id, home_id), "away_unavailable": self.unavailable(match_id, away_id),
             "home_starters": self.starters(match_id, home_id), "away_starters": self.starters(match_id, away_id),
+            "home_key_players": self.team_key_players(home_id),
+            "away_key_players": self.team_key_players(away_id),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),
             "home_value": _val(info, "home_starters_value_eur"), "away_value": _val(info, "away_starters_value_eur"),

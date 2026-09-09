@@ -193,13 +193,15 @@ def test_site_build_end_to_end(tmp_path):
     assert "—</td>" in post and 'class="best"' not in post
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
-    assert post.count("<svg") == 3          # 2 cartine + 1 momentum
+    # esclude i 2 logo (header/footer), identificati dal ruolo "Logo CalcioMetro" e dalla viewport 64
+    chart_svg = [s for s in post.split("<svg")[1:] if 'aria-label="Logo CalcioMetro"' not in s]
+    assert len(chart_svg) == 3          # 2 cartine + 1 momentum
     assert "xG 0,88" in post                       # gol di Lautaro Martínez, decimale italiano
     assert "Nessun tiro registrato" in post        # pannello Monza vuoto
     # momentum (SVG a barre + marker gol): 18 punti seed + 2 del campione; Inter dominante (13/20 = 65%)
     assert "Momentum della partita" in post
     assert "Momentum a favore di <b>Inter</b> nel 65% dei minuti" in post
-    assert 'fill="#f2555a"' in post and 'fill-opacity="0.75"' in post  # barre negative/positive
+    assert 'fill="#e0605a"' in post and 'fill-opacity="0.75"' in post  # barre negative/positive
     # Migliori in campo: split per squadra, rating con virgola, minuti e rating stagionale
     assert "Migliori in campo" in post
     assert ">9,1</td>" in post and "stagione 8,20" in post      # Lautaro (Inter)
@@ -230,6 +232,10 @@ def test_site_build_end_to_end(tmp_path):
     assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
+    # card «Giocatori da tenere d'occhio» solo in pre-partita: media di stagione con virgola, gol/assist
+    assert "Giocatori da tenere d'occhio" in pre
+    assert "Migliori in campo" not in pre          # card post-partita: non deve apparire prima
+    assert "media <b>" not in pre                 # niente media di stagione nel post (verificato dopo)
     assert "(ora italiana)" in pre
     assert "Ultimi precedenti" in pre and "Lazio <b>1-1</b> Udinese" in pre
     assert "Lazio <b>2-1</b> Udinese" in pre
@@ -336,6 +342,51 @@ def test_top_players_per_team_with_goals(tmp_path):
     assert tp["away"][0]["minutes"] == 60
     # match senza rating → liste vuote, nessun crash
     assert ma.top_players(999, 10, 20) == {"home": [], "away": []}
+    st.close()
+
+
+def test_team_key_players_season_rating(tmp_path):
+    """Giocatori da tenere d'occhio: top per media di stagione, dedup per giocatore, gol/assist stagionali."""
+    import pandas as pd
+
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", pd.DataFrame([
+        {"match_id": 1, "league_id": 55, "home_id": 10, "away_id": 20, "home_name": "A", "away_name": "B",
+         "utc_kickoff": pd.Timestamp("2026-09-08 12:00", tz="UTC"), "status": "finished"},
+        {"match_id": 2, "league_id": 55, "home_id": 20, "away_id": 10, "home_name": "B", "away_name": "A",
+         "utc_kickoff": pd.Timestamp("2026-09-08 12:00", tz="UTC"), "status": "finished"},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        # due gare per lo stesso giocatore: deve comparire una sola volta, media più alta
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
+         "season_rating": 6.0, "position_id": 3},
+        {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
+         "season_rating": 7.0, "position_id": 3},
+        {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "role": "starter",
+         "season_rating": 8.5, "position_id": 4},
+        {"match_id": 1, "team_id": 10, "player_id": 103, "player_name": "A3", "role": "starter",
+         "season_rating": None, "position_id": 4},          # senza media: escluso
+        {"match_id": 1, "team_id": 10, "player_id": 104, "player_name": "A4", "role": "sub",
+         "season_rating": 7.8, "position_id": 4},
+    ]))
+    st.write("player_stats", pd.DataFrame([
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "goals", "value": 1.0, "total": None},
+        {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "goals", "value": 1.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "assists", "value": 2.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "key": "goals", "value": 0.0, "total": None},
+    ]))
+    ma = MatchAnalysis(st)
+    kp = ma.team_key_players(10)
+    # ordina per media di stagione decrescente: A2 (8.5), A4 (7.8), A1 (7.0); A3 senza media escluso
+    assert [p["name"] for p in kp] == ["A2", "A4", "A1"]
+    a1 = next(p for p in kp if p["name"] == "A1")
+    assert a1["season_rating"] == 7.0
+    assert a1["goals"] == 2 and a1["assists"] == 2      # somma delle 2 gare
+    assert a1["pos"] == "centrocampista"
+    assert kp[0]["pos"] == "attaccante"
+    # limite n e nessun dato → lista vuota
+    assert len(ma.team_key_players(10, 2)) == 2
+    assert ma.team_key_players(999) == []
     st.close()
 
 

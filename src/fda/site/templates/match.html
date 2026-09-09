@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block title %}{{ c.home_name }} - {{ c.away_name }} — analisi{% endblock %}
+{% block title %}{{ c.home_name }} - {{ c.away_name }} — analisi · CalcioMetro{% endblock %}
 {% block content %}
 <p class="mut small"><a href="{{ root }}index.html">← Oggi</a> · {{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %} ·
   {{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</p>
@@ -33,6 +33,31 @@
     <table>{% for score, prob in p.top_scores.items() %}<tr><td>{{ score }}</td><td class="r">{{ (prob*100)|dec(1) }}%</td></tr>{% endfor %}</table>
     {% if p.elo_home %}<p class="small mut" style="margin-top:10px">Elo: {{ c.home_name }} {{ p.elo_home|round|int }} · {{ c.away_name }} {{ p.elo_away|round|int }}<br>
     Forza DC (attacco/difesa): {{ p.dc_attack_home|dec }}/{{ p.dc_defence_home|dec }} vs {{ p.dc_attack_away|dec }}/{{ p.dc_defence_away|dec }} · vantaggio casa {{ p.dc_home_advantage|dec }}</p>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if c.status != 'finished' and (c.home_key_players or c.away_key_players) %}
+<div class="card">
+  <h2>Giocatori da tenere d'occhio</h2>
+  <p class="small mut">Top per media voto di stagione (FotMob), con gol e assist stagionali. Il voto è la media stagionale del ruolo.</p>
+  <div class="grid">
+  {% for name, players in ((c.home_name, c.home_key_players), (c.away_name, c.away_key_players)) %}
+    <div class="card" style="margin:0">
+      <h3 style="margin:0 0 8px">{{ name }}</h3>
+      {% if players %}
+      <table>
+        {% for p in players %}
+        <tr>
+          <td class="r" style="width:38px;font-weight:600">{{ p.season_rating|dec(2) }}</td>
+          <td>{{ p.name }}{% if p.pos %} <span class="mut small">{{ p.pos }}</span>{% endif %}
+            {% if p.goals or p.assists %}<span class="small">· {{ p.goals }} gol{% if p.assists %}, {{ p.assists }} assist{% endif %}</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </table>
+      {% else %}<p class="mut small">Nessuna media di stagione disponibile.</p>{% endif %}
+    </div>
+  {% endfor %}
   </div>
 </div>
 {% endif %}
@@ -147,7 +172,7 @@
         <circle cx="332" cy="136" r="2.2" fill="#3b5068"/>
         <rect x="416" y="121.4" width="4" height="29.2" fill="#e6edf3" opacity="0.75"/>
         {% for s in shots %}
-        <circle cx="{{ s.px }}" cy="{{ s.py }}" r="{{ s.r }}"{% if s.kind == 'goal' %} fill="#4cc38a" fill-opacity="0.9" stroke="#4cc38a"{% elif s.kind == 'target' %} fill="#4c9dd3" fill-opacity="0.45" stroke="#4c9dd3"{% elif s.kind == 'blocked' %} fill="none" stroke="#f0b429" stroke-dasharray="3 2"{% else %} fill="none" stroke="#8b9bb0"{% endif %} stroke-width="1.6"><title>{{ s.player }} · {{ s.minute if s.minute is not none else '—' }}' · xG {{ s.xg|dec }} · {{ 'Gol' if s.kind == 'goal' else 'In porta' if s.kind == 'target' else 'Bloccato' if s.kind == 'blocked' else 'Fuori' }}</title></circle>
+        <circle cx="{{ s.px }}" cy="{{ s.py }}" r="{{ s.r }}"{% if s.kind == 'goal' %} fill="#28c893" fill-opacity="0.9" stroke="#28c893"{% elif s.kind == 'target' %} fill="#4c9dd3" fill-opacity="0.45" stroke="#4c9dd3"{% elif s.kind == 'blocked' %} fill="none" stroke="#f0b429" stroke-dasharray="3 2"{% else %} fill="none" stroke="#8b9bb0"{% endif %} stroke-width="1.6"><title>{{ s.player }} · {{ s.minute if s.minute is not none else '—' }}' · xG {{ s.xg|dec }} · {{ 'Gol' if s.kind == 'goal' else 'In porta' if s.kind == 'target' else 'Bloccato' if s.kind == 'blocked' else 'Fuori' }}</title></circle>
         {% endfor %}
         {% if not shots %}<text x="210" y="140" text-anchor="middle" fill="#8b9bb0" font-size="15">Nessun tiro registrato</text>{% endif %}
       </svg>
@@ -155,7 +180,7 @@
     </div>
   {% endfor %}
   </div>
-  <p class="small mut" style="margin-top:10px">Legenda: <span style="color:#4cc38a">●</span> gol · <span style="color:#4c9dd3">●</span> in porta (parato) · <span style="color:#f0b429">◌</span> bloccato · <span style="color:#8b9bb0">◌</span> fuori.</p>
+  <p class="small mut" style="margin-top:10px">Legenda: <span style="color:#28c893">●</span> gol · <span style="color:#4c9dd3">●</span> in porta (parato) · <span style="color:#f0b429">◌</span> bloccato · <span style="color:#8b9bb0">◌</span> fuori.</p>
 </div>
 {% endif %}
 {% if c.momentum %}
@@ -165,8 +190,8 @@
     <text x="6" y="122" fill="#8b9bb0" font-size="10">0'</text>
     <text x="204" y="122" fill="#8b9bb0" font-size="10">45'</text>
     <text x="404" y="122" fill="#8b9bb0" font-size="10">90'</text>
-    {% for m in c.momentum.points %}{% set x = 6 + (m.minute if m.minute < 90 else 90) / 90 * 408 %}{% if m.v > 0 %}<rect x="{{ x - 1.7 }}" y="{{ 64 - (m.v * 0.42)|round(1) }}" width="3.4" height="{{ (m.v * 0.42)|round(1) }}" fill="#4cc38a" fill-opacity="0.75"/>{% elif m.v < 0 %}<rect x="{{ x - 1.7 }}" y="64" width="3.4" height="{{ (-m.v * 0.42)|round(1) }}" fill="#f2555a" fill-opacity="0.75"/>{% endif %}{% endfor %}
-    {% for e in c.timeline %}{% if e.type == 'Goal' %}{% set x = 6 + ((e.minute + (e.added or 0)) if (e.minute + (e.added or 0)) < 90 else 90) / 90 * 408 %}<circle cx="{{ x }}" cy="{{ 12 if e.home else 116 }}" r="4" fill="{{ '#4cc38a' if e.home else '#f2555a' }}" stroke="#101a24" stroke-width="1"><title>⚽ {{ e.player }} {{ e.minute }}{% if e.added %}+{{ e.added }}{% endif %}' ({{ c.home_name if e.home else c.away_name }})</title></circle>{% endif %}{% endfor %}
+    {% for m in c.momentum.points %}{% set x = 6 + (m.minute if m.minute < 90 else 90) / 90 * 408 %}{% if m.v > 0 %}<rect x="{{ x - 1.7 }}" y="{{ 64 - (m.v * 0.42)|round(1) }}" width="3.4" height="{{ (m.v * 0.42)|round(1) }}" fill="#28c893" fill-opacity="0.75"/>{% elif m.v < 0 %}<rect x="{{ x - 1.7 }}" y="64" width="3.4" height="{{ (-m.v * 0.42)|round(1) }}" fill="#e0605a" fill-opacity="0.75"/>{% endif %}{% endfor %}
+    {% for e in c.timeline %}{% if e.type == 'Goal' %}{% set x = 6 + ((e.minute + (e.added or 0)) if (e.minute + (e.added or 0)) < 90 else 90) / 90 * 408 %}<circle cx="{{ x }}" cy="{{ 12 if e.home else 116 }}" r="4" fill="{{ '#28c893' if e.home else '#e0605a' }}" stroke="#101a24" stroke-width="1"><title>⚽ {{ e.player }} {{ e.minute }}{% if e.added %}+{{ e.added }}{% endif %}' ({{ c.home_name if e.home else c.away_name }})</title></circle>{% endif %}{% endfor %}
   </svg>
   <p class="small mut" style="margin:8px 0 0">Sopra la linea: pressione di <b>{{ c.home_name }}</b>; sotto: <b>{{ c.away_name }}</b> (momentum FotMob, ±100). I pallini segnano i gol.</p>
   {% if c.momentum.pos_share >= 0.60 %}<p class="small">Momentum a favore di <b>{{ c.home_name }}</b> nel {{ (c.momentum.pos_share*100)|round|int }}% dei minuti.</p>

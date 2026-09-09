@@ -5,9 +5,9 @@ from __future__ import annotations
 import logging
 import shutil
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -76,17 +76,25 @@ class SiteBuilder:
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
-        self.now = datetime.now(timezone.utc)
+        self.now = datetime.now(UTC)
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
         self.analysis = MatchAnalysis(self.store)
         self.audit_rows: list[dict[str, Any]] = []
 
     # ---- helpers ------------------------------------------------------------------------------
+    # mappa pagina → voce di nav attiva (aria-current)
+    NAV_SECTIONS: ClassVar[dict[str, str]] = {
+        "index.html": "oggi", "prossime.html": "prossime", "risultati.html": "risultati",
+        "accuratezza.html": "accuratezza", "stagione.html": "stagione", "stato.html": "stato",
+        "info.html": "info",
+    }
+
     def _render(self, template: str, rel_path: str, **ctx: Any) -> None:
         depth = rel_path.count("/")
         root = "../" * depth
-        html = self.env.get_template(template).render(root=root, generated_at=self.now, **ctx)
+        section = self.NAV_SECTIONS.get(rel_path, "")
+        html = self.env.get_template(template).render(root=root, generated_at=self.now, section=section, **ctx)
         path = self.out / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(html, encoding="utf-8")
@@ -243,7 +251,8 @@ class SiteBuilder:
         self.build_accuracy(fx)
         self.build_stagione()
         self.build_status()
-        return {"matches": n, "fixtures": int(len(fx))}
+        self._render("info.html", "info.html", title="Metodologia e fonti")
+        return {"matches": n, "fixtures": len(fx)}
 
 
 def _rps(probs: np.ndarray, outcomes: np.ndarray) -> float:
