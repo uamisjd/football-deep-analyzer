@@ -59,11 +59,14 @@ main{max-width:var(--max);margin:0 auto;padding:28px 26px 44px}
 
 /* ---- Header ---- */
 /* Header statico (non sticky): evita l'effetto «pinned tagliato» in iframe/preview e
-   garantisce che in cima alla pagina il brand e la nav siano sempre interamente visibili. */
+   garantisce che in cima alla pagina il brand e la nav siano sempre interamente visibili.
+   La riga dell'header riusa la classe .bar (usata anche per le barre-probabilità più sotto):
+   qui si dichiarano altezza/overflow espliciti (height:auto; overflow:visible) così gli stili
+   generici della barra-probabilità (height fissa + overflow:hidden) non tagliano logo e brand. */
 header{background:linear-gradient(180deg,#0e141d,#0b1017);border-bottom:1px solid var(--line)}
 header{overflow:visible}
-header .bar{display:flex;align-items:center;gap:26px;flex-wrap:wrap;padding:18px 0;min-height:72px}
-.brand{display:flex;align-items:center;gap:16px;color:var(--txt);flex:0 0 auto;text-decoration:none;user-select:none;-webkit-user-select:none}
+header .bar{display:flex;align-items:center;gap:26px;flex-wrap:wrap;padding:24px 0;min-height:84px;height:auto;overflow:visible}
+.brand{display:flex;align-items:center;gap:16px;color:var(--txt);flex:0 0 auto;text-decoration:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
 .brand ::selection,.brand::selection{background:transparent;color:inherit}
 .brand .mark{width:60px;height:60px;flex:0 0 auto;display:block}
 .brand .word{display:flex;flex-direction:column;justify-content:center;line-height:1.08;min-width:0}
@@ -109,6 +112,15 @@ td.best{font-weight:800;color:var(--accent)}
 .bar .d{background:#7f8aa0;color:#0d1420}
 .bar .a{background:linear-gradient(180deg,#e0605a,#b2403b)}
 .bar.big{height:46px;font-size:15px}
+
+/* ---- Brand: protezione dal riuso della classe .bar ---- */
+/* L'header e il footer riusano <div class="bar">/nomi .h per il wordmark: i selettori
+   generici qui sopra (".bar span", ".bar .h") non devono dare sfondi, riquadri o padding
+   al logo testuale CalcioMetro (fix: wordmark senza «riquadro verde», tap senza alone). */
+.brand .h,footer .fbrand .h{background:none}
+.brand span,footer .fbrand span{background:none;padding:0}
+.brand,footer .fbrand{-webkit-tap-highlight-color:transparent}
+
 
 /* ---- Pill risultato V/N/P ---- */
 .pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:12.5px;font-weight:700;margin-right:5px}
