@@ -90,6 +90,10 @@ nav a[aria-current]{color:#06231a;background:var(--accent);font-weight:700}
 
 /* ---- Tabelle (numeri tabulari, scrollabile) ---- */
 .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+.posbtn{padding:6px 12px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--txt2);
+  font-size:13px;font-weight:600;cursor:pointer;transition:.14s}
+.posbtn:hover{color:var(--txt);background:var(--surface2)}
+.posbtn[aria-pressed="true"]{color:#06231a;background:var(--accent);border-color:var(--accent);font-weight:700}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14.5px}
 td,th{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{color:var(--mut);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em}
@@ -255,6 +259,7 @@ footer .cols li{margin:6px 0}
         <a href="{{ root }}risultati.html"{% if section == 'risultati' %} aria-current="page"{% endif %}>Risultati</a>
         <a href="{{ root }}accuratezza.html"{% if section == 'accuratezza' %} aria-current="page"{% endif %}>Accuratezza</a>
         <a href="{{ root }}stagione.html"{% if section == 'stagione' %} aria-current="page"{% endif %}>Proiezioni</a>
+        <a href="{{ root }}giocatori/index.html"{% if section == 'giocatori' %} aria-current="page"{% endif %}>Giocatori</a>
         <a href="{{ root }}stato.html"{% if section == 'stato' %} aria-current="page"{% endif %}>Stato fonti</a>
         <a href="{{ root }}info.html"{% if section == 'info' %} aria-current="page"{% endif %}>Info</a>
       </nav>
@@ -280,6 +285,7 @@ footer .cols li{margin:6px 0}
         <h4>Approfondisci</h4>
         <ul>
           <li><a href="{{ root }}stagione.html">Proiezioni di stagione</a></li>
+          <li><a href="{{ root }}giocatori/index.html">Schede giocatori</a></li>
           <li><a href="{{ root }}stato.html">Stato delle fonti</a></li>
           <li><a href="{{ root }}info.html">Metodologia e fonti</a></li>
         </ul>

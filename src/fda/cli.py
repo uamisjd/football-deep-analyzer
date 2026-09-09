@@ -159,7 +159,7 @@ def collect_cmd(
     past_days: int = typer.Option(3, help="Giorni indietro per i dettagli partita"),
     future_days: int = typer.Option(3, help="Giorni avanti per i dettagli partita"),
     max_matches: int = typer.Option(40, help="Massimo partite per campionato per run"),
-    max_backfill: int = typer.Option(40, help="Massimo storiche recuperate (leghe senza Understat)"),
+    max_backfill: int = typer.Option(40, help="Massimo partite finite recuperate per lega (fuori finestra)"),
 ) -> None:
     """Raccolta dati (calendario, dettagli partite, Understat, ESPN) → data/processed/*.parquet."""
     from .collect import collect_all
@@ -282,7 +282,7 @@ def simulate_cmd(
 
 @app.command("build")
 def build_cmd() -> None:
-    """Genera il sito statico in site/ (pagine Oggi, Prossime, Risultati, partite, Accuratezza, Stato)."""
+    """Genera il sito statico in site/ (Oggi, Prossime, Risultati, partite, Giocatori, Accuratezza, Stato)."""
     from .site.build import SITE_DIR, SiteBuilder
     from .store import Store
 

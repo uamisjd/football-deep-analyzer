@@ -1,0 +1,117 @@
+{% extends "base.html" %}
+{% block title %}{{ p.name }} — scheda giocatore · CalcioMetro{% endblock %}
+{% block content %}
+<p class="mut small"><a href="{{ root }}giocatori/index.html">← Giocatori</a>{% if league_name %} · <a href="{{ root }}giocatori/{{ league_key }}.html">{{ league_name }}</a>{% endif %}{% if p.team_name %} · {{ p.team_name }}{% endif %}</p>
+<h1>{{ p.name }}{% if p.captain %} <span class="pill v" title="capitano">C</span>{% endif %}
+  {% if p.position_label %}<span class="tag">{{ p.position_label }}</span>{% else %}<span class="tag">ruolo n.d.</span>{% endif %}</h1>
+
+<div class="card">
+  <table>
+    <tr><th>Squadra</th><td>{{ p.team_name or '—' }}</td><th>Età</th><td class="r">{{ p.age if p.age is not none else '—' }}</td></tr>
+    <tr><th>Nazionalità</th><td>{{ p.country or '—' }}</td>{% if p.market_value_eur %}<th>Valore di mercato</th><td class="r">€{{ (p.market_value_eur / 1000000)|it_num }}M</td>{% else %}<th>Valore di mercato</th><td class="r">—</td>{% endif %}</tr>
+    <tr><th>Presenze {{ p.season }}</th><td>{{ p.matches }}</td><th>Minuti</th><td class="r">{{ p.minutes|it_num }}</td></tr>
+    <tr><th>Media voto</th><td>{% if p.rating is not none %}{{ p.rating|dec }}{% else %}—{% endif %}</td><th>Campionato</th><td class="r">{{ league_name or '—' }}</td></tr>
+  </table>
+  {% if p.unavail %}
+  <p style="margin:10px 0 0"><span class="pill p">⚠ {{ p.unavail.type }}</span>{% if p.unavail.return %} <span class="small mut">rientro previsto: {{ p.unavail.return }}</span>{% endif %}</p>
+  {% endif %}
+</div>
+
+{% if p.minutes == 0 %}
+<div class="card">
+  <h2>Stagione {{ p.season }}</h2>
+  <p class="mut">Non ancora sceso in campo nelle partite raccolte finora. Le statistiche compariranno
+    al primo minuto giocato; l'eventuale indisponibilità è indicata sopra, se comunicata dalla fonte.</p>
+</div>
+{% else %}
+
+<div class="grid">
+  <div class="card">
+    <h2>Stagione <span class="tag">FotMob · {{ p.matches }} gare</span></h2>
+    <table>
+      <tr><th>Statistica</th><th class="r">Totale</th><th class="r">Per 90′</th></tr>
+      {% for row in p.stats_table %}
+        {% if row.header %}<tr><th colspan="3" style="padding-top:10px">{{ row.group }}</th></tr>
+        {% else %}<tr><td>{{ row.label }}</td><td class="r">{{ row.total }}</td><td class="r">{{ row.per90 or '' }}</td></tr>{% endif %}
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>Radar di ruolo</h2>
+    {% if p.radar %}
+    <svg viewBox="0 0 340 300" style="width:100%;height:auto;background:#101a24;border-radius:6px" role="img"
+         aria-label="Radar: percentili di {{ p.name }} rispetto ai pari-ruolo del campionato">
+      {% for pts in p.radar.rings %}<polygon points="{{ pts }}" fill="none" stroke="#3b5068" stroke-width="1"/>{% endfor %}
+      {% for s in p.radar.spokes %}<line x1="{{ p.radar.cx }}" y1="{{ p.radar.cy }}" x2="{{ s[0] }}" y2="{{ s[1] }}" stroke="#3b5068" stroke-width="1"/>{% endfor %}
+      <polygon points="{{ p.radar.poly }}" fill="#28c893" fill-opacity="0.2" stroke="#28c893" stroke-width="2"/>
+      {% for a in p.radar.axes %}
+      <text x="{{ a.lx }}" y="{{ a.ly }}" text-anchor="{{ a.anchor }}" font-size="10.5" fill="#8b9bb0">{{ a.label }}</text>
+      <text x="{{ a.lx }}" y="{{ a.ly + 13 }}" text-anchor="{{ a.anchor }}" font-size="11" font-weight="700" fill="#28c893">{{ a.pct }}°</text>
+      {% endfor %}
+    </svg>
+    <p class="small mut" style="margin:8px 0 0">Percentili 0–100 rispetto ai {{ p.n_peers }} giocatori del campionato
+      con lo stesso ruolo e almeno {{ p.min_minutes }} minuti (statistiche per 90 minuti).{% if p.has_lower_axis %} Le statistiche contrassegnate con «↓» sono capovolte: meno se ne fanno, più alto è il percentile.{% endif %}</p>
+    {% else %}
+    <p class="mut">Percentili non ancora calcolabili: servono almeno {{ p.min_minutes }} minuti giocati
+      e un numero sufficiente di pari-ruolo con dato (minimo 8). Nessuna stima inventata.</p>
+    {% endif %}
+    {% if p.small_sample %}
+    <p class="small mut" style="margin-top:8px">⚠ Campione ridotto: {{ p.matches }} gare e {{ p.minutes }} minuti.
+      A inizio stagione i percentili sono molto sensibili a una singola prestazione.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if p.pct_rows %}
+<div class="card">
+  <h2>Percentili di lega <span class="tag">per ruolo · per 90′</span></h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(270px,1fr));gap:10px 26px">
+    {% for row in p.pct_rows %}
+    <div style="min-width:0">
+      <div class="small" style="display:flex;justify-content:space-between;gap:8px">
+        <span>{{ row.label }}{% if row.lower %} <span class="mut" title="meno è meglio">↓</span>{% endif %}{% if row.in_radar %} <span class="mut" title="asse del radar">◎</span>{% endif %}</span>
+        <span class="mut">{{ row.total }}{% if row.per90 %} · {{ row.per90 }}/90′{% endif %}</span>
+      </div>
+      {% if row.pct is not none %}
+      <div style="background:#1b2938;border-radius:6px;height:9px;margin-top:3px">
+        <div style="width:{{ row.pct }}%;height:9px;border-radius:6px;background:#28c893;opacity:{{ (0.45 + 0.55 * row.pct / 100)|round(2) }}"></div>
+      </div>
+      <div class="small mut" style="margin-top:2px">{{ row.pct }}° percentile · su {{ row.peers }} pari-ruolo con dato</div>
+      {% else %}
+      <div class="small mut" style="margin-top:3px">percentile n.d. — troppi pochi pari-ruolo con questo dato</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Partite giocate <span class="tag">{{ p.log|length }}</span></h2>
+  {% if p.log %}
+  <div class="tablewrap"><table>
+    <tr><th>Data</th><th>Avversario</th><th class="c">Risultato</th><th class="r">Min</th>
+        <th class="r">Voto</th><th class="r">G</th><th class="r">A</th><th class="r">xG</th><th class="r">xA</th><th></th></tr>
+    {% for m in p.log %}
+    <tr>
+      <td class="mut small">{{ m.date|it_dt_short }}</td>
+      <td class="small">{{ 'vs' if m.home else '@' }} {{ m.opponent }}</td>
+      <td class="c">{% if m.res %}<span class="pill {{ m.res }}" title="{{ m.score }}">{{ m.res }}</span>{% else %}<span class="mut small">{{ m.score or '—' }}</span>{% endif %}</td>
+      <td class="r">{{ m.minutes }}</td>
+      <td class="r">{% if m.rating is not none %}{{ m.rating|dec }}{% else %}—{% endif %}</td>
+      <td class="r">{{ m.goals or '' }}</td><td class="r">{{ m.assists or '' }}</td>
+      <td class="r">{{ m.xg|dec if m.xg is not none else '' }}</td>
+      <td class="r">{{ m.xa|dec if m.xa is not none else '' }}</td>
+      <td class="r small">{% if m.link %}<a href="{{ root }}partite/{{ m.match_id }}.html">report →</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {% else %}<p class="mut small">Nessuna partita con statistiche individuali registrata finora.</p>{% endif %}
+</div>
+{% endif %}
+
+<p class="small mut">Dati: FotMob (statistiche individuali per partita, formazioni, indisponibilità) · stagione {{ p.season }}.
+  Media voto = media dei voti di partita ponderata sui minuti giocati. I percentili confrontano solo giocatori
+  dello stesso campionato e ruolo con almeno {{ p.min_minutes }} minuti. Pagina generata il {{ generated_at|it_utc }} (ora italiana).</p>
+{% endblock %}

@@ -1,6 +1,6 @@
 # football-deep-analyzer
 
-Analisi calcistica con dati reali — portale gratuito di analisi profonda delle partite (xG, previsioni calibrate, indisponibili, arbitro, contesto, quote vs modello, report in italiano).
+Analisi calcistica con dati reali — portale gratuito di analisi profonda delle partite (xG, previsioni calibrate, indisponibili, arbitro, contesto, quote vs modello, schede giocatore con percentili e radar, report in italiano).
 
 ## Stato
 
@@ -14,6 +14,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/01_studio_fattibilita.md`](docs/01_studio_fattibilita.md) — studio completo: cosa costruire, fonti (con verdetto), progetti open source da riutilizzare, architettura a costo zero, metodologia dei modelli, aspetti legali, rischi, roadmap, decisioni aperte.
 - [`docs/02_catalogo_fonti_dati.md`](docs/02_catalogo_fonti_dati.md) — catalogo tecnico degli endpoint gratuiti verificati (FotMob, ESPN, Understat, football-data.co.uk, ClubElo, StatsBomb, Transfermarkt datasets, BSD, quote, meteo, notizie), limiti, id utili e schema dati minimo.
 - [`docs/03_decisioni_e_funzionamento.md`](docs/03_decisioni_e_funzionamento.md) — decisioni prese (7 campionati, uso personale, quote) e spiegazione dell'automazione giornaliera.
+- [`docs/07_fase3_giocatori.md`](docs/07_fase3_giocatori.md) — progetto delle schede giocatore (fase 3): dati misurati, metodologia percentili/radar, decisioni.
 
 ## Avvio rapido (sviluppo)
 
@@ -26,7 +27,7 @@ pytest -q          # test
 
 ## Come funziona (in breve)
 
-`fda daily` = `collect` (FotMob, Understat, ESPN → `data/processed/*.parquet`) → `predict` (Dixon-Coles + Elo) → `build` (sito in `site/`).
+`fda daily` = `collect` (FotMob, Understat, ESPN → `data/processed/*.parquet`) → `predict` (Dixon-Coles + Elo) → `simulate` (Monte Carlo stagione) → `build` (sito in `site/`, incluse le schede giocatore).
 GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), committa i dati e pubblica il sito su GitHub Pages.
 
 ### Attivazione (una volta sola, dal ramo `main`)

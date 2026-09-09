@@ -89,6 +89,19 @@ _RETURN_IT = {
 }
 _RETURN_PART_IT = {"early": "inizio", "mid": "metà", "late": "fine"}
 
+# Tipi di indisponibilità FotMob → italiano (valori reali visti nei dati:
+# 'injury' 897 righe, 'suspension' 39 — verificato 2026-09-09).
+_UNAVAIL_IT = {"injury": "infortunio", "suspension": "squalifica", "suspended": "squalificato",
+               "doubtful": "dubbio", "illness": "malattia", "national duty": "in nazionale",
+               "not in squad": "fuori rosa", "rest": "riposo"}
+
+
+def unavailability_it(value: Any) -> str:
+    """'injury' → 'infortunio'; valori sconosciuti restituiti come sono (mai inventati)."""
+    if not isinstance(value, str) or not value.strip():
+        return "indisponibile"
+    return _UNAVAIL_IT.get(value.strip().lower(), value.strip())
+
 
 def _return_it(s: str | None) -> str | None:
     """'Mid October 2026' → 'metà ottobre 2026'; forme note tradotte, il resto invariato."""
@@ -458,7 +471,7 @@ class MatchAnalysis:
         rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
                            & (self.lineup.role == "unavailable")]
         rows = rows.sort_values("market_value_eur", ascending=False, na_position="last")
-        return [{"name": r.player_name, "type": _val(r._asdict(), "unavailability_type", "indisponibile"),
+        return [{"name": r.player_name, "type": unavailability_it(_val(r._asdict(), "unavailability_type")),
                  "ret": _return_it(_val(r._asdict(), "expected_return")), "value": _val(r._asdict(), "market_value_eur"),
                  "pos": POSITION_NAMES.get(int(r.usual_position_id) if pd.notna(r.usual_position_id) else 0, "")}
                 for r in rows.itertuples(index=False)]
@@ -526,6 +539,7 @@ class MatchAnalysis:
         out = []
         for r in rows.itertuples(index=False):
             out.append({
+                "id": int(r.player_id),
                 "name": r.player_name,
                 "pos": POSITION_NAMES.get(int(r.position_id) if pd.notna(r.position_id) else 0, ""),
                 "season_rating": float(r.season_rating),
@@ -622,6 +636,7 @@ class MatchAnalysis:
             for r in sel.itertuples(index=False):
                 minutes = _num(int(r.player_id), "minutes_played")
                 players.append({
+                    "id": int(r.player_id),
                     "name": r.player_name,
                     "rating": float(r.rating),
                     "goals": int(_num(int(r.player_id), "goals") or 0),
