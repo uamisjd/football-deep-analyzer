@@ -57,6 +57,23 @@ def _seed(tmp_path, espn_cls=FakeEspn):
         (5, -30), (10, -40), (15, -35), (20, -25), (25, -20), (30, 0),
         (35, 20), (40, 35), (45, 45), (50, 30), (55, 55), (60, 65), (65, 40), (70, 50), (75, 60), (80, 45), (85, 70), (90, 35)]]
     st.upsert("momentum", mom)
+    # fatti FotMob per la futura (Udinese 8600 – Lazio 8543): mix traducibili / hype / inglese
+    st.upsert("insights", [
+        {"match_id": 5749669, "team_id": 8600, "player_id": None, "text":
+         "Udinese haven't lost to Lazio in their last 8 meetings (3W, 5D)."},
+        {"match_id": 5749669, "team_id": 8543, "player_id": None, "text":
+         "Have scored 8 goals in their last 5 matches"},
+        {"match_id": 5749669, "team_id": 8543, "player_id": None, "text":
+         "Have kept the most clean sheets in the competition (4)"},
+        {"match_id": 5749669, "team_id": 8543, "player_id": None, "text":
+         "Unknown English hype phrase"},
+        {"match_id": 5749669, "team_id": 8543, "player_id": 111, "text":
+         "Ciro Immobile is the competition's top scorer (5)"},
+        {"match_id": 5749669, "team_id": 9999, "player_id": None, "text":
+         "Have won their last 4 matches"},
+        {"match_id": 5749645, "team_id": 8636, "player_id": None, "text":
+         "Haven't lost in 12 matches"},
+    ])
     # un precedente non pari per coprire V e P (il campione ha solo un 1-1)
     st.upsert("h2h", [
         {"match_id": 5749645, "utc": "2025-09-15T18:45:00+00:00", "league": "Serie A",
@@ -93,6 +110,81 @@ def _seed(tmp_path, espn_cls=FakeEspn):
             ("Monza", 3, 0, 30.1, 17.9, 0.0, 0.02, 0.66),
         ]])
     return st
+
+
+def test_translate_insight_patterns_and_drop_english():
+    """Traduzione dei template FotMob; testi sconosciuti / hype → None (niente inglese)."""
+    from fda.site.analysis import translate_insight
+
+    assert translate_insight("Have scored 5 goals in their last 5 matches") == {
+        "text": "ha segnato 5 gol nelle ultime 5 partite", "kind": "goals", "priority": 80}
+    assert translate_insight("Have scored 1 goals in their last 1 matches")["text"] == (
+        "ha segnato 1 gol nell'ultima partita")
+    assert translate_insight("Haven't scored in their last 3 matches")["text"] == "non segna da 3 partite"
+    assert translate_insight("Haven't lost in 19 matches") == {
+        "text": "imbattuta da 19 partite", "kind": "streak", "priority": 90}
+    assert translate_insight("Haven't won a match in 6 attempts")["text"] == "non vince da 6 partite"
+    assert translate_insight("Have lost their last 4 matches")["text"] == "ha perso le ultime 4 partite"
+    assert translate_insight("Have won their last 3 matches")["text"] == "ha vinto le ultime 3 partite"
+    assert translate_insight("Haven't kept a clean sheet in 7 matches")["text"] == (
+        "non tiene la porta inviolata da 7 partite")
+    h2h = translate_insight("Atalanta haven't lost to Roma in their last 8 meetings (6W, 2D).")
+    assert h2h["kind"] == "h2h" and h2h["priority"] == 100
+    assert h2h["text"] == "non perde contro Roma da 8 incontri (6V, 2N)"
+    assert translate_insight("Venezia have won the previous 5 matches against Frosinone.")["text"] == (
+        "ha vinto le precedenti 5 partite contro Frosinone")
+    assert translate_insight(
+        "Cagliari and Lecce have not drawn any of their last 10 matches against each other."
+    )["text"] == "nessun pareggio negli ultimi 10 confronti diretti"
+    assert translate_insight(
+        "Paris FC and Lyon have drawn their last 3 matches against each other."
+    )["text"] == "ha pareggiato gli ultimi 3 confronti diretti"
+    scorer = translate_insight("Donyell Malen is the competition's top scorer (5)")
+    assert scorer["kind"] == "scorer" and "Donyell Malen" in scorer["text"]
+    assert "5 gol" in scorer["text"]
+    # hype / sconosciuti: non si mostrano
+    for raw in (
+        "Have kept the most clean sheets in the competition (4)",
+        "Have been awarded the most penalties this season (3)",
+        "Average 1.8 goals per match",
+        "Ranked 2 at home this season",
+        "Armand Laurienté has created the most big chances for Sassuolo (2)",
+        "Unknown English hype phrase",
+        "",
+        None,
+    ):
+        assert translate_insight(raw) is None
+
+
+def test_match_insights_selection_team_and_empty(tmp_path):
+    """Selezione: max 3, squadra corretta, inglese scartato, lista vuota se manca tutto."""
+    st = Store(tmp_path / "processed")
+    st.upsert("insights", [
+        {"match_id": 1, "team_id": 10, "player_id": None,
+         "text": "Home haven't lost to Away in their last 8 meetings (6W, 2D)."},
+        {"match_id": 1, "team_id": 10, "player_id": None, "text": "Haven't lost in 5 matches"},
+        {"match_id": 1, "team_id": 20, "player_id": None, "text": "Have scored 7 goals in their last 5 matches"},
+        {"match_id": 1, "team_id": 20, "player_id": None, "text": "Haven't kept a clean sheet in 4 matches"},
+        {"match_id": 1, "team_id": 20, "player_id": None, "text": "Have kept the most clean sheets in the competition (3)"},
+        {"match_id": 1, "team_id": 20, "player_id": 99, "text": "Hero is the competition's top scorer (9)"},
+        {"match_id": 1, "team_id": 77, "player_id": None, "text": "Have won their last 4 matches"},
+    ])
+    ma = MatchAnalysis(st)
+    got = ma.match_insights(1, 10, 20, "Casa", "Trasferta")
+    assert len(got) == 3
+    assert all("team" in x and "text" in x for x in got)
+    assert {x["team"] for x in got} <= {"Casa", "Trasferta"}
+    kinds = [x["kind"] for x in got]
+    assert kinds[0] == "h2h" and got[0]["team"] == "Casa"
+    assert "non perde contro Away da 8 incontri (6V, 2N)" in got[0]["text"]
+    assert "imbattuta da 5 partite" in {x["text"] for x in got}
+    assert "ha segnato 7 gol nelle ultime 5 partite" in {x["text"] for x in got}
+    # hype e squadra estranea esclusi; capocannoniere è 4° (scartato dal tetto)
+    blob = " ".join(x["text"] for x in got)
+    assert "clean sheets" not in blob and "Hero" not in blob and "Haven't" not in blob
+    assert ma.match_insights(999, 10, 20, "Casa", "Trasferta") == []
+    assert MatchAnalysis(Store(tmp_path / "empty")).match_insights(1, 10, 20, "A", "B") == []
+    st.close()
 
 
 def test_standing_prefers_fotmob_with_espn_fallback(tmp_path):
@@ -234,6 +326,14 @@ def test_site_build_end_to_end(tmp_path):
     assert "Risultati esatti" in pre and "1-1" in pre
     # card «Giocatori da tenere d'occhio» solo in pre-partita: media di stagione con virgola, gol/assist
     assert "Giocatori da tenere d'occhio" in pre
+    # card «Fatti rilevanti» solo in pre-partita: tradotti, max 3, niente inglese
+    assert "Fatti rilevanti" in pre
+    assert "non perde contro Lazio da 8 incontri (3V, 5N)" in pre
+    assert "ha segnato 8 gol nelle ultime 5 partite" in pre
+    assert "imbattuta da 19 partite" in pre          # insight del campione FotMob (team remappato)
+    assert "capocannoniere" not in pre               # 4° per priorità: scartato
+    assert "Haven't" not in pre
+    assert "clean sheets" not in pre and "hype phrase" not in pre
     assert "Migliori in campo" not in pre          # card post-partita: non deve apparire prima
     assert "media <b>" not in pre                 # niente media di stagione nel post (verificato dopo)
     assert "(ora italiana)" in pre
