@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Giocatori — CalcioMetro{% endblock %}
+{% block content %}
+<h1>Giocatori</h1>
+<p class="small mut">Schede individuali per tutte le 7 leghe: statistiche di stagione da FotMob (per partita),
+percentili rispetto ai pari-ruolo del campionato, radar di ruolo e log delle gare con voto.
+Soglia minima per i confronti: {{ min_minutes }} minuti. Aggiornato a ogni run del sito.</p>
+{% if not leagues %}
+<div class="card"><p class="mut">Nessun giocatore ancora raccolto: le schede compaiono dal primo run con i lineup.</p></div>
+{% endif %}
+{% for lg in leagues %}
+<div class="card">
+  <h2><a href="{{ root }}giocatori/{{ lg.key }}.html">{{ lg.name }}</a> <span class="tag">{{ lg.n_played }} allineati</span></h2>
+  {% if lg.top %}
+  <div class="tablewrap"><table>
+    <tr><th>Giocatore</th><th>Squadra</th><th>Ruolo</th><th class="r">Voto</th><th class="r">Min</th>
+        <th class="r">G</th><th class="r">xG</th><th class="r">A</th><th class="r">xA</th></tr>
+    {% for r in lg.top %}
+    <tr>
+      <td><a href="{{ root }}giocatori/{{ r.id }}.html">{{ r.name }}</a></td>
+      <td class="mut small">{{ r.team or '—' }}</td>
+      <td class="mut small">{{ r.pos or 'n.d.' }}</td>
+      <td class="r">{% if r.rating is not none %}{{ r.rating|dec }}{% else %}—{% endif %}</td>
+      <td class="r">{{ r.minutes }}</td>
+      <td class="r">{{ r.goals|int }}</td>
+      <td class="r">{{ r.xg|dec }}</td>
+      <td class="r">{{ r.assists|int }}</td>
+      <td class="r">{{ r.xa|dec }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p class="small mut" style="margin:8px 0 0">I più votati della {{ lg.name }}. {% if lg.n_bench %}Altri {{ lg.n_bench }} in rosa senza minuti finora.{% endif %}
+    Tabellone completo: <a href="{{ root }}giocatori/{{ lg.key }}.html">{{ lg.name }} →</a></p>
+  {% else %}
+  <p class="mut small">Nessun giocatore con minuti finora in questo campionato.</p>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

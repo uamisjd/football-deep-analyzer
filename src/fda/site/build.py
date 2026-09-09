@@ -19,6 +19,7 @@ from ..models.predict import outcome_index
 from ..store import Store
 from .analysis import MatchAnalysis
 from .audit import audit_match
+from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
 
@@ -65,6 +66,14 @@ def it_from_utc(ts, tz) -> str:
     return f"{t.day:02d}/{t.month:02d}/{t.year} {t.hour:02d}:{t.minute:02d}"
 
 
+def it_date_short(ts, tz) -> str:
+    """Timestamp → '08/09' nel fuso display (log partite delle schede giocatore)."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        t = t.tz_localize("UTC")
+    return f"{t.tz_convert(tz).day:02d}/{t.tz_convert(tz).month:02d}"
+
+
 class SiteBuilder:
     def __init__(self, store: Store | None = None, out_dir: Path | None = None) -> None:
         self.store = store or Store()
@@ -76,6 +85,7 @@ class SiteBuilder:
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
+        self.env.filters["it_dt_short"] = lambda ts: it_date_short(ts, self.tz)
         self.now = datetime.now(UTC)
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
@@ -89,11 +99,14 @@ class SiteBuilder:
         "accuratezza.html": "accuratezza", "stagione.html": "stagione", "stato.html": "stato",
         "info.html": "info",
     }
+    NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori")]
 
     def _render(self, template: str, rel_path: str, **ctx: Any) -> None:
         depth = rel_path.count("/")
         root = "../" * depth
         section = self.NAV_SECTIONS.get(rel_path, "")
+        if not section:
+            section = next((s for prefix, s in self.NAV_PREFIXES if rel_path.startswith(prefix)), "")
         html = self.env.get_template(template).render(root=root, generated_at=self.now, section=section, **ctx)
         path = self.out / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,8 +156,9 @@ class SiteBuilder:
                      days=self._group_by_day(self._match_rows(results)))
         return set(pd.concat([today, upcoming, results]).match_id.astype(int))
 
-    def build_match_pages(self, match_ids: set[int]) -> int:
-        n = 0
+    def build_match_pages(self, match_ids: set[int]) -> set[int]:
+        """Pagine partita: ritorna gli id effettivamente generati (per i link del log giocatori)."""
+        built: set[int] = set()
         for mid in sorted(match_ids):
             ctx = self.analysis.build(mid)
             if not ctx:
@@ -154,6 +168,41 @@ class SiteBuilder:
                 self.audit_rows.append(audit_match(ctx))
             self._render("match.html", f"partite/{mid}.html", c=ctx,
                          league_name=self.league_names.get(ctx["league_id"], ""))
+            built.add(mid)
+        return built
+
+    def build_players(self, built_match_ids: set[int]) -> int:
+        """Pagine `giocatori/`: hub, tabellone per lega e scheda di ogni giocatore (fase 3)."""
+        cat = PlayerCatalog(self.store)
+        lg_by_id = {lg.fotmob_id: lg for lg in leagues()}
+        blocks = []
+        for lg in leagues():
+            if cat.empty:
+                break
+            rows, bench = cat.league_rows(lg.fotmob_id)
+            if not rows and not bench:
+                continue
+            blocks.append(cat.hub_block(lg.fotmob_id, lg.name, lg.key))
+        self._render("giocatori_hub.html", "giocatori/index.html", leagues=blocks,
+                     min_minutes=90, title="Giocatori")
+        n = 0
+        for lg in leagues():
+            rows, bench = cat.league_rows(lg.fotmob_id)
+            if not rows and not bench:
+                continue
+            self._render("giocatori_lega.html", f"giocatori/{lg.key}.html", rows=rows,
+                         bench=bench, league_name=lg.name, season=cat.season,
+                         positions=[("Portieri", "Portiere"), ("Difensori", "Difensore"),
+                                    ("Centrocampisti", "Centrocampista"), ("Attaccanti", "Attaccante")])
+            n += len(rows) + len(bench)
+        for pid in cat.player_ids():
+            page = cat.player_page(pid, built_match_ids)
+            if page is None:
+                continue
+            lg = lg_by_id.get(page["league_id"])
+            self._render("giocatore.html", f"giocatori/{pid}.html", p=page,
+                         league_name=lg.name if lg else None,
+                         league_key=lg.key if lg else None)
             n += 1
         return n
 
@@ -247,12 +296,20 @@ class SiteBuilder:
             self.build_status()
             return {"matches": 0}
         ids = self.build_indexes(fx)
-        n = self.build_match_pages(ids)
+        # tutte le partite finite con dati raccolti hanno la loro pagina (archivio:
+        # backfill completo di stagione dal 2026-09-09), oltre alla finestra oggi/7 giorni
+        mi = self.store.read("match_info")
+        if not mi.empty:
+            fin = set(mi.loc[mi["status"] == "finished", "match_id"].astype(int))
+            fx_fin = set(fx.loc[fx["status"] == "finished", "match_id"].astype(int))
+            ids |= fin & fx_fin
+        built = self.build_match_pages(ids)
+        n_players = self.build_players(built)
         self.build_accuracy(fx)
         self.build_stagione()
         self.build_status()
         self._render("info.html", "info.html", title="Metodologia e fonti")
-        return {"matches": n, "fixtures": len(fx)}
+        return {"matches": len(built), "fixtures": len(fx), "players": n_players}
 
 
 def _rps(probs: np.ndarray, outcomes: np.ndarray) -> float:

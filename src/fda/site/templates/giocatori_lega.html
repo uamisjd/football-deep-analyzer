@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}Giocatori — {{ league_name }} · CalcioMetro{% endblock %}
+{% block content %}
+<p class="mut small"><a href="{{ root }}giocatori/index.html">← Giocatori</a> · {{ league_name }} · stagione {{ season }}</p>
+<h1>Giocatori · {{ league_name }}</h1>
+
+<div class="card" style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+  <input id="q" type="search" placeholder="Cerca per nome o squadra…" aria-label="Cerca giocatore"
+         style="flex:1;min-width:220px;padding:9px 12px;border-radius:9px;border:1px solid var(--line2);
+                background:var(--surface2);color:var(--txt);font-size:14px">
+  <div role="group" aria-label="Filtra per ruolo" style="display:flex;gap:6px;flex-wrap:wrap">
+    <button class="posbtn" data-pos="" aria-pressed="true">Tutti</button>
+    {% for lbl, code in positions %}
+    <button class="posbtn" data-pos="{{ code }}" aria-pressed="false">{{ lbl }}</button>
+    {% endfor %}
+  </div>
+  <span id="count" class="small mut" aria-live="polite"></span>
+</div>
+
+<div class="card">
+  <div class="tablewrap"><table id="tbl">
+    <tr><th>Giocatore</th><th>Squadra</th><th>Ruolo</th><th class="r">Età</th><th class="r">Voto</th>
+        <th class="r">Min</th><th class="r">G</th><th class="r">xG</th><th class="r">A</th><th class="r">xA</th></tr>
+    {% for r in rows %}
+    <tr data-pos="{{ r.pos or '' }}" data-q="{{ (r.name ~ ' ' ~ (r.team or ''))|lower }}">
+      <td><a href="{{ root }}giocatori/{{ r.id }}.html">{{ r.name }}</a></td>
+      <td class="mut small">{{ r.team or '—' }}</td>
+      <td class="mut small">{{ r.pos or 'n.d.' }}</td>
+      <td class="r mut">{{ r.age or '—' }}</td>
+      <td class="r">{% if r.rating is not none %}{{ r.rating|dec }}{% else %}—{% endif %}</td>
+      <td class="r">{{ r.minutes }}</td>
+      <td class="r">{{ r.goals|int }}</td>
+      <td class="r">{{ r.xg|dec }}</td>
+      <td class="r">{{ r.assists|int }}</td>
+      <td class="r">{{ r.xa|dec }}</td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p class="small mut" style="margin:8px 0 0">Ordinati per media voto (ponderata sui minuti). G/xG/A/xA sono totali di stagione.
+    Percentili e radar completi nella scheda di ogni giocatore.</p>
+</div>
+
+{% if bench %}
+<div class="card">
+  <h2>In rosa, ancora senza minuti <span class="tag">{{ bench|length }}</span></h2>
+  <p class="small" style="margin:0 0 8px">
+    {% for b in bench %}<a href="{{ root }}giocatori/{{ b.id }}.html">{{ b.name }}</a>{% if b.unavail %} <span class="pill p" title="indisponibile">⚠</span>{% endif %}<span class="mut"> ({{ b.team or '—' }}{% if b.pos %} · {{ b.pos }}{% endif %})</span>{{ ' · ' if not loop.last }}{% endfor %}
+  </p>
+</div>
+{% endif %}
+
+<script>
+(function () {
+  var q = document.getElementById('q'), tbl = document.getElementById('tbl'),
+      count = document.getElementById('count'), pos = '';
+  var btns = document.querySelectorAll('.posbtn');
+  function apply() {
+    var t = q.value.trim().toLowerCase(), n = 0;
+    tbl.querySelectorAll('tr[data-q]').forEach(function (r) {
+      var ok = (!t || r.dataset.q.indexOf(t) >= 0) && (!pos || r.dataset.pos === pos);
+      r.style.display = ok ? '' : 'none'; if (ok) n++;
+    });
+    count.textContent = n + ' giocatori';
+  }
+  btns.forEach(function (b) {
+    b.addEventListener('click', function () {
+      pos = b.dataset.pos;
+      btns.forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      apply();
+    });
+  });
+  q.addEventListener('input', apply);
+  apply();
+})();
+</script>
+{% endblock %}

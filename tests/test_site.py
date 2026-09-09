@@ -285,6 +285,16 @@ def test_site_build_end_to_end(tmp_path):
     assert "—</td>" in post and 'class="best"' not in post
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
+    # fase 3 — pagine giocatore: hub, tabellone di lega e schede individuali linkate dalle partite
+    assert (out / "giocatori" / "index.html").exists()
+    assert (out / "giocatori" / "ITA1.html").exists()
+    schede = list((out / "giocatori").glob("*.html"))
+    schede = [f for f in schede if f.stem != "index" and f.stem != "ITA1"]
+    assert len(schede) >= 5, f"attese schede giocatore, trovate {len(schede)}"
+    assert 'href="../giocatori/' in post          # link dalla scheda partita
+    una = schede[0].read_text(encoding="utf-8")
+    assert "scheda giocatore" in una and ("Stagione" in una or "Non ancora sceso in campo" in una)
+    assert "Giocatori" in (out / "index.html").read_text(encoding="utf-8")   # voce di navigazione
     # esclude i 2 logo (header/footer), identificati dal ruolo "Logo CalcioMetro" e dalla viewport 64
     chart_svg = [s for s in post.split("<svg")[1:] if 'aria-label="Logo CalcioMetro"' not in s]
     assert len(chart_svg) == 3          # 2 cartine + 1 momentum

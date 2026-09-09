@@ -18,6 +18,7 @@ import pandas as pd
 
 from ..config import load_leagues_config
 from ..store import Store
+from .analysis import _return_it, unavailability_it
 from .fmt import dec, pct_str
 
 MIN_MINUTES = 90          # soglia per avere/entrare nei percentili (docs/07 §2.3)
@@ -297,7 +298,7 @@ class PlayerCatalog:
         pos = int(pos)
         axes, points = [], []
         n = len(RADAR[pos])
-        cx, cy, r_max = 160.0, 150.0, 96.0
+        cx, cy, r_max = 170.0, 150.0, 90.0
         for i, (sid, label) in enumerate(RADAR[pos]):
             row = self._stat_row(sid, player_id)
             pct = row["pct"]
@@ -384,7 +385,8 @@ class PlayerCatalog:
                 pct_rows.append(row)
         unavail = None
         if isinstance(r["unavail_type"], str) and r["unavail_type"]:
-            unavail = {"type": r["unavail_type"], "return": r["expected_return"]
+            unavail = {"type": unavailability_it(r["unavail_type"]),
+                       "return": _return_it(r["expected_return"])
                        if isinstance(r["expected_return"], str) else None}
         return {
             "id": player_id, "name": r["name"], "team_name": r["team_name"],
@@ -404,12 +406,24 @@ class PlayerCatalog:
             "season": self.season, "min_minutes": MIN_MINUTES,
             "eligible": bool(r["minutes"] >= MIN_MINUTES),
             "n_players_league": self._n_league_players(r),
+            "n_peers": self._n_peers(r),
+            "has_lower_axis": pos_int is not None and any(
+                STATS[sid].lower for sid, _ in RADAR.get(pos_int, [])),
         }
 
     def _n_league_players(self, r) -> int:
         if pd.isna(r["league_id"]):
             return 0
         return int((self.players["league_id"] == r["league_id"]).sum())
+
+    def _n_peers(self, r) -> int:
+        """Pari-ruolo idonei (stessa lega, stesso ruolo, ≥ MIN_MINUTES)."""
+        if pd.isna(r["league_id"]) or pd.isna(r["position"]):
+            return 0
+        mask = ((self.players["league_id"] == r["league_id"])
+                & (self.players["position"] == r["position"])
+                & (self.players["minutes"] >= MIN_MINUTES))
+        return int(mask.sum())
 
     def league_rows(self, league_id: int) -> tuple[list[dict], list[dict]]:
         """(giocatori con minuti, in rosa senza minuti) per la pagina di lega."""

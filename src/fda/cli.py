@@ -282,7 +282,7 @@ def simulate_cmd(
 
 @app.command("build")
 def build_cmd() -> None:
-    """Genera il sito statico in site/ (pagine Oggi, Prossime, Risultati, partite, Accuratezza, Stato)."""
+    """Genera il sito statico in site/ (Oggi, Prossime, Risultati, partite, Giocatori, Accuratezza, Stato)."""
     from .site.build import SITE_DIR, SiteBuilder
     from .store import Store
 
