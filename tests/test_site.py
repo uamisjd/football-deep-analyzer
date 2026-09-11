@@ -282,7 +282,8 @@ def test_site_build_end_to_end(tmp_path):
     # card Confronto di stagione (tabella FotMob): Inter in tabella, Monza no → lato «—», nessun evidenziato
     assert "Confronto di stagione" in post and "Punti/gara" in post
     assert "9 in 3 gare" in post and "3,00" in post and "media gol del campionato" in post
-    assert "—</td>" in post and 'class="best"' not in post
+    cmp = post[post.find("Confronto di stagione"):post.find("Contesto")]
+    assert "—</td>" in cmp and 'class="best"' not in cmp   # Monza assente: niente evidenziazione nel confronto
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
     # fase 3 — pagine giocatore: hub, tabellone di lega e schede individuali linkate dalle partite
@@ -297,10 +298,14 @@ def test_site_build_end_to_end(tmp_path):
     assert "Giocatori" in (out / "index.html").read_text(encoding="utf-8")   # voce di navigazione
     # esclude i 2 logo (header/footer), identificati dal ruolo "Logo CalcioMetro" e dalla viewport 64
     chart_svg = [s for s in post.split("<svg")[1:] if 'aria-label="Logo CalcioMetro"' not in s]
-    assert len(chart_svg) == 3          # 2 cartine + 1 momentum
+    assert len(chart_svg) == 5          # 2 cartine + momentum + corsa xG + WP in-play
     assert "xG 0,88" in post                       # gol di Lautaro Martínez, decimale italiano
     assert "Nessun tiro registrato" in post        # pannello Monza vuoto
     # momentum (SVG a barre + marker gol): 18 punti seed + 2 del campione; Inter dominante (13/20 = 65%)
+    assert "Matrice dei punteggi" in post and "Scontro tattico" in post
+    assert "Corsa xG" in post and "Qualità dei tiri" in post and "Probabilità in-play" in post
+    assert "RegularPlay" not in post and "FastBreak" not in post and "FromCorner" not in post
+    assert "azione manovrata" in post
     assert "Momentum della partita" in post
     assert "Momentum a favore di <b>Inter</b> nel 65% dei minuti" in post
     assert 'fill="#e0605a"' in post and 'fill-opacity="0.75"' in post  # barre negative/positive

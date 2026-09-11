@@ -37,6 +37,45 @@
 </div>
 {% endif %}
 
+{% if c.score_matrix %}
+{% set m = c.score_matrix %}
+<div class="card">
+  <h2>Matrice dei punteggi</h2>
+  <p class="small mut">Probabilità Dixon-Coles di ogni risultato 0–{{ m.cap }} (righe = gol {{ c.home_name }}, colonne = gol {{ c.away_name }}). La cella evidenziata è la più probabile ({{ m.mode }}). Coda 6+ gol: {{ (m.p_tail*100)|dec(1) }}%.</p>
+  <div class="tablewrap">
+    <table class="scoregrid">
+      <tr><th></th>{% for j in range(m.cap+1) %}<th>{{ j }}</th>{% endfor %}</tr>
+      {% for row in m.cells %}
+      <tr>
+        <th>{{ row[0].i }}</th>
+        {% for cell in row %}
+        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }})" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) }}%">{{ (cell.p*100)|dec(1) }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+
+{% if c.clash %}
+<div class="card">
+  <h2>Scontro tattico</h2>
+  <p class="small mut">Come si incontrano gli stili: λ del modello, parametri attacco/difesa Dixon-Coles, xG di stagione (azione vs palle inattive) e pressing (PPDA). Il valore migliore è evidenziato.</p>
+  <table>
+    <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
+    {% for r in c.clash.rows %}
+    <tr>
+      <th>{{ r.label }}</th>
+      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}—{% else %}{{ r.h|dec(r.nd) }}{% endif %}</td>
+      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}—{% else %}{{ r.a|dec(r.nd) }}{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small mut" style="margin-top:8px">{{ c.clash.notes[0] }} {{ c.clash.notes[1] }}</p>
+</div>
+{% endif %}
+
 {% if c.status != 'finished' and c.insights %}
 <div class="card">
   <h2>Fatti rilevanti</h2>
@@ -191,6 +230,83 @@
   {% endfor %}
   </div>
   <p class="small mut" style="margin-top:10px">Legenda: <span style="color:#28c893">●</span> gol · <span style="color:#4c9dd3">●</span> in porta (parato) · <span style="color:#f0b429">◌</span> bloccato · <span style="color:#8b9bb0">◌</span> fuori.</p>
+</div>
+{% endif %}
+{% if c.xg_race %}
+<div class="card">
+  <h2>Corsa xG</h2>
+  <p class="small mut">xG cumulativo dai tiri (autogol esclusi). I pallini segnano i gol.</p>
+  <svg viewBox="0 0 420 160" style="width:100%;height:auto;background:#101a24;border-radius:6px" role="img" aria-label="Corsa xG">
+    <line x1="6" y1="148" x2="414" y2="148" stroke="#3b5068" stroke-width="1"/>
+    <text x="6" y="158" fill="#8b9bb0" font-size="10">0'</text>
+    <text x="204" y="158" fill="#8b9bb0" font-size="10">45'</text>
+    <text x="400" y="158" fill="#8b9bb0" font-size="10">90'</text>
+    <polyline fill="none" stroke="#28c893" stroke-width="2.2" points="{{ c.xg_race.poly_h }}"/>
+    <polyline fill="none" stroke="#e0605a" stroke-width="2.2" points="{{ c.xg_race.poly_a }}"/>
+    {% for g in c.xg_race.goals %}
+    <circle cx="{{ g.x }}" cy="{{ g.y }}" r="4" fill="{{ '#28c893' if g.home else '#e0605a' }}" stroke="#101a24" stroke-width="1"><title>⚽ {{ g.player }} {{ g.minute|round|int }}'</title></circle>
+    {% endfor %}
+  </svg>
+  <p class="small mut" style="margin:8px 0 0"><span style="color:#28c893">●</span> {{ c.home_name }} {{ c.xg_race.home_xg|dec }} · <span style="color:#e0605a">●</span> {{ c.away_name }} {{ c.xg_race.away_xg|dec }} · {{ c.xg_race.n }} tiri</p>
+</div>
+{% endif %}
+{% if c.home_shotq or c.away_shotq %}
+<div class="card">
+  <h2>Qualità dei tiri</h2>
+  <p class="small mut">Volume vs qualità (xG/tiro), azione manovrata vs palle inattive, conversione rispetto a xG e xGOT. Autogol esclusi.</p>
+  <table>
+    <tr><th></th><th class="r">{{ c.home_name }}</th><th class="r">{{ c.away_name }}</th></tr>
+    {% set hq, aq = c.home_shotq, c.away_shotq %}
+    <tr><td>Tiri (xG/tiro)</td>
+      <td class="r">{% if hq %}{{ hq.n }} ({{ hq.xg_per_shot|dec }}){% else %}—{% endif %}</td>
+      <td class="r">{% if aq %}{{ aq.n }} ({{ aq.xg_per_shot|dec }}){% else %}—{% endif %}</td></tr>
+    <tr><td>xG azione manovrata</td>
+      <td class="r">{% if hq %}{{ hq.open.xg|dec }} ({{ hq.open.n }}){% else %}—{% endif %}</td>
+      <td class="r">{% if aq %}{{ aq.open.xg|dec }} ({{ aq.open.n }}){% else %}—{% endif %}</td></tr>
+    <tr><td>xG palle inattive</td>
+      <td class="r">{% if hq %}{{ hq.set.xg|dec }} ({{ hq.set.n }}){% else %}—{% endif %}</td>
+      <td class="r">{% if aq %}{{ aq.set.xg|dec }} ({{ aq.set.n }}){% else %}—{% endif %}</td></tr>
+    <tr><td>xG da rigore</td>
+      <td class="r">{% if hq %}{{ hq.pen.xg|dec }} ({{ hq.pen.n }}){% else %}—{% endif %}</td>
+      <td class="r">{% if aq %}{{ aq.pen.xg|dec }} ({{ aq.pen.n }}){% else %}—{% endif %}</td></tr>
+    <tr><td>Gol − xG</td>
+      <td class="r">{% if hq %}{{ hq.over_xg|dec }}{% else %}—{% endif %}</td>
+      <td class="r">{% if aq %}{{ aq.over_xg|dec }}{% else %}—{% endif %}</td></tr>
+    <tr><td>Gol − xGOT</td>
+      <td class="r">{% if hq %}{{ hq.finishing|dec }}{% else %}—{% endif %}</td>
+      <td class="r">{% if aq %}{{ aq.finishing|dec }}{% else %}—{% endif %}</td></tr>
+  </table>
+  <p class="small mut" style="margin-top:8px">Gol − xG: conversione rispetto alle occasioni create. Gol − xGOT: quanto i tiri in porta hanno superato (o no) il portiere.</p>
+</div>
+{% endif %}
+{% if c.wp_path %}
+<div class="card">
+  <h2>Probabilità in-play</h2>
+  <p class="small mut">Ricostruzione 1X2 dopo ogni gol: tempo residuo ∝ minuti restanti, Poisson indipendente sul residuo (ρ Dixon-Coles vale per la partita intera, non si scala). Non è un live feed.</p>
+  <svg viewBox="0 0 420 128" style="width:100%;height:auto;background:#101a24;border-radius:6px" role="img" aria-label="Probabilità in-play">
+    <line x1="6" y1="116" x2="414" y2="116" stroke="#3b5068" stroke-width="1"/>
+    <text x="6" y="126" fill="#8b9bb0" font-size="10">0'</text>
+    <text x="400" y="126" fill="#8b9bb0" font-size="10">90'</text>
+    <polyline fill="none" stroke="#28c893" stroke-width="2" points="{{ c.wp_path.poly_h }}"/>
+    <polyline fill="none" stroke="#7f8aa0" stroke-width="2" points="{{ c.wp_path.poly_d }}"/>
+    <polyline fill="none" stroke="#e0605a" stroke-width="2" points="{{ c.wp_path.poly_a }}"/>
+    {% for g in c.wp_path.points %}{% if g.event == 'goal' %}
+    <circle cx="{{ g.x }}" cy="{{ g.y_h if g.scorer_home else g.y_a }}" r="3.5" fill="{{ '#28c893' if g.scorer_home else '#e0605a' }}"><title>{{ g.player }} {{ g.hg }}-{{ g.ag }} · {{ g.minute|round|int }}'</title></circle>
+    {% endif %}{% endfor %}
+  </svg>
+  <p class="small mut" style="margin:8px 0 0"><span style="color:#28c893">●</span> 1 {{ c.home_name }} · <span style="color:#7f8aa0">●</span> X · <span style="color:#e0605a">●</span> 2 {{ c.away_name }}</p>
+  <table style="margin-top:8px">
+    <tr><th>Minuto</th><th>Punteggio</th><th class="r">1</th><th class="r">X</th><th class="r">2</th></tr>
+    {% for g in c.wp_path.points %}
+    <tr>
+      <td class="mut small">{{ g.minute|round|int }}'</td>
+      <td>{{ g.hg }}-{{ g.ag }}{% if g.player %} · {{ g.player }}{% endif %}</td>
+      <td class="r">{{ (g.p_home*100)|round|int }}%</td>
+      <td class="r">{{ (g.p_draw*100)|round|int }}%</td>
+      <td class="r">{{ (g.p_away*100)|round|int }}%</td>
+    </tr>
+    {% endfor %}
+  </table>
 </div>
 {% endif %}
 {% if c.momentum %}

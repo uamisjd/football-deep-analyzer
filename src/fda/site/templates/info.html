@@ -34,7 +34,17 @@
 
 <div class="card">
   <h2>Leggere una scheda partita</h2>
-  <p>Una scheda pre-partita contiene: previsione del modello, risultati esatti, forma recente, xG di stagione, <b>xPTS vs punti reali</b>, confronto di stagione, indisponibili, formazione probabile, riposo, arbitro, meteo e precedenti H2H. La scheda post-partita aggiunge lettura della gara, statistiche chiave, cronaca, tiri, cartina dei tiri e momentum.</p>
+  <p>Una scheda pre-partita contiene: previsione del modello, risultati esatti, <b>matrice dei punteggi</b> 0–5 (griglia Dixon-Coles), <b>scontro tattico</b> (λ, attacco/difesa DC, xG azione vs palle inattive, PPDA), forma recente, xG di stagione, <b>xPTS vs punti reali</b>, confronto di stagione, indisponibili, formazione probabile, riposo, arbitro, meteo e precedenti H2H. La scheda post-partita aggiunge lettura della gara, statistiche chiave, cronaca, tiri, cartina, <b>corsa xG</b>, <b>qualità dei tiri</b> (volume, palle inattive, gol−xG, gol−xGOT), <b>probabilità in-play</b> ricostruite dopo ogni gol, e momentum.</p>
+</div>
+<div class="card">
+  <h2>Laboratorio analitico (come si calcolano)</h2>
+  <ul style="padding-left:20px;margin:0">
+    <li><b>Matrice dei punteggi</b> — Poisson bivariato con correzione τ di Dixon-Coles (ρ stimato sul campionato). Coda oltre 5 gol dichiarata a parte; ρ fuori dai bound matematici viene clampato, mai inventato.</li>
+    <li><b>Scontro tattico</b> — parametri attacco/difesa del modello; xG azione manovrata / palle inattive come media sulle partite finite FotMob (parità 7/7); PPDA e passaggi profondi da Understat dove copre.</li>
+    <li><b>Corsa xG</b> — somma cumulativa dell'xG di ogni tiro, autogol esclusi.</li>
+    <li><b>Qualità dei tiri</b> — xG/tiro; split RegularPlay/contropiede vs corner/punizioni/rimesse vs rigori; gol − xG (conversione) e gol − xGOT (tiro in porta vs portiere).</li>
+    <li><b>Probabilità in-play</b> — al minuto t, λ residue = λ pre-partita × (90−t)/90; Poisson indipendente sul residuo (ρ non si scala al tempo parziale). Non è un modello live: è una ricostruzione onesta dopo il fischio finale.</li>
+  </ul>
 </div>
 
 <div class="card">
