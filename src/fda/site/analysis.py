@@ -18,6 +18,7 @@ from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
+from .advanced import score_matrix, shot_quality, style_rows, wp_path, xg_race
 
 POSITION_NAMES = {1: "portiere", 2: "difensore", 3: "centrocampista", 4: "attaccante"}
 
@@ -341,9 +342,14 @@ class MatchAnalysis:
             rows = self.us_team[self.us_team.team_name.map(canonical) == canon]
             if not rows.empty:
                 n = len(rows)
-                return {"source": "Understat", "played": n, "xg": rows.xg.sum(), "xga": rows.xga.sum(),
-                        "xg_pm": rows.xg.mean(), "xga_pm": rows.xga.mean(), "xpts": rows.xpts.sum(),
-                        "pts": rows.pts.sum(), "ppda": rows.ppda.mean()}
+                out = {"source": "Understat", "played": n, "xg": rows.xg.sum(), "xga": rows.xga.sum(),
+                       "xg_pm": rows.xg.mean(), "xga_pm": rows.xga.mean(), "xpts": rows.xpts.sum(),
+                       "pts": rows.pts.sum(), "ppda": rows.ppda.mean()}
+                for col, key in (("ppda_allowed", "ppda_allowed"), ("deep", "deep"),
+                                 ("deep_allowed", "deep_allowed")):
+                    if col in rows.columns:
+                        out[key] = float(rows[col].mean())
+                return out
         if not self.info.empty:
             fin = self.info[self.info.status == "finished"]
             h = fin[fin.home_id == team_id]
@@ -371,6 +377,40 @@ class MatchAnalysis:
                         "xga": xga.sum(), "xg_pm": xg.mean(), "xga_pm": xga.mean(),
                         "xpts": xpts, "pts": pts, "ppda": None}
         return None
+
+    def season_style(self, team_name: str, team_id: int) -> dict[str, Any] | None:
+        """Stile di stagione: xG/xGA, split azione/palle inattive (FotMob), PPDA/deep (Understat)."""
+        base = dict(self.season_xg(team_name, team_id) or {})
+        split = self._season_xg_split(team_id)
+        if split:
+            base.update(split)
+        return base or None
+
+    def _season_xg_split(self, team_id: int) -> dict[str, Any]:
+        """xG azione manovrata / palle inattive per gara, dalle partite finite FotMob."""
+        if self.team_stats.empty or self.info.empty:
+            return {}
+        fin = set(self.info.loc[self.info.status == "finished", "match_id"].astype(int))
+        ts = self.team_stats[(self.team_stats.team_id == team_id)
+                             & (self.team_stats.period == "All")
+                             & (self.team_stats.match_id.isin(fin))]
+        if ts.empty:
+            return {}
+
+        def _mean(key: str) -> float | None:
+            v = pd.to_numeric(ts.loc[ts.key == key, "value"], errors="coerce").dropna()
+            return float(v.mean()) if len(v) else None
+
+        out: dict[str, Any] = {}
+        op, sp = _mean("expected_goals_open_play"), _mean("expected_goals_set_play")
+        if op is not None:
+            out["open_pm"] = op
+        if sp is not None:
+            out["set_pm"] = sp
+        n = ts.loc[ts.key == "expected_goals", "match_id"].nunique()
+        if n:
+            out["split_played"] = int(n)
+        return out
 
     def standing(self, team_name: str) -> dict[str, Any] | None:
         """Classifica: prima FotMob (fonte primaria), poi ESPN come riserva."""
@@ -798,6 +838,54 @@ class MatchAnalysis:
         d["top_scores"] = top or {}
         return d
 
+    def score_matrix(self, pred: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Matrice 0–5 dei punteggi dalla λ e ρ della previsione (None se manca λ)."""
+        if not pred or pred.get("lambda_home") is None or pred.get("lambda_away") is None:
+            return None
+        rho = pred.get("dc_rho") or 0.0
+        try:
+            rho = 0.0 if rho is None or (isinstance(rho, float) and pd.isna(rho)) else float(rho)
+        except (TypeError, ValueError):
+            rho = 0.0
+        return score_matrix(float(pred["lambda_home"]), float(pred["lambda_away"]), rho)
+
+    def clash(self, home_name: str, home_id: int, away_name: str, away_id: int,
+              pred: dict[str, Any] | None) -> dict[str, Any] | None:
+        return style_rows(self.season_style(home_name, home_id),
+                          self.season_style(away_name, away_id), pred)
+
+    def match_xg_race(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        if self.shots.empty:
+            return None
+        return xg_race(self.shots[self.shots.match_id == match_id], home_id, away_id)
+
+    def match_shot_quality(self, match_id: int, team_id: int) -> dict[str, Any] | None:
+        if self.shots.empty:
+            return None
+        return shot_quality(self.shots[self.shots.match_id == match_id], team_id)
+
+    def match_wp(self, pred: dict[str, Any] | None, timeline: list[dict[str, Any]]) -> dict[str, Any] | None:
+        """Traiettoria 1X2 dopo ogni gol; None senza previsione o senza gol."""
+        if not pred or pred.get("lambda_home") is None or pred.get("lambda_away") is None:
+            return None
+        goals = [e for e in timeline if e.get("type") == "Goal"]
+        if not goals:
+            return None
+        rho = pred.get("dc_rho") or 0.0
+        try:
+            rho = 0.0 if rho is None or (isinstance(rho, float) and pd.isna(rho)) else float(rho)
+        except (TypeError, ValueError):
+            rho = 0.0
+        pts = wp_path(goals, float(pred["lambda_home"]), float(pred["lambda_away"]), rho)
+        if len(pts) < 2:
+            return None
+        return {
+            "points": pts,
+            "poly_h": " ".join(f"{p['x']},{p['y_h']}" for p in pts),
+            "poly_d": " ".join(f"{p['x']},{p['y_d']}" for p in pts),
+            "poly_a": " ".join(f"{p['x']},{p['y_a']}" for p in pts),
+        }
+
     # ---- testo analitico ----------------------------------------------------------------------------
     @staticmethod
     def narrative(ctx: dict[str, Any]) -> list[str]:
@@ -822,6 +910,25 @@ class MatchAnalysis:
                 s.append(f"Gara da pochi gol: {_f(tot)} gol attesi complessivi, Under 2,5 al {_pct(1 - p['p_over25'])}.")
             if p.get("p_btts") is not None and p["p_btts"] >= 0.58:
                 s.append(f"Entrambe a segno probabile ({_pct(p['p_btts'])}).")
+        clash = ctx.get("clash")
+        if clash:
+            by = {r["label"]: r for r in clash["rows"]}
+            ppda = by.get("PPDA (↓ = più pressing)")
+            if ppda and ppda["h"] is not None and ppda["a"] is not None:
+                if ppda["h"] <= 0.75 * ppda["a"]:
+                    s.append(f"{h} preme molto più di {a} (PPDA {_f(ppda['h'], 1)} vs {_f(ppda['a'], 1)}).")
+                elif ppda["a"] <= 0.75 * ppda["h"]:
+                    s.append(f"{a} preme molto più di {h} (PPDA {_f(ppda['a'], 1)} vs {_f(ppda['h'], 1)}).")
+            op = by.get("xG azione manovrata / gara")
+            st = by.get("xG palle inattive / gara")
+            if op and st and op["h"] is not None and st["h"] is not None and (op["h"] + st["h"]) > 0:
+                share = st["h"] / (op["h"] + st["h"])
+                if share >= 0.40:
+                    s.append(f"{h} crea una quota alta di xG su palla inattiva ({_pct(share)} del totale).")
+            if op and st and op["a"] is not None and st["a"] is not None and (op["a"] + st["a"]) > 0:
+                share = st["a"] / (op["a"] + st["a"])
+                if share >= 0.40:
+                    s.append(f"{a} crea una quota alta di xG su palla inattiva ({_pct(share)} del totale).")
         for side, name in (("home", h), ("away", a)):
             f = ctx.get(f"{side}_form") or []
             if len(f) >= 3:
@@ -947,5 +1054,11 @@ class MatchAnalysis:
             "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
             "generated_at": datetime.now(timezone.utc),
         }
+        ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
+        ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
+        ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
+        ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None
+        ctx["away_shotq"] = self.match_shot_quality(match_id, away_id) if status == "finished" else None
+        ctx["wp_path"] = self.match_wp(ctx["prediction"], ctx["timeline"]) if status == "finished" else None
         ctx["narrative"] = self.narrative(ctx)
         return ctx
