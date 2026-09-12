@@ -220,11 +220,39 @@ distinta, un solo `groupby` su `lineup`): il dato più cercato è leggibile senz
 - `scripts/verify_site.py` → **4056 pagine, 0 problemi, 1082 controlli numerici** (nuovo passo `[5]`:
   648 ruoli, 108 infermerie, 103 archivi di precedenti ricontrollati contro le tabelle).
 
-### F5. Resta da fare (prossimo giro, già misurato)
+### F5. Secondo giro (stesso giorno): post-partita, statistiche di dettaglio, mercati
 
-1. **Post-partita**: assist sui gol (`assist_player_id` su 535/753 gol, nome risolvibile nel 100%),
-   split primo/secondo tempo (periodi `FirstHalf`/`SecondHalf` 478/478), portieri (`goals_prevented`,
-   `saves`, `errors_led_to_goal`: 7/7 leghe), metriche fisiche **condizionali** (solo 60/478 = 12,5%).
-2. **Statistiche di squadra non mostrate** a copertura piena: duelli vinti, intercetti, passaggi
-   nell'ultimo terzo, cross e lanci riusciti, pali, fuorigioco (13 delle 40 chiavi sono a schermo).
-3. **Accuratezza per mercato** (Over/Under, BTTS, esito) oltre a 1X2 e RPS complessivo.
+Tutto ciò che era elencato come «resta da fare» è stato implementato nello stesso giorno.
+
+| Novità | Cosa mostra | Copertura misurata sul sito generato |
+|---|---|---|
+| **Assist e tipo di gol in cronaca** | «⚽ Rasmus Højlund · *assist di Giovanni Di Lorenzo* · 0-2», con «di testa», «rigore», «punizione diretta», «rovesciata» dove la fonte lo dice | **534 assist su 752 gol** (71%), nome risolto dalla distinta della stessa partita nel 100%; tipo di gol su **143** gol (gli autogol non ripetono «autogol») |
+| **Primo e secondo tempo** | xG, tiri, tiri in porta, possesso, angoli, grandi occasioni per tempo | **239/239** partite finite, 7/7 leghe |
+| **I portieri** | parate, **gol prevenuti** (xG subito − gol incassati), errori che hanno portato a un gol, rigori parati | **239/239**; il portiere è chi ha `saves`/`goals_prevented` — validato: **478/478** con ruolo 0 in distinta (prima versione pescava i difensori: van Ewijk al posto di Raya) |
+| **Dati fisici** (condizionale) | distanza in km, sprint, metri in sprint, giocatore più veloce con km/h | **30 partite** (FotMob li pubblica solo lì): la card compare solo quando i dati esistono |
+| **Statistiche di dettaglio** | le altre 23 voci FotMob: tiri da dentro/fuori area, xG azione manovrata vs palle inattive, duelli (a terra/aerei), intercetti, rinvii, tiri bloccati, dribbling, cross, lanci, passaggi per metà campo, legni, fuorigioco | **239/239**, due colonne per non allungare la pagina |
+| **Accuratezza per mercato** | per 9 mercati (Over 1,5/2,5/3,5, BTTS, doppie chance 1X/12/X2, porte inviolate): previsto vs osservato, **Brier**, Brier della frequenza di base, Δ, scelte indovinate | 28 gare valutate |
+
+**Risultato scomodo ma pubblicato**: sui 9 mercati il modello **batte la frequenza di base solo su
+doppia chance 1X (Δ −0,0223) e porta inviolata in trasferta (Δ −0,0139)**; sugli altri il Brier è
+peggiore del riferimento, e la causa è visibile nella stessa tabella: dichiara Over 2,5 al 56,0%
+contro un osservato del 64,3% (sottostima dei gol, coerente con il difetto di shrinkage già corretto
+nel codice ma non ancora nelle previsioni pubblicate). Campione di 28 gare: va riletto dopo qualche
+giornata di run.
+
+### F6. Verifiche del secondo giro
+
+- `pytest -q` → **106 passed** (+5 test post-partita: assist/tipo di gol, split 1T/2T, portiere
+  che esclude i giocatori di movimento, fisiche condizionali, statistiche di dettaglio).
+- `fda build` → 347 partite, 2364 fixture, 7388 giocatori.
+- `scripts/verify_site.py` → **4056 pagine, 0 problemi, 1855 controlli numerici**; nuovo passo `[6]`
+  che ricontrolla **534 assist** contro gli eventi (con la grafia del nome della stessa partita:
+  lo stesso `player_id` ha grafie diverse fra le giornate) e **239 split 1T/2T** contro `team_stats`.
+
+### F7. Resta aperto (dichiarato)
+
+1. **Le previsioni pubblicate** cambiano solo al primo `fda predict` con la rete: la tabella dei
+   mercati va riletta allora (atteso: Over/Under più calibrati dopo lo shrinkage corretto).
+2. **Metriche fisiche** su 30 partite: la copertura dipende dalla fonte, non da noi.
+3. **`goals_prevented`/`errors_led_to_goal`** mancano su alcune partite (93/239 per gli errori):
+   il «—» a schermo significa «non registrato dalla fonte», non zero (nota nella card).

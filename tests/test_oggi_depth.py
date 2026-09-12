@@ -268,3 +268,148 @@ def test_build_exposes_new_pre_match_keys(tmp_path):
     ctx_fin = ma.build(4)
     assert ctx_fin["home_arrival"] is None and ctx_fin["h2h_pattern"] is None
     assert ctx_fin["referee_profile"]["name"] == "AltraPersona"
+
+
+# ---- post-partita: assist, tempi, portieri, fisiche, statistiche di dettaglio --------------
+def _finished_store(tmp_path) -> Store:
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", pd.DataFrame([
+        {"match_id": 1, "league_id": 55, "home_id": 10, "away_id": 20, "home_name": "Alpha",
+         "away_name": "Beta", "utc_kickoff": pd.Timestamp("2026-09-05 18:00", tz="UTC"),
+         "status": "finished", "round": "3", "home_goals": 2, "away_goals": 1},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 1, "team_id": 10, "player_id": 201, "player_name": "Punta A", "role": "starter",
+         "usual_position_id": 3, "position_id": 115, "rating": 8.0, "season_rating": 7.4,
+         "shirt_number": 9, "is_captain": False, "unavailability_type": None, "expected_return": None,
+         "market_value_eur": 1_000_000},
+        {"match_id": 1, "team_id": 10, "player_id": 202, "player_name": "Portiere A", "role": "starter",
+         "usual_position_id": 0, "position_id": 11, "rating": 7.0, "season_rating": 7.0,
+         "shirt_number": 1, "is_captain": False, "unavailability_type": None, "expected_return": None,
+         "market_value_eur": 1_000_000},
+        {"match_id": 1, "team_id": 20, "player_id": 203, "player_name": "Terzino B", "role": "starter",
+         "usual_position_id": 1, "position_id": 34, "rating": 6.5, "season_rating": 6.8,
+         "shirt_number": 2, "is_captain": False, "unavailability_type": None, "expected_return": None,
+         "market_value_eur": 1_000_000},
+        {"match_id": 1, "team_id": 20, "player_id": 204, "player_name": "Portiere B", "role": "starter",
+         "usual_position_id": 0, "position_id": 11, "rating": 6.9, "season_rating": 6.9,
+         "shirt_number": 1, "is_captain": False, "unavailability_type": None, "expected_return": None,
+         "market_value_eur": 1_000_000},
+    ]))
+    st.write("events", pd.DataFrame([
+        # gol con assist, gol di testa senza assist, autogol (descrizione ignorata)
+        {"match_id": 1, "type": "Goal", "minute": 12, "minute_added": None, "is_home": True,
+         "player_id": 201, "player_name": "Punta A", "card": None, "own_goal": False,
+         "assist_player_id": 202, "home_score": 0, "away_score": 0, "swap": None,
+         "goal_description": None},
+        {"match_id": 1, "type": "Goal", "minute": 55, "minute_added": 1, "is_home": True,
+         "player_id": 201, "player_name": "Punta A", "card": None, "own_goal": False,
+         "assist_player_id": None, "home_score": 1, "away_score": 0, "swap": None,
+         "goal_description": "Header"},
+        # autogol di un giocatore di Alpha: il gol è accreditato a Beta (is_home=False)
+        {"match_id": 1, "type": "Goal", "minute": 70, "minute_added": None, "is_home": False,
+         "player_id": 201, "player_name": "Punta A", "card": None, "own_goal": True,
+         "assist_player_id": None, "home_score": 2, "away_score": 0, "swap": None,
+         "goal_description": "Own goal"},
+    ]))
+    stats = [("expected_goals", 1.8, 0.6), ("total_shots", 14, 5), ("ShotsOnTarget", 6, 2),
+             ("BallPossesion", 62, 38), ("corners", 4, 1), ("big_chance", 3, 0),
+             ("duel_won", 40, 33), ("interceptions", 9, 12), ("Offsides", 2, 1)]
+    rows = []
+    for period, mul in (("All", 1.0), ("FirstHalf", 0.4), ("SecondHalf", 0.6)):
+        for key, hv, av in stats:
+            rows.append({"match_id": 1, "team_id": 10, "period": period, "key": key,
+                         "value": round(hv * mul, 2), "text": f"{hv * mul:.2f}"})
+            rows.append({"match_id": 1, "team_id": 20, "period": period, "key": key,
+                         "value": round(av * mul, 2), "text": f"{av * mul:.2f}"})
+    st.write("team_stats", pd.DataFrame(rows))
+    ps = []
+    for pid, name, tid, mins, saves, gp in ((201, "Punta A", 10, 90, None, None),
+                                            (202, "Portiere A", 10, 90, 3, 0.8),
+                                            (203, "Terzino B", 20, 90, None, None),
+                                            (204, "Portiere B", 20, 90, 5, -1.2)):
+        ps.append({"match_id": 1, "team_id": tid, "player_id": pid, "player_name": name,
+                   "key": "minutes_played", "value": float(mins)})
+        if saves is not None:
+            ps.append({"match_id": 1, "team_id": tid, "player_id": pid, "player_name": name,
+                       "key": "saves", "value": float(saves)})
+            ps.append({"match_id": 1, "team_id": tid, "player_id": pid, "player_name": name,
+                       "key": "goals_prevented", "value": gp})
+    # il terzino ha un errore che porta a un gol: non deve diventare il portiere
+    ps.append({"match_id": 1, "team_id": 20, "player_id": 203, "player_name": "Terzino B",
+               "key": "errors_led_to_goal", "value": 1.0})
+    # metriche fisiche solo per la squadra di casa
+    for pid, name, dist, spr, top in ((201, "Punta A", 10_000, 12, 33.5), (202, "Portiere A", 5_000, 2, 28.0)):
+        for key, val in (("physical_metrics_distance_covered", dist),
+                         ("physical_metrics_number_of_sprints", spr),
+                         ("physical_metrics_sprinting", 200),
+                         ("physical_metrics_topspeed", top)):
+            ps.append({"match_id": 1, "team_id": 10, "player_id": pid, "player_name": name,
+                       "key": key, "value": float(val)})
+    st.write("player_stats", pd.DataFrame(ps))
+    return st
+
+
+def test_timeline_assist_and_goal_kind(tmp_path):
+    """Cronaca: assist risolto dalla distinta, tipo di gol tradotto, autogol senza tipo."""
+    ma = MatchAnalysis(_finished_store(tmp_path))
+    goals = [e for e in ma.timeline(1) if e["type"] == "Goal"]
+    # l'autogol è accreditato alla squadra che ne beneficia (is_home già al netto, 22/22)
+    assert [g["score"] for g in goals] == ["1-0", "2-0", "2-1"]
+    assert goals[2]["scorer_home"] is True          # chi segna è di Alpha, il gol vale per Beta
+    assert goals[0]["assist"] == "Portiere A" and goals[0]["kind"] == ""
+    assert goals[1]["assist"] is None and goals[1]["kind"] == "di testa"
+    assert goals[2]["own_goal"] is True and goals[2]["kind"] == ""     # niente «autogol» due volte
+
+
+def test_half_split(tmp_path):
+    """Primo/secondo tempo: stesse voci, testi della fonte con la virgola decimale."""
+    ma = MatchAnalysis(_finished_store(tmp_path))
+    hs = ma.half_split(1, 10, 20)
+    assert [c["label"] for c in hs["cols"]] == ["Primo tempo", "Secondo tempo"]
+    assert hs["labels"] == [r["label"] for r in hs["cols"][0]["rows"]]
+    first = hs["cols"][0]["rows"][0]
+    assert first["label"] == "xG" and first["home"] == "0.72".replace(".", ",")
+    assert len(hs["cols"][1]["rows"]) == len(hs["labels"])
+
+
+def test_keeper_stats_excludes_outfielders(tmp_path):
+    """Portiere = chi ha saves/goals_prevented: gli errori di un terzino non bastano."""
+    ma = MatchAnalysis(_finished_store(tmp_path))
+    k = ma.keeper_stats(1, 10, 20)
+    assert k["home"]["name"] == "Portiere A" and k["home"]["saves"] == 3
+    assert k["home"]["goals_prevented"] == 0.8
+    assert k["away"]["name"] == "Portiere B" and k["away"]["saves"] == 5
+    assert k["away"]["goals_prevented"] == -1.2
+    assert all(k[s]["errors_led_to_goal"] is None for s in ("home", "away"))
+
+
+def test_physical_stats_is_conditional(tmp_path):
+    """Fisiche: card solo se entrambe le squadre hanno i dati (qui manca la trasferta)."""
+    ma = MatchAnalysis(_finished_store(tmp_path))
+    assert ma.physical_stats(1, 10, 20) is None
+    st = _finished_store(tmp_path)
+    extra = pd.DataFrame([{"match_id": 1, "team_id": 20, "player_id": 204, "player_name": "Portiere B",
+                           "key": k, "value": v}
+                          for k, v in (("physical_metrics_distance_covered", 5_500.0),
+                                       ("physical_metrics_number_of_sprints", 3.0),
+                                       ("physical_metrics_sprinting", 120.0),
+                                       ("physical_metrics_topspeed", 29.5))])
+    st.write("player_stats", pd.concat([st.read("player_stats"), extra], ignore_index=True))
+    ma2 = MatchAnalysis(st)
+    ph = ma2.physical_stats(1, 10, 20)
+    assert ph["home"]["km"] == 15.0 and ph["home"]["sprints"] == 14
+    assert ph["home"]["fastest"] == "Punta A" and ph["home"]["topspeed"] == 33.5
+    assert ph["away"]["km"] == 5.5
+
+
+def test_detail_stats_only_shared_keys(tmp_path):
+    """Statistiche di dettaglio: solo le chiavi presenti per entrambe le squadre."""
+    ma = MatchAnalysis(_finished_store(tmp_path))
+    rows = ma.detail_stats(1, 10, 20)
+    labels = [r["label"] for r in rows]
+    assert "Duelli vinti" in labels and "Intercetti" in labels and "Fuorigioco" in labels
+    assert "Possesso palla" not in labels                 # sta nel riquadro principale
+    assert all(r["home"] and r["away"] for r in rows)
+    # stesse chiavi anche per periodo (1T/2T) e nessuna chiave fantasma
+    assert ma.key_stats(1, 10, 20)[0]["label"] == "Possesso palla"

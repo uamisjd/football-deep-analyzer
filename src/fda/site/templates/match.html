@@ -217,6 +217,70 @@
     <table><tr><th class="r">{{ c.home_name }}</th><th class="c"></th><th>{{ c.away_name }}</th></tr>
     {% for s in c.key_stats %}<tr><td class="r">{{ s.home }}</td><td class="c mut small">{{ s.label }}</td><td>{{ s.away }}</td></tr>{% endfor %}</table>
   </div>
+
+{% if c.half_split %}
+<div class="card">
+  <h2>Primo e secondo tempo</h2>
+  <p class="small mut">Le stesse statistiche divise per tempo: serve a capire <b>quando</b> la partita si è decisa. Valori FotMob per periodo ({{ c.home_name }} a sinistra).</p>
+  <table>
+    <tr><th class="c mut small">voce</th>{% for col in c.half_split.cols %}<th class="c" colspan="2">{{ col.label }}</th>{% endfor %}</tr>
+    <tr><th></th>{% for col in c.half_split.cols %}<th class="r mut small">{{ c.home_name }}</th><th class="mut small">{{ c.away_name }}</th>{% endfor %}</tr>
+    {% for i in range(c.half_split.labels|length) %}
+    <tr><td class="c mut small">{{ c.half_split.labels[i] }}</td>
+      {% for col in c.half_split.cols %}<td class="r">{{ col.rows[i].home }}</td><td>{{ col.rows[i].away }}</td>{% endfor %}</tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if c.keepers %}
+<div class="card">
+  <h2>I portieri</h2>
+  <p class="small mut">Parate e <b>gol prevenuti</b> (xG dei tiri subiti meno i gol incassati: positivo = ha parato più del previsto), più gli errori che hanno portato a un gol. Fonte FotMob, per giocatore.</p>
+  <table>
+    <tr><th class="mut small">portiere</th><th class="r" style="width:64px">parate</th><th class="r" style="width:110px">gol prevenuti</th><th class="r" style="width:150px">errori → gol</th><th class="r" style="width:110px">rigori parati</th></tr>
+    {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}{% set k = c.keepers[side] %}
+    <tr>
+      <td>{% if k.id %}<a href="{{ root }}giocatori/{{ k.id }}.html">{{ k.name }}</a>{% else %}{{ k.name }}{% endif %} <span class="mut small">{{ name }}</span></td>
+      <td class="r">{{ k.saves|int if k.saves is not none else '—' }}</td>
+      <td class="r">{{ k.goals_prevented|dec if k.goals_prevented is not none else '—' }}</td>
+      <td class="r">{{ k.errors_led_to_goal|int if k.errors_led_to_goal is not none else '—' }}</td>
+      <td class="r">{{ k.saved_penalties|int if k.saved_penalties is not none else '—' }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  <p class="small mut">«—» significa che la fonte non ha registrato quell'evento per il giocatore, non che vale zero.</p>
+</div>
+{% endif %}
+
+{% if c.physical %}
+<div class="card">
+  <h2>Dati fisici</h2>
+  <p class="small mut">Distanza coperta, sprint e velocità di punta. FotMob li pubblica solo per una parte delle partite: questa card compare quando i dati esistono.</p>
+  <table>
+    <tr><th class="mut small">squadra</th><th class="r" style="width:110px">distanza</th><th class="r" style="width:80px">sprint</th><th class="r" style="width:130px">metri in sprint</th><th class="r" style="width:170px">più veloce</th></tr>
+    {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}{% set f = c.physical[side] %}
+    <tr><td>{{ name }} <span class="mut small">({{ f.players }} giocatori)</span></td>
+      <td class="r">{{ f.km|dec(1) }} km</td><td class="r">{{ f.sprints }}</td><td class="r">{{ f.sprint_m|it_num }} m</td>
+      <td class="r">{{ f.fastest }} <span class="mut small">{{ f.topspeed|dec(1) }} km/h</span></td></tr>
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+{% if c.detail_stats %}
+<div class="card">
+  <h2>Statistiche di dettaglio</h2>
+  <p class="small mut">Le altre voci pubblicate da FotMob per questa partita ({{ c.detail_stats|length }}): duelli, intercetti, cross, xG per tipo di azione. Una riga compare solo se il dato esiste per entrambe le squadre.</p>
+  <div class="grid">
+    {% set half = (c.detail_stats|length / 2)|round(0, 'ceil')|int %}
+    {% for chunk in (c.detail_stats[:half], c.detail_stats[half:]) %}
+    <table style="margin:0"><tr><th class="r">{{ c.home_name }}</th><th class="c"></th><th>{{ c.away_name }}</th></tr>
+      {% for s in chunk %}<tr><td class="r">{{ s.home }}</td><td class="c mut small">{{ s.label }}</td><td>{{ s.away }}</td></tr>{% endfor %}</table>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
   {% endif %}
 </div>
 
@@ -225,7 +289,7 @@
   {% if c.timeline %}
   <div class="card"><h2>Cronaca essenziale</h2><table>
     {% for e in c.timeline %}<tr><td class="r mut" style="width:48px">{{ e.minute }}{% if e.added %}+{{ e.added }}{% endif %}'</td>
-      <td>{% if e.type == 'Goal' %}⚽ <b>{{ e.player }}</b>{% if e.own_goal %} (autogol){% endif %} · {{ e.score }}{% elif e.type == 'Card' %}{{ '🟨' if e.card == 'Yellow' else '🟥' }} {{ e.player }}{% else %}🔁 {{ e.swap_in }} <span class="mut">per {{ e.swap_out }}</span>{% endif %}
+      <td>{% if e.type == 'Goal' %}⚽ <b>{{ e.player }}</b>{% if e.own_goal %} (autogol){% endif %}{% if e.kind %} <span class="mut small">{{ e.kind }}</span>{% endif %}{% if e.assist %} <span class="mut small">· assist di {{ e.assist }}</span>{% endif %} · {{ e.score }}{% elif e.type == 'Card' %}{{ '🟨' if e.card == 'Yellow' else '🟥' }} {{ e.player }}{% else %}🔁 {{ e.swap_in }} <span class="mut">per {{ e.swap_out }}</span>{% endif %}
       <span class="mut small">({{ c.home_name if e.scorer_home else c.away_name }})</span></td></tr>{% endfor %}</table></div>
   {% endif %}
   <div class="card"><h2>Tiri e occasioni</h2>

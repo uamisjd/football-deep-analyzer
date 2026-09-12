@@ -219,6 +219,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         h = lineup[lineup.usual_position_id.notna()]
         hist = {int(k): int(v) for k, v in
                 h.groupby("player_id").usual_position_id.agg(lambda x: x.astype(int).mode().iloc[0]).items()}
+    hist_name: dict[int, str] = {}
+    if not lineup.empty:
+        hist_name = {int(k): str(v) for k, v in
+                     lineup.dropna(subset=["player_name"]).drop_duplicates("player_id")
+                     .set_index("player_id").player_name.items()}
     role_re = re.compile(r'giocatori/(\d+)\.html">([^<]+)</a>\s*<span class="mut small">'
                          r'(portiere|difensore|centrocampista|attaccante)</span>')
     abs_re = re.compile(r"Indisponibili \((\d+)\)")
@@ -281,6 +286,65 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                          un_count.get((int(mid), int(row.away_id)), 0)):
                 fails.append(f"{lg_page}: infermeria {n1} {c1} / {n2} {c2} != distinta")
     print(f"[5] schede oggi: {n_role} ruoli, {n_abs} infermerie, {n_h2h} archivi precedenti")
+
+    # 6) post-partita: assist della cronaca e split primo/secondo tempo contro le tabelle
+    events, team_stats = st.read("events"), st.read("team_stats")
+    n_assist = n_half = 0
+    if not events.empty:
+        goals = events[events.type == "Goal"]
+        # nome dalla distinta DELLA STESSA partita: lo stesso player_id ha grafie diverse
+        # fra le giornate (Uriel/Uriël van Aalst, Josko/Joško Gvardiol) e il sito usa quella
+        # della partita, quindi il confronto va fatto sulla stessa base
+        same_match: dict[tuple[int, int], str] = {}
+        if not lineup.empty:
+            same_match = {(int(a), int(b)): str(c) for a, b, c in
+                          lineup.dropna(subset=["player_id", "player_name"])
+                          [["match_id", "player_id", "player_name"]].itertuples(index=False)}
+        names_by_match: dict[int, set[tuple[str, str]]] = {}
+        for r in goals.itertuples(index=False):
+            aid = getattr(r, "assist_player_id", None)
+            if aid is None or pd.isna(aid):
+                continue
+            nm = same_match.get((int(r.match_id), int(aid))) or hist_name.get(int(aid))
+            if nm:
+                names_by_match.setdefault(int(r.match_id), set()).add((str(r.player_name), str(nm)))
+        assist_re = re.compile(r"\u26bd <b>([^<]+)</b>.*?assist di ([^<]+)</span>")
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Cronaca essenziale" not in html:
+                continue
+            pairs = names_by_match.get(int(pg.stem), set())
+            for scorer, helper in assist_re.findall(html):
+                checks += 1
+                n_assist += 1
+                if (html_unescape(scorer), html_unescape(helper)) not in pairs:
+                    fails.append(f"{pg.name}: assist \u00ab{helper}\u00bb a {scorer} non negli eventi")
+    if not team_stats.empty:
+        # tra le celle può esserci un a capo (il template va a capo dentro la riga)
+        half_re = re.compile(r'<td class="c mut small">xG</td>\s*<td class="r">([^<]*)</td>\s*'
+                             r'<td>([^<]*)</td>\s*<td class="r">([^<]*)</td>\s*<td>([^<]*)</td>')
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Primo e secondo tempo" not in html or int(pg.stem) not in fx_by_id.index:
+                continue
+            m = half_re.search(html)
+            if not m:
+                fails.append(f"{pg.name}: tabella 1T/2T senza riga xG")
+                continue
+            row = fx_by_id.loc[int(pg.stem)]
+            want = []
+            for period in ("FirstHalf", "SecondHalf"):
+                ts = team_stats[(team_stats.match_id == int(pg.stem)) & (team_stats.period == period)
+                                & (team_stats.key == "expected_goals")]
+                for tid in (int(row.home_id), int(row.away_id)):
+                    cell = ts[ts.team_id == tid]
+                    want.append("" if cell.empty else str(cell.iloc[0].text).replace(".", ","))
+            got = [html_unescape(x) for x in m.groups()]
+            checks += 1
+            n_half += 1
+            if got != want:
+                fails.append(f"{pg.name}: xG 1T/2T {got} vs {want} da team_stats")
+    print(f"[6] post-partita: {n_assist} assist, {n_half} split 1T/2T")
 
     st.close()
     return fails, checks

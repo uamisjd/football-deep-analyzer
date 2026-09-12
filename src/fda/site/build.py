@@ -256,9 +256,22 @@ class SiteBuilder:
                      n_sims=sim["n_sims"].max(), updated=it_from_utc(sim["made_at"].max(), self.tz),
                      leagues=blocks)
 
+    # mercati binari pubblicati dal modello → (colonna, etichetta, evento osservato)
+    MARKETS: ClassVar[tuple[tuple[str, str, str], ...]] = (
+        ("p_over15", "Over 1,5 gol", "over15"),
+        ("p_over25", "Over 2,5 gol", "over25"),
+        ("p_over35", "Over 3,5 gol", "over35"),
+        ("p_btts", "Gol · entrambe a segno", "btts"),
+        ("p_1x", "Doppia chance 1X", "d1x"),
+        ("p_12", "Doppia chance 12", "d12"),
+        ("p_x2", "Doppia chance X2", "dx2"),
+        ("p_home_clean_sheet", "Porta inviolata casa", "cs_h"),
+        ("p_away_clean_sheet", "Porta inviolata trasferta", "cs_a"),
+    )
+
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")
-        summary, recent, calib = [], [], []
+        summary, recent, calib, markets = [], [], [], []
         if not preds.empty:
             fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id"]]
             # la previsione valida è l'ultima fatta PRIMA del calcio d'inizio
@@ -293,7 +306,32 @@ class SiteBuilder:
                                    "away": fxn.loc[r.match_id, "away_name"], "hg": int(r.home_goals), "ag": int(r.away_goals),
                                    "p_home": r.p_home, "p_draw": r.p_draw, "p_away": r.p_away, "p_real": r.p_real,
                                    "top": r.top, "hit": bool(r.hit), "rps": float(r.rps)})
-        self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib)
+                # mercati binari: Brier contro quello della frequenza di base (stesso campione)
+                tot = (p.home_goals.astype(float) + p.away_goals.astype(float)).to_numpy()
+                hg = p.home_goals.astype(float).to_numpy()
+                ag = p.away_goals.astype(float).to_numpy()
+                observed = {
+                    "over15": tot > 1.5, "over25": tot > 2.5, "over35": tot > 3.5,
+                    "btts": (hg > 0) & (ag > 0),
+                    "d1x": hg >= ag, "d12": hg != ag, "dx2": hg <= ag,
+                    "cs_h": ag == 0, "cs_a": hg == 0}
+                for col, label, key in self.MARKETS:
+                    if col not in p.columns:
+                        continue
+                    pr = pd.to_numeric(p[col], errors="coerce").to_numpy(dtype=float)
+                    y = observed[key].astype(float)
+                    ok = ~np.isnan(pr)
+                    if ok.sum() < 5:
+                        continue
+                    pr, y = pr[ok], y[ok]
+                    base = y.mean()
+                    markets.append({"label": label, "n": int(ok.sum()), "prev": float(pr.mean()),
+                                    "obs": float(base), "brier": float(((pr - y) ** 2).mean()),
+                                    "brier_base": float(((base - y) ** 2).mean()),
+                                    "hit": float((((pr >= 0.5).astype(float)) == y).mean())})
+                    markets[-1]["delta"] = markets[-1]["brier"] - markets[-1]["brier_base"]
+        self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
+                     markets=markets)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")

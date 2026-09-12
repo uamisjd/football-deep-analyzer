@@ -26,6 +26,12 @@ from .fmt import dec, it_plural
 # 600 formazioni su 600 che lo contengono — es. Lazio 12/09, Mandas (n. 35) = 0, Doekhi e
 # Provstgaard = 1, Frattesi = 2, Zaccagni = 3. Con la vecchia mappa 1→portiere ogni riga
 # della distinta era spostata di un ruolo e il portiere restava senza etichetta.
+# ``goal_description`` di FotMob → italiano. Tenuti solo i valori presenti nei dati
+# (166/753 gol): per gli altri non si inventa nulla, la riga resta senza specifica.
+GOAL_KIND_IT = {"Header": "di testa", "Penalty": "rigore", "Own goal": "autogol",
+                "Direct freekick": "punizione diretta", "Overhead kick": "rovesciata",
+                "Tap-in": "sotto misura", "Deflected": "deviato"}
+
 POSITION_NAMES = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
 # ``positionId`` tattico di FotMob (11, 34, 64, 115…) → ruolo. Tenuti solo gli id che su
 # almeno 20 titolari concordano col ruolo nel 90% dei casi (misurato sull'archivio):
@@ -1037,12 +1043,43 @@ class MatchAnalysis:
     def key_stats(self, match_id: int, home_id: int, away_id: int) -> list[dict[str, Any]]:
         if self.team_stats.empty:
             return []
-        ts = self.team_stats[(self.team_stats.match_id == match_id) & (self.team_stats.period == "All")]
         wanted = [("BallPossesion", "Possesso palla"), ("expected_goals", "xG"), ("expected_goals_on_target", "xGOT"),
                   ("total_shots", "Tiri"), ("ShotsOnTarget", "Tiri in porta"), ("big_chance", "Grandi occasioni"),
                   ("big_chance_missed_title", "Grandi occasioni fallite"), ("accurate_passes", "Passaggi riusciti"),
                   ("corners", "Calci d'angolo"), ("fouls", "Falli"), ("yellow_cards", "Ammonizioni"),
                   ("red_cards", "Espulsioni"), ("touches_opp_box", "Tocchi in area avversaria")]
+        return self._stat_rows(match_id, home_id, away_id, wanted, "All")
+
+    def detail_stats(self, match_id: int, home_id: int, away_id: int) -> list[dict[str, Any]]:
+        """Statistiche di dettaglio: le chiavi FotMob non comprese nel riquadro principale.
+
+        Stessa fonte e stessa formattazione di ``key_stats`` (testo della fonte, decimali con
+        la virgola): una riga compare solo se **entrambe** le squadre hanno il dato, quindi
+        nessun segnaposto. Copertura misurata su 239 partite finite, 7/7 leghe.
+        """
+        wanted = [("shots_inside_box", "Tiri da dentro l'area"), ("shots_outside_box", "Tiri da fuori area"),
+                  ("expected_goals_open_play", "xG azione manovrata"),
+                  ("expected_goals_set_play", "xG palle inattive"),
+                  ("expected_goals_non_penalty", "xG senza rigori"),
+                  ("duel_won", "Duelli vinti"), ("ground_duels_won", "Duelli a terra vinti"),
+                  ("aerials_won", "Duelli aerei vinti"), ("interceptions", "Intercetti"),
+                  ("clearances", "Rinvii"), ("blocked_shots", "Tiri bloccati"),
+                  ("shot_blocks", "Contrasti su tiro"), ("dribbles_succeeded", "Dribbling riusciti"),
+                  ("accurate_crosses", "Cross riusciti"), ("long_balls_accurate", "Lanci lunghi riusciti"),
+                  ("passes", "Passaggi totali"), ("opposition_half_passes", "Passaggi metà campo avversaria"),
+                  ("own_half_passes", "Passaggi nella propria metà"), ("keeper_saves", "Parate del portiere"),
+                  ("shots_woodwork", "Legni"), ("Offsides", "Fuorigioco"),
+                  ("player_throws", "Rimesse laterali"), ("ShotsOffTarget", "Tiri fuori")]
+        return self._stat_rows(match_id, home_id, away_id, wanted, "All")
+
+    def _stat_rows(self, match_id: int, home_id: int, away_id: int,
+                   wanted: list[tuple[str, str]], period: str) -> list[dict[str, Any]]:
+        """Righe di confronto casa/trasferta per una lista di chiavi, su un periodo."""
+        if self.team_stats.empty:
+            return []
+        ts = self.team_stats[(self.team_stats.match_id == match_id) & (self.team_stats.period == period)]
+        if ts.empty:
+            return []
         out = []
         for key, label in wanted:
             h = ts[(ts.team_id == home_id) & (ts.key == key)]
@@ -1051,6 +1088,105 @@ class MatchAnalysis:
                 out.append({"label": label, "home": _stat_text_it(h.iloc[0].text),
                             "away": _stat_text_it(a.iloc[0].text)})
         return out
+
+    def half_split(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        """Primo e secondo tempo a confronto: xG, tiri, tiri in porta, possesso, angoli.
+
+        FotMob pubblica le stesse chiavi per periodo (``FirstHalf``/``SecondHalf``) su
+        239 partite finite, 7/7 leghe: serve a vedere **quando** una partita si è decisa.
+        """
+        wanted = [("expected_goals", "xG"), ("total_shots", "Tiri"), ("ShotsOnTarget", "Tiri in porta"),
+                  ("BallPossesion", "Possesso palla"), ("corners", "Calci d'angolo"),
+                  ("big_chance", "Grandi occasioni")]
+        cols = []
+        for period, label in (("FirstHalf", "Primo tempo"), ("SecondHalf", "Secondo tempo")):
+            rows = self._stat_rows(match_id, home_id, away_id, wanted, period)
+            if rows:
+                cols.append({"label": label, "rows": rows})
+        if len(cols) < 2:
+            return None
+        # righe comuni a entrambi i tempi, nello stesso ordine: la tabella resta allineata
+        labels = [r["label"] for r in cols[0]["rows"]]
+        cols[1]["rows"] = [r for r in cols[1]["rows"] if r["label"] in labels]
+        if len(cols[1]["rows"]) != len(labels):
+            return None
+        return {"cols": cols, "labels": labels}
+
+    def keeper_stats(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        """Portieri a confronto: parate, gol prevenuti, errori, rigori parati.
+
+        Il portiere è identificato dai dati, non dal ruolo in distinta: è il giocatore con
+        righe ``saves``/``goals_prevented`` in ``player_stats``. Copertura 239 partite per le
+        parate e i gol prevenuti, 93 per gli errori che hanno portato a un gol.
+        """
+        keys = ("saves", "goals_prevented", "errors_led_to_goal", "saved_penalties",
+                "conceded_penalties", "penalties_won")
+        sides = {}
+        for side, team_id in (("home", home_id), ("away", away_id)):
+            ps = self._match_player_stats(match_id, team_id)
+            if ps.empty:
+                continue
+            # il portiere è chi ha statistiche **da portiere**: saves/goals_prevented.
+            # Usare anche errors_led_to_goal o penalties_won pescava i difensori
+            # (Arsenal-Coventry 11/09: van Ewijk, terzino, al posto del portiere).
+            gk_keys = [k for k in ("saves", "goals_prevented") if k in set(ps.columns)]
+            if not gk_keys:
+                continue
+            keepers = ps[ps[gk_keys].notna().any(axis=1)]
+            if keepers.empty:
+                continue
+            if "minutes_played" in keepers.columns:      # il titolare è chi ha più minuti
+                keepers = keepers.sort_values("minutes_played", ascending=False, na_position="last")
+            r = keepers.iloc[0].to_dict()
+            sides[side] = {"name": r["player_name"], "id": int(r["player_id"]),
+                           **{k: (None if pd.isna(r.get(k, np.nan)) else float(r[k])) for k in keys}}
+        if len(sides) < 2:
+            return None
+        return {"home": sides["home"], "away": sides["away"], "keys": keys}
+
+    def physical_stats(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        """Dati fisici: distanza, sprint, metri in sprint, giocatore più veloce.
+
+        FotMob li pubblica solo per una parte delle partite (**30** in archivio): la card
+        compare solo quando i dati ci sono, senza stime al posto dei numeri mancanti.
+        """
+        keys = ("physical_metrics_distance_covered", "physical_metrics_number_of_sprints",
+                "physical_metrics_sprinting", "physical_metrics_topspeed")
+        sides = {}
+        for side, team_id in (("home", home_id), ("away", away_id)):
+            ps = self._match_player_stats(match_id, team_id)
+            if ps.empty or not set(keys) <= set(ps.columns):
+                continue
+            # pandas 3: con colonne di dtype 'str' l'indicizzazione con una *tupla* dà
+            # KeyError anche quando le etichette ci sono → si passa sempre una lista
+            have = ps[ps[list(keys)].notna().any(axis=1)]
+            if have.empty:
+                continue
+            fastest = have.dropna(subset=["physical_metrics_topspeed"]).sort_values(
+                "physical_metrics_topspeed", ascending=False)
+            top = fastest.iloc[0] if not fastest.empty else None
+            sides[side] = {
+                "km": float(have.physical_metrics_distance_covered.sum() / 1000.0),
+                "sprints": int(have.physical_metrics_number_of_sprints.fillna(0).sum()),
+                "sprint_m": int(have.physical_metrics_sprinting.fillna(0).sum()),
+                "players": int(len(have)),
+                "fastest": None if top is None else str(top.player_name),
+                "topspeed": None if top is None else float(top.physical_metrics_topspeed)}
+        if len(sides) < 2:
+            return None
+        return {"home": sides["home"], "away": sides["away"]}
+
+    def _match_player_stats(self, match_id: int, team_id: int) -> pd.DataFrame:
+        """Una riga per giocatore della squadra in questa partita (chiavi → colonne)."""
+        if self.player_stats.empty:
+            return pd.DataFrame()
+        ps = self.player_stats[(self.player_stats.match_id == match_id) & (self.player_stats.team_id == team_id)]
+        ps = ps[ps.value.notna()]
+        if ps.empty:
+            return pd.DataFrame()
+        ps = ps.assign(num=pd.to_numeric(ps.value, errors="coerce"))
+        wide = ps.groupby(["player_id", "player_name", "key"]).num.sum().unstack("key")
+        return wide.reset_index()
 
     def timeline(self, match_id: int) -> list[dict[str, Any]]:
         """Cronaca essenziale (gol, cartellini, sostituzioni) con il punteggio **dopo** ogni gol.
@@ -1072,6 +1208,7 @@ class MatchAnalysis:
             return []
         ev = self.events[(self.events.match_id == match_id) & (self.events.type.isin(["Goal", "Card", "Substitution"]))]
         ev = ev.sort_values(["minute", "minute_added"], na_position="first")
+        names = self._match_player_names(match_id)
         out = []
         hg = ag = 0
         for r in ev.itertuples(index=False):
@@ -1099,13 +1236,30 @@ class MatchAnalysis:
                 else:
                     ag += 1
                 score = f"{hg}-{ag}"
+            kind = ""
+            if r.type == "Goal" and not own_goal:
+                kind = GOAL_KIND_IT.get(str(_val(d, "goal_description") or ""), "")
+            aid = _val(d, "assist_player_id") if r.type == "Goal" else None
             out.append({"type": r.type, "minute": _val(d, "minute"), "added": int(added) if added is not None else None,
                         "home": scored_home, "scorer_home": scored_home != own_goal,
-                        "player": _val(d, "player_name"),
+                        "player": _val(d, "player_name"), "kind": kind,
+                        "assist": names.get(int(aid)) if aid is not None and pd.notna(aid) else None,
                         "card": _val(d, "card"), "own_goal": own_goal, "score": score,
                         "swap_in": swap[0][1] if swap and len(swap) > 0 else None,
                         "swap_out": swap[1][1] if swap and len(swap) > 1 else None})
         return out
+
+    def _match_player_names(self, match_id: int) -> dict[int, str]:
+        """``player_id" → nome dalla distinta della partita.
+
+        Serve agli assist: FotMob pubblica ``assistPlayerId`` su 535/753 gol e il nome è
+        risolvibile nel 100% dei casi attraverso la distinta (titolari, panchina e
+        indisponibili stanno tutti nella tabella ``lineup``).
+        """
+        if self.lineup.empty:
+            return {}
+        lu = self.lineup[(self.lineup.match_id == match_id) & self.lineup.player_id.notna()]
+        return {int(r.player_id): str(r.player_name) for r in lu.itertuples(index=False)}
 
     def top_players(self, match_id: int, home_id: int, away_id: int,
                     n: int = 3) -> dict[str, list[dict[str, Any]]]:
@@ -1531,6 +1685,11 @@ class MatchAnalysis:
             "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
             "generated_at": datetime.now(timezone.utc),
         }
+        if status == "finished":
+            ctx["detail_stats"] = self.detail_stats(match_id, home_id, away_id)
+            ctx["half_split"] = self.half_split(match_id, home_id, away_id)
+            ctx["keepers"] = self.keeper_stats(match_id, home_id, away_id)
+            ctx["physical"] = self.physical_stats(match_id, home_id, away_id)
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None

@@ -76,7 +76,9 @@ di contenuto e 14 difetti di calcolo/dati).
 - `fda build` → 347 partite + 2364 fixture + 7388 giocatori.
 - `scripts/verify_site.py` → **4056 pagine, 0 problemi, 140 controlli numerici superati**.
   *(Secondo giro, dopo le card di profondità: **1082 controlli** — il nuovo passo `[5]` ricontrolla
-  **648 ruoli**, **108 conteggi di indisponibili** e **103 archivi di precedenti** contro le tabelle.)*
+  **648 ruoli**, **108 conteggi di indisponibili** e **103 archivi di precedenti** contro le tabelle.
+  Terzo giro, dopo il post-partita: **1855 controlli** — il passo `[6]` verifica **534 assist** della
+  cronaca contro gli eventi e **239 split primo/secondo tempo** contro `team_stats`.)*
 - Esempi ricontrollati pagina per pagina: `partite/5802919.html` (cronaca 0-1/0-2/1-2, tiri 19 (3),
   xG 1,69-1,36 con virgola, nota sull'xG dei tiri mappati), `giocatori/1070052.html` («Amad Diallo ·
   ruolo n.d.»), `partite/5881162.html` (Karetsas indisponibile fuori dalla distinta).
