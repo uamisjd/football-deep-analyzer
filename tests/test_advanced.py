@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 
 from fda.site.advanced import (
@@ -57,15 +58,23 @@ def test_state_probs_full_time_and_kickoff():
 
 
 def test_wp_path_own_goal_and_order():
+    """`home` è la squadra **a cui il gol è attribuito**: FotMob ha già contato gli autogol.
+
+    Verificato su 226 partite finite (22 con autogol): usare `isHome` tal quale riproduce il
+    risultato finale 225/226 e 22/22 sui casi con autogol; ribaltarlo sugli autogol dà 0/22.
+    """
     goals = [
         {"minute": 10, "home": True, "own_goal": False, "player": "A"},
-        {"minute": 40, "home": True, "own_goal": True, "player": "B"},  # autogol casa → gol ospite
+        {"minute": 40, "home": True, "own_goal": True, "player": "B"},   # autogol di B → gol casa
+        {"minute": 70, "home": False, "own_goal": False, "player": "C"},
     ]
     path = wp_path(goals, 1.5, 1.2, rho=0.0)
     assert path[0]["hg"] == 0 and path[0]["ag"] == 0 and path[0]["event"] is None
     assert path[1]["hg"] == 1 and path[1]["ag"] == 0 and path[1]["event"] == "goal"
-    assert path[2]["hg"] == 1 and path[2]["ag"] == 1
-    assert path[2]["scorer_home"] is False
+    assert path[2]["hg"] == 2 and path[2]["ag"] == 0
+    assert path[2]["scorer_home"] is True      # nessun ribaltamento: l'autogol vale per la casa
+    assert path[3]["hg"] == 2 and path[3]["ag"] == 1
+    assert path[3]["scorer_home"] is False
     assert "x" in path[0] and "y_h" in path[0]
 
 
@@ -132,8 +141,9 @@ def test_match_analysis_score_matrix_and_wp(tmp_path):
          "p_home": 0.6, "p_draw": 0.22, "p_away": 0.18, "made_at": "2026-09-01T12:00:00+00:00"},
     ])
     st.upsert("events", [
+        # home_score/away_score di FotMob = punteggio **prima** del gol (verificato 226/226)
         {"match_id": 1, "type": "Goal", "minute": 15, "minute_added": None, "is_home": True,
-         "player_name": "X", "own_goal": False, "home_score": 1, "away_score": 0},
+         "player_name": "X", "own_goal": False, "home_score": 0, "away_score": 0},
     ])
     ma = MatchAnalysis(st)
     pred = ma.prediction(1)
@@ -144,3 +154,37 @@ def test_match_analysis_score_matrix_and_wp(tmp_path):
     assert ma.match_wp(None, []) is None
     assert ma.score_matrix(None) is None
     st.close()
+
+
+def _synthetic_hist(n_teams: int = 12, seed: int = 7) -> pd.DataFrame:
+    """Storico sintetico (264 partite) per i test che richiedono un fit Dixon-Coles."""
+    rng = np.random.default_rng(seed)
+    teams = [f"T{i}" for i in range(n_teams)]
+    rows = []
+    for i, h in enumerate(teams):
+        for a in teams[i + 1:]:
+            for _ in range(4):
+                rows.append({"date": pd.Timestamp("2024-08-01") + pd.Timedelta(days=int(rng.integers(0, 300))),
+                             "home": h, "away": a,
+                             "home_goals": int(rng.poisson(1.4)), "away_goals": int(rng.poisson(1.1))})
+    return pd.DataFrame(rows)
+
+
+def test_dixon_coles_grid_uses_the_fitted_model_tau():
+    """La τ del sito deve essere quella del modello addestrato, non quella dell'helper.
+
+    Regressione (verificata a 2,8e-17): ``create_dixon_coles_grid`` di penaltyblog applica i
+    fattori 1+λρ e 1+μρ a celle invertite rispetto a ``DixonColesGoalModel.predict`` — ~1 pp
+    di differenza sull'1X2, cioè una pagina incoerente con la propria matrice punteggi.
+    """
+    from fda.models.predict import DixonColesModel
+
+    m = DixonColesModel(shrink_prior=0.0).fit(_synthetic_hist())
+    for home, away in (("T0", "T5"), ("T3", "T11"), ("T7", "T2")):
+        d = m.predict(home, away)
+        ref = np.asarray(m.model.predict(home, away, max_goals=10).grid)
+        mine = dixon_coles_grid(d["lambda_home"], d["lambda_away"], rho=d["dc_rho"], max_goals=9)
+        assert mine.shape == ref.shape
+        assert np.abs(mine - ref).max() < 1e-12
+        # e i mercati della griglia condivisa coincidono con quelli del modello
+        assert abs(grid_1x2(mine)[0] - float(np.asarray(m.model.predict(home, away, max_goals=10).home_draw_away)[0])) < 1e-12

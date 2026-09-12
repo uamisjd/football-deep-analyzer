@@ -19,6 +19,7 @@ from ..models.predict import outcome_index
 from ..store import Store
 from .analysis import MatchAnalysis
 from .audit import audit_match
+from .fmt import it_plural
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,15 @@ def it_date_short(ts, tz) -> str:
     return f"{t.tz_convert(tz).day:02d}/{t.tz_convert(tz).month:02d}"
 
 
+def it_date_full(ts, tz) -> str:
+    """Timestamp → '08/09/2026' nel fuso display (serve dove l'anno non è deducibile)."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        t = t.tz_localize("UTC")
+    t = t.tz_convert(tz)
+    return f"{t.day:02d}/{t.month:02d}/{t.year}"
+
+
 class SiteBuilder:
     def __init__(self, store: Store | None = None, out_dir: Path | None = None) -> None:
         self.store = store or Store()
@@ -84,8 +94,10 @@ class SiteBuilder:
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
+        self.env.filters["it_plural"] = it_plural
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.env.filters["it_dt_short"] = lambda ts: it_date_short(ts, self.tz)
+        self.env.filters["it_dt_full"] = lambda ts: it_date_full(ts, self.tz)
         self.now = datetime.now(UTC)
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
@@ -112,12 +124,28 @@ class SiteBuilder:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(html, encoding="utf-8")
 
+    def _absence_counts(self) -> dict[tuple[int, int], int]:
+        """Indisponibili per (partita, squadra): un groupby sulla distinta, costa poco.
+
+        Serve alle liste (oggi / prossime) per anticipare il dato più richiesto senza
+        aprire la scheda: quanti giocatori mancano a ciascuna squadra.
+        """
+        lu = self.analysis.lineup
+        if lu.empty:
+            return {}
+        un = lu[lu.role == "unavailable"]
+        if un.empty:
+            return {}
+        g = un.groupby(["match_id", "team_id"]).size()
+        return {(int(a), int(b)): int(c) for (a, b), c in g.items()}
+
     def _match_rows(self, fx: pd.DataFrame) -> list[dict[str, Any]]:
         preds = self.store.read("predictions")
         latest = {}
         if not preds.empty:
             for r in preds.sort_values("made_at").itertuples(index=False):
                 latest[int(r.match_id)] = r._asdict()
+        absent = self._absence_counts()
         rows = []
         for r in fx.itertuples(index=False):
             local = pd.Timestamp(r.utc_kickoff).tz_convert(self.tz)
@@ -127,6 +155,8 @@ class SiteBuilder:
                 "home_goals": None if pd.isna(r.home_goals) else int(r.home_goals),
                 "away_goals": None if pd.isna(r.away_goals) else int(r.away_goals),
                 "status": r.status, "prediction": latest.get(int(r.match_id)),
+                "abs_home": absent.get((int(r.match_id), int(r.home_id)), 0),
+                "abs_away": absent.get((int(r.match_id), int(r.away_id)), 0),
             })
         return rows
 
@@ -226,9 +256,22 @@ class SiteBuilder:
                      n_sims=sim["n_sims"].max(), updated=it_from_utc(sim["made_at"].max(), self.tz),
                      leagues=blocks)
 
+    # mercati binari pubblicati dal modello → (colonna, etichetta, evento osservato)
+    MARKETS: ClassVar[tuple[tuple[str, str, str], ...]] = (
+        ("p_over15", "Over 1,5 gol", "over15"),
+        ("p_over25", "Over 2,5 gol", "over25"),
+        ("p_over35", "Over 3,5 gol", "over35"),
+        ("p_btts", "Gol · entrambe a segno", "btts"),
+        ("p_1x", "Doppia chance 1X", "d1x"),
+        ("p_12", "Doppia chance 12", "d12"),
+        ("p_x2", "Doppia chance X2", "dx2"),
+        ("p_home_clean_sheet", "Porta inviolata casa", "cs_h"),
+        ("p_away_clean_sheet", "Porta inviolata trasferta", "cs_a"),
+    )
+
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")
-        summary, recent, calib = [], [], []
+        summary, recent, calib, markets = [], [], [], []
         if not preds.empty:
             fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id"]]
             # la previsione valida è l'ultima fatta PRIMA del calcio d'inizio
@@ -263,7 +306,32 @@ class SiteBuilder:
                                    "away": fxn.loc[r.match_id, "away_name"], "hg": int(r.home_goals), "ag": int(r.away_goals),
                                    "p_home": r.p_home, "p_draw": r.p_draw, "p_away": r.p_away, "p_real": r.p_real,
                                    "top": r.top, "hit": bool(r.hit), "rps": float(r.rps)})
-        self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib)
+                # mercati binari: Brier contro quello della frequenza di base (stesso campione)
+                tot = (p.home_goals.astype(float) + p.away_goals.astype(float)).to_numpy()
+                hg = p.home_goals.astype(float).to_numpy()
+                ag = p.away_goals.astype(float).to_numpy()
+                observed = {
+                    "over15": tot > 1.5, "over25": tot > 2.5, "over35": tot > 3.5,
+                    "btts": (hg > 0) & (ag > 0),
+                    "d1x": hg >= ag, "d12": hg != ag, "dx2": hg <= ag,
+                    "cs_h": ag == 0, "cs_a": hg == 0}
+                for col, label, key in self.MARKETS:
+                    if col not in p.columns:
+                        continue
+                    pr = pd.to_numeric(p[col], errors="coerce").to_numpy(dtype=float)
+                    y = observed[key].astype(float)
+                    ok = ~np.isnan(pr)
+                    if ok.sum() < 5:
+                        continue
+                    pr, y = pr[ok], y[ok]
+                    base = y.mean()
+                    markets.append({"label": label, "n": int(ok.sum()), "prev": float(pr.mean()),
+                                    "obs": float(base), "brier": float(((pr - y) ** 2).mean()),
+                                    "brier_base": float(((base - y) ** 2).mean()),
+                                    "hit": float((((pr >= 0.5).astype(float)) == y).mean())})
+                    markets[-1]["delta"] = markets[-1]["brier"] - markets[-1]["brier_base"]
+        self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
+                     markets=markets)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")

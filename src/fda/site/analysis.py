@@ -19,8 +19,61 @@ from scipy.stats import poisson
 from ..store import Store
 from ..teams import canonical
 from .advanced import score_matrix, shot_quality, style_rows, wp_path, xg_race
+from .fmt import dec, it_plural
 
-POSITION_NAMES = {1: "portiere", 2: "difensore", 3: "centrocampista", 4: "attaccante"}
+# Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
+# 616 formazioni: il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in
+# 600 formazioni su 600 che lo contengono — es. Lazio 12/09, Mandas (n. 35) = 0, Doekhi e
+# Provstgaard = 1, Frattesi = 2, Zaccagni = 3. Con la vecchia mappa 1→portiere ogni riga
+# della distinta era spostata di un ruolo e il portiere restava senza etichetta.
+# ``goal_description`` di FotMob → italiano. Tenuti solo i valori presenti nei dati
+# (166/753 gol): per gli altri non si inventa nulla, la riga resta senza specifica.
+GOAL_KIND_IT = {"Header": "di testa", "Penalty": "rigore", "Own goal": "autogol",
+                "Direct freekick": "punizione diretta", "Overhead kick": "rovesciata",
+                "Tap-in": "sotto misura", "Deflected": "deviato"}
+
+POSITION_NAMES = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
+# ``positionId`` tattico di FotMob (11, 34, 64, 115…) → ruolo. Tenuti solo gli id che su
+# almeno 20 titolari concordano col ruolo nel 90% dei casi (misurato sull'archivio):
+# 11 portiere (632/632), 33-38 difensori, 64-77 centrocampisti, 105/106/115 attaccanti.
+POSITION_ID_ROLE = {11: 0, 33: 1, 34: 1, 35: 1, 36: 1, 37: 1, 38: 1, 64: 2, 66: 2, 73: 2,
+                    74: 2, 75: 2, 76: 2, 77: 2, 105: 3, 106: 3, 115: 3}
+
+# Competizioni FotMob nei precedenti (h2h) → italiano. I nomi propri restano tali (LaLiga,
+# Bundesliga, KNVB Cup, DFB Pokal, Community Shield…): la stampa italiana li usa così.
+# Si traducono le diciture inglesi e i suffissi ricorrenti.
+_COMPETITION_IT = {
+    "Club Friendlies": "Amichevoli per club",
+    "League Cup": "Coppa di Lega",
+    "EFL Cup": "Coppa di Lega (EFL)",
+    "Super Cup": "Supercoppa",
+    "Supercup": "Supercoppa",
+    "German Super Cup": "Supercoppa di Germania",
+    "UEFA Super Cup": "Supercoppa UEFA",
+    "Ligue 1 Qualification": "spareggio Ligue 1",
+    "Champions Cup": "Coppa dei Campioni",
+    "Cup": "Coppa",
+}
+# le frasi prima delle parole singole: "Serie B Promotion Playoff" → "Serie B playoff promozione"
+_COMPETITION_SUFFIX_IT = (("Promotion Playoff", "playoff promozione"), ("2nd stage", "seconda fase"),
+                          ("Grp.", "girone"), ("Playoff", "playoff"))
+
+
+def _competition_it(name: Any) -> str:
+    """Nome della competizione in italiano; ciò che non è traducibile resta com'è."""
+    if not isinstance(name, str) or not name.strip():
+        return ""
+    s = name.strip().replace("\xa0", " ")
+    for en in sorted(_COMPETITION_IT, key=len, reverse=True):
+        if s == en:
+            return _COMPETITION_IT[en]
+        if s.startswith(en + " "):
+            s = _COMPETITION_IT[en] + s[len(en):]
+            break
+    for en, it in _COMPETITION_SUFFIX_IT:
+        s = re.sub(rf"\b{re.escape(en)}", it, s)   # solo bordo iniziale: "Grp." finisce con un punto
+    return s
+XI_SIZE = 11   # giocatori in campo per squadra: oltre questa soglia il dato è ambiguo
 
 
 def _pct(p: float | None) -> str:
@@ -30,6 +83,22 @@ def _pct(p: float | None) -> str:
 def _f(x: Any, nd: int = 2) -> str:
     """Numero per il testo narrativo: virgola decimale italiana ('3,12'; '—' se manca)."""
     return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}".replace(".", ",")
+
+
+_DECIMAL_TEXT = re.compile(r"^\d+\.\d+$")
+
+
+def _stat_text_it(text: Any) -> str:
+    """Testo di una statistica FotMob → italiano (virgola decimale).
+
+    FotMob pubblica gli xG come ``"1.69"``: il sito è in italiano, quindi i valori
+    decimali puri diventano ``"1,69"``. Le stringhe composite (``"330 (83%)"``) e gli
+    interi restano invariati.
+    """
+    if not isinstance(text, str):
+        return "" if text is None or pd.isna(text) else str(text)
+    t = text.strip()
+    return t.replace(".", ",") if _DECIMAL_TEXT.match(t) else t
 
 
 def _first(df: pd.DataFrame) -> dict[str, Any]:
@@ -43,6 +112,22 @@ def _goals(info: dict, key: str, fixture: dict) -> int | None:
     return None if v is None else int(v)
 
 
+def _on_target(s: pd.DataFrame) -> pd.Series:
+    """Maschera «tiro in porta» a partire dalla lista tiri FotMob.
+
+    Due correzioni rispetto al campo grezzo ``isOnTarget``, misurate su 478
+    squadre-partita contro la statistica ufficiale ``ShotsOnTarget``:
+    - FotMob mette ``isOnTarget=True`` anche sui tiri **bloccati** (1688 delle 1858 righe
+      con ``isOnTarget`` lo sono): un tiro è in porta se l'esito è gol o parata **e** non
+      è bloccato (Angers–Rennes 11/09: 15 «in porta» grezzi contro i 3 ufficiali);
+    - gli **autogol** non contano come tiro in porta della squadra del giocatore.
+    Con entrambe le regole: 476/478 (99,6%) di concordanza, contro 453/478 (94,8%) della
+    sola prima regola.
+    """
+    return (s.event_type.isin(["Goal", "AttemptSaved"])
+            & ~s.is_blocked.fillna(False) & ~s.is_own_goal.fillna(False))
+
+
 def _val(d: dict, key: str, default=None):
     v = d.get(key, default)
     return default if v is None or (isinstance(v, float) and pd.isna(v)) else v
@@ -50,13 +135,24 @@ def _val(d: dict, key: str, default=None):
 
 # FotMob fornisce le condizioni meteo in inglese: mappa minima per il sito in italiano
 _WEATHER_IT = {
-    "sunny": "soleggiato", "clear": "sereno", "mostly clear": "per lo più sereno", "fair": "bel tempo",
+    "sunny": "soleggiato", "clear": "sereno", "clear sky": "cielo sereno",
+    "mostly clear": "per lo più sereno", "mainly clear": "per lo più sereno", "fair": "bel tempo",
     "mostly sunny": "per lo più soleggiato",
     "partly cloudy": "parzialmente nuvoloso", "mostly cloudy": "per lo più nuvoloso",
+    "few clouds": "poche nuvole", "scattered clouds": "nuvole sparse", "broken clouds": "nuvolosità variabile",
     "cloudy": "nuvoloso", "overcast": "coperto", "rain": "pioggia", "light rain": "pioggia debole",
-    "heavy rain": "pioggia intensa", "drizzle": "pioggia leggera", "showers": "rovesci",
-    "rain showers": "rovesci di pioggia", "showers in the vicinity": "rovesci nelle vicinanze",
-    "thunderstorm": "temporale", "thunderstorms": "temporali", "thunder in the vicinity": "temporali nelle vicinanze",
+    "moderate rain": "pioggia moderata", "heavy rain": "pioggia intensa",
+    "drizzle": "pioggia leggera", "light drizzle": "pioggia leggera",
+    "showers": "rovesci", "few showers": "qualche rovescio", "scattered showers": "rovesci sparsi",
+    "rain shower": "rovescio di pioggia", "rain showers": "rovesci di pioggia",
+    "light rain shower": "rovescio debole", "heavy rain shower": "rovescio intenso",
+    "showers in the vicinity": "rovesci nelle vicinanze",
+    "patchy rain nearby": "pioggia a tratti nelle vicinanze",
+    "thunderstorm": "temporale", "thunderstorms": "temporali",
+    "scattered thunderstorms": "temporali sparsi", "isolated thunderstorms": "temporali isolati",
+    "thunder in the vicinity": "temporali nelle vicinanze",
+    "light rain with thunder": "pioggia debole con temporali",
+    "rain with thunder": "pioggia con temporali", "thunder with rain": "temporali con pioggia",
     "snow": "neve", "light snow": "neve debole", "heavy snow": "neve abbondante", "sleet": "nevischio",
     "fog": "nebbia", "foggy": "nebbioso", "mist": "foschia", "haze": "foschia",
     "windy": "ventoso", "wind": "ventoso",
@@ -64,16 +160,26 @@ _WEATHER_IT = {
 
 
 def _weather_it(desc: str | None) -> str | None:
+    """Descrizione meteo FotMob/Open-Meteo → italiano.
+
+    Oltre alla mappa: varianti combinate con «/» o «with» (tradotte pezzo per pezzo) e
+    singolare/plurale («Rain Shower»/«Rain Showers»). Se un testo resta sconosciuto viene
+    mostrato com'è, mai tradotto a metà o inventato.
+    """
     if not isinstance(desc, str) or not desc.strip():
         return desc
     t = desc.strip()
     low = t.lower()
     if low in _WEATHER_IT:
         return _WEATHER_IT[low]
-    if "/" in low:  # varianti combinate di FotMob, es. "Partly Cloudy/Wind"
-        parts = [p.strip() for p in low.split("/")]
-        if all(p in _WEATHER_IT for p in parts):
-            return " e ".join(_WEATHER_IT[p] for p in parts)
+    for sep, joiner in (("/", " e "), (" with ", " con ")):
+        if sep in low:
+            parts = [p.strip() for p in low.split(sep) if p.strip()]
+            tr = [_weather_it(p) for p in parts]
+            if len(parts) > 1 and all(x != p for x, p in zip(tr, parts, strict=True)):
+                return joiner.join(tr)
+    if low.endswith("s") and low[:-1] in _WEATHER_IT:   # plurale → singolare già in mappa
+        return _WEATHER_IT[low[:-1]]
     return t
 
 
@@ -504,6 +610,37 @@ class MatchAnalysis:
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             return None
 
+    # ---- ruolo di un giocatore ----------------------------------------------------------------
+    def _role_hist(self) -> dict[int, int]:
+        """Ruolo abituale per ``player_id`` desunto dalle distinte in archivio (cache).
+
+        Serve per gli indisponibili: FotMob non pubblica ``usualPosition`` su quelle righe
+        (0/1340), quindi il ruolo si ricava dalle partite in cui il giocatore è stato
+        schierato. Copre 99/248 assenti di oggi: dove non c'è, il ruolo resta vuoto.
+        """
+        if getattr(self, "_role_cache", None) is None:
+            lu = self.lineup
+            if lu.empty or "usual_position_id" not in lu.columns:
+                self._role_cache = {}
+            else:
+                h = lu[lu.usual_position_id.notna()]
+                self._role_cache = {int(k): int(v) for k, v in
+                                    h.groupby("player_id").usual_position_id
+                                     .agg(lambda x: x.astype(int).mode().iloc[0]).items()}
+        return self._role_cache
+
+    def _role_it(self, player_id: Any, usual: Any = None, pos: Any = None) -> str:
+        """Ruolo in italiano: ``usualPosition`` → ``positionId`` mappato → storico distinte."""
+        if usual is not None and pd.notna(usual) and int(usual) in POSITION_NAMES:
+            return POSITION_NAMES[int(usual)]
+        if pos is not None and pd.notna(pos) and int(pos) in POSITION_ID_ROLE:
+            return POSITION_NAMES[POSITION_ID_ROLE[int(pos)]]
+        if player_id is not None and pd.notna(player_id):
+            r = self._role_hist().get(int(player_id))
+            if r is not None:
+                return POSITION_NAMES.get(r, "")
+        return ""
+
     # ---- assenze ------------------------------------------------------------------------------
     def unavailable(self, match_id: int, team_id: int) -> list[dict[str, Any]]:
         if self.lineup.empty:
@@ -513,7 +650,7 @@ class MatchAnalysis:
         rows = rows.sort_values("market_value_eur", ascending=False, na_position="last")
         return [{"name": r.player_name, "type": unavailability_it(_val(r._asdict(), "unavailability_type")),
                  "ret": _return_it(_val(r._asdict(), "expected_return")), "value": _val(r._asdict(), "market_value_eur"),
-                 "pos": POSITION_NAMES.get(int(r.usual_position_id) if pd.notna(r.usual_position_id) else 0, "")}
+                 "pos": self._role_it(_val(r._asdict(), "player_id"), r.usual_position_id, r.position_id)}
                 for r in rows.itertuples(index=False)]
 
     def starters(self, match_id: int, team_id: int) -> list[dict[str, Any]]:
@@ -527,6 +664,16 @@ class MatchAnalysis:
         rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
                            & (self.lineup.role == "starter")
                            & (~self.lineup.player_id.isin(unav_ids))]
+        # Una squadra schiera 11 giocatori. Se ne restano di più, il dato accumulato da
+        # snapshot diversi è ambiguo: il voto di partita esiste solo nello snapshot
+        # ufficiale post-gara, quindi i titolari con voto sono la formazione reale
+        # (verificato: 11 esatti in 472 squadre-partita su 478). Senza voti (partita non
+        # ancora giocata) non c'è criterio: si mostra l'elenco della fonte, mai un taglio
+        # arbitrario.
+        if len(rows) > XI_SIZE:
+            rated = rows[rows.rating.notna()]
+            if len(rated) >= XI_SIZE:
+                rows = rated.head(XI_SIZE)
         out = []
         for r in rows.itertuples(index=False):
             rating = r.rating if not pd.isna(r.rating) else None
@@ -581,13 +728,304 @@ class MatchAnalysis:
             out.append({
                 "id": int(r.player_id),
                 "name": r.player_name,
-                "pos": POSITION_NAMES.get(int(r.position_id) if pd.notna(r.position_id) else 0, ""),
+                "pos": self._role_it(r.player_id, _val(r._asdict(), "usual_position_id"),
+                                     _val(r._asdict(), "position_id")),
                 "season_rating": float(r.season_rating),
                 "goals": int(_season_num(int(r.player_id), "goals")),
                 "assists": int(_season_num(int(r.player_id), "assists")),
             })
         return sorted(out, key=lambda p: p["season_rating"], reverse=True)[:n]
 
+
+    # ---- profondità pre-partita: trend, precedenti, giocatori, assenze, arbitro ---------------
+    def _season_player_stats(self, team_id: int) -> pd.DataFrame:
+        """Una riga per giocatore della squadra con i totali di stagione dalle statistiche gara.
+
+        ``player_stats`` ha una riga per (partita, giocatore, chiave): il pivot per chiave dà
+        i totali senza doppioni. Fonte FotMob, presente su tutte e 7 le leghe (Understat ne
+        copre 5): è la base comune per le schede giocatori, quindi niente leghe di serie B.
+        ``rating_avg`` è la media dei voti sulle partite in cui il voto c'è.
+        """
+        if self.player_stats.empty:
+            return pd.DataFrame()
+        if not self.fixtures.empty:
+            ids = set(self.fixtures.loc[self.fixtures.home_id == team_id, "match_id"]) \
+                | set(self.fixtures.loc[self.fixtures.away_id == team_id, "match_id"])
+            ps = self.player_stats[self.player_stats.match_id.isin(ids)]
+        else:
+            ps = self.player_stats
+        ps = ps[(ps.team_id == team_id) & ps.value.notna()]
+        if ps.empty:
+            return pd.DataFrame()
+        num = pd.to_numeric(ps.value, errors="coerce")
+        ps = ps.assign(num=num)
+        # unstack, non pivot_table(dropna=False): quest'ultimo espande l'indice al prodotto
+        # cartesiano dei valori di ogni livello (18 giocatori → 324 righe con nomi incrociati)
+        agg = ps.groupby(["player_id", "player_name", "key"]).num.sum().unstack("key")
+        rated = ps[ps.key == "rating_title"].groupby(["player_id", "player_name"]).num.mean()
+        games = ps[ps.key == "minutes_played"].groupby(["player_id", "player_name"]).num.count()
+        out = agg.reset_index()
+        key = pd.MultiIndex.from_arrays([out.player_id, out.player_name])
+        out["rating_avg"] = pd.Series(rated.reindex(key).to_numpy(), index=out.index, dtype=float)
+        out["games"] = pd.Series(games.reindex(key).to_numpy(), index=out.index, dtype=float)
+        return out
+
+    @staticmethod
+    def _num(d: dict, key: str) -> float:
+        """Valore numerico da un dizionario pivot: 0,0 se la chiave manca o non è un numero."""
+        v = d.get(key)
+        if v is None:
+            return 0.0
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            return 0.0
+        return 0.0 if pd.isna(f) else f
+
+    def arrival_trend(self, team_name: str, team_id: int, n: int = 6) -> dict[str, Any] | None:
+        """Come arriva la squadra: xG/xGA per gara, punti contro xPTS, PPDA, split casa/trasferta.
+
+        Fonte primaria Understat (xG e PPDA per ogni gara, 5 leghe); dove non copre si usano
+        le statistiche FotMob delle partite finite (xG su 7/7, senza PPDA). Se non si arriva
+        a 3 gare con gli xG → None: la card non compare, nessun dato inventato.
+        """
+        rows: list[dict[str, Any]] = []
+        source = None
+        canon = canonical(team_name)
+        # avversario per (data, casa/trasferta): serve perché Understat non lo pubblica
+        opp_of: dict[tuple[str, bool], str] = {}
+        if not self.fixtures.empty:
+            tfx = self.fixtures[(self.fixtures.home_id == team_id) | (self.fixtures.away_id == team_id)]
+            for r in tfx.itertuples(index=False):
+                is_h = int(r.home_id) == team_id
+                when = pd.Timestamp(r.utc_kickoff).date()
+                opp_of[(str(when), is_h)] = r.home_name if not is_h else r.away_name
+        if not self.us_team.empty:
+            ut = self.us_team[self.us_team.team_name.map(canonical) == canon].copy()
+            if not ut.empty:
+                source = "Understat"
+                ut["dt"] = pd.to_datetime(ut.date, utc=True, errors="coerce")
+                ut = ut.dropna(subset=["dt"]).sort_values("dt").tail(n)
+                for r in ut.itertuples(index=False):
+                    gf, ga = int(r.goals), int(r.goals_against)
+                    rows.append({"date": r.dt, "home": bool(r.is_home), "gf": gf, "ga": ga,
+                                 "xg": float(r.xg), "xga": float(r.xga),
+                                 "ppda": None if pd.isna(r.ppda) else float(r.ppda),
+                                 "xpts": float(r.xpts), "pts": int(r.pts),
+                                 "opp": opp_of.get((str(r.dt.date()), bool(r.is_home)), ""),
+                                 "res": "V" if gf > ga else "N" if gf == ga else "P"})
+        if not rows and not self.team_stats.empty and not self.fixtures.empty:
+            source = "FotMob"
+            fx = self.fixtures[(self.fixtures.status == "finished")
+                               & self.fixtures.home_goals.notna()
+                               & ((self.fixtures.home_id == team_id) | (self.fixtures.away_id == team_id))]
+            fx = fx.sort_values("utc_kickoff").tail(n * 2)
+            ts = self.team_stats[(self.team_stats.period == "All") & (self.team_stats.key == "expected_goals")]
+            xg_of = {(int(m), int(t)): float(v) for m, t, v in zip(ts.match_id, ts.team_id, ts.value)}
+            for r in fx.itertuples(index=False):
+                is_home = int(r.home_id) == team_id
+                opp = int(r.away_id) if is_home else int(r.home_id)
+                gf, ga = (r.home_goals, r.away_goals) if is_home else (r.away_goals, r.home_goals)
+                mine, theirs = xg_of.get((int(r.match_id), team_id)), xg_of.get((int(r.match_id), opp))
+                if mine is None or theirs is None or pd.isna(mine) or pd.isna(theirs):
+                    continue
+                gf, ga = int(gf), int(ga)
+                pts = 3 if gf > ga else 1 if gf == ga else 0
+                xh, xa = self._poisson_xpts(mine, theirs)
+                rows.append({"date": r.utc_kickoff, "home": is_home, "gf": gf, "ga": ga,
+                             "xg": mine, "xga": theirs, "ppda": None,
+                             "xpts": xh if is_home else xa, "pts": pts,
+                             "opp": r.home_name if not is_home else r.away_name,
+                             "res": "V" if gf > ga else "N" if gf == ga else "P"})
+                if len(rows) == n:
+                    break
+        if len(rows) < 3:
+            return None
+        xg = [r["xg"] for r in rows]
+        xga = [r["xga"] for r in rows]
+        ppda = [r["ppda"] for r in rows if r["ppda"] is not None]
+        home_rows = [r for r in rows if r["home"]]
+        away_rows = [r for r in rows if not r["home"]]
+        trend = None
+        if len(rows) >= 6:                 # ultime 3 contro le precedenti: solo se ci sono 6 gare
+            recent, before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
+            if before > 0:
+                delta = recent - before
+                trend = "in crescita" if delta > 0.15 else "in calo" if delta < -0.15 else "stabile"
+        return {"source": source, "played": len(rows), "rows": rows,
+                "xg_pm": sum(xg) / len(xg), "xga_pm": sum(xga) / len(xga),
+                "pts": sum(r["pts"] for r in rows), "xpts": round(sum(r["xpts"] for r in rows), 1),
+                "ppda": sum(ppda) / len(ppda) if ppda else None,
+                "home_pm": sum(r["xg"] for r in home_rows) / len(home_rows) if home_rows else None,
+                "away_pm": sum(r["xg"] for r in away_rows) / len(away_rows) if away_rows else None,
+                "trend": trend}
+
+    def h2h_pattern(self, match_id: int, home_id: int, away_id: int,
+                    kickoff: pd.Timestamp, n: int = 60) -> dict[str, Any] | None:
+        """Pattern sugli scontri diretti: tutti i precedenti disponibili, non solo gli ultimi 5.
+
+        Esiti dal punto di vista della squadra di casa **attuale**. In archivio ci sono
+        precedenti per 75/77 partite future, in media 19 a incontro (min 2, max 43):
+        abbastanza per frequenze, non per conclusioni — ogni valore riporta il numero di casi.
+        """
+        rows = self._h2h_core(match_id, home_id, away_id, kickoff, n)
+        if len(rows) < 3:
+            return None
+        w = d = l = 0
+        margins: list[int] = []
+        scorelines: dict[str, int] = {}
+        btts = over25 = 0
+        last_draw = None
+        for i, r in enumerate(rows):
+            was_home = r["home_id"] == home_id
+            signed = (r["hg"] - r["ag"]) if was_home else (r["ag"] - r["hg"])
+            if signed > 0:
+                w += 1
+            elif signed == 0:
+                d += 1
+                if last_draw is None:
+                    last_draw = i          # 0 = l'ultimo scontro è stato un pareggio
+            else:
+                l += 1
+            margins.append(signed)
+            key = f"{r['hg']}-{r['ag']}" if was_home else f"{r['ag']}-{r['hg']}"
+            scorelines[key] = scorelines.get(key, 0) + 1
+            btts += int(r["hg"] > 0 and r["ag"] > 0)
+            over25 += int(r["hg"] + r["ag"] > 2.5)
+        total = len(rows)
+        top = sorted(scorelines.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        return {"n": total, "wins": w, "draws": d, "losses": l,
+                "gpg": sum(r["hg"] + r["ag"] for r in rows) / total,
+                "margin": sum(margins) / total,
+                "btts": btts / total, "over25": over25 / total, "draw_drought": last_draw,
+                "top_scores": [{"score": s, "n": c, "share": c / total} for s, c in top],
+                "last": rows[0]["utc"], "first": rows[-1]["utc"]}
+
+    def key_players_deep(self, team_id: int, n: int = 3) -> dict[str, Any] | None:
+        """Giocatori decisivi di stagione: contributo offensivo atteso per 90 minuti.
+
+        Metrica (xG + xA) per 90: FotMob pubblica ``expected_goals`` e ``expected_assists``
+        in tutte e 7 le leghe, quindi la card è identica ovunque. Due regole di qualità:
+        - entrano in classifica solo i giocatori con **almeno un dato xG/xA**: chi non ha
+          righe xG non è "a zero", è senza dato, e verrebbe penalizzato per errore;
+        - soglia di minutaggio **relativa alla squadra** (40% dei minuti del più impiegato,
+          minimo 90'): a inizio stagione una soglia assoluta (es. 270') lascerebbe fuori i
+          più produttivi e premierebbe chi ha giocato tutto senza creare nulla.
+        Sotto queste condizioni nessun giocatore → None, e la card non compare.
+        """
+        agg = self._season_player_stats(team_id)
+        if agg.empty or "minutes_played" not in agg.columns:
+            return None
+        mins = agg.minutes_played.fillna(0.0)
+        floor = max(90.0, 0.4 * float(mins.max()))
+        played = agg[mins >= floor].copy()
+        if played.empty:
+            return None
+        empty = pd.Series(index=played.index, dtype=float)
+        xg = played.get("expected_goals", empty)
+        xa = played.get("expected_assists", empty)
+        # senza almeno una riga xG/xA il giocatore non ha un dato, non ha zero contributo
+        mask = xg.notna() | xa.notna()
+        played = played[mask]
+        if played.empty:
+            return None
+        xg, xa = played.get("expected_goals", empty), played.get("expected_assists", empty)
+        p90 = played.minutes_played / 90.0
+        contrib = xg.fillna(0.0) + xa.fillna(0.0)
+        played = played.assign(p90=p90, contrib=contrib, contrib_p90=contrib / p90)
+        eligible = int(len(played))
+        played = played.sort_values("contrib_p90", ascending=False).head(n)
+        out = []
+        for r in played.itertuples(index=False):
+            d = r._asdict()
+            gx, ax = d.get("expected_goals"), d.get("expected_assists")
+            out.append({
+                "id": int(r.player_id), "name": r.player_name,
+                "pos": self._role_it(r.player_id),
+                "minutes": int(self._num(d, "minutes_played")), "games": int(self._num(d, "games")),
+                "goals": int(self._num(d, "goals")), "assists": int(self._num(d, "assists")),
+                "xg": None if gx is None or pd.isna(gx) else round(float(gx), 2),
+                "xa": None if ax is None or pd.isna(ax) else round(float(ax), 2),
+                "contrib_p90": float(r.contrib_p90),
+                "chances": int(self._num(d, "chances_created")),
+                "big_chances": int(self._num(d, "big_chance_created_team_title")),
+                "rating": None if pd.isna(r.rating_avg) else round(float(r.rating_avg), 2)})
+        return {"rows": out, "floor": int(floor), "eligible": eligible}
+
+    def absences_weight(self, match_id: int, team_id: int) -> dict[str, Any] | None:
+        """Quanto pesa l'infermeria: gol, assist e xG+xA per 90 che gli assenti portano via.
+
+        Ogni assente è pesato sui suoi numeri reali di stagione. «Titolare abituale» =
+        almeno metà dei minuti medi per giocatore della squadra (minuti totali / 11).
+        """
+        unav = self.unavailable(match_id, team_id)
+        if not unav:
+            return None
+        agg = self._season_player_stats(team_id)
+        stats: dict[int, dict[str, float]] = {}
+        team_minutes = 0.0
+        if not agg.empty:
+            for r in agg.itertuples(index=False):
+                d = r._asdict()
+                mins = self._num(d, "minutes_played")
+                stats[int(r.player_id)] = {
+                    "minutes": mins, "goals": self._num(d, "goals"), "assists": self._num(d, "assists"),
+                    "contrib": self._num(d, "expected_goals") + self._num(d, "expected_assists")}
+                team_minutes += mins
+        # minuti medi per giocatore: la somma dei minuti divisa per gli 11 in campo
+        per_player = team_minutes / XI_SIZE if team_minutes else 0.0
+        lu = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
+                         & (self.lineup.role == "unavailable") & self.lineup.player_id.notna()]
+        by_name = {str(r.player_name): int(r.player_id) for r in lu.itertuples(index=False)}
+        players, starters_out, contrib_lost = [], 0, 0.0
+        for u in unav:
+            pid = by_name.get(str(u["name"]))
+            s = stats.get(pid, {}) if pid is not None else {}
+            mins, p90 = s.get("minutes", 0.0), s.get("minutes", 0.0) / 90.0
+            contrib = s.get("contrib", 0.0) / p90 if p90 and s.get("contrib") else None
+            is_starter = bool(per_player and mins >= 0.5 * per_player)
+            starters_out += int(is_starter)
+            contrib_lost += contrib or 0.0
+            players.append({**u, "minutes": int(mins) or None, "games": None,
+                            "goals": int(s.get("goals", 0.0)), "assists": int(s.get("assists", 0.0)),
+                            "contrib_p90": contrib, "starter": is_starter})
+        players.sort(key=lambda p: (-(p["contrib_p90"] or 0.0), -(p["minutes"] or 0)))
+        return {"players": players, "n": len(players), "starters_out": starters_out,
+                "contrib_lost_p90": contrib_lost or None, "has_stats": bool(stats)}
+
+    def referee_profile(self, match_id: int) -> dict[str, Any] | None:
+        """Profilo dell'arbitro con il confronto sulla media del campionato.
+
+        Le medie di lega sono calcolate sulle designazioni FotMob in archivio
+        (``match_info``): dove i dati statistici dell'arbitro mancano la card mostra solo il
+        nome, senza stime.
+        """
+        row = self.info[self.info.match_id == match_id]
+        if row.empty:
+            return None
+        d = row.iloc[0].to_dict()
+        if not _val(d, "referee_name"):
+            return None
+        league_id = _val(d, "league_id")
+        if league_id is None:
+            lg = self.info
+        else:
+            lg = self.info[self.info.league_id == league_id]
+        lg = lg[pd.to_numeric(lg.get("referee_yellows_per_match"), errors="coerce").notna()] \
+            if "referee_yellows_per_match" in lg.columns else lg.iloc[:0]
+
+        def _mean(col: str) -> float | None:
+            if lg.empty or col not in lg.columns:
+                return None
+            v = pd.to_numeric(lg[col], errors="coerce").dropna()
+            return float(v.mean()) if len(v) else None
+
+        return {"name": _val(d, "referee_name"), "matches": _val(d, "referee_matches"),
+                "yellows": _val(d, "referee_yellows_per_match"), "reds": _val(d, "referee_reds_total"),
+                "pens": _val(d, "referee_penalties_total"), "fouls": _val(d, "referee_fouls_per_match"),
+                "league_yellows": _mean("referee_yellows_per_match"),
+                "league_fouls": _mean("referee_fouls_per_match"),
+                "league_matches": int(len(lg)) if not lg.empty else None}
 
     def _weather(self, match_id: int, desc: Any, temp: Any, precip: Any) -> dict[str, Any]:
         """Meteo della gara: FotMob primario, Open-Meteo (previsionale) come fallback."""
@@ -605,26 +1043,174 @@ class MatchAnalysis:
     def key_stats(self, match_id: int, home_id: int, away_id: int) -> list[dict[str, Any]]:
         if self.team_stats.empty:
             return []
-        ts = self.team_stats[(self.team_stats.match_id == match_id) & (self.team_stats.period == "All")]
         wanted = [("BallPossesion", "Possesso palla"), ("expected_goals", "xG"), ("expected_goals_on_target", "xGOT"),
                   ("total_shots", "Tiri"), ("ShotsOnTarget", "Tiri in porta"), ("big_chance", "Grandi occasioni"),
                   ("big_chance_missed_title", "Grandi occasioni fallite"), ("accurate_passes", "Passaggi riusciti"),
                   ("corners", "Calci d'angolo"), ("fouls", "Falli"), ("yellow_cards", "Ammonizioni"),
                   ("red_cards", "Espulsioni"), ("touches_opp_box", "Tocchi in area avversaria")]
+        return self._stat_rows(match_id, home_id, away_id, wanted, "All")
+
+    def detail_stats(self, match_id: int, home_id: int, away_id: int) -> list[dict[str, Any]]:
+        """Statistiche di dettaglio: le chiavi FotMob non comprese nel riquadro principale.
+
+        Stessa fonte e stessa formattazione di ``key_stats`` (testo della fonte, decimali con
+        la virgola): una riga compare solo se **entrambe** le squadre hanno il dato, quindi
+        nessun segnaposto. Copertura misurata su 239 partite finite, 7/7 leghe.
+        """
+        wanted = [("shots_inside_box", "Tiri da dentro l'area"), ("shots_outside_box", "Tiri da fuori area"),
+                  ("expected_goals_open_play", "xG azione manovrata"),
+                  ("expected_goals_set_play", "xG palle inattive"),
+                  ("expected_goals_non_penalty", "xG senza rigori"),
+                  ("duel_won", "Duelli vinti"), ("ground_duels_won", "Duelli a terra vinti"),
+                  ("aerials_won", "Duelli aerei vinti"), ("interceptions", "Intercetti"),
+                  ("clearances", "Rinvii"), ("blocked_shots", "Tiri bloccati"),
+                  ("shot_blocks", "Contrasti su tiro"), ("dribbles_succeeded", "Dribbling riusciti"),
+                  ("accurate_crosses", "Cross riusciti"), ("long_balls_accurate", "Lanci lunghi riusciti"),
+                  ("passes", "Passaggi totali"), ("opposition_half_passes", "Passaggi metà campo avversaria"),
+                  ("own_half_passes", "Passaggi nella propria metà"), ("keeper_saves", "Parate del portiere"),
+                  ("shots_woodwork", "Legni"), ("Offsides", "Fuorigioco"),
+                  ("player_throws", "Rimesse laterali"), ("ShotsOffTarget", "Tiri fuori")]
+        return self._stat_rows(match_id, home_id, away_id, wanted, "All")
+
+    def _stat_rows(self, match_id: int, home_id: int, away_id: int,
+                   wanted: list[tuple[str, str]], period: str) -> list[dict[str, Any]]:
+        """Righe di confronto casa/trasferta per una lista di chiavi, su un periodo."""
+        if self.team_stats.empty:
+            return []
+        ts = self.team_stats[(self.team_stats.match_id == match_id) & (self.team_stats.period == period)]
+        if ts.empty:
+            return []
         out = []
         for key, label in wanted:
             h = ts[(ts.team_id == home_id) & (ts.key == key)]
             a = ts[(ts.team_id == away_id) & (ts.key == key)]
             if not h.empty and not a.empty:
-                out.append({"label": label, "home": h.iloc[0].text, "away": a.iloc[0].text})
+                out.append({"label": label, "home": _stat_text_it(h.iloc[0].text),
+                            "away": _stat_text_it(a.iloc[0].text)})
         return out
 
+    def half_split(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        """Primo e secondo tempo a confronto: xG, tiri, tiri in porta, possesso, angoli.
+
+        FotMob pubblica le stesse chiavi per periodo (``FirstHalf``/``SecondHalf``) su
+        239 partite finite, 7/7 leghe: serve a vedere **quando** una partita si è decisa.
+        """
+        wanted = [("expected_goals", "xG"), ("total_shots", "Tiri"), ("ShotsOnTarget", "Tiri in porta"),
+                  ("BallPossesion", "Possesso palla"), ("corners", "Calci d'angolo"),
+                  ("big_chance", "Grandi occasioni")]
+        cols = []
+        for period, label in (("FirstHalf", "Primo tempo"), ("SecondHalf", "Secondo tempo")):
+            rows = self._stat_rows(match_id, home_id, away_id, wanted, period)
+            if rows:
+                cols.append({"label": label, "rows": rows})
+        if len(cols) < 2:
+            return None
+        # righe comuni a entrambi i tempi, nello stesso ordine: la tabella resta allineata
+        labels = [r["label"] for r in cols[0]["rows"]]
+        cols[1]["rows"] = [r for r in cols[1]["rows"] if r["label"] in labels]
+        if len(cols[1]["rows"]) != len(labels):
+            return None
+        return {"cols": cols, "labels": labels}
+
+    def keeper_stats(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        """Portieri a confronto: parate, gol prevenuti, errori, rigori parati.
+
+        Il portiere è identificato dai dati, non dal ruolo in distinta: è il giocatore con
+        righe ``saves``/``goals_prevented`` in ``player_stats``. Copertura 239 partite per le
+        parate e i gol prevenuti, 93 per gli errori che hanno portato a un gol.
+        """
+        keys = ("saves", "goals_prevented", "errors_led_to_goal", "saved_penalties",
+                "conceded_penalties", "penalties_won")
+        sides = {}
+        for side, team_id in (("home", home_id), ("away", away_id)):
+            ps = self._match_player_stats(match_id, team_id)
+            if ps.empty:
+                continue
+            # il portiere è chi ha statistiche **da portiere**: saves/goals_prevented.
+            # Usare anche errors_led_to_goal o penalties_won pescava i difensori
+            # (Arsenal-Coventry 11/09: van Ewijk, terzino, al posto del portiere).
+            gk_keys = [k for k in ("saves", "goals_prevented") if k in set(ps.columns)]
+            if not gk_keys:
+                continue
+            keepers = ps[ps[gk_keys].notna().any(axis=1)]
+            if keepers.empty:
+                continue
+            if "minutes_played" in keepers.columns:      # il titolare è chi ha più minuti
+                keepers = keepers.sort_values("minutes_played", ascending=False, na_position="last")
+            r = keepers.iloc[0].to_dict()
+            sides[side] = {"name": r["player_name"], "id": int(r["player_id"]),
+                           **{k: (None if pd.isna(r.get(k, np.nan)) else float(r[k])) for k in keys}}
+        if len(sides) < 2:
+            return None
+        return {"home": sides["home"], "away": sides["away"], "keys": keys}
+
+    def physical_stats(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
+        """Dati fisici: distanza, sprint, metri in sprint, giocatore più veloce.
+
+        FotMob li pubblica solo per una parte delle partite (**30** in archivio): la card
+        compare solo quando i dati ci sono, senza stime al posto dei numeri mancanti.
+        """
+        keys = ("physical_metrics_distance_covered", "physical_metrics_number_of_sprints",
+                "physical_metrics_sprinting", "physical_metrics_topspeed")
+        sides = {}
+        for side, team_id in (("home", home_id), ("away", away_id)):
+            ps = self._match_player_stats(match_id, team_id)
+            if ps.empty or not set(keys) <= set(ps.columns):
+                continue
+            # pandas 3: con colonne di dtype 'str' l'indicizzazione con una *tupla* dà
+            # KeyError anche quando le etichette ci sono → si passa sempre una lista
+            have = ps[ps[list(keys)].notna().any(axis=1)]
+            if have.empty:
+                continue
+            fastest = have.dropna(subset=["physical_metrics_topspeed"]).sort_values(
+                "physical_metrics_topspeed", ascending=False)
+            top = fastest.iloc[0] if not fastest.empty else None
+            sides[side] = {
+                "km": float(have.physical_metrics_distance_covered.sum() / 1000.0),
+                "sprints": int(have.physical_metrics_number_of_sprints.fillna(0).sum()),
+                "sprint_m": int(have.physical_metrics_sprinting.fillna(0).sum()),
+                "players": int(len(have)),
+                "fastest": None if top is None else str(top.player_name),
+                "topspeed": None if top is None else float(top.physical_metrics_topspeed)}
+        if len(sides) < 2:
+            return None
+        return {"home": sides["home"], "away": sides["away"]}
+
+    def _match_player_stats(self, match_id: int, team_id: int) -> pd.DataFrame:
+        """Una riga per giocatore della squadra in questa partita (chiavi → colonne)."""
+        if self.player_stats.empty:
+            return pd.DataFrame()
+        ps = self.player_stats[(self.player_stats.match_id == match_id) & (self.player_stats.team_id == team_id)]
+        ps = ps[ps.value.notna()]
+        if ps.empty:
+            return pd.DataFrame()
+        ps = ps.assign(num=pd.to_numeric(ps.value, errors="coerce"))
+        wide = ps.groupby(["player_id", "player_name", "key"]).num.sum().unstack("key")
+        return wide.reset_index()
+
     def timeline(self, match_id: int) -> list[dict[str, Any]]:
+        """Cronaca essenziale (gol, cartellini, sostituzioni) con il punteggio **dopo** ogni gol.
+
+        Semantica FotMob verificata sui dati (226 partite finite, di cui 22 con autogol):
+        - ``homeScore``/``awayScore`` di un evento gol sono il punteggio **prima** del gol
+          (226/226: mai quello dopo);
+        - ``isHome`` indica la squadra **a cui il gol è attribuito**, già al netto degli
+          autogol (22/22 partite con autogol: usando ``isHome`` tal quale il conteggio
+          finale coincide col risultato; ribaltandolo sugli autogol 0/22).
+
+        Da qui: il punteggio mostrato è ricostruito contando i gol in ordine, e un evento
+        gol il cui «punteggio prima» non coincide con la sequenza viene scartato — è il
+        caso dei gol duplicati dalla fonte (es. Union Berlin–Schalke 04 del 11/09: 46' e
+        48' con gli stessi campi punteggio), che altrimenti finirebbero sia in cronaca sia
+        nelle probabilità in-play.
+        """
         if self.events.empty:
             return []
         ev = self.events[(self.events.match_id == match_id) & (self.events.type.isin(["Goal", "Card", "Substitution"]))]
         ev = ev.sort_values(["minute", "minute_added"], na_position="first")
+        names = self._match_player_names(match_id)
         out = []
+        hg = ag = 0
         for r in ev.itertuples(index=False):
             d = r._asdict()
             swap = _val(d, "swap")
@@ -634,13 +1220,46 @@ class MatchAnalysis:
                 except (ValueError, SyntaxError):
                     swap = None
             added = _val(d, "minute_added")
+            scored_home = bool(_val(d, "is_home", False))   # squadra a cui il gol è attribuito
+            own_goal = bool(_val(d, "own_goal", False))
+            score = None
+            if r.type == "Goal":
+                before_h, before_a = _val(d, "home_score"), _val(d, "away_score")
+                if before_h is not None and before_a is not None:
+                    try:
+                        if (int(before_h), int(before_a)) != (hg, ag):
+                            continue   # evento duplicato o fuori sequenza: scartato
+                    except (TypeError, ValueError):
+                        pass
+                if scored_home:
+                    hg += 1
+                else:
+                    ag += 1
+                score = f"{hg}-{ag}"
+            kind = ""
+            if r.type == "Goal" and not own_goal:
+                kind = GOAL_KIND_IT.get(str(_val(d, "goal_description") or ""), "")
+            aid = _val(d, "assist_player_id") if r.type == "Goal" else None
             out.append({"type": r.type, "minute": _val(d, "minute"), "added": int(added) if added is not None else None,
-                        "home": bool(_val(d, "is_home", False)), "player": _val(d, "player_name"),
-                        "card": _val(d, "card"), "own_goal": bool(_val(d, "own_goal", False)),
-                        "score": f"{_val(d, 'home_score', '')}-{_val(d, 'away_score', '')}" if r.type == "Goal" else None,
+                        "home": scored_home, "scorer_home": scored_home != own_goal,
+                        "player": _val(d, "player_name"), "kind": kind,
+                        "assist": names.get(int(aid)) if aid is not None and pd.notna(aid) else None,
+                        "card": _val(d, "card"), "own_goal": own_goal, "score": score,
                         "swap_in": swap[0][1] if swap and len(swap) > 0 else None,
                         "swap_out": swap[1][1] if swap and len(swap) > 1 else None})
         return out
+
+    def _match_player_names(self, match_id: int) -> dict[int, str]:
+        """``player_id" → nome dalla distinta della partita.
+
+        Serve agli assist: FotMob pubblica ``assistPlayerId`` su 535/753 gol e il nome è
+        risolvibile nel 100% dei casi attraverso la distinta (titolari, panchina e
+        indisponibili stanno tutti nella tabella ``lineup``).
+        """
+        if self.lineup.empty:
+            return {}
+        lu = self.lineup[(self.lineup.match_id == match_id) & self.lineup.player_id.notna()]
+        return {int(r.player_id): str(r.player_name) for r in lu.itertuples(index=False)}
 
     def top_players(self, match_id: int, home_id: int, away_id: int,
                     n: int = 3) -> dict[str, list[dict[str, Any]]]:
@@ -694,10 +1313,13 @@ class MatchAnalysis:
         if self.shots.empty:
             return {}
         s = self.shots[(self.shots.match_id == match_id) & (self.shots.team_id == team_id)]
+        # autogol esclusi: restano nella lista tiri FotMob ma non nei suoi aggregati di
+        # squadra (tiri totali 475/478 e tiri in porta 476/478 concordano solo escludendoli)
+        s = s[~s.is_own_goal.fillna(False).astype(bool)]
         if s.empty:
             return {}
         big = s[s.xg >= 0.3]
-        return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(s.is_on_target.fillna(False).sum()),
+        return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(_on_target(s).sum()),
                 "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": int(len(big)),
                 "goals": int((s.event_type == "Goal").sum()),
                 "best": _first(s.sort_values("xg", ascending=False)[["player_name", "xg", "minute", "event_type"]])}
@@ -708,12 +1330,11 @@ class MatchAnalysis:
             return []
         s = self.shots[(self.shots.match_id == match_id) & (self.shots.team_id == team_id)].dropna(subset=["x", "y"])
         out = []
-        for r in s.itertuples(index=False):
+        for r, on_tgt in zip(s.itertuples(index=False), _on_target(s), strict=True):
             xg = float(r.xg) if pd.notna(r.xg) else 0.0
             goal = r.event_type == "Goal"
-            on_target = bool(r.is_on_target) if pd.notna(r.is_on_target) else False
             blocked = bool(r.is_blocked) if pd.notna(r.is_blocked) else False
-            kind = "goal" if goal else "target" if on_target else "blocked" if blocked else "miss"
+            kind = "goal" if goal else "blocked" if blocked else "target" if on_tgt else "miss"
             out.append({"px": round(min(max((float(r.x) - 52.5) * 8.0, 4.0), 412.0), 1),
                         "py": round(min(max(float(r.y) * 4.0, 8.0), 264.0), 1),
                         "r": round(2.5 + 8.5 * xg ** 0.5, 1),
@@ -764,7 +1385,7 @@ class MatchAnalysis:
                 # se era in trasferta ha vinto chi ha più gol in trasferta
                 cur_home_was_home = r["home_id"] == home_id
                 res = "V" if (hg > ag) == cur_home_was_home else "P"
-            out.append({"date": r["utc"].strftime("%d/%m/%Y"), "league": r["league"],
+            out.append({"date": r["utc"].strftime("%d/%m/%Y"), "league": _competition_it(r["league"]),
                         "home": names[r["home_id"]], "away": names[r["away_id"]],
                         "score": f"{hg}-{ag}", "res": res})
         return out
@@ -942,11 +1563,11 @@ class MatchAnalysis:
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
                 if diff >= 3:
-                    s.append(f"{name} ha raccolto {diff:+.1f} punti rispetto agli xPTS: rendimento sopra la qualità "
-                             f"del gioco prodotto, possibile regressione.")
+                    s.append(f"{name} ha raccolto {dec(diff, 1, plus=True)} punti rispetto agli xPTS: rendimento "
+                             f"sopra la qualità del gioco prodotto, possibile regressione.")
                 elif diff <= -3:
-                    s.append(f"{name} ha {diff:+.1f} punti rispetto agli xPTS: sta rendendo meno di quanto crea, "
-                             f"segnale di sottovalutazione.")
+                    s.append(f"{name} ha {dec(diff, 1, plus=True)} punti rispetto agli xPTS: sta rendendo meno di "
+                             f"quanto crea, segnale di sottovalutazione.")
             un = ctx.get(f"{side}_unavailable") or []
             if un:
                 heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
@@ -963,7 +1584,8 @@ class MatchAnalysis:
             if y is not None:
                 tone = "molto severo" if y >= 5 else "severo" if y >= 4.2 else "permissivo" if y <= 3.2 else "nella media"
                 s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita ({tone})"
-                         + (f", {int(ref['pens'])} rigori in {int(ref['matches'])} gare." if ref.get("pens") is not None else "."))
+                         + (f", {it_plural(ref['pens'], 'rigore')} in {it_plural(ref['matches'], 'gara')}."
+                            if ref.get("pens") is not None else "."))
         w = ctx.get("weather")
         if w and w.get("desc"):
             extra = ""
@@ -1025,8 +1647,17 @@ class MatchAnalysis:
             "home_key_players": self.team_key_players(home_id),
             "away_key_players": self.team_key_players(away_id),
             "insights": (self.match_insights(match_id, home_id, away_id,
-                                             f["home_name"], f["away_name"])
+                                             f["home_name"], f["away_name"], n=5)
                          if status != "finished" else []),
+            "home_arrival": self.arrival_trend(f["home_name"], home_id) if status != "finished" else None,
+            "away_arrival": self.arrival_trend(f["away_name"], away_id) if status != "finished" else None,
+            "h2h_pattern": (self.h2h_pattern(match_id, home_id, away_id, kickoff)
+                            if status != "finished" else None),
+            "home_key_deep": self.key_players_deep(home_id) if status != "finished" else None,
+            "away_key_deep": self.key_players_deep(away_id) if status != "finished" else None,
+            "home_absences": self.absences_weight(match_id, home_id) if status != "finished" else None,
+            "away_absences": self.absences_weight(match_id, away_id) if status != "finished" else None,
+            "referee_profile": self.referee_profile(match_id),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),
             "home_value": _val(info, "home_starters_value_eur"), "away_value": _val(info, "away_starters_value_eur"),
@@ -1054,6 +1685,11 @@ class MatchAnalysis:
             "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
             "generated_at": datetime.now(timezone.utc),
         }
+        if status == "finished":
+            ctx["detail_stats"] = self.detail_stats(match_id, home_id, away_id)
+            ctx["half_split"] = self.half_split(match_id, home_id, away_id)
+            ctx["keepers"] = self.keeper_stats(match_id, home_id, away_id)
+            ctx["physical"] = self.physical_stats(match_id, home_id, away_id)
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None

@@ -12,6 +12,22 @@
 <p class="small mut">Δ = RPS modello − RPS della base naive (probabilità fisse 45/27/28): negativo = il modello batte la base.
 Con poche gare valutate per campionato i valori restano indicativi: servono ~30 gare per lettura stabile.</p>
 </div>
+{% if markets %}
+<div class="card"><h2>Accuratezza per mercato</h2>
+  <table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th><th class="r">osservato</th>
+    <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th></tr>
+  {% for m in markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
+    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
+    <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
+    <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
+    <td class="r">{{ (m.hit*100)|round|int }}%</td></tr>{% endfor %}</table>
+  <p class="small mut">«Previsto» è la probabilità media dichiarata, «osservato» la frequenza reale nello
+  stesso campione: se sono vicini il mercato è calibrato. Il Brier misura l'errore quadratico della
+  probabilità (0 = perfetto); <b>Brier base</b> è l'errore di chi pronostica sempre la frequenza di
+  base, quindi Δ negativo significa che il modello batte quel riferimento. «Scelte indovinate» conta
+  le volte in cui l'esito reale coincide con il lato indicato da una probabilità ≥ 50%.</p>
+</div>
+{% endif %}
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
 <div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th></tr>
 {% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}%</td></tr>{% endfor %}

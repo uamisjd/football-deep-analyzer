@@ -27,7 +27,7 @@
 
 <div class="grid">
   <div class="card">
-    <h2>Stagione <span class="tag">FotMob · {{ p.matches }} gare</span></h2>
+    <h2>Stagione <span class="tag">FotMob · {{ p.matches|it_plural('gara') }}</span></h2>
     <table>
       <tr><th>Statistica</th><th class="r">Totale</th><th class="r">Per 90′</th></tr>
       {% for row in p.stats_table %}
@@ -57,7 +57,7 @@
       e un numero sufficiente di pari-ruolo con dato (minimo 8). Nessuna stima inventata.</p>
     {% endif %}
     {% if p.small_sample %}
-    <p class="small mut" style="margin-top:8px">⚠ Campione ridotto: {{ p.matches }} gare e {{ p.minutes }} minuti.
+    <p class="small mut" style="margin-top:8px">⚠ Campione ridotto: {{ p.matches|it_plural('gara') }} e {{ p.minutes|it_plural('minuto') }}.
       A inizio stagione i percentili sono molto sensibili a una singola prestazione.</p>
     {% endif %}
   </div>

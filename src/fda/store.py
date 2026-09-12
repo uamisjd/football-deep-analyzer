@@ -28,7 +28,9 @@ TABLE_KEYS: dict[str, list[str]] = {
     "shots": ["match_id", "shot_id"],
     "team_stats": ["match_id", "team_id", "period", "key"],
     "player_stats": ["match_id", "player_id", "key"],
-    "lineup": ["match_id", "team_id", "player_id", "role"],
+    # senza "role": il ruolo di un giocatore cambia tra snapshot (probabile → ufficiale),
+    # e con il ruolo in chiave lo stesso giocatore restava in due righe (13-19 "titolari").
+    "lineup": ["match_id", "team_id", "player_id"],
     "events": ["match_id", "type", "minute", "minute_added", "is_home", "player_id"],
     "momentum": ["match_id", "minute"],
     "h2h": ["match_id", "home_id", "away_id", "utc"],
@@ -77,14 +79,37 @@ class Store:
             df = df.sort_values(keys, kind="stable")
         df.reset_index(drop=True).to_parquet(self.path(table), index=False, compression="zstd")
 
-    def upsert(self, table: str, rows: Iterable[dict[str, Any]] | pd.DataFrame) -> int:
-        """Inserisce/aggiorna righe per chiave. Ritorna il numero di righe nuove/aggiornate."""
+    def upsert(self, table: str, rows: Iterable[dict[str, Any]] | pd.DataFrame,
+               replace_by: str | None = None) -> int:
+        """Inserisce/aggiorna righe per chiave. Ritorna il numero di righe nuove/aggiornate.
+
+        ``replace_by`` (es. ``"match_id"``) è per le tabelle che sono **snapshot completi**
+        di un'entità: eventi, formazioni, tiri, statistiche. Le righe esistenti con lo
+        stesso valore vengono sostituite in blocco dalle nuove, invece di essere fuse per
+        chiave. Due motivi concreti (entrambi osservati sui dati 2026-09-12):
+        - una fusione per chiave lascia le righe vecchie accanto alle nuove quando la fonte
+          cambia idea (un giocatore dato titolare nella formazione probabile e poi in
+          panchina/indisponibile restava in entrambe le righe → «formazioni» da 13-19 nomi);
+        - due righe legittime possono condividere la chiave (due sostituzioni allo stesso
+          minuto hanno ``player_id`` nullo → la seconda veniva scartata: 6,5 sostituzioni
+          per partita invece di ~10).
+        """
         new = rows if isinstance(rows, pd.DataFrame) else pd.DataFrame(list(rows))
         if new.empty:
             return 0
         new = _normalize(new)
         old = self.read(table)
         keys = [k for k in TABLE_KEYS.get(table, []) if k in new.columns]
+        if replace_by and replace_by in new.columns:
+            if not old.empty and replace_by in old.columns:
+                fresh = set(new[replace_by].astype(str))
+                old = old[~old[replace_by].astype(str).isin(fresh)]
+            merged = new if old.empty else pd.concat([old, new], ignore_index=True)
+            # lo snapshot nuovo è autorevole: niente dedup per chiave (due sostituzioni allo
+            # stesso minuto condividono la chiave), si fondono solo le righe identiche
+            merged = merged.drop_duplicates()
+            self.write(table, merged)
+            return int(len(new))
         if old.empty or not keys:
             merged = pd.concat([old, new], ignore_index=True) if not old.empty else new
         else:

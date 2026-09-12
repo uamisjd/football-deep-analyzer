@@ -13,7 +13,7 @@
       <li><b>Dixon-Coles</b> pesato nel tempo (attacco/difesa per squadra, λ di gol, ρ per i risultati bassi);</li>
       <li><b>Elo</b> (forza di squadra aggiornata gara per gara).</li>
     </ul>
-    <p style="margin-top:12px">Da questi escono mercati 1X2, gol attesi, Over/Under, entrambe a segno, doppia chance, clean sheet e risultati esatti. L'accuratezza è pubblicata in <a href="accuratezza.html">Accuratezza</a> con RPS/Brier rispetto a una base naive.</p>
+    <p style="margin-top:12px">Da questi escono mercati 1X2, gol attesi, Over/Under, entrambe a segno, doppia chance, porta inviolata e risultati esatti. L'accuratezza è pubblicata in <a href="accuratezza.html">Accuratezza</a> con RPS/Brier rispetto a una base naive.</p>
   </div>
   <div class="card">
     <h2>Le fonti (gratuite)</h2>
@@ -42,7 +42,7 @@
     <li><b>Matrice dei punteggi</b> — Poisson bivariato con correzione τ di Dixon-Coles (ρ stimato sul campionato). Coda oltre 5 gol dichiarata a parte; ρ fuori dai bound matematici viene clampato, mai inventato.</li>
     <li><b>Scontro tattico</b> — parametri attacco/difesa del modello; xG azione manovrata / palle inattive come media sulle partite finite FotMob (parità 7/7); PPDA e passaggi profondi da Understat dove copre.</li>
     <li><b>Corsa xG</b> — somma cumulativa dell'xG di ogni tiro, autogol esclusi.</li>
-    <li><b>Qualità dei tiri</b> — xG/tiro; split RegularPlay/contropiede vs corner/punizioni/rimesse vs rigori; gol − xG (conversione) e gol − xGOT (tiro in porta vs portiere).</li>
+    <li><b>Qualità dei tiri</b> — xG/tiro; split azione manovrata/contropiede vs corner/punizioni/rimesse vs rigori; gol − xG (conversione) e gol − xGOT (tiro in porta vs portiere).</li>
     <li><b>Probabilità in-play</b> — al minuto t, λ residue = λ pre-partita × (90−t)/90; Poisson indipendente sul residuo (ρ non si scala al tempo parziale). Non è un modello live: è una ricostruzione onesta dopo il fischio finale.</li>
   </ul>
 </div>

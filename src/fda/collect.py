@@ -33,6 +33,13 @@ log = logging.getLogger(__name__)
 # Orizzonte del meteo previsionale Open-Meteo (giorni futuri coperti come fallback).
 WEATHER_HORIZON_DAYS = 7
 
+# Versione dello snapshot per-partita. Va incrementata quando cambia il modo in cui le
+# tabelle per-partita vengono salvate: le partite finite salvate con una versione più
+# vecchia vengono riscaricate una volta (poche per run, vedi `max_refresh`).
+#   2 (2026-09-12): tabelle per-partita salvate come snapshot completi (replace_by match_id),
+#                   chiave `lineup` senza ruolo → formazioni e sostituzioni complete.
+COLLECT_SNAPSHOT = 2
+
 
 @dataclass
 class CollectReport:
@@ -42,6 +49,7 @@ class CollectReport:
     matches_fetched: int = 0
     matches_skipped: int = 0
     matches_backfilled: int = 0
+    matches_refreshed: int = 0
     standings: int = 0
     understat_rows: int = 0
     espn_events: int = 0
@@ -77,6 +85,7 @@ def collect_league(
     future_days: int = 3,
     max_matches: int = 40,
     max_backfill: int = 40,
+    max_refresh: int = 6,
     fotmob: FotMobClient | None = None,
     understat: UnderstatClient | None = None,
     espn: EspnClient | None = None,
@@ -104,7 +113,11 @@ def collect_league(
         already = set()
         existing = store.read("match_info")
         if not existing.empty and "status" in existing.columns:
-            already = set(existing.loc[existing["status"] == "finished", "match_id"].astype(int))
+            done = existing["status"] == "finished"
+            if "snapshot_version" in existing.columns:
+                ver = pd.to_numeric(existing["snapshot_version"], errors="coerce").fillna(0)
+                done = done & (ver >= COLLECT_SNAPSHOT)
+            already = set(existing.loc[done, "match_id"].astype(int))
         def _fetch(f: Fixture) -> bool:
             """Scarica e salva i dettagli di una partita. Ritorna True se salvata."""
             raw = _safe(f"fotmob match {f.match_id}",
@@ -118,7 +131,12 @@ def collect_league(
 
             def _save() -> bool:
                 for table, rows in bundle_to_dicts(bundle).items():
-                    store.upsert(table, rows)
+                    if table == "match_info":
+                        # marca lo snapshot: le partite finite salvate con una versione
+                        # precedente vengono riscaricate una volta (vedi `already`)
+                        rows = [{**r, "snapshot_version": COLLECT_SNAPSHOT} for r in rows]
+                    # tabelle per-partita = snapshot completi: sostituzione, non fusione
+                    store.upsert(table, rows, replace_by="match_id")
                 return True
 
             # anche il salvataggio è isolato: una partita con righe anomale non deve
@@ -136,13 +154,20 @@ def collect_league(
         # 2b) backfill finite di stagione (TUTTE le leghe: parità 7/7 per le schede    --
         # giocatore, fase 3 — docs/07). Ogni finita si scarica una sola volta (poi è in
         # `already`); le più recenti prima.
-        old = [f for f in fixtures
-               if f.status == "finished" and f.utc_kickoff and f.utc_kickoff < lo
-               and f.match_id not in already]
-        old.sort(key=lambda f: f.utc_kickoff, reverse=True)
+        past = [f for f in fixtures
+                if f.status == "finished" and f.utc_kickoff and f.utc_kickoff < lo]
+        past.sort(key=lambda f: f.utc_kickoff, reverse=True)
+        old = [f for f in past if f.match_id not in already]        # mai scaricate
+        stale = [f for f in past if f.match_id in already]          # snapshot da rinfrescare
         for f in old[:max_backfill]:
             if _fetch(f):
                 report.matches_backfilled += 1
+        # Rinfresco delle partite finite salvate prima dello snapshot corrente: recupera
+        # formazioni e sostituzioni complete. Tetto piccolo e separato dal backfill per
+        # restare dentro il budget FotMob (600 richieste/run, ~500 già usate).
+        for f in stale[:max_refresh]:
+            if _fetch(f):
+                report.matches_refreshed += 1
 
     # 2c) tabella di lega (FotMob `leagues`: fonte primaria delle classifiche) ----------------
     def _table() -> int:

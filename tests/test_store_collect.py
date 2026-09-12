@@ -288,3 +288,50 @@ def test_collect_skips_openmeteo_when_not_provided(tmp_path):
     assert st.read("weather_forecast").empty
     assert "openmeteo" not in rep.requests     # passo disattivato: nessuna fonte registrata
     st.close()
+
+
+def test_upsert_replace_by_snapshot(tmp_path):
+    """Le tabelle per-partita sono snapshot: lo snapshot nuovo sostituisce il vecchio.
+
+    Regressione sui dati 2026-09-12: 573 coppie (partita, giocatore) in doppia riga su
+    15985 (titolare della formazione probabile + subentrato/indisponibile di quella
+    ufficiale) → «formazioni» da 13-19 nomi sul sito.
+    """
+    st = Store(tmp_path / "processed")
+    st.upsert("lineup", [
+        {"match_id": 1, "team_id": 10, "player_id": 100, "role": "starter", "player_name": "A"},
+        {"match_id": 1, "team_id": 10, "player_id": 101, "role": "starter", "player_name": "B"},
+    ])
+    st.upsert("lineup", [
+        {"match_id": 1, "team_id": 10, "player_id": 100, "role": "sub", "player_name": "A"},
+        {"match_id": 1, "team_id": 10, "player_id": 102, "role": "starter", "player_name": "C"},
+    ], replace_by="match_id")
+    df = st.read("lineup")
+    assert len(df) == 2                                          # B esce, A cambia ruolo
+    assert df.loc[df.player_id == 100, "role"].iloc[0] == "sub"
+    assert set(df.player_id) == {100, 102}
+    # le altre partite non vengono toccate
+    st.upsert("lineup", [{"match_id": 2, "team_id": 10, "player_id": 100, "role": "starter",
+                          "player_name": "A"}], replace_by="match_id")
+    assert len(st.read("lineup")) == 3
+    st.close()
+
+
+def test_upsert_events_double_substitution_same_minute(tmp_path):
+    """Due sostituzioni allo stesso minuto sopravvivono (chiave `events` non le distingue).
+
+    Le righe di sostituzione hanno `player_id` nullo (i due giocatori stanno in `swap`):
+    con la sola fusione per chiave una delle due veniva scartata — 6,5 sostituzioni per
+    partita in archivio invece di ~10.
+    """
+    st = Store(tmp_path / "processed")
+    rows = [
+        {"match_id": 7, "type": "Substitution", "minute": 68, "minute_added": None, "is_home": True,
+         "player_id": None, "player_name": None, "swap": "[(1, 'Entra Uno'), (2, 'Esce Due')]"},
+        {"match_id": 7, "type": "Substitution", "minute": 68, "minute_added": None, "is_home": True,
+         "player_id": None, "player_name": None, "swap": "[(3, 'Entra Tre'), (4, 'Esce Quattro')]"},
+    ]
+    st.upsert("events", rows, replace_by="match_id")
+    df = st.read("events")
+    assert len(df) == 2
+    st.close()

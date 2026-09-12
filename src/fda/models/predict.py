@@ -20,9 +20,14 @@ import numpy as np
 import pandas as pd
 import penaltyblog as pb
 
+from .dc_grid import probability_grid
+
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "dc-elo-ens-0.1"
+MODEL_VERSION = "dc-elo-ens-0.2"   # 0.2: shrinkage dei parametri DC verso la media di lega
+
+# Pseudo-partite del prior sui parametri attacco/difesa (shrinkage verso la media di lega).
+SHRINK_PRIOR = 8.0
 
 
 def _grid_markets(grid: Any) -> dict[str, float]:
@@ -54,8 +59,16 @@ def _grid_markets(grid: Any) -> dict[str, float]:
 class DixonColesModel:
     xi: float = 0.0018             # decadimento temporale (Dixon & Coles 1997: ~0.0065/settimana ≈ 0.0009/giorno)
     max_goals: int = 10
+    # Shrinkage dei parametri attacco/difesa verso la media di lega. A inizio stagione una
+    # neopromossa ha 2-3 partite: il suo stimatore finisce al bordo dell'ottimizzazione
+    # (attacco −2,5) e la rende "incapace di segnare" (Dortmund–Paderborn λ 1,02–0,19 con
+    # Over 2,5 al 12%, contro 0,71 xG/gara reali del Paderborn). Il parametro viene
+    # contratto di f = w/(w+shrink_prior), dove w è il peso temporale delle sue partite.
+    # shrink_prior = 0 disattiva la contrazione (comportamento penaltyblog puro).
+    shrink_prior: float = SHRINK_PRIOR
     model: Any = field(default=None, init=False, repr=False)
     teams: set[str] = field(default_factory=set, init=False)
+    team_weight: dict[str, float] = field(default_factory=dict, init=False)
     fitted_at: datetime | None = field(default=None, init=False)
     n_matches: int = field(default=0, init=False)
 
@@ -77,17 +90,62 @@ class DixonColesModel:
         )
         self.model.fit()
         self.teams = set(df["home"]) | set(df["away"])
+        w = pd.Series(np.asarray(weights, dtype=float), index=df.index)
+        per_team = w.groupby(df["home"]).sum().add(w.groupby(df["away"]).sum(), fill_value=0.0)
+        self.team_weight = {str(t): float(v) for t, v in per_team.items()}
         self.n_matches = int(len(df))
         self.fitted_at = datetime.now(timezone.utc)
         return self
+
+    def shrunk_params(self, params: dict[str, float] | Any) -> dict[str, float]:
+        """Parametri attacco/difesa contratti verso la media di lega, in proporzione ai dati.
+
+        ``f = w / (w + shrink_prior)`` con ``w`` = peso temporale accumulato dalla squadra
+        (una squadra presente da 3 stagioni pesa ~130 con xi=0.0018, una neopromossa ~2).
+
+        Poiché ``f`` cambia da squadra a squadra, la contrazione sposterebbe le medie di
+        lega e con esse il gauge scelto dall'ottimizzatore (λ = exp(attacco + difesa +
+        hfa)): le due medie vengono quindi riportate al valore del fit. Restano intatte
+        graduatorie e differenze relative, che sono ciò che determina λ.
+        """
+        params = dict(params)
+        if self.shrink_prior <= 0 or not self.teams:
+            return params
+        att = {t: float(params.get(f"attack_{t}", 0.0)) for t in self.teams}
+        dfn = {t: float(params.get(f"defence_{t}", 0.0)) for t in self.teams}
+        mean_att = sum(att.values()) / len(att)
+        mean_dfn = sum(dfn.values()) / len(dfn)
+        shrunk_att, shrunk_dfn = {}, {}
+        for t in self.teams:
+            w = self.team_weight.get(t, 0.0)
+            f = w / (w + self.shrink_prior)
+            shrunk_att[t] = mean_att + (att[t] - mean_att) * f
+            shrunk_dfn[t] = mean_dfn + (dfn[t] - mean_dfn) * f
+        shift_att = sum(shrunk_att.values()) / len(shrunk_att) - mean_att
+        shift_dfn = sum(shrunk_dfn.values()) / len(shrunk_dfn) - mean_dfn
+        for t in self.teams:
+            params[f"attack_{t}"] = shrunk_att[t] - shift_att
+            params[f"defence_{t}"] = shrunk_dfn[t] - shift_dfn
+        return params
+
+    def lambdas(self, home: str, away: str, params: dict[str, float]) -> tuple[float, float]:
+        """λ attese dalla parametrizzazione moltiplicativa di penaltyblog (exp di att+dif+hfa)."""
+        hfa = float(params.get("home_advantage", 0.0))
+        att_h = float(params.get(f"attack_{home}", 0.0))
+        att_a = float(params.get(f"attack_{away}", 0.0))
+        dfn_h = float(params.get(f"defence_{home}", 0.0))
+        dfn_a = float(params.get(f"defence_{away}", 0.0))
+        return math.exp(att_h + dfn_a + hfa), math.exp(att_a + dfn_h)
 
     def predict(self, home: str, away: str) -> dict[str, Any]:
         if home not in self.teams or away not in self.teams:
             missing = [t for t in (home, away) if t not in self.teams]
             raise KeyError(f"squadre non nello storico DC: {missing}")
-        grid = self.model.predict(home, away, max_goals=self.max_goals)
+        params = self.shrunk_params(self.model.get_params())
+        lh, la = self.lambdas(home, away, params)
+        # griglia ricostruita sui parametri contratti (stessa τ del modello addestrato)
+        grid = probability_grid(lh, la, params.get("rho", 0.0) or 0.0, size=self.max_goals)
         out = _grid_markets(grid)
-        params = self.model.get_params()
         out["dc_attack_home"] = float(params.get(f"attack_{home}", float("nan")))
         out["dc_defence_home"] = float(params.get(f"defence_{home}", float("nan")))
         out["dc_attack_away"] = float(params.get(f"attack_{away}", float("nan")))
@@ -97,8 +155,9 @@ class DixonColesModel:
         return out
 
     def strength_table(self) -> pd.DataFrame:
-        p = self.model.get_params()
-        rows = [{"team": t, "attack": p[f"attack_{t}"], "defence": p[f"defence_{t}"]} for t in sorted(self.teams)]
+        p = self.shrunk_params(self.model.get_params())
+        rows = [{"team": t, "attack": p[f"attack_{t}"], "defence": p[f"defence_{t}"],
+                 "matches_weight": round(self.team_weight.get(t, 0.0), 1)} for t in sorted(self.teams)]
         df = pd.DataFrame(rows)
         # più alto = meglio, per entrambi (attack alto = segna di più; defence basso = subisce meno)
         df["rating"] = df["attack"] - df["defence"]
@@ -151,9 +210,14 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     try:
         ge = pb.models.goal_expectancy(ph, pdw, pa, dc_adj=True, rho=dc.get("dc_rho", 0.0) or 0.0)
         lh, la = float(ge["home_exp"]), float(ge["away_exp"])
-        grid = pb.models.create_dixon_coles_grid(lh, la, rho=dc.get("dc_rho", 0.0) or 0.0, max_goals=10)
+        grid = probability_grid(lh, la, dc.get("dc_rho", 0.0) or 0.0, size=10)
         markets = _grid_markets(grid)
-        markets.update({"p_home": ph, "p_draw": pdw, "p_away": pa})
+        # la doppia chance è per definizione una somma di esiti 1X2: va ricalcolata sul 1X2
+        # mediato, altrimenti la scheda mostra «1X 73%» accanto a «1X2 48/27/26» (100−26=74).
+        # Sui dati pubblicati lo scarto arrivava a 1,1 punti e l'intero a schermo era
+        # incoerente nel 14,3% delle partite.
+        markets.update({"p_home": ph, "p_draw": pdw, "p_away": pa,
+                        "p_1x": ph + pdw, "p_12": ph + pa, "p_x2": pdw + pa})
         out.update(markets)
     except Exception as exc:  # fallback: solo 1X2 mediato
         log.debug("goal_expectancy fallita (%s): uso 1X2 mediato e mercati DC", exc)
@@ -169,9 +233,10 @@ def fair_odds(p: float) -> float | None:
 
 
 def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.0018,
-                    w_dc: float = 0.7) -> tuple[pd.DataFrame, DixonColesModel, EloModel]:
+                    w_dc: float = 0.7,
+                    shrink_prior: float = SHRINK_PRIOR) -> tuple[pd.DataFrame, DixonColesModel, EloModel]:
     """Addestra DC+Elo su `hist` e prevede le righe di `fixtures` (colonne: match_id, home, away, ...)."""
-    dc = DixonColesModel(xi=xi).fit(hist)
+    dc = DixonColesModel(xi=xi, shrink_prior=shrink_prior).fit(hist)
     elo = EloModel().fit(hist)
     made_at = datetime.now(timezone.utc)
     rows = []

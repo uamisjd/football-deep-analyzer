@@ -11,6 +11,7 @@
     <div class="bar"><span class="h" style="width:{{ (ph*100)|round }}%">{{ (ph*100)|round|int }}</span><span class="d" style="width:{{ (pd*100)|round }}%">{{ (pd*100)|round|int }}</span><span class="a" style="width:{{ (pa*100)|round }}%">{{ (pa*100)|round|int }}</span></div>
     <span class="lean">Il modello punta su <b>{{ top }}</b> ({{ (top_p*100)|round|int }}%)</span>
     <span class="mut"> · λ {{ m.prediction.lambda_home|dec }}–{{ m.prediction.lambda_away|dec }} · O2.5 {{ (m.prediction.p_over25*100)|round|int }}%</span>
-  {% else %}<span class="mut">previsione non disponibile</span>{% endif %}</div>
+  {% else %}<span class="mut">previsione non disponibile</span>{% endif %}
+    {% if m.status != 'finished' and (m.abs_home or m.abs_away) %}<br><span class="mut small">Infermeria: {{ m.home_name }} {{ m.abs_home|it_plural('assente') }} · {{ m.away_name }} {{ m.abs_away|it_plural('assente') }}</span>{% endif %}</div>
 </div>
 {%- endmacro %}

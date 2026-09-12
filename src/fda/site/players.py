@@ -19,13 +19,24 @@ import pandas as pd
 from ..config import load_leagues_config
 from ..store import Store
 from .analysis import _return_it, unavailability_it
-from .fmt import dec, pct_str
+from .fmt import dec, int_it, pct_str
 
 MIN_MINUTES = 90          # soglia per avere/entrare nei percentili (docs/07 §2.3)
 MIN_PEERS = 8             # minimo pari-ruolo con dato per calcolare il percentile
 SMALL_SAMPLE_MINUTES = 270  # sotto: avviso «campione ridotto»
 
 POSITION_LABELS = {0: "Portiere", 1: "Difensore", 2: "Centrocampista", 3: "Attaccante"}
+
+
+def _label_or_none(v: Any) -> str | None:
+    """Etichetta testuale o ``None``.
+
+    Con pandas 3 le colonne di stringhe sono Arrow-backed: un ``None`` assegnato a una
+    colonna diventa ``nan`` (che nei template Jinja è *truthy* → «Amad Diallonan»).
+    Ogni etichetta che esce dal DataFrame passa da qui, così il template riceve sempre
+    ``str`` oppure ``None``.
+    """
+    return v if isinstance(v, str) and v else None
 
 LOG_KEYS = ("minutes_played", "rating_title", "goals", "assists",
             "expected_goals", "expected_assists")
@@ -38,6 +49,10 @@ class StatDef:
     kind: ``per90`` (somma → per 90 minuti), ``ratio`` (valore/totale della stessa
     chiave, es. passaggi riusciti/tentati), ``ratio2`` (chiave/chiave2, es. duelli
     vinti/vinti+persi), ``rating`` (media dei voti di partita ponderata sui minuti).
+
+    ``count=True`` per le statistiche che sono conteggi interi (gol, tiri, passaggi…):
+    il totale viene mostrato senza decimali («4», non «4,00»); il per-90 resta a due
+    decimali perché è una media.
     """
 
     id: str
@@ -46,39 +61,40 @@ class StatDef:
     key: str = ""
     key2: str = ""
     lower: bool = False
+    count: bool = False
 
 
 STATS: dict[str, StatDef] = {
     s.id: s for s in (
         StatDef("rating", "Media voto", "rating", "rating_title"),
-        StatDef("goals", "Gol", "per90", "goals"),
+        StatDef("goals", "Gol", "per90", "goals", count=True),
         StatDef("xg", "xG", "per90", "expected_goals"),
         StatDef("npxg", "xG senza rigori", "per90", "expected_goals_non_penalty"),
-        StatDef("assists", "Assist", "per90", "assists"),
+        StatDef("assists", "Assist", "per90", "assists", count=True),
         StatDef("xa", "xA", "per90", "expected_assists"),
-        StatDef("shots", "Tiri", "per90", "total_shots"),
-        StatDef("sot", "Tiri nello specchio", "per90", "ShotsOnTarget"),
-        StatDef("chances", "Occasioni create", "per90", "chances_created"),
-        StatDef("dribbles", "Dribbling riusciti", "per90", "dribbles_succeeded"),
-        StatDef("box_touches", "Tocchi in area avversaria", "per90", "touches_opp_box"),
-        StatDef("passes", "Passaggi riusciti", "per90", "accurate_passes"),
+        StatDef("shots", "Tiri", "per90", "total_shots", count=True),
+        StatDef("sot", "Tiri nello specchio", "per90", "ShotsOnTarget", count=True),
+        StatDef("chances", "Occasioni create", "per90", "chances_created", count=True),
+        StatDef("dribbles", "Dribbling riusciti", "per90", "dribbles_succeeded", count=True),
+        StatDef("box_touches", "Tocchi in area avversaria", "per90", "touches_opp_box", count=True),
+        StatDef("passes", "Passaggi riusciti", "per90", "accurate_passes", count=True),
         StatDef("pass_pct", "Passaggi riusciti %", "ratio", "accurate_passes"),
-        StatDef("pft", "Passaggi nell'ultimo terzo", "per90", "passes_into_final_third"),
-        StatDef("touches", "Tocchi palla", "per90", "touches"),
-        StatDef("interceptions", "Intercessioni", "per90", "interceptions"),
-        StatDef("recoveries", "Palloni recuperati", "per90", "recoveries"),
-        StatDef("clearances", "Respingimenti", "per90", "clearances"),
-        StatDef("aerials", "Duelli aerei vinti", "per90", "aerials_won"),
+        StatDef("pft", "Passaggi ultimo terzo", "per90", "passes_into_final_third", count=True),
+        StatDef("touches", "Tocchi palla", "per90", "touches", count=True),
+        StatDef("interceptions", "Intercessioni", "per90", "interceptions", count=True),
+        StatDef("recoveries", "Palloni recuperati", "per90", "recoveries", count=True),
+        StatDef("clearances", "Respingimenti", "per90", "clearances", count=True),
+        StatDef("aerials", "Duelli aerei vinti", "per90", "aerials_won", count=True),
         StatDef("duels_pct", "Duelli vinti %", "ratio2", "duel_won", "duel_lost"),
-        StatDef("fouls", "Falli commessi", "per90", "fouls"),
-        StatDef("fouled", "Falli subiti", "per90", "was_fouled"),
-        StatDef("saves", "Parate", "per90", "saves"),
-        StatDef("saves_box", "Parate dentro l'area", "per90", "saves_inside_box"),
-        StatDef("conceded", "Gol subiti", "per90", "goals_conceded", lower=True),
+        StatDef("fouls", "Falli commessi", "per90", "fouls", count=True),
+        StatDef("fouled", "Falli subiti", "per90", "was_fouled", count=True),
+        StatDef("saves", "Parate", "per90", "saves", count=True),
+        StatDef("saves_box", "Parate dentro l'area", "per90", "saves_inside_box", count=True),
+        StatDef("conceded", "Gol subiti", "per90", "goals_conceded", lower=True, count=True),
         StatDef("prevented", "Gol prevenuti", "per90", "goals_prevented"),
         StatDef("xgot_faced", "xGOT affrontato", "per90", "expected_goals_on_target_faced"),
-        StatDef("claims", "Uscite alte", "per90", "keeper_high_claim"),
-        StatDef("punches", "Pugni", "per90", "punches"),
+        StatDef("claims", "Uscite alte", "per90", "keeper_high_claim", count=True),
+        StatDef("punches", "Pugni", "per90", "punches", count=True),
     )
 }
 
@@ -125,8 +141,9 @@ def _fmt_pair(stat: StatDef, total: Any, per90: Any) -> tuple[str, str]:
                 pct_str(per90, 1) if _ok(per90) else "—")
     if stat.id == "rating":
         return (dec(total, 2) if _ok(total) else "—"), ""
-    return (dec(total, 2) if _ok(total) else "—",
-            dec(per90, 2) if _ok(per90) else "—")
+    # conteggi interi senza decimali nel totale («4», non «4,00»); il per-90 resta decimale
+    tot = (int_it(total) if stat.count else dec(total, 2)) if _ok(total) else "—"
+    return tot, (dec(per90, 2) if _ok(per90) else "—")
 
 
 class PlayerCatalog:
@@ -392,7 +409,7 @@ class PlayerCatalog:
             "id": player_id, "name": r["name"], "team_name": r["team_name"],
             "team_id": None if pd.isna(r["team_id"]) else int(r["team_id"]),
             "league_id": None if pd.isna(r["league_id"]) else int(r["league_id"]),
-            "position_label": r["position_label"], "position": pos_int,
+            "position_label": _label_or_none(r["position_label"]), "position": pos_int,
             "age": None if pd.isna(r["age"]) else int(r["age"]),
             "country": r["country"] if isinstance(r["country"], str) else None,
             "market_value_eur": (None if pd.isna(r["market_value_eur"])
@@ -433,7 +450,8 @@ class PlayerCatalog:
         played = sub[sub["minutes"] > 0].sort_values(["rating", "minutes"], ascending=False)
         rows = [{
             "id": int(i), "name": r["name"], "team": r["team_name"],
-            "pos": r["position_label"], "age": None if pd.isna(r["age"]) else int(r["age"]),
+            "pos": _label_or_none(r["position_label"]),
+            "age": None if pd.isna(r["age"]) else int(r["age"]),
             "rating": None if pd.isna(r["rating"]) else round(float(r["rating"]), 2),
             "minutes": int(r["minutes"]), "matches": int(r["matches"]),
             "goals": _f_or0(self._vals["goals"].get(i)),
@@ -444,7 +462,8 @@ class PlayerCatalog:
         bench = sub[sub["minutes"] == 0].sort_values("name")
         bench_rows = [{
             "id": int(i), "name": r["name"], "team": r["team_name"],
-            "pos": r["position_label"], "age": None if pd.isna(r["age"]) else int(r["age"]),
+            "pos": _label_or_none(r["position_label"]),
+            "age": None if pd.isna(r["age"]) else int(r["age"]),
             "unavail": isinstance(r["unavail_type"], str) and r["unavail_type"] != "",
         } for i, r in bench.iterrows()]
         return rows, bench_rows

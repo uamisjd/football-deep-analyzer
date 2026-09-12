@@ -339,14 +339,15 @@ def test_site_build_end_to_end(tmp_path):
     assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
-    # card «Giocatori da tenere d'occhio» solo in pre-partita: media di stagione con virgola, gol/assist
-    assert "Giocatori da tenere d'occhio" in pre
-    # card «Fatti rilevanti» solo in pre-partita: tradotti, max 3, niente inglese
+    # card «I giocatori che decidono» solo in pre-partita: contributo per 90 e media di stagione
+    assert "I giocatori che decidono" in pre
+    # card «Fatti rilevanti» solo in pre-partita: tradotti, tetto a 5, niente inglese
     assert "Fatti rilevanti" in pre
     assert "non perde contro Lazio da 8 incontri (3V, 5N)" in pre
     assert "ha segnato 8 gol nelle ultime 5 partite" in pre
     assert "imbattuta da 19 partite" in pre          # insight del campione FotMob (team remappato)
-    assert "capocannoniere" not in pre               # 4° per priorità: scartato
+    assert "capocannoniere" in pre                   # 4° fatto: il tetto è salito da 3 a 5
+    assert pre.count("Fatti rilevanti") == 1
     assert "Haven't" not in pre
     assert "clean sheets" not in pre and "hype phrase" not in pre
     assert "Migliori in campo" not in pre          # card post-partita: non deve apparire prima
@@ -391,15 +392,17 @@ def test_status_page_warns_espn_standings(tmp_path):
 def test_timeline_added_is_int(tmp_path):
     """Il minuto di recupero nella cronaca è intero: `45+1'`, non `45+1.0'`."""
     st = Store(tmp_path / "processed")
+    # home_score/away_score di FotMob = punteggio **prima** del gol (verificato 226/226)
     st.upsert("events", [
         {"match_id": 99, "type": "Goal", "minute": 45, "minute_added": 1.0, "is_home": True,
-         "player_id": 1, "player_name": "X", "home_score": 1, "away_score": 0},
+         "player_id": 1, "player_name": "X", "home_score": 0, "away_score": 0},
         {"match_id": 99, "type": "Goal", "minute": 90, "minute_added": 0.0, "is_home": False,
-         "player_id": 2, "player_name": "Y", "home_score": 1, "away_score": 1},
+         "player_id": 2, "player_name": "Y", "home_score": 1, "away_score": 0},
     ])
     tl = MatchAnalysis(st).timeline(99)
     assert tl[0]["added"] == 1 and isinstance(tl[0]["added"], int)   # 1.0 → 1
     assert tl[1]["added"] is None or tl[1]["added"] == 0             # 0.0 non mostrato come recupero
+    assert tl[0]["score"] == "1-0" and tl[1]["score"] == "1-1"       # punteggio dopo il gol
     st.close()
 
 
@@ -474,15 +477,15 @@ def test_team_key_players_season_rating(tmp_path):
     st.write("lineup", pd.DataFrame([
         # due gare per lo stesso giocatore: deve comparire una sola volta, media più alta
         {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
-         "season_rating": 6.0, "position_id": 3},
+         "season_rating": 6.0, "position_id": 64, "usual_position_id": 2},
         {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
-         "season_rating": 7.0, "position_id": 3},
+         "season_rating": 7.0, "position_id": 64, "usual_position_id": 2},
         {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "role": "starter",
-         "season_rating": 8.5, "position_id": 4},
+         "season_rating": 8.5, "position_id": 115, "usual_position_id": None},   # ruolo da positionId
         {"match_id": 1, "team_id": 10, "player_id": 103, "player_name": "A3", "role": "starter",
-         "season_rating": None, "position_id": 4},          # senza media: escluso
+         "season_rating": None, "position_id": 115, "usual_position_id": 3},     # senza media: escluso
         {"match_id": 1, "team_id": 10, "player_id": 104, "player_name": "A4", "role": "sub",
-         "season_rating": 7.8, "position_id": 4},
+         "season_rating": 7.8, "position_id": 11, "usual_position_id": 0},
     ]))
     st.write("player_stats", pd.DataFrame([
         {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "goals", "value": 1.0, "total": None},
@@ -497,8 +500,8 @@ def test_team_key_players_season_rating(tmp_path):
     a1 = next(p for p in kp if p["name"] == "A1")
     assert a1["season_rating"] == 7.0
     assert a1["goals"] == 2 and a1["assists"] == 2      # somma delle 2 gare
-    assert a1["pos"] == "centrocampista"
-    assert kp[0]["pos"] == "attaccante"
+    assert a1["pos"] == "centrocampista"          # usualPosition 2
+    assert kp[0]["pos"] == "attaccante"           # positionId 115 → attaccante (fallback)
     # limite n e nessun dato → lista vuota
     assert len(ma.team_key_players(10, 2)) == 2
     assert ma.team_key_players(999) == []
@@ -585,4 +588,51 @@ def test_weather_fallback_openmeteo(tmp_path):
     w2 = ma._weather(2, None, None, None)
     assert w2 == {"desc": "pioggia debole", "temp": 21.0, "precip": 60.0, "source": "Open-Meteo"}
     assert ma._weather(3, None, None, None)["desc"] is None      # né FotMob né previsione
+    st.close()
+
+
+def test_starters_eleven_only_when_the_source_is_ambiguous(tmp_path):
+    """La distinta mostra 11 giocatori: con più righe vale chi ha il voto di partita."""
+    st = Store(tmp_path / "processed")
+    st.upsert("lineup", [
+        {"match_id": 1, "team_id": 10, "player_id": i, "player_name": f"P{i:02d}", "role": "starter",
+         "shirt_number": i, "rating": 6.5 if i <= 11 else None, "season_rating": None, "is_captain": False}
+        for i in range(1, 14)
+    ])
+    xi = MatchAnalysis(st).starters(1, 10)
+    assert len(xi) == 11
+    assert {p["name"] for p in xi} == {f"P{i:02d}" for i in range(1, 12)}   # i votati, non un taglio a caso
+    st.close()
+
+
+def test_starters_not_trimmed_without_match_ratings(tmp_path):
+    """Partita non giocata: nessun voto, nessun criterio → si mostra l'elenco della fonte."""
+    st = Store(tmp_path / "processed")
+    st.upsert("lineup", [
+        {"match_id": 2, "team_id": 10, "player_id": i, "player_name": f"P{i:02d}", "role": "starter",
+         "shirt_number": i, "rating": None, "season_rating": None, "is_captain": False}
+        for i in range(1, 14)
+    ])
+    assert len(MatchAnalysis(st).starters(2, 10)) == 13
+    st.close()
+
+
+def test_timeline_drops_goal_out_of_sequence(tmp_path):
+    """Un gol il cui «punteggio prima» non torna è un duplicato della fonte: scartato.
+
+    Caso reale: Union Berlin–Schalke 04 (11/09/2026), Aouchiche al 46' e al 48' con gli
+    stessi campi punteggio → il gol compariva due volte in cronaca e nelle probabilità.
+    """
+    st = Store(tmp_path / "processed")
+    st.upsert("events", [
+        {"match_id": 5, "type": "Goal", "minute": 46, "minute_added": None, "is_home": False,
+         "player_name": "Aouchiche", "home_score": 0, "away_score": 0},
+        {"match_id": 5, "type": "Goal", "minute": 48, "minute_added": None, "is_home": False,
+         "player_name": "Aouchiche", "home_score": 0, "away_score": 0},   # duplicato
+        {"match_id": 5, "type": "Goal", "minute": 70, "minute_added": None, "is_home": True,
+         "player_name": "Ilic", "home_score": 0, "away_score": 1},
+    ])
+    goals = [e for e in MatchAnalysis(st).timeline(5) if e["type"] == "Goal"]
+    assert [g["player"] for g in goals] == ["Aouchiche", "Ilic"]
+    assert [g["score"] for g in goals] == ["0-1", "1-1"]
     st.close()
