@@ -391,15 +391,17 @@ def test_status_page_warns_espn_standings(tmp_path):
 def test_timeline_added_is_int(tmp_path):
     """Il minuto di recupero nella cronaca è intero: `45+1'`, non `45+1.0'`."""
     st = Store(tmp_path / "processed")
+    # home_score/away_score di FotMob = punteggio **prima** del gol (verificato 226/226)
     st.upsert("events", [
         {"match_id": 99, "type": "Goal", "minute": 45, "minute_added": 1.0, "is_home": True,
-         "player_id": 1, "player_name": "X", "home_score": 1, "away_score": 0},
+         "player_id": 1, "player_name": "X", "home_score": 0, "away_score": 0},
         {"match_id": 99, "type": "Goal", "minute": 90, "minute_added": 0.0, "is_home": False,
-         "player_id": 2, "player_name": "Y", "home_score": 1, "away_score": 1},
+         "player_id": 2, "player_name": "Y", "home_score": 1, "away_score": 0},
     ])
     tl = MatchAnalysis(st).timeline(99)
     assert tl[0]["added"] == 1 and isinstance(tl[0]["added"], int)   # 1.0 → 1
     assert tl[1]["added"] is None or tl[1]["added"] == 0             # 0.0 non mostrato come recupero
+    assert tl[0]["score"] == "1-0" and tl[1]["score"] == "1-1"       # punteggio dopo il gol
     st.close()
 
 
@@ -585,4 +587,51 @@ def test_weather_fallback_openmeteo(tmp_path):
     w2 = ma._weather(2, None, None, None)
     assert w2 == {"desc": "pioggia debole", "temp": 21.0, "precip": 60.0, "source": "Open-Meteo"}
     assert ma._weather(3, None, None, None)["desc"] is None      # né FotMob né previsione
+    st.close()
+
+
+def test_starters_eleven_only_when_the_source_is_ambiguous(tmp_path):
+    """La distinta mostra 11 giocatori: con più righe vale chi ha il voto di partita."""
+    st = Store(tmp_path / "processed")
+    st.upsert("lineup", [
+        {"match_id": 1, "team_id": 10, "player_id": i, "player_name": f"P{i:02d}", "role": "starter",
+         "shirt_number": i, "rating": 6.5 if i <= 11 else None, "season_rating": None, "is_captain": False}
+        for i in range(1, 14)
+    ])
+    xi = MatchAnalysis(st).starters(1, 10)
+    assert len(xi) == 11
+    assert {p["name"] for p in xi} == {f"P{i:02d}" for i in range(1, 12)}   # i votati, non un taglio a caso
+    st.close()
+
+
+def test_starters_not_trimmed_without_match_ratings(tmp_path):
+    """Partita non giocata: nessun voto, nessun criterio → si mostra l'elenco della fonte."""
+    st = Store(tmp_path / "processed")
+    st.upsert("lineup", [
+        {"match_id": 2, "team_id": 10, "player_id": i, "player_name": f"P{i:02d}", "role": "starter",
+         "shirt_number": i, "rating": None, "season_rating": None, "is_captain": False}
+        for i in range(1, 14)
+    ])
+    assert len(MatchAnalysis(st).starters(2, 10)) == 13
+    st.close()
+
+
+def test_timeline_drops_goal_out_of_sequence(tmp_path):
+    """Un gol il cui «punteggio prima» non torna è un duplicato della fonte: scartato.
+
+    Caso reale: Union Berlin–Schalke 04 (11/09/2026), Aouchiche al 46' e al 48' con gli
+    stessi campi punteggio → il gol compariva due volte in cronaca e nelle probabilità.
+    """
+    st = Store(tmp_path / "processed")
+    st.upsert("events", [
+        {"match_id": 5, "type": "Goal", "minute": 46, "minute_added": None, "is_home": False,
+         "player_name": "Aouchiche", "home_score": 0, "away_score": 0},
+        {"match_id": 5, "type": "Goal", "minute": 48, "minute_added": None, "is_home": False,
+         "player_name": "Aouchiche", "home_score": 0, "away_score": 0},   # duplicato
+        {"match_id": 5, "type": "Goal", "minute": 70, "minute_added": None, "is_home": True,
+         "player_name": "Ilic", "home_score": 0, "away_score": 1},
+    ])
+    goals = [e for e in MatchAnalysis(st).timeline(5) if e["type"] == "Goal"]
+    assert [g["player"] for g in goals] == ["Aouchiche", "Ilic"]
+    assert [g["score"] for g in goals] == ["0-1", "1-1"]
     st.close()

@@ -10,7 +10,7 @@
 </table></div></div>
 <div class="card"><h2>Tabelle</h2>
 <div class="tablewrap"><table><tr><th>Tabella</th><th class="r">Righe</th><th class="r">KB</th></tr>
-{% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows }}</td><td class="r">{{ t.kb }}</td></tr>{% endfor %}
+{% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows|it_num }}</td><td class="r">{{ t.kb|dec(1) }}</td></tr>{% endfor %}
 </table></div></div>
 </div>
 <div class="card">

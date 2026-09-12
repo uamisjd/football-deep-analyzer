@@ -37,6 +37,7 @@ ALIASES: dict[str, str] = {
     "everton": "Everton", "fulham": "Fulham", "brentford": "Brentford", "bournemouth": "Bournemouth",
     "afc bournemouth": "Bournemouth", "crystal palace": "Crystal Palace",
     "nott'm forest": "Nottingham Forest", "nottingham forest": "Nottingham Forest",
+    "nottm forest": "Nottingham Forest",   # grafia corta di FotMob nel calendario 2026/27
     "leeds": "Leeds United", "leeds united": "Leeds United", "sunderland": "Sunderland",
     "burnley": "Burnley", "ipswich": "Ipswich Town", "ipswich town": "Ipswich Town",
     "leicester": "Leicester City", "leicester city": "Leicester City",
@@ -66,6 +67,7 @@ ALIASES: dict[str, str] = {
     "leverkusen": "Bayer Leverkusen", "bayer leverkusen": "Bayer Leverkusen", "bayer 04 leverkusen": "Bayer Leverkusen",
     "rb leipzig": "RB Leipzig", "leipzig": "RB Leipzig", "stuttgart": "VfB Stuttgart", "vfb stuttgart": "VfB Stuttgart",
     "ein frankfurt": "Eintracht Frankfurt", "eintracht frankfurt": "Eintracht Frankfurt",
+    "frankfurt": "Eintracht Frankfurt",   # FotMob 2026/27 la chiama solo "Frankfurt"
     "freiburg": "SC Freiburg", "sc freiburg": "SC Freiburg", "m'gladbach": "Borussia Mönchengladbach",
     "borussia monchengladbach": "Borussia Mönchengladbach", "borussia mönchengladbach": "Borussia Mönchengladbach",
     "gladbach": "Borussia Mönchengladbach", "wolfsburg": "VfL Wolfsburg", "vfl wolfsburg": "VfL Wolfsburg",
@@ -103,6 +105,8 @@ ALIASES: dict[str, str] = {
     "heracles": "Heracles Almelo", "heracles almelo": "Heracles Almelo", "pec zwolle": "PEC Zwolle", "zwolle": "PEC Zwolle",
     "willem ii": "Willem II", "excelsior": "Excelsior", "volendam": "FC Volendam", "fc volendam": "FC Volendam",
     "telstar": "Telstar", "waalwijk": "RKC Waalwijk", "rkc waalwijk": "RKC Waalwijk", "almere city": "Almere City",
+    "ado den haag": "ADO Den Haag", "den haag": "ADO Den Haag", "cambuur": "Cambuur",
+    "sc cambuur": "Cambuur", "academico viseu": "Académico Viseu", "maritimo": "Marítimo",
     # ---- Liga Portugal ----
     "benfica": "Benfica", "sl benfica": "Benfica", "porto": "FC Porto", "fc porto": "FC Porto",
     "sp lisbon": "Sporting CP", "sporting cp": "Sporting CP", "sporting lisbon": "Sporting CP", "sporting": "Sporting CP",
@@ -121,10 +125,15 @@ _SUFFIXES = re.compile(r"\b(fc|cf|ac|as|ss|us|sc|afc|rc|cd|ud|sd|calcio|club|de|
 
 
 def soft_key(name: str) -> str:
-    """Chiave di confronto: minuscole, senza accenti, punteggiatura e suffissi comuni."""
+    """Chiave di confronto: minuscole, senza accenti, apostrofi, punteggiatura e suffissi.
+
+    L'apostrofo viene rimosso (non solo normalizzato) perché le fonti non concordano:
+    football-data scrive «Nott'm Forest», FotMob «Nottm Forest». Devono convergere,
+    altrimenti la stessa squadra entra nel modello come due identità distinte.
+    """
     s = unicodedata.normalize("NFKD", str(name)).encode("ascii", "ignore").decode()
     s = s.lower().replace("&", "and").replace("-", " ").replace("'", "'")
-    s = re.sub(r"[^a-z0-9' ]+", " ", s)
+    s = re.sub(r"[^a-z0-9 ]+", " ", s)
     s = _SUFFIXES.sub(" ", s)
     return re.sub(r"\s+", " ", s).strip()
 

@@ -58,3 +58,17 @@ def test_return_it():
     assert _return_it("Back in training") == "rientrato agli allenamenti"
     assert _return_it("Custom 2027") == "Custom 2027"  # fallback
     assert _return_it(None) is None
+
+
+def test_plurali_italiani():
+    """«1 gara» / «33 gare»: la concordanza era rotta su 1098 pagine (audit 2026-09-12)."""
+    from fda.site.fmt import it_plural, plural_it
+
+    assert plural_it("gara") == "gare" and plural_it("partita") == "partite"
+    assert plural_it("pareggio") == "pareggi"          # -io: cade solo la -o
+    assert plural_it("giocatore") == "giocatori" and plural_it("vittoria") == "vittorie"
+    assert plural_it("gol") == "gol" and plural_it("assist") == "assist"   # invariabili
+    assert it_plural(1, "gara") == "1 gara" and it_plural(33, "gara") == "33 gare"
+    assert it_plural(1, "pareggio") == "1 pareggio" and it_plural(12, "pareggio") == "12 pareggi"
+    assert it_plural(1, "vittoria", "vittorie") == "1 vittoria"
+    assert it_plural(2, "tiro", "tiri") == "2 tiri"

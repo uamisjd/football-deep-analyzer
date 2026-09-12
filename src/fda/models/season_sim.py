@@ -18,6 +18,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .dc_grid import probability_grid
 from .predict import MODEL_VERSION, DixonColesModel, EloModel, ensemble
 
 log = logging.getLogger(__name__)
@@ -62,22 +63,20 @@ def _match_grid(dc: DixonColesModel, elo: EloModel, home: str, away: str, w_dc: 
     Ensemble 70/30 come le previsioni; senza storico DC per una squadra → λ neutre
     (medie gol di lega, già inclusive del fattore campo).
     """
-    import penaltyblog as pb
-
     try:
         d = dc.predict(home, away)
     except KeyError:
         d = None
     if d is None:
         lm, la = neutral
-        grid = pb.models.create_dixon_coles_grid(lm, la, rho=0.0, max_goals=10)
+        grid = probability_grid(lm, la, rho=0.0, size=11)
         m = np.asarray(grid.grid, dtype=float)
         return m / m.sum(), lm, la
     e = elo.predict(home, away) if home in elo.ratings and away in elo.ratings else None
     r = ensemble(d, e, w_dc=w_dc)
     lm, la = float(r["lambda_home"]), float(r["lambda_away"])
     rho = float(r.get("dc_rho") or 0.0)
-    grid = pb.models.create_dixon_coles_grid(lm, la, rho=rho, max_goals=10)
+    grid = probability_grid(lm, la, rho=rho, size=11)
     m = np.asarray(grid.grid, dtype=float)
     return m / m.sum(), lm, la
 

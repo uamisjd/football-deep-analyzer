@@ -19,6 +19,7 @@ from ..models.predict import outcome_index
 from ..store import Store
 from .analysis import MatchAnalysis
 from .audit import audit_match
+from .fmt import it_plural
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -84,6 +85,7 @@ class SiteBuilder:
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
+        self.env.filters["it_plural"] = it_plural
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.env.filters["it_dt_short"] = lambda ts: it_date_short(ts, self.tz)
         self.now = datetime.now(UTC)

@@ -19,8 +19,45 @@ from scipy.stats import poisson
 from ..store import Store
 from ..teams import canonical
 from .advanced import score_matrix, shot_quality, style_rows, wp_path, xg_race
+from .fmt import dec, it_plural
 
 POSITION_NAMES = {1: "portiere", 2: "difensore", 3: "centrocampista", 4: "attaccante"}
+
+# Competizioni FotMob nei precedenti (h2h) → italiano. I nomi propri restano tali (LaLiga,
+# Bundesliga, KNVB Cup, DFB Pokal, Community Shield…): la stampa italiana li usa così.
+# Si traducono le diciture inglesi e i suffissi ricorrenti.
+_COMPETITION_IT = {
+    "Club Friendlies": "Amichevoli per club",
+    "League Cup": "Coppa di Lega",
+    "EFL Cup": "Coppa di Lega (EFL)",
+    "Super Cup": "Supercoppa",
+    "Supercup": "Supercoppa",
+    "German Super Cup": "Supercoppa di Germania",
+    "UEFA Super Cup": "Supercoppa UEFA",
+    "Ligue 1 Qualification": "spareggio Ligue 1",
+    "Champions Cup": "Coppa dei Campioni",
+    "Cup": "Coppa",
+}
+# le frasi prima delle parole singole: "Serie B Promotion Playoff" → "Serie B playoff promozione"
+_COMPETITION_SUFFIX_IT = (("Promotion Playoff", "playoff promozione"), ("2nd stage", "seconda fase"),
+                          ("Grp.", "girone"), ("Playoff", "playoff"))
+
+
+def _competition_it(name: Any) -> str:
+    """Nome della competizione in italiano; ciò che non è traducibile resta com'è."""
+    if not isinstance(name, str) or not name.strip():
+        return ""
+    s = name.strip().replace("\xa0", " ")
+    for en in sorted(_COMPETITION_IT, key=len, reverse=True):
+        if s == en:
+            return _COMPETITION_IT[en]
+        if s.startswith(en + " "):
+            s = _COMPETITION_IT[en] + s[len(en):]
+            break
+    for en, it in _COMPETITION_SUFFIX_IT:
+        s = re.sub(rf"\b{re.escape(en)}", it, s)   # solo bordo iniziale: "Grp." finisce con un punto
+    return s
+XI_SIZE = 11   # giocatori in campo per squadra: oltre questa soglia il dato è ambiguo
 
 
 def _pct(p: float | None) -> str:
@@ -30,6 +67,22 @@ def _pct(p: float | None) -> str:
 def _f(x: Any, nd: int = 2) -> str:
     """Numero per il testo narrativo: virgola decimale italiana ('3,12'; '—' se manca)."""
     return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}".replace(".", ",")
+
+
+_DECIMAL_TEXT = re.compile(r"^\d+\.\d+$")
+
+
+def _stat_text_it(text: Any) -> str:
+    """Testo di una statistica FotMob → italiano (virgola decimale).
+
+    FotMob pubblica gli xG come ``"1.69"``: il sito è in italiano, quindi i valori
+    decimali puri diventano ``"1,69"``. Le stringhe composite (``"330 (83%)"``) e gli
+    interi restano invariati.
+    """
+    if not isinstance(text, str):
+        return "" if text is None or pd.isna(text) else str(text)
+    t = text.strip()
+    return t.replace(".", ",") if _DECIMAL_TEXT.match(t) else t
 
 
 def _first(df: pd.DataFrame) -> dict[str, Any]:
@@ -43,6 +96,22 @@ def _goals(info: dict, key: str, fixture: dict) -> int | None:
     return None if v is None else int(v)
 
 
+def _on_target(s: pd.DataFrame) -> pd.Series:
+    """Maschera «tiro in porta» a partire dalla lista tiri FotMob.
+
+    Due correzioni rispetto al campo grezzo ``isOnTarget``, misurate su 478
+    squadre-partita contro la statistica ufficiale ``ShotsOnTarget``:
+    - FotMob mette ``isOnTarget=True`` anche sui tiri **bloccati** (1688 delle 1858 righe
+      con ``isOnTarget`` lo sono): un tiro è in porta se l'esito è gol o parata **e** non
+      è bloccato (Angers–Rennes 11/09: 15 «in porta» grezzi contro i 3 ufficiali);
+    - gli **autogol** non contano come tiro in porta della squadra del giocatore.
+    Con entrambe le regole: 476/478 (99,6%) di concordanza, contro 453/478 (94,8%) della
+    sola prima regola.
+    """
+    return (s.event_type.isin(["Goal", "AttemptSaved"])
+            & ~s.is_blocked.fillna(False) & ~s.is_own_goal.fillna(False))
+
+
 def _val(d: dict, key: str, default=None):
     v = d.get(key, default)
     return default if v is None or (isinstance(v, float) and pd.isna(v)) else v
@@ -50,13 +119,24 @@ def _val(d: dict, key: str, default=None):
 
 # FotMob fornisce le condizioni meteo in inglese: mappa minima per il sito in italiano
 _WEATHER_IT = {
-    "sunny": "soleggiato", "clear": "sereno", "mostly clear": "per lo più sereno", "fair": "bel tempo",
+    "sunny": "soleggiato", "clear": "sereno", "clear sky": "cielo sereno",
+    "mostly clear": "per lo più sereno", "mainly clear": "per lo più sereno", "fair": "bel tempo",
     "mostly sunny": "per lo più soleggiato",
     "partly cloudy": "parzialmente nuvoloso", "mostly cloudy": "per lo più nuvoloso",
+    "few clouds": "poche nuvole", "scattered clouds": "nuvole sparse", "broken clouds": "nuvolosità variabile",
     "cloudy": "nuvoloso", "overcast": "coperto", "rain": "pioggia", "light rain": "pioggia debole",
-    "heavy rain": "pioggia intensa", "drizzle": "pioggia leggera", "showers": "rovesci",
-    "rain showers": "rovesci di pioggia", "showers in the vicinity": "rovesci nelle vicinanze",
-    "thunderstorm": "temporale", "thunderstorms": "temporali", "thunder in the vicinity": "temporali nelle vicinanze",
+    "moderate rain": "pioggia moderata", "heavy rain": "pioggia intensa",
+    "drizzle": "pioggia leggera", "light drizzle": "pioggia leggera",
+    "showers": "rovesci", "few showers": "qualche rovescio", "scattered showers": "rovesci sparsi",
+    "rain shower": "rovescio di pioggia", "rain showers": "rovesci di pioggia",
+    "light rain shower": "rovescio debole", "heavy rain shower": "rovescio intenso",
+    "showers in the vicinity": "rovesci nelle vicinanze",
+    "patchy rain nearby": "pioggia a tratti nelle vicinanze",
+    "thunderstorm": "temporale", "thunderstorms": "temporali",
+    "scattered thunderstorms": "temporali sparsi", "isolated thunderstorms": "temporali isolati",
+    "thunder in the vicinity": "temporali nelle vicinanze",
+    "light rain with thunder": "pioggia debole con temporali",
+    "rain with thunder": "pioggia con temporali", "thunder with rain": "temporali con pioggia",
     "snow": "neve", "light snow": "neve debole", "heavy snow": "neve abbondante", "sleet": "nevischio",
     "fog": "nebbia", "foggy": "nebbioso", "mist": "foschia", "haze": "foschia",
     "windy": "ventoso", "wind": "ventoso",
@@ -64,16 +144,26 @@ _WEATHER_IT = {
 
 
 def _weather_it(desc: str | None) -> str | None:
+    """Descrizione meteo FotMob/Open-Meteo → italiano.
+
+    Oltre alla mappa: varianti combinate con «/» o «with» (tradotte pezzo per pezzo) e
+    singolare/plurale («Rain Shower»/«Rain Showers»). Se un testo resta sconosciuto viene
+    mostrato com'è, mai tradotto a metà o inventato.
+    """
     if not isinstance(desc, str) or not desc.strip():
         return desc
     t = desc.strip()
     low = t.lower()
     if low in _WEATHER_IT:
         return _WEATHER_IT[low]
-    if "/" in low:  # varianti combinate di FotMob, es. "Partly Cloudy/Wind"
-        parts = [p.strip() for p in low.split("/")]
-        if all(p in _WEATHER_IT for p in parts):
-            return " e ".join(_WEATHER_IT[p] for p in parts)
+    for sep, joiner in (("/", " e "), (" with ", " con ")):
+        if sep in low:
+            parts = [p.strip() for p in low.split(sep) if p.strip()]
+            tr = [_weather_it(p) for p in parts]
+            if len(parts) > 1 and all(x != p for x, p in zip(tr, parts, strict=True)):
+                return joiner.join(tr)
+    if low.endswith("s") and low[:-1] in _WEATHER_IT:   # plurale → singolare già in mappa
+        return _WEATHER_IT[low[:-1]]
     return t
 
 
@@ -527,6 +617,16 @@ class MatchAnalysis:
         rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
                            & (self.lineup.role == "starter")
                            & (~self.lineup.player_id.isin(unav_ids))]
+        # Una squadra schiera 11 giocatori. Se ne restano di più, il dato accumulato da
+        # snapshot diversi è ambiguo: il voto di partita esiste solo nello snapshot
+        # ufficiale post-gara, quindi i titolari con voto sono la formazione reale
+        # (verificato: 11 esatti in 472 squadre-partita su 478). Senza voti (partita non
+        # ancora giocata) non c'è criterio: si mostra l'elenco della fonte, mai un taglio
+        # arbitrario.
+        if len(rows) > XI_SIZE:
+            rated = rows[rows.rating.notna()]
+            if len(rated) >= XI_SIZE:
+                rows = rated.head(XI_SIZE)
         out = []
         for r in rows.itertuples(index=False):
             rating = r.rating if not pd.isna(r.rating) else None
@@ -616,15 +716,32 @@ class MatchAnalysis:
             h = ts[(ts.team_id == home_id) & (ts.key == key)]
             a = ts[(ts.team_id == away_id) & (ts.key == key)]
             if not h.empty and not a.empty:
-                out.append({"label": label, "home": h.iloc[0].text, "away": a.iloc[0].text})
+                out.append({"label": label, "home": _stat_text_it(h.iloc[0].text),
+                            "away": _stat_text_it(a.iloc[0].text)})
         return out
 
     def timeline(self, match_id: int) -> list[dict[str, Any]]:
+        """Cronaca essenziale (gol, cartellini, sostituzioni) con il punteggio **dopo** ogni gol.
+
+        Semantica FotMob verificata sui dati (226 partite finite, di cui 22 con autogol):
+        - ``homeScore``/``awayScore`` di un evento gol sono il punteggio **prima** del gol
+          (226/226: mai quello dopo);
+        - ``isHome`` indica la squadra **a cui il gol è attribuito**, già al netto degli
+          autogol (22/22 partite con autogol: usando ``isHome`` tal quale il conteggio
+          finale coincide col risultato; ribaltandolo sugli autogol 0/22).
+
+        Da qui: il punteggio mostrato è ricostruito contando i gol in ordine, e un evento
+        gol il cui «punteggio prima» non coincide con la sequenza viene scartato — è il
+        caso dei gol duplicati dalla fonte (es. Union Berlin–Schalke 04 del 11/09: 46' e
+        48' con gli stessi campi punteggio), che altrimenti finirebbero sia in cronaca sia
+        nelle probabilità in-play.
+        """
         if self.events.empty:
             return []
         ev = self.events[(self.events.match_id == match_id) & (self.events.type.isin(["Goal", "Card", "Substitution"]))]
         ev = ev.sort_values(["minute", "minute_added"], na_position="first")
         out = []
+        hg = ag = 0
         for r in ev.itertuples(index=False):
             d = r._asdict()
             swap = _val(d, "swap")
@@ -634,10 +751,26 @@ class MatchAnalysis:
                 except (ValueError, SyntaxError):
                     swap = None
             added = _val(d, "minute_added")
+            scored_home = bool(_val(d, "is_home", False))   # squadra a cui il gol è attribuito
+            own_goal = bool(_val(d, "own_goal", False))
+            score = None
+            if r.type == "Goal":
+                before_h, before_a = _val(d, "home_score"), _val(d, "away_score")
+                if before_h is not None and before_a is not None:
+                    try:
+                        if (int(before_h), int(before_a)) != (hg, ag):
+                            continue   # evento duplicato o fuori sequenza: scartato
+                    except (TypeError, ValueError):
+                        pass
+                if scored_home:
+                    hg += 1
+                else:
+                    ag += 1
+                score = f"{hg}-{ag}"
             out.append({"type": r.type, "minute": _val(d, "minute"), "added": int(added) if added is not None else None,
-                        "home": bool(_val(d, "is_home", False)), "player": _val(d, "player_name"),
-                        "card": _val(d, "card"), "own_goal": bool(_val(d, "own_goal", False)),
-                        "score": f"{_val(d, 'home_score', '')}-{_val(d, 'away_score', '')}" if r.type == "Goal" else None,
+                        "home": scored_home, "scorer_home": scored_home != own_goal,
+                        "player": _val(d, "player_name"),
+                        "card": _val(d, "card"), "own_goal": own_goal, "score": score,
                         "swap_in": swap[0][1] if swap and len(swap) > 0 else None,
                         "swap_out": swap[1][1] if swap and len(swap) > 1 else None})
         return out
@@ -694,10 +827,13 @@ class MatchAnalysis:
         if self.shots.empty:
             return {}
         s = self.shots[(self.shots.match_id == match_id) & (self.shots.team_id == team_id)]
+        # autogol esclusi: restano nella lista tiri FotMob ma non nei suoi aggregati di
+        # squadra (tiri totali 475/478 e tiri in porta 476/478 concordano solo escludendoli)
+        s = s[~s.is_own_goal.fillna(False).astype(bool)]
         if s.empty:
             return {}
         big = s[s.xg >= 0.3]
-        return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(s.is_on_target.fillna(False).sum()),
+        return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(_on_target(s).sum()),
                 "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": int(len(big)),
                 "goals": int((s.event_type == "Goal").sum()),
                 "best": _first(s.sort_values("xg", ascending=False)[["player_name", "xg", "minute", "event_type"]])}
@@ -708,12 +844,11 @@ class MatchAnalysis:
             return []
         s = self.shots[(self.shots.match_id == match_id) & (self.shots.team_id == team_id)].dropna(subset=["x", "y"])
         out = []
-        for r in s.itertuples(index=False):
+        for r, on_tgt in zip(s.itertuples(index=False), _on_target(s), strict=True):
             xg = float(r.xg) if pd.notna(r.xg) else 0.0
             goal = r.event_type == "Goal"
-            on_target = bool(r.is_on_target) if pd.notna(r.is_on_target) else False
             blocked = bool(r.is_blocked) if pd.notna(r.is_blocked) else False
-            kind = "goal" if goal else "target" if on_target else "blocked" if blocked else "miss"
+            kind = "goal" if goal else "blocked" if blocked else "target" if on_tgt else "miss"
             out.append({"px": round(min(max((float(r.x) - 52.5) * 8.0, 4.0), 412.0), 1),
                         "py": round(min(max(float(r.y) * 4.0, 8.0), 264.0), 1),
                         "r": round(2.5 + 8.5 * xg ** 0.5, 1),
@@ -764,7 +899,7 @@ class MatchAnalysis:
                 # se era in trasferta ha vinto chi ha più gol in trasferta
                 cur_home_was_home = r["home_id"] == home_id
                 res = "V" if (hg > ag) == cur_home_was_home else "P"
-            out.append({"date": r["utc"].strftime("%d/%m/%Y"), "league": r["league"],
+            out.append({"date": r["utc"].strftime("%d/%m/%Y"), "league": _competition_it(r["league"]),
                         "home": names[r["home_id"]], "away": names[r["away_id"]],
                         "score": f"{hg}-{ag}", "res": res})
         return out
@@ -942,11 +1077,11 @@ class MatchAnalysis:
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
                 if diff >= 3:
-                    s.append(f"{name} ha raccolto {diff:+.1f} punti rispetto agli xPTS: rendimento sopra la qualità "
-                             f"del gioco prodotto, possibile regressione.")
+                    s.append(f"{name} ha raccolto {dec(diff, 1, plus=True)} punti rispetto agli xPTS: rendimento "
+                             f"sopra la qualità del gioco prodotto, possibile regressione.")
                 elif diff <= -3:
-                    s.append(f"{name} ha {diff:+.1f} punti rispetto agli xPTS: sta rendendo meno di quanto crea, "
-                             f"segnale di sottovalutazione.")
+                    s.append(f"{name} ha {dec(diff, 1, plus=True)} punti rispetto agli xPTS: sta rendendo meno di "
+                             f"quanto crea, segnale di sottovalutazione.")
             un = ctx.get(f"{side}_unavailable") or []
             if un:
                 heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
@@ -963,7 +1098,8 @@ class MatchAnalysis:
             if y is not None:
                 tone = "molto severo" if y >= 5 else "severo" if y >= 4.2 else "permissivo" if y <= 3.2 else "nella media"
                 s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita ({tone})"
-                         + (f", {int(ref['pens'])} rigori in {int(ref['matches'])} gare." if ref.get("pens") is not None else "."))
+                         + (f", {it_plural(ref['pens'], 'rigore')} in {it_plural(ref['matches'], 'gara')}."
+                            if ref.get("pens") is not None else "."))
         w = ctx.get("weather")
         if w and w.get("desc"):
             extra = ""

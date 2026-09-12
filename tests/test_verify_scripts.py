@@ -45,3 +45,34 @@ def test_finished_coverage():
     mi = pd.DataFrame([{"league_id": 57, "status": "finished", "home_xg": 1.2},
                        {"league_id": 55, "status": "finished", "home_xg": None}])
     assert vs.finished_coverage(fx, mi) == {57: (2, 1), 55: (1, 0)}
+
+
+def _site_module():
+    p = Path(__file__).parent.parent / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_verify_site_content_checks(tmp_path):
+    """Il verificatore del sito trova i difetti che l'audit 2026-09-12 ha corretto."""
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "ok.html").write_text(
+        '<a href="altra.html">link</a><p>1 gara · 2 pareggi · xG 1,69 · spettatori 67.598</p>', encoding="utf-8")
+    (site / "altra.html").write_text("<p>ok</p>", encoding="utf-8")
+    fails, pages = vs.check_pages(site)
+    assert pages == 2 and fails == []        # i separatori di migliaia non sono decimali col punto
+
+    (site / "rotta.html").write_text(
+        '<a href="mancante.html">x</a><p>1 gare · nan · 1.69 · RegularPlay · clean sheet</p>', encoding="utf-8")
+    fails, pages = vs.check_pages(site)
+    kinds = {f.split(": ", 1)[1] for f in fails if f.startswith("rotta.html")}
+    assert pages == 3
+    assert any("collegamento interno mancante" in k for k in kinds)
+    assert any("concordanza '1 gare'" in k for k in kinds)
+    assert any("residuo 'nan'" in k for k in kinds)
+    assert any("decimale col punto '1.69'" in k for k in kinds)
+    assert any("inglese" in k for k in kinds)

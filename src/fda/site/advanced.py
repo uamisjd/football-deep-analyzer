@@ -11,7 +11,9 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
-from scipy.stats import poisson
+
+from ..models.dc_grid import clamp_rho as _clamp_rho  # noqa: F401  (riesportato per i test)
+from ..models.dc_grid import tau_grid
 
 # Situazioni FotMob → italiano (valori reali in shots.parquet, 2026-09-11).
 SITUATION_IT = {
@@ -32,35 +34,17 @@ PENALTY = "Penalty"
 MATRIX_CAP = 5
 
 
-def _clamp_rho(lh: float, la: float, rho: float) -> float:
-    """Dixon-Coles 1997: ρ ammissibile dipende dalle λ (tau ≥ 0)."""
-    lh, la = max(lh, 1e-9), max(la, 1e-9)
-    lo = max(-1.0 / lh, -1.0 / la)
-    hi = min(1.0, 1.0 / (lh * la))
-    return float(min(max(rho, lo), hi))
-
-
 def dixon_coles_grid(lh: float, la: float, rho: float = 0.0, max_goals: int = 12) -> np.ndarray:
     """Matrice P(casa=i, trasferta=j) Dixon-Coles, troncata e rinormalizzata.
 
-    τ(0,0)=1−λh λa ρ; τ(1,0)=1+λh ρ; τ(0,1)=1+λa ρ; τ(1,1)=1−ρ; altrimenti 1.
-    λ ≤ 0 vengono trattate come ~0 (partita già chiusa / tempo residuo nullo).
+    τ(0,0)=1−λh λa ρ; τ(0,1)=1+λh ρ; τ(1,0)=1+λa ρ; τ(1,1)=1−ρ; altrimenti 1.
+    È l'implementazione condivisa con i modelli (:mod:`fda.models.dc_grid`): la matrice
+    mostrata sul sito e le probabilità pubblicate devono derivare dalla stessa formula.
+    ``max_goals`` è il numero massimo di gol rappresentato (matrice di lato max_goals+1).
+    λ ≤ 0 vengono trattate come ~0 (partita già chiusa / tempo residuo nullo);
     ρ fuori dai bound matematici viene clampato, mai scartato.
     """
-    lh, la = max(float(lh), 1e-9), max(float(la), 1e-9)
-    rho = _clamp_rho(lh, la, float(rho or 0.0))
-    i = np.arange(max_goals + 1)
-    grid = np.outer(poisson.pmf(i, lh), poisson.pmf(i, la))
-    grid[0, 0] *= 1.0 - lh * la * rho
-    if max_goals >= 1:
-        grid[1, 0] *= 1.0 + lh * rho
-        grid[0, 1] *= 1.0 + la * rho
-        grid[1, 1] *= 1.0 - rho
-    grid = np.maximum(grid, 0.0)
-    s = float(grid.sum())
-    if s > 0:
-        grid /= s
-    return grid
+    return tau_grid(lh, la, rho, size=int(max_goals) + 1)
 
 
 def grid_1x2(grid: np.ndarray) -> tuple[float, float, float]:
@@ -134,8 +118,9 @@ def wp_path(goals: list[dict[str, Any]], lh: float, la: float,
             rho: float = 0.0) -> list[dict[str, Any]]:
     """Traiettoria 1X2: calcio d'inizio + un punto dopo ogni gol.
 
-    ``goals`` ordinati: ``minute``, ``home`` (bool, chi ha segnato), ``own_goal``,
-    ``player``. Autogol: il gol è attribuito alla squadra avversaria.
+    ``goals`` ordinati: ``minute``, ``home`` (squadra **a cui il gol è attribuito**),
+    ``player``. Gli autogol sono già contabilizzati dalla fonte (vedi
+    :meth:`MatchAnalysis.timeline`): qui ``home`` si usa tal quale, senza ribaltamenti.
     """
     pts = []
     hg = ag = 0
@@ -149,8 +134,6 @@ def wp_path(goals: list[dict[str, Any]], lh: float, la: float,
         added = g.get("added") or 0
         t = float(minute) + float(added)
         scored_home = bool(g.get("home"))
-        if g.get("own_goal"):
-            scored_home = not scored_home
         if scored_home:
             hg += 1
         else:

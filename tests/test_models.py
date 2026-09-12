@@ -119,3 +119,72 @@ def test_backtest_beats_naive(hist):
     naive = rps([[0.45, 0.27, 0.28]] * len(outs), outs)
     assert score < naive - 0.02
     assert pred["fair_home"].gt(1).all()
+
+
+def test_dc_shrinkage_pulls_thin_history_to_league_mean(hist):
+    """Shrinkage: 2 partite non possono lasciare una squadra al bordo dell'ottimizzazione.
+
+    Caso reale che ha motivato la correzione: a inizio stagione Dortmund–Paderborn usciva
+    con λ 1,02–0,19 (Over 2,5 al 12%) perché l'attacco del Paderborn era stimato −2,5, il
+    limite del risolutore, contro 0,71 xG/gara reali.
+    """
+    last = hist["date"].max()
+    extra = pd.DataFrame([
+        {"date": last, "home": "Nuova Promossa", "away": "Inter", "home_goals": 5, "away_goals": 0},
+        {"date": last, "home": "AC Milan", "away": "Nuova Promossa", "home_goals": 0, "away_goals": 4},
+    ])
+    df = pd.concat([hist, extra], ignore_index=True)
+    m = DixonColesModel().fit(df)
+
+    assert m.team_weight["Nuova Promossa"] < 5 < m.team_weight["Inter"]   # 2 gare vs 3 stagioni
+
+    raw = dict(m.model.get_params())
+    sh = m.shrunk_params(raw)
+    teams = sorted(m.teams)
+    mean_att = sum(raw[f"attack_{t}"] for t in teams) / len(teams)
+    mean_dfn = sum(raw[f"defence_{t}"] for t in teams) / len(teams)
+
+    # gauge invariante: le medie di lega non si spostano
+    assert abs(sum(sh[f"attack_{t}"] for t in teams) / len(teams) - mean_att) < 1e-9
+    assert abs(sum(sh[f"defence_{t}"] for t in teams) / len(teams) - mean_dfn) < 1e-9
+
+    # contrazione proporzionale ai dati: 2 partite → quasi tutta la deviazione sparisce,
+    # una stagione intera (peso ~27 con xi=0.0018, quindi f = 27/35) → resta per lo più
+    dev_raw = abs(raw["attack_Nuova Promossa"] - mean_att)
+    ratio_new = abs(sh["attack_Nuova Promossa"] - mean_att) / dev_raw
+    ratio_inter = abs(sh["attack_Inter"] - mean_att) / abs(raw["attack_Inter"] - mean_att)
+    assert ratio_new < 0.5
+    assert ratio_inter > 0.75
+    assert ratio_new < ratio_inter
+
+    # senza prior: parametri identici al fit (nessun comportamento nascosto)
+    assert DixonColesModel(shrink_prior=0.0).fit(df).shrunk_params(raw) == raw
+
+
+def test_dc_lambda_reconstruction_matches_grid(hist):
+    """λ pubblicate = exp(attacco casa + difesa ospite + vantaggio campo), come penaltyblog."""
+    import math
+
+    m = DixonColesModel(shrink_prior=0.0).fit(hist)
+    d = m.predict("Inter", "AC Milan")
+    ref = m.model.predict("Inter", "AC Milan", max_goals=m.max_goals)
+    assert abs(d["lambda_home"] - ref.home_goal_expectation) < 1e-9
+    assert abs(d["lambda_away"] - ref.away_goal_expectation) < 1e-9
+    p = m.model.get_params()
+    assert abs(d["lambda_home"] - math.exp(p["attack_Inter"] + p["defence_AC Milan"] + p["home_advantage"])) < 1e-9
+
+
+def test_ensemble_double_chance_matches_1x2():
+    """1X/12/X2 sono somme del 1X2 pubblicato: la scheda non deve contraddirsi.
+
+    Regressione: i mercati venivano dalla griglia ricostruita mentre il 1X2 era la media
+    pesata DC/Elo → scarto fino a 1,1 punti e intero a schermo incoerente nel 14,3% dei casi.
+    """
+    dc = {"p_home": 0.50, "p_draw": 0.27, "p_away": 0.23, "dc_rho": -0.08,
+          "lambda_home": 1.7, "lambda_away": 1.0}
+    elo = {"elo_p_home": 0.40, "elo_p_draw": 0.29, "elo_p_away": 0.31}
+    out = ensemble(dc, elo, w_dc=0.7)
+    assert abs(out["p_1x"] - (out["p_home"] + out["p_draw"])) < 1e-12
+    assert abs(out["p_12"] - (out["p_home"] + out["p_away"])) < 1e-12
+    assert abs(out["p_x2"] - (out["p_draw"] + out["p_away"])) < 1e-12
+    assert abs(out["p_1x"] - (1.0 - out["p_away"])) < 1e-12
