@@ -63,6 +63,7 @@ di contenuto e 14 difetti di calcolo/dati).
 | 16 | **Testo FotMob non tradotto** | xG con punto decimale (`1.69`) su ~478 righe × 5 chiavi; meteo «Rain Shower», «Few Showers», «Light Rain with Thunder», «Scattered Thunderstorms»; «RegularPlay» in `info.html`; «clean sheet»; «Club Friendlies», «League Cup Grp. A» nei precedenti | `_stat_text_it()`, `_weather_it()` composizionale, `SITUATION_IT`, `_competition_it()` |
 | 17 | **Conteggi di conteggio con decimali** | statistiche per-90 formattate a 2 decimali anche per i conteggi | `StatDef.count` + `int_it` (20 statistiche) |
 | 18 | **Formazioni con più di 11 nomi** | 61 squadre-partita finite con ≠11 titolari | se ci sono più righe e almeno 11 hanno il voto di partita (snapshot ufficiale) → si mostrano quelle: **11 esatti in 472/478**; senza voti (partita da giocare) nessun taglio arbitrario, ma nota esplicita |
+| 19 | **Ruoli dei giocatori spostati di uno** (trovato implementando le card giocatori/assenze) | `POSITION_NAMES` partiva da **1**, ma la codifica FotMob `usualPosition` parte da **0**: su 616 formazioni il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in 600/600 formazioni che lo contengono (Lazio 12/09: Mandas n. 35 = 0, Doekhi/Provstgaard = 1, Frattesi = 2, Zaccagni = 3). Ogni riga di distinta era etichettata col ruolo precedente e il portiere restava senza etichetta; sugli indisponibili `usualPosition` è sempre vuoto (0/1340) e `positionId` vale 1000/1100 (vocabolario diverso) → ruolo mai mostrato | `POSITION_NAMES` ricentrata su 0-3; mappa `POSITION_ID_ROLE` per i `positionId` tattici tenuta solo dove ≥20 titolari concordano nel 90% dei casi (11 portiere 632/632, 33-38 difensori, 64-77 centrocampisti, 105/106/115 attaccanti); fallback sullo storico delle distinte per gli assenti (99/248 assenti di oggi). Verificatore: **648 ruoli** pubblicati ricontrollati |
 
 ---
 
@@ -70,9 +71,12 @@ di contenuto e 14 difetti di calcolo/dati).
 
 - `pytest -q` → **91 passed** (10 test nuovi: τ del modello, shrinkage, λ ricostruite, doppia chance,
   snapshot/`replace_by`, sostituzioni allo stesso minuto, distinta a 11, gol fuori sequenza, plurali,
-  verificatore del sito).
+  verificatore del sito). *(Aggiornamento 2026-09-12, secondo giro: **101 passed** con i 9 test di
+  `tests/test_oggi_depth.py` sulle card di profondità.)*
 - `fda build` → 347 partite + 2364 fixture + 7388 giocatori.
 - `scripts/verify_site.py` → **4056 pagine, 0 problemi, 140 controlli numerici superati**.
+  *(Secondo giro, dopo le card di profondità: **1082 controlli** — il nuovo passo `[5]` ricontrolla
+  **648 ruoli**, **108 conteggi di indisponibili** e **103 archivi di precedenti** contro le tabelle.)*
 - Esempi ricontrollati pagina per pagina: `partite/5802919.html` (cronaca 0-1/0-2/1-2, tiri 19 (3),
   xG 1,69-1,36 con virgola, nota sull'xG dei tiri mappati), `giocatori/1070052.html` («Amad Diallo ·
   ruolo n.d.»), `partite/5881162.html` (Karetsas indisponibile fuori dalla distinta).

@@ -339,14 +339,15 @@ def test_site_build_end_to_end(tmp_path):
     assert "Indisponibili" in pre and "McTominay" in pre and "metà ottobre 2026" in pre
     assert "Partita equilibrata" in pre
     assert "Risultati esatti" in pre and "1-1" in pre
-    # card «Giocatori da tenere d'occhio» solo in pre-partita: media di stagione con virgola, gol/assist
-    assert "Giocatori da tenere d'occhio" in pre
-    # card «Fatti rilevanti» solo in pre-partita: tradotti, max 3, niente inglese
+    # card «I giocatori che decidono» solo in pre-partita: contributo per 90 e media di stagione
+    assert "I giocatori che decidono" in pre
+    # card «Fatti rilevanti» solo in pre-partita: tradotti, tetto a 5, niente inglese
     assert "Fatti rilevanti" in pre
     assert "non perde contro Lazio da 8 incontri (3V, 5N)" in pre
     assert "ha segnato 8 gol nelle ultime 5 partite" in pre
     assert "imbattuta da 19 partite" in pre          # insight del campione FotMob (team remappato)
-    assert "capocannoniere" not in pre               # 4° per priorità: scartato
+    assert "capocannoniere" in pre                   # 4° fatto: il tetto è salito da 3 a 5
+    assert pre.count("Fatti rilevanti") == 1
     assert "Haven't" not in pre
     assert "clean sheets" not in pre and "hype phrase" not in pre
     assert "Migliori in campo" not in pre          # card post-partita: non deve apparire prima
@@ -476,15 +477,15 @@ def test_team_key_players_season_rating(tmp_path):
     st.write("lineup", pd.DataFrame([
         # due gare per lo stesso giocatore: deve comparire una sola volta, media più alta
         {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
-         "season_rating": 6.0, "position_id": 3},
+         "season_rating": 6.0, "position_id": 64, "usual_position_id": 2},
         {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
-         "season_rating": 7.0, "position_id": 3},
+         "season_rating": 7.0, "position_id": 64, "usual_position_id": 2},
         {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "role": "starter",
-         "season_rating": 8.5, "position_id": 4},
+         "season_rating": 8.5, "position_id": 115, "usual_position_id": None},   # ruolo da positionId
         {"match_id": 1, "team_id": 10, "player_id": 103, "player_name": "A3", "role": "starter",
-         "season_rating": None, "position_id": 4},          # senza media: escluso
+         "season_rating": None, "position_id": 115, "usual_position_id": 3},     # senza media: escluso
         {"match_id": 1, "team_id": 10, "player_id": 104, "player_name": "A4", "role": "sub",
-         "season_rating": 7.8, "position_id": 4},
+         "season_rating": 7.8, "position_id": 11, "usual_position_id": 0},
     ]))
     st.write("player_stats", pd.DataFrame([
         {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "goals", "value": 1.0, "total": None},
@@ -499,8 +500,8 @@ def test_team_key_players_season_rating(tmp_path):
     a1 = next(p for p in kp if p["name"] == "A1")
     assert a1["season_rating"] == 7.0
     assert a1["goals"] == 2 and a1["assists"] == 2      # somma delle 2 gare
-    assert a1["pos"] == "centrocampista"
-    assert kp[0]["pos"] == "attaccante"
+    assert a1["pos"] == "centrocampista"          # usualPosition 2
+    assert kp[0]["pos"] == "attaccante"           # positionId 115 → attaccante (fallback)
     # limite n e nessun dato → lista vuota
     assert len(ma.team_key_players(10, 2)) == 2
     assert ma.team_key_players(999) == []

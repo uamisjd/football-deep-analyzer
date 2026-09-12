@@ -177,3 +177,54 @@ Un solo passo alla volta, ciascuno con i suoi controlli in `scripts/verify_site.
 
 Ogni card nuova deve superare: (a) 0 inglese, (b) 0 `nan`/placeholder, (c) parità 7/7 o copertura
 dichiarata, (d) un controllo numerico nel verificatore del sito.
+
+---
+
+## F. Implementato (2026-09-12, stesso giorno del piano)
+
+Richiesta utente: «falli tutti… senza errori», priorità **giocatori e assenze**. Fatto questo giro,
+con le coperture misurate sul sito generato (`scripts/verify_site.py`, passo `[5]`).
+
+### F1. Card nuove nelle schede partita (pre-partita)
+
+| Card | Cosa mostra | Fonte e copertura | Regola di degradazione |
+|---|---|---|---|
+| **Come arrivano** | ultime gare con **xG e xGA a confronto**, risultato, avversario, esito V/N/P; xG e xGA per gara, **punti fatti contro xPTS**, PPDA, split casa/trasferta, tendenza (ultime 3 contro le precedenti) | Understat (38 squadre di oggi) → fallback FotMob `team_stats` (14 squadre: NED1/POR1). Avversario recuperato dal calendario: **191/191 righe** | sotto 3 gare con xG la card non compare; PPDA solo da Understat |
+| **I giocatori che decidono** | **(xG+xA) per 90** con minuti, gol, assist, xG, xA, occasioni create (anche clamorose) e media voto; sotto, la classifica per media voto di stagione | `player_stats` FotMob, **7/7 leghe** (xG/xA non esistono in Understat per NED1/POR1) | soglia di minutaggio **relativa** (40% dei minuti del più impiegato, min 90′): chi non ha nessuna riga xG/xA non entra in classifica (non è «a zero», è senza dato) |
+| **Infermeria pesata** | per ogni assente: **ruolo**, motivo, rientro previsto, **minuti di stagione**, gol+assist, **xG+xA per 90**, marchio «titolare»; in testa alla tabella quanti titolari abituali mancano e quanti xG+xA a partita perde la squadra | `lineup` (1340 indisponibili, ruolo dedotto) + `player_stats` | 248 assenti oggi: **99 con ruolo**, **81 con statistiche di stagione**; sotto la soglia il valore per 90 non si stampa |
+| **Precedenti completi** | tutti i precedenti in archivio (non 5): V/N/P dal punto di vista della squadra di casa attuale, gol a gara, **BTTS%**, **Over 2,5%**, risultati più frequenti, da quanti scontri manca il pareggio, arco temporale con le date complete | `h2h`: **103 schede verificate**, media 19 precedenti (min 2, max 43) | sotto 3 precedenti niente card; la riga riassuntiva FotMob è soppressa quando l'archivio è completo (i due conteggi coincidono: Lazio-Milan 12/12/16 da entrambe le fonti) |
+| **Arbitro a confronto** | gialli e falli a gara dell'arbitro **contro la media del campionato** e il numero di designazioni | `match_info`: 77/77 nomi, 60/77 statistiche | senza statistiche resta solo il nome, nessuna stima |
+| **Fatti rilevanti** | tetto alzato da 3 a **5** per partita | `insights`: 7,5 fatti/partita in archivio | invariata: solo testi traducibili, mai inglese |
+
+### F2. Liste (oggi / prossime / risultati)
+
+Ogni riga futura mostra **«Infermeria: <casa> N assenti · <trasferta> M assenti»** (conteggio dalla
+distinta, un solo `groupby` su `lineup`): il dato più cercato è leggibile senza aprire la scheda.
+
+### F3. Correzioni nate dall'implementazione
+
+- **Difetto 19** (`docs/10_…`): ruoli spostati di uno — codifica FotMob `usualPosition` da **0**, non da 1.
+- **`pivot_table(dropna=False)` faceva il prodotto cartesiano** dei livelli dell'indice (18 giocatori →
+  324 righe con nomi incrociati): sostituito con `groupby().unstack()`. Senza questa correzione le
+  statistiche di stagione venivano attribuite al giocatore sbagliato.
+- Plurali: «1 clamorose» → «1 clamorosa»; intestazione «40 Precedenti» → «Precedenti (40)».
+- Nuovo filtro `it_dt_full` (data con anno nel fuso italiano) per l'arco dei precedenti.
+
+### F4. Verifiche di questo giro
+
+- `pytest -q` → **101 passed** (9 test nuovi in `tests/test_oggi_depth.py`: codifica dei ruoli,
+  catena di risoluzione del ruolo, trend da Understat e fallback FotMob, precedenti dal punto di vista
+  della squadra di casa attuale con riga anomala scartata, classifica per contributo con soglia
+  relativa, infermeria pesata, arbitro contro media di lega, chiavi esposte da `build()`).
+- `fda build` → 347 partite + 2364 fixture + 7388 giocatori.
+- `scripts/verify_site.py` → **4056 pagine, 0 problemi, 1082 controlli numerici** (nuovo passo `[5]`:
+  648 ruoli, 108 infermerie, 103 archivi di precedenti ricontrollati contro le tabelle).
+
+### F5. Resta da fare (prossimo giro, già misurato)
+
+1. **Post-partita**: assist sui gol (`assist_player_id` su 535/753 gol, nome risolvibile nel 100%),
+   split primo/secondo tempo (periodi `FirstHalf`/`SecondHalf` 478/478), portieri (`goals_prevented`,
+   `saves`, `errors_led_to_goal`: 7/7 leghe), metriche fisiche **condizionali** (solo 60/478 = 12,5%).
+2. **Statistiche di squadra non mostrate** a copertura piena: duelli vinti, intercetti, passaggi
+   nell'ultimo terzo, cross e lanci riusciti, pali, fuorigioco (13 delle 40 chiavi sono a schermo).
+3. **Accuratezza per mercato** (Over/Under, BTTS, esito) oltre a 1X2 e RPS complessivo.

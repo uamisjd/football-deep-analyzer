@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import re
 from collections import Counter
+from html import unescape as html_unescape
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
@@ -207,6 +208,79 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if abs(g.p_rel.sum() - 3) > 0.02:
                 fails.append(f"season_sim {lg}: somma P(retrocessione) = {g.p_rel.sum():.3f}")
         print(f"[4] leghe simulate: {sim.league_key.nunique()} · righe {len(sim)}")
+
+    # 5) schede «oggi»: ruolo dei giocatori, conteggio indisponibili, archivio dei precedenti
+    lineup, fixtures, h2h = st.read("lineup"), st.read("fixtures"), st.read("h2h")
+    # codifica FotMob indipendente dal codice del sito: usualPosition parte da 0 (616 formazioni)
+    role_names = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
+    hist: dict[int, int] = {}
+    n_role = n_abs = n_h2h = 0
+    if not lineup.empty and lineup.usual_position_id.notna().any():
+        h = lineup[lineup.usual_position_id.notna()]
+        hist = {int(k): int(v) for k, v in
+                h.groupby("player_id").usual_position_id.agg(lambda x: x.astype(int).mode().iloc[0]).items()}
+    role_re = re.compile(r'giocatori/(\d+)\.html">([^<]+)</a>\s*<span class="mut small">'
+                         r'(portiere|difensore|centrocampista|attaccante)</span>')
+    abs_re = re.compile(r"Indisponibili \((\d+)\)")
+    prev_re = re.compile(r"<th>Precedenti \((\d+)\)</th>")
+    inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
+                        r' · ([^<]*?) (\d+) assenti', re.S)
+    fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
+    un_count: dict[tuple[int, int], int] = {}
+    if not lineup.empty:
+        un = lineup[lineup.role == "unavailable"]
+        un_count = {(int(a), int(b)): int(c) for (a, b), c in un.groupby(["match_id", "team_id"]).size().items()}
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        mid = int(pg.stem)
+        for pid, _name, shown in role_re.findall(html):
+            want = hist.get(int(pid))
+            if want is None:
+                continue                       # mai schierato: la pagina non stampa il ruolo
+            checks += 1
+            n_role += 1
+            if shown != role_names[want]:
+                fails.append(f"{pg.name}: ruolo {shown} per {_name}, atteso {role_names[want]}")
+        if mid not in fx_by_id.index:
+            continue
+        row = fx_by_id.loc[mid]
+        want_abs = sorted(x for x in (un_count.get((mid, int(row.home_id)), 0),
+                                      un_count.get((mid, int(row.away_id)), 0)) if x)
+        shown_abs = sorted(int(x) for x in abs_re.findall(html))
+        if shown_abs:
+            checks += 1
+            n_abs += 1
+            if shown_abs != want_abs:
+                fails.append(f"{pg.name}: indisponibili {shown_abs} vs {want_abs} dalla distinta")
+        m = prev_re.search(html)
+        if m and not h2h.empty:
+            kick = pd.to_datetime(row.utc_kickoff, utc=True)
+            ids = (int(row.home_id), int(row.away_id))
+            hh = h2h[h2h.match_id == mid].dropna(subset=["utc", "home_goals", "away_goals"])
+            hh = hh[pd.to_datetime(hh.utc, utc=True) < kick].sort_values("utc",
+                                                                        ascending=False).head(60)
+            hh = hh[hh.home_id.isin(ids) & hh.away_id.isin(ids)]
+            checks += 1
+            n_h2h += 1
+            if int(m.group(1)) != len(hh):
+                fails.append(f"{pg.name}: {m.group(1)} precedenti in pagina vs {len(hh)} in archivio")
+    for lg_page in ("index.html", "prossime.html"):
+        path = site / lg_page
+        if not path.exists():
+            continue
+        html = path.read_text(encoding="utf-8")
+        for mid, n1, c1, n2, c2 in inf_re.findall(html):
+            if int(mid) not in fx_by_id.index:
+                continue
+            row = fx_by_id.loc[int(mid)]
+            checks += 1
+            n1, n2 = html_unescape(n1), html_unescape(n2)   # M'gladbach → M&#39;gladbach in HTML
+            if (n1.strip(), int(c1)) != (str(row.home_name).strip(),
+                                         un_count.get((int(mid), int(row.home_id)), 0)) or \
+               (n2.strip(), int(c2)) != (str(row.away_name).strip(),
+                                         un_count.get((int(mid), int(row.away_id)), 0)):
+                fails.append(f"{lg_page}: infermeria {n1} {c1} / {n2} {c2} != distinta")
+    print(f"[5] schede oggi: {n_role} ruoli, {n_abs} infermerie, {n_h2h} archivi precedenti")
 
     st.close()
     return fails, checks
