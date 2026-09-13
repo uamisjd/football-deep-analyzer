@@ -32,7 +32,7 @@ import pandas as pd
 
 from .calibration import SCALE_BOUNDS, Calibration
 from .dc_grid import GRID_SIZE, grid_markets_many, tau_grid, tau_grid_many
-from .predict import DixonColesModel, EloModel, _clamp_lambda, ensemble
+from .predict import ENSEMBLE_MODE, DixonColesModel, EloModel, _clamp_lambda, ensemble
 
 log = logging.getLogger("fda.lab")
 
@@ -69,7 +69,7 @@ class Candidate:
 #: insieme predefinito: il modello in produzione, i suoi iperparametri critici, le famiglie
 #: di verosimiglianza alternative e i sistemi di rating puri.
 CANDIDATES: tuple[Candidate, ...] = (
-    Candidate(BASELINE, "DC+Elo in produzione (w 0,7)", "production", "dixon_coles",
+    Candidate(BASELINE, "DC+Elo in produzione (w 0,7, gol attesi invariati)", "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7}),
     Candidate("dc_puro", "Dixon-Coles senza Elo", "goals", "dixon_coles", {"xi": 0.0018, "shrink": 8.0}),
     Candidate("dc_xi10", "Dixon-Coles ξ 0,0010 (memoria lunga)", "goals", "dixon_coles",
@@ -91,10 +91,11 @@ CANDIDATES: tuple[Candidate, ...] = (
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}),
     Candidate("mix_85", "Miscela di griglie DC+Elo 85/15", "blend", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}),
-    # alternativa strutturale alla ricetta di produzione: l'Elo inclina solo il rapporto
-    # casa/trasferta, il totale dei gol attesi resta quello del modello sui gol (vedi _tilt_grid)
-    Candidate("dc_elo_tilt", "DC+Elo a gol attesi invariati (solo inclinazione)", "blend", "dixon_coles",
-              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "mode": "tilt"}),
+    # ricetta **precedente** (fino al 2026-09-13): due λ libere cercate da ``goal_expectancy``
+    # per riprodurre l'1X2 mediato. È la baseline contro cui il tilt è stato misurato e poi
+    # promosso; tenerla fra i candidati rende ripetibile il confronto anche dopo il cambio.
+    Candidate("dc_elo_ge", "Ricetta precedente: λ invertite dall'1X2 mediato", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "mode": "inverti"}),
     # il peso della media pesata in produzione (0,7) non è mai stato misurato: ecco 0,5 e 0,85
     Candidate("prod_w50", "Produzione con peso DC 0,50", "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}),
@@ -233,45 +234,6 @@ def _mix_grids(lh_a: float, la_a: float, rho_a: float, probs_b: tuple[float, flo
     return g, lh_m, la_m
 
 
-#: inclinazioni casa/trasferta provate da ``_tilt_grid`` (1,00 = λ invariate)
-TILT_GRID: tuple[float, ...] = tuple(round(0.85 + 0.01 * i, 3) for i in range(31))
-
-
-def _tilt_grid(lh_a: float, la_a: float, rho_a: float, probs_b: tuple[float, float, float],
-               w: float) -> tuple[np.ndarray, float, float]:
-    """Media pesata sull'1X2 **senza gonfiare i gol attesi**: cambia solo l'inclinazione.
-
-    La ricetta di produzione cerca due λ libere che riproducano il vettore mediato
-    (``goal_expectancy``): il totale che ne esce è +8,6% sopra i gol osservati sul backtest,
-    ed è il difetto che la calibrazione deve poi correggere. Qui il totale dei gol attesi
-    resta quello stimato dal modello sui gol e l'Elo sposta soltanto il rapporto
-    casa/trasferta; il vettore 1X2 pubblicato è quello della griglia risultante, quindi
-    mercati e 1X2 restano coerenti fra loro. Il candidato serve proprio a misurare quanto
-    vale, in RPS e Brier, la libertà di gonfiare le λ.
-    """
-    ii, jj = np.indices((GRID_SIZE, GRID_SIZE))
-    ga = tau_grid(lh_a, la_a, rho_a, size=GRID_SIZE)
-    probs_a = (float(ga[ii > jj].sum()), float(ga[ii == jj].sum()), float(ga[ii < jj].sum()))
-    target = tuple(w * a + (1.0 - w) * b for a, b in zip(probs_a, probs_b))
-    totale = lh_a + la_a
-    best: tuple[float, float, np.ndarray] | None = None
-    for t in TILT_GRID:
-        lh_t, la_t = lh_a * t, la_a / max(t, 1e-9)
-        s = totale / (lh_t + la_t) if (lh_t + la_t) > 0 else 1.0     # il totale non cambia
-        g = tau_grid(lh_t * s, la_t * s, rho_a, size=GRID_SIZE)
-        err = ((float(g[ii > jj].sum()) - target[0]) ** 2
-               + (float(g[ii == jj].sum()) - target[1]) ** 2
-               + (float(g[ii < jj].sum()) - target[2]) ** 2)
-        if best is None or err < best[0]:
-            best = (err, t, g)
-    assert best is not None
-    t = best[1]
-    lh_t, la_t = lh_a * t, la_a / max(t, 1e-9)
-    s = totale / (lh_t + la_t) if (lh_t + la_t) > 0 else 1.0
-    g = best[2]
-    return g / g.sum(), float(lh_t * s), float(la_t * s)
-
-
 # --------------------------------------------------------------------------- walk-forward
 def walk_forward(hist: pd.DataFrame, candidates: tuple[Candidate, ...] = CANDIDATES,
                  step_days: int = 28, min_train: int = 600, calibration: Calibration | None = None,
@@ -395,27 +357,25 @@ def _predict_candidate(cand: Candidate, fitted: Any, all_fitted: dict[str, Any],
             return None
         dc = goals.predict(home, away)
         e = elo.predict(home, away) if home in elo.ratings and away in elo.ratings else None
-        if cand.kind == "production":
-            out = ensemble(dc, e, w_dc=float(cand.params.get("w_dc", 0.7))) if e else dc
-            # fedele alla produzione: mercati dalla griglia invertita, 1X2 dalla media pesata
-            row = _row_from_grid(tau_grid(float(out["lambda_home"]), float(out["lambda_away"]),
-                                          float(out.get("dc_rho", 0.0) or 0.0), size=GRID_SIZE),
-                                 float(out["lambda_home"]), float(out["lambda_away"]),
-                                 float(out.get("dc_rho", 0.0) or 0.0))
-            row.update({"p_home": float(out["p_home"]), "p_draw": float(out["p_draw"]),
-                        "p_away": float(out["p_away"])})
+        w = float(cand.params.get("w_dc", 0.7))
+        # la ricetta di produzione (e la sua alternativa a gol invariati) passa da
+        # ``ensemble``: **lo stesso codice del sito**, così il laboratorio misura esattamente
+        # ciò che verrebbe pubblicato, non una reimplementazione che le assomiglia
+        if cand.kind == "production" or cand.params.get("mode") == "tilt":
+            out = ensemble(dc, e, w_dc=w, mode=str(cand.params.get("mode", ENSEMBLE_MODE))) if e else dc
+            lh, la = float(out["lambda_home"]), float(out["lambda_away"])
+            rho = float(out.get("dc_rho", 0.0) or 0.0)
+            # fedele alla produzione: una sola griglia (quella pubblicata) per 1X2 e mercati
+            row = _row_from_grid(tau_grid(lh, la, rho, size=GRID_SIZE), lh, la, rho)
         else:
             lh, la, rho = _dc_lambdas(goals, home, away)
             probs_b = _rating_probs(elo, "elo", home, away) if e else None
-            w = float(cand.params.get("w_dc", 0.7))
             if probs_b is None:
                 grid = tau_grid(lh, la, rho, size=GRID_SIZE)
-            elif cand.params.get("mode") == "tilt":
-                grid, lh, la = _tilt_grid(lh, la, rho, probs_b, w)
             else:
                 grid, lh, la = _mix_grids(lh, la, rho, probs_b, w)
-            # la superficie qui è la miscela (o la griglia inclinata): va corretta nel livello
-            # senza essere sostituita da una griglia DC (vedi _apply_grid_level)
+            # la superficie qui è la miscela: va corretta nel livello senza essere sostituita
+            # da una griglia DC (vedi _apply_grid_level)
             return _apply_grid_level(_row_from_grid(grid, lh, la, rho), grid, cal)
         return _apply_calibration(row, cal)
 

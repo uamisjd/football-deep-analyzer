@@ -6,7 +6,7 @@ import pytest
 
 from fda.models import lab
 from fda.models.calibration import Calibration
-from fda.models.predict import LAMBDA_TOTAL_MAX_REL
+from fda.models.predict import ENSEMBLE_MODE, LAMBDA_TOTAL_MAX_REL
 from fda.models.dc_grid import tau_grid
 from fda.models.lab import (BASELINE, CANDIDATES, Candidate, convex_weights, per_league,
                             summarize, walk_forward)
@@ -222,29 +222,18 @@ def test_lab_runs_on_a_real_offline_corpus(tmp_path):
     assert "rps" in tab.columns and len(tab) >= 1
 
 
-def test_tilt_grid_conserva_i_gol_attesi_del_modello_sui_gol():
-    """L'alternativa alla ricetta di produzione: l'Elo inclina, non gonfia i gol attesi.
+def test_il_candidato_della_ricetta_precedente_usa_l_inversione_delle_lambda():
+    """Dopo la promozione del tilt, il laboratorio tiene la ricetta precedente come candidato.
 
-    ``goal_expectancy`` cerca due λ libere che riproducano il vettore mediato e il totale si
-    gonfia (+14% medio misurato sul backtest, +8,6% sopra i gol osservati). Qui il totale
-    resta quello del modello sui gol e cambia solo il rapporto casa/trasferta.
+    Serve a rendere ripetibile il confronto che ha deciso la promozione: ``dc_elo_prod`` è
+    ora la ricetta a gol invariati, ``dc_elo_ge`` è ``goal_expectancy`` (λ libere dall'1X2
+    mediato). Entrambe passano da ``predict.ensemble``, una sola implementazione.
     """
-    lh, la, rho = 1.80, 0.90, -0.10
-    ga = tau_grid(lh, la, rho, size=lab.GRID_SIZE)
-    i, j = np.indices(ga.shape)
-    probs_b = (0.75, 0.15, 0.10)          # rating molto più fiducioso sulla vittoria casalinga
-    g, lh_t, la_t = lab._tilt_grid(lh, la, rho, probs_b, 0.7)
-    assert g.sum() == pytest.approx(1.0, abs=1e-9) and (g >= 0).all()
-    assert lh_t + la_t == pytest.approx(lh + la, abs=1e-9), "il totale dei gol attesi deve restare"
-    assert lh_t / la_t > lh / la, "l'inclinazione deve seguire il rating"
-    assert float(g[i > j].sum()) > float(ga[i > j].sum())
-    # anche i gol attesi **effettivi** (media della matrice, τ compreso) restano gli stessi
-    assert float((g * (i + j)).sum()) == pytest.approx(float((ga * (i + j)).sum()), abs=1e-3)
-    # con un rating identico al modello sui gol la griglia non si muove
-    probs_a = (float(ga[i > j].sum()), float(ga[i == j].sum()), float(ga[i < j].sum()))
-    g0, lh0, la0 = lab._tilt_grid(lh, la, rho, probs_a, 0.7)
-    assert (lh0, la0) == pytest.approx((lh, la), abs=1e-6)
-    assert np.allclose(g0, ga / ga.sum(), atol=1e-9)
+    keys = {c.key: c for c in CANDIDATES}
+    assert BASELINE == "dc_elo_prod"
+    assert keys["dc_elo_prod"].params.get("mode", ENSEMBLE_MODE) == ENSEMBLE_MODE
+    assert keys["dc_elo_ge"].params.get("mode") == "inverti"
+    assert keys["dc_elo_ge"].kind == "production"
 
 
 def test_mix_grids_non_gonfia_le_lambda_su_vettori_irraggiungibili():
