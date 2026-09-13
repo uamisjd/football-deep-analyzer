@@ -10,7 +10,7 @@ Hanno lo scopo di (1) non perdere mai lavoro, (2) lavorare con la massima accura
 2. **Un turno = un obiettivo piccolo e concluso.** Mai "faccio tutta la fase in un colpo". Ogni turno termina con: cosa è stato fatto, cosa manca, qual è il prossimo passo (3–5 righe).
 3. **Zero dati grezzi in chat.** Le risposte delle API/pagine non si leggono mai per intero in conversazione: si scaricano con uno script che salva su disco e stampa solo un riepilogo (`head`, conteggi, chiavi). Se serve una verifica al volo: **una sola pagina, un solo frammento**, mai in parallelo.
 4. **Output dei comandi limitato.** Ogni comando stampa al massimo ~30 righe (`| head -30`, `| cut -c1-200`). Log e test lunghi vanno su file.
-5. **Checkpoint obbligatorio.** Il file `docs/STATO.md` viene aggiornato a **ogni turno** con: fatto / in corso / prossimo passo / decisioni aperte. Se la chat si blocca, si riparte da lì senza dover ripetere nulla.
+5. **Checkpoint obbligatorio.** Il file `docs/STATO.md` viene aggiornato a **ogni turno** con: fatto / in corso / prossimo passo / decisioni aperte. Se la chat si blocca, si riparte da lì senza dover ripetere nulla. **Anti-crescita infinita:** ogni 10 giri (o quando `STATO.md` supera ~80k) archiviare i giri più vecchi in `docs/STATO_archivio_*.md` e tenere in `STATO.md` solo gli ultimi 3 giri + link all'archivio — la verità resta nel repo, non nella chat.
 6. **Risposte brevi.** Spiegazioni lunghe → in un file `docs/`; in chat solo il riassunto e il link.
 7. **Niente lavori pesanti nella chat.** Backfill di stagioni, scaricamento di centinaia di partite, backtest: si eseguono in GitHub Actions o con uno script lanciato in background, e in chat si guarda solo il log finale.
 8. **Commit piccoli e frequenti** con messaggio chiaro, sul branch di lavoro.
@@ -20,6 +20,7 @@ mette il lavoro al sicuro (vedi sez. D). Non si accumulano commit locali "in att
 Se il push fallisce (rete del sandbox), lo si dice **nello stesso turno** e il lavoro viene consegnato
 in un file scaricabile (`handover/` servito dal server di preview), mai lasciato solo nel sandbox:
 i commit locali **non sopravvivono** a una sessione nuova, che riparte da un clone di `origin/main`.
+**WIP ammesso:** se i test locali non sono ancora verdi, pushare comunque con messaggio che inizia per `WIP:` — prima di proporre PR i test devono essere verdi (sez. D checklist).
 9. **PR e merge: dirlo sempre in modo esplicito** (vedi sezione **D** sotto — *quando è il momento di fare PR / merge*). L'agente lavora sul branch `arena/...`; `main` riceve il lavoro solo tramite pull request.
 
 ## B. Paletti di qualità (nuovi — valgono sempre, su ogni deliverable)
@@ -29,7 +30,7 @@ L'obiettivo del progetto è **analisi molto accurata, precisa e profonda**; il l
 1. **Accuratezza dei numeri = ogni numero mostrato è verificabile e misurato.** Nessuna previsione/statistica dichiarata senza registrazione e valutazione pubblica (RPS/Brier — vedi regola C "Onestà sui numeri"). Prima di affermare che un modello/fonte "funziona", mostrare la misura su dati reali o su test offline con fixtures; mai impressioni.
 2. **Precisione del linguaggio = distinguere sempre** cosa è *verificato dal vivo*, cosa è *verificato solo offline su fixtures/campioni*, cosa è *presunto/congettura*. In STATO.md e nelle chat ogni affermazione ricade in una di queste tre classi; se non è chiaro, si dice "da verificare".
 3. **Profondità = non fermarsi alla superficie.** Prima di concludere "non si può fare", verificare: fonti alternative/ridondanti (FotMob → ESPN → Understat → mirror), fallback, librerie riusabili, e documentare perché una strada è chiusa (con prova, non supposizione).
-4. **Qualità del codice**: suite di test verde prima di proporre PR; `ruff` senza errori sul codice nuovo; funzioni piccole e con nomi chiari; niente codice duplicato o incollato da altrove senza capirlo; dati tipizzati (UTC stabili); log leggibili.
+4. **Qualità del codice**: suite di test verde prima di proporre PR; `ruff` senza errori sul codice nuovo; funzioni piccole e con nomi chiari; niente codice duplicato o incollato da altrove senza capirlo; dati tipizzati (UTC stabili); log leggibili; **mai committare segreti** (token, API key, password) — usare `gh secret` o env di Actions, `.gitignore` per file locali.
 5. **Qualità dei documenti**: lingua italiana corretta, sezioni brevi e per titolo, link agli altri doc, niente dati grezzi incollati, ogni file `docs/` si chiude con "prossimo passo".
 6. **Le verifiche di rete vanno dove la rete arriva.** Dal sandbox dell'agente alcune fonti sono irraggiungibili (si raggiungono `github.com` e `api.github.com`): le verifiche "dal vivo" su FotMob/Understat/mirror vanno fatte in **GitHub Actions** o sul PC dell'utente, mai dichiarate come fatte dal sandbox.
 7. **Se un'azione non è compiuta in-turno, si dice esplicitamente** "non verificato / in attesa", mai "fatto".
@@ -68,7 +69,7 @@ Solo quando si è verificato che non resta nulla di importante da aggiungere si 
 **Dopo la PR aperta**: l'agente monitora i check (tests). Quando sono verdi e la PR è mergeable, l'agente **lo comunica e indica il momento del merge** con la frase fissa:
 > *"👉 Tutto verde: è il momento di fare Merge (PR #N)."*
 
-E spiega in una riga perché è sicuro. **Il merge lo esegue SEMPRE l'utente, MAI l'agente** (decisione del 2026-09-08): dopo la frase fissa l'agente si ferma e aspetta — non preme mai "Merge pull request" (né via UI né via `gh pr merge`), nemmeno se la prassi precedente era diversa. Dopo il merge eseguito dall'utente: l'agente aggiorna STATO.md con il commit di merge e indica il prossimo passo.
+E spiega in una riga perché è sicuro. **Il merge lo esegue di norma SEMPRE l'utente, MAI l'agente in autonomia** (decisione del 2026-09-08): dopo la frase fissa l'agente si ferma e aspetta — non preme mai "Merge pull request" (né via UI né via `gh pr merge`) di propria iniziativa, nemmeno se la prassi precedente era diversa. **Eccezione con deroga esplicita:** se l'utente scrive esplicitamente "mergia tu" / "Please merge the pull request" / "esegui tu il merge", l'agente può eseguire `gh pr merge --merge` **solo dopo aver verificato check verdi e mergeable**, e deve documentare la deroga in `docs/STATO.md` e `docs/13` (data, PR, motivo "ordine esplicito utente"). Dopo il merge (da utente o da agente in deroga): l'agente aggiorna STATO.md con il commit di merge e indica il prossimo passo.
 
 **Cosa è successo il 2026-09-12/13 (caso reale da non ripetere).** Dopo il merge di PR #23
 (eseguito su richiesta esplicita dell'utente) sono stati fatti altri 4 commit locali — aggiornamento
