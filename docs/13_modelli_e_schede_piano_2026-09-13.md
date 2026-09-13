@@ -558,3 +558,67 @@ Schede complete anche per le partite lontane: ~2.000 pagine in più (**+17 minut
 contenuto in gran parte segnaposto («formazioni non ancora pubblicate», «arbitro da definire»), e il
 valore cresce solo a ridosso della gara. Oggi la riga compatta dà già il modello (1X2, gol attesi,
 Over 2,5) per tutta la stagione; la Tappa 2 aggiungerebbe contesto, non informazione predittiva.
+
+### 9.6 Audit pre-merge delle schede **in programma** (misurato sulla build locale, 2026-09-13)
+
+Domanda dell'utente: «le schede delle partite in programma hanno le giuste sezioni e contenuti?».
+Misurato su **95 schede pre-partita** (le gare in programma entro 7 giorni: ESP1 22, ITA1 15, POR1 15,
+ENG1 12, NED1 11, FRA1 10, GER1 10) — le altre **1.987 partite in programma hanno la riga compatta e
+non la scheda** (4,6% di copertura: è la Tappa 2, §9.5).
+
+| Sezione | ENG1 | ESP1 | FRA1 | GER1 | ITA1 | NED1 | POR1 |
+|---|---|---|---|---|---|---|---|
+| Analisi pre-partita (hero) | 12/12 | 22/22 | 10/10 | 10/10 | 15/15 | 11/11 | 15/15 |
+| Scontro tattico | 12/12 | 22/22 | 10/10 | 10/10 | 15/15 | 11/11 | 15/15 |
+| I giocatori che decidono | 12/12 | 22/22 | 10/10 | 10/10 | 15/15 | 11/11 | 15/15 |
+| Contesto (distinte, meteo, arbitro, precedenti) | 12/12 | 22/22 | 10/10 | 10/10 | 15/15 | 11/11 | 15/15 |
+| Confronto di stagione | 12/12 | 22/22 | 10/10 | 10/10 | 15/15 | 11/11 | 15/15 |
+| Fatti rilevanti | 12/12 | 22/22 | 10/10 | 10/10 | 15/15 | 11/11 | 15/15 |
+| Previsione / Risultati esatti / Matrice / Quanti gol | 12/12 | 22/22 | 10/10 | **9/10** | 15/15 | 11/11 | **14/15** |
+| Come arrivano | 12/12 | 22/22 | 10/10 | **9/10** | 15/15 | 11/11 | 15/15 |
+| Come nasce questa probabilità | **4/12** | **5/22** | **3/10** | **2/10** | **4/15** | **3/11** | **4/15** |
+
+Audit per campo (`audit_match`, 13 campi × 95 schede): **0 «mancante»** dopo le correzioni sotto;
+«attesi dalla fonte» = formazioni 66, arbitro 75 (finestre reali di pubblicazione), indisponibili 11.
+
+**Diagnosi delle due righe in grassetto (non sono difetti di codice):**
+- **2 schede senza i blocchi del modello** (`Schalke 04–Elversberg` GER1 e `Estrela da Amadora–
+  Académico Viseu` POR1, 20/09): neopromosse **senza storico** nel corpus surrogato del sandbox
+  (`h2h`), quindi `predict_matches` le salta. Con lo storico reale di produzione le neopromosse
+  ricevono il prior dagli esiti della stagione in corso (già verificato in `docs/STATO.md` per
+  ADO Den Haag/Cambuur/Académico Viseu/Marítimo nel 2026-09-08): **da ricontare dopo il merge**
+  (§9.4 punto 2). La stessa causa spiega le 150 righe «senza previsione» del calendario offline.
+- **«Come nasce questa probabilità» su 25 schede su 95**: le **138 previsioni committate in
+  `data/processed` sono di due versioni di modello fa** (`dc-elo-ens-0.1` 60 righe, `-0.2` 78 righe),
+  quindi non hanno i campi `blend_p_*` / `lambda_*_raw` / `rho_raw` / `calibration_*` da cui la
+  catena viene ricostruita. Verificato riga per riga: **25/25 schede con riga `dc-elo-ens-0.3`
+  hanno la sezione, 0/138 con riga più vecchia**. Il primo `fda predict` dopo il merge le
+  rigenera tutte → la sezione (e la calibrazione v1.1, e i limiti sulle λ) va a regime su **tutte**
+  le schede, non solo su quelle nuove.
+
+**Quattro correzioni fatte prima del merge (nate da questo audit):**
+1. **`audit.py`: la previsione non è un dato «atteso dalla fonte».** Con `--days-ahead 0` il modello
+   non aspetta nessun editore: se manca è **mancante** (`AuditItem.from_source = False`). Prima le
+   2 schede senza previsione risultavano «attese» e il buco spariva dal conto in `stato.html`.
+2. **`audit.py`: «nessun indisponibile» con distinta pubblicata non è un buco.** 4 squadre su 105
+   schede (Telstar, Excelsior, PSG, Moreirense) avevano 11 nomi in distinta e zero assenze
+   segnalate → contate come campo mancante. Ora: distinta presente e lista vuota = **presente**
+   (`stato.html`: Mancante 4 → **2**, Presente 1.142 → **1.146**, «senza campi scaduti» 101 → 103).
+3. **`match.html`: il silenzio non è un'informazione.** Con distinta pubblicata e nessuna assenza la
+   scheda ora scrive «Nessun indisponibile segnalato nella distinta pubblicata dalla fonte
+   (formazione probabile/ufficiale)» — **solo pre-partita**: sulle gare finite la fonte riporta le
+   assenze una volta su due (misurato: 133 sì / 138 no su 271 finite), quindi lì il silenzio è
+   davvero ambiguo e la frase sarebbe stata fuorviante.
+4. **`base.html`: etichetta del footer** «Prossimi 7 giorni» → «**Prossime partite e calendario**»
+   (la pagina ora copre tutta la stagione; l'h1 e la nav erano già aggiornati).
+
+**Verifiche di compatibilità fatte sullo stesso giro** (cose che l'orizzonte esteso poteva rompere):
+- tutti i lettori di `predictions` tollerano una riga per partita: `build_accuracy`
+  (`made_at < kickoff` + `sort/tail(1)`, oggi un no-op), `analysis.prediction` (`sort/tail(1)`),
+  `verify_site` [3]/[8], `scripts/anteprima_scheda.py` (che scrive su `/tmp/preview_data`, **non** su
+  `data/processed`);
+- `daily.yml` ha `timeout-minutes: 40` contro ~11 minuti di run odierni + ~1 minuto per l'orizzonte
+  esteso (misurato 29,7 ms per partita);
+- crescita del dato committato: `predictions.parquet` 218 kB → ~550 kB a run, 5 run/giorno
+  (+~1,6 MB/giorno di blob, ~11% della cartella `data/processed` che oggi pesa 3,0 MB) — accettata,
+  è il prezzo di 14× la copertura.

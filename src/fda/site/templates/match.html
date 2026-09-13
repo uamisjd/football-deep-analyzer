@@ -217,7 +217,7 @@
       <span class="small mut">{% for x in f %}{{ x.gf }}-{{ x.ga }} {{ 'vs' if x.home else '@' }} {{ x.opponent }}{{ ', ' if not loop.last }}{% endfor %}</span></p>{% endif %}
     {% set xg = c[side ~ '_xg'] %}{% if xg %}<p>Stagione ({{ xg.source }}, {{ xg.played|it_plural('gara') }}): xG {{ xg.xg_pm|dec }} / xGA {{ xg.xga_pm|dec }} a partita{% if xg.xpts is not none %} · xPTS {{ xg.xpts|dec(1) }} vs {{ xg.pts|it_plural('punto') }} reali{% endif %}{% if xg.ppda %} · PPDA {{ xg.ppda|dec(1) }}{% endif %}</p>{% endif %}
     {% if c[side ~ '_rest'] is not none %}<p class="small mut">Riposo: {{ c[side ~ '_rest']|it_plural('giorno') }} dall'ultima gara</p>{% endif %}
-    {% set ab = c[side ~ '_absences'] %}{% if ab and ab.players %}
+    {% set ab = c[side ~ '_absences'] %}{% set stt = c[side ~ '_starters'] %}{% if ab and ab.players %}
     <p><b>Indisponibili ({{ ab.n }})</b>{% if ab.starters_out %} <span class="mut small">· {{ ab.starters_out }} {{ 'titolare abituale' if ab.starters_out == 1 else 'titolari abituali' }} fuori</span>{% endif %}{% if ab.contrib_lost_p90 %} <span class="mut small">· {{ ab.contrib_lost_p90|dec }} xG+xA a partita in meno</span>{% endif %}</p>
     <table>
       <tr><th class="mut small">giocatore</th><th class="mut small">motivo</th><th class="r" style="width:44px">min</th><th class="r" style="width:38px">g+a</th><th class="r" style="width:64px">xG+xA/90</th></tr>
@@ -232,8 +232,14 @@
       {% endfor %}
     </table>
     {% if ab.has_stats %}<p class="small mut">Minuti, gol e assist di stagione sommati dalle statistiche gara; xG+xA per 90 dove la fonte li pubblica. «Titolare» = almeno metà dei minuti medi per giocatore della squadra. Il ruolo manca quando il giocatore non è ancora comparso in una distinta.</p>{% else %}<p class="small mut">Nessuna statistica di stagione in archivio per questi giocatori: l'elenco viene dalla distinta della fonte.</p>{% endif %}
+    {% elif stt and c.status != 'finished' %}
+    {#- la fonte ha pubblicato la distinta e non segnala assenze: si dice, invece di lasciare
+        il silenzio (che non distingue «nessuno fuori» da «dato non raccolto»). Solo pre-partita:
+        a gara conclusa la fonte riporta le assenze una volta su due (133 sì e 138 no sulle 271
+        finite misurate il 2026-09-13), quindi il silenzio non è distinguibile da «nessuno fuori». -#}
+    <p class="small mut">Nessun indisponibile segnalato nella distinta pubblicata dalla fonte ({{ 'formazione ufficiale' if c.lineup_type == 'official' or c.status == 'finished' else 'formazione probabile' }}).</p>
     {% endif %}
-    {% set stt = c[side ~ '_starters'] %}{% if stt %}<p style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · valore titolari €{{ (c[side ~ '_value']/1e6)|it_num }}M{% endif %}</p>
+    {% if stt %}<p style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · valore titolari €{{ (c[side ~ '_value']/1e6)|it_num }}M{% endif %}</p>
       <p class="small">{% for s in stt %}{{ s.num or '' }} {{ s.name }}{% if s.captain %} (C){% endif %}{% if s.rating %} <span class="mut">{{ s.rating|dec(1) }}</span>{% endif %}{{ ' · ' if not loop.last }}{% endfor %}</p>
       {% if stt|length != 11 %}<p class="small mut">La fonte elenca {{ stt|length|it_plural('giocatore') }} come titolari: la distinta non è ancora definitiva.</p>{% endif %}{% endif %}
   </div>

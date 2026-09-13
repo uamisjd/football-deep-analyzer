@@ -20,10 +20,18 @@ class AuditItem:
     label: str
     required: bool = True
     min_days_before: int = 0
+    # ``from_source=False``: il dato dipende solo da noi, non da una finestra di pubblicazione
+    # della fonte. Se manca è **mancante**, mai «atteso» — non c'è nessun editore da aspettare.
+    from_source: bool = True
 
 
 PREMATCH_ITEMS = (
-    AuditItem("prediction", "Previsione modello"),
+    # la previsione non aspetta nessuna fonte: da quando `fda predict --days-ahead 0` copre tutto
+    # il calendario, ogni gara in programma deve averla (il modello usa solo squadre e storico).
+    # Prima di questa distinzione una gara senza previsione risultava «attesa» e il buco spariva
+    # dal conto: misurato sulla build 2026-09-13, 2 schede su 95 (Schalke 04-Elversberg ed
+    # Estrela da Amadora-Académico Viseu, neopromosse senza storico) erano invisibili all'audit.
+    AuditItem("prediction", "Previsione modello", from_source=False),
     AuditItem("home_form", "Forma casa"),
     AuditItem("away_form", "Forma trasferta"),
     AuditItem("home_xg", "xG stagione casa"),
@@ -61,12 +69,18 @@ def audit_match(ctx: dict[str, Any], now: pd.Timestamp | None = None) -> dict[st
     items = []
     for item in PREMATCH_ITEMS:
         value = ctx.get(item.key)
+        # distinta pubblicata e nessun indisponibile segnalato: «nessuno è fuori» è
+        # un'informazione completa, non un buco (misurato 2026-09-13: 4 squadre su 105 schede
+        # finivano contate come campo mancante pur avendo la formazione con 11 nomi).
+        if item.key.endswith("_unavailable") and not _present(value):
+            if _present(ctx.get(f"{item.key.split('_', 1)[0]}_starters")):
+                value = True
         if _present(value):
             state = "presente"
-        elif days > item.min_days_before:
-            state = "atteso"
+        elif item.from_source and days > item.min_days_before:
+            state = "atteso"          # la fonte non l'ha ancora pubblicato (finestra editoriale)
         else:
-            state = "mancante"
+            state = "mancante"        # è un buco nostro: va visto, non nascosto
         items.append({"key": item.key, "label": item.label, "state": state})
     counts = {state: sum(i["state"] == state for i in items) for state in ("presente", "atteso", "mancante")}
     counts["totale"] = len(items)

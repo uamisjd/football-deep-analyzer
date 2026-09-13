@@ -735,3 +735,27 @@ def test_calendario_senza_partite_lontane_non_appare(tmp_path):
     h = (out / "prossime.html").read_text(encoding="utf-8")
     assert "Tutto il calendario" not in h and 'class="cal-row' not in h
     st.close()
+
+
+def test_scheda_dice_nessun_indisponibile_quando_la_distinta_c_e(tmp_path):
+    """Distinta pubblicata e nessuna assenza → la scheda lo scrive: il silenzio non distingue
+    «nessuno è fuori» da «dato non raccolto» (direttiva utente 2026-09-08)."""
+    st = _seed(tmp_path)
+    lin = st.read("lineup")
+    assert not lin.empty and (lin.role == "unavailable").any()      # il campione ha indisponibili
+    st.write("lineup", lin[lin.role != "unavailable"])              # li togliamo: resta la distinta
+    out = tmp_path / "sito"
+    sb = SiteBuilder(store=st, out_dir=out)
+    sb.build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    assert "Nessun indisponibile segnalato nella distinta pubblicata dalla fonte" in h
+    assert "formazione probabile" in h                              # dichiara quale distinta è
+    assert "<b>Indisponibili (" not in h                            # e non stampa la tabella vuota
+
+    st.write("lineup", lin)                                         # rimettendoli torna la tabella
+    # MatchAnalysis legge le tabelle alla costruzione: serve un builder nuovo, non una rilettura
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    assert "<b>Indisponibili (" in h
+    assert "Nessun indisponibile segnalato" not in h
+    st.close()
