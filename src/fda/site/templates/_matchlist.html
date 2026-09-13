@@ -1,17 +1,69 @@
+{% macro form_pills(team, label) -%}
+  {% set form = team.form %}
+  {% if form and form.n %}
+  <span class="form-line" aria-label="{{ label }}: {{ form.sequence }} nelle ultime {{ form.n }} partite, {{ form.points }} punti">
+    <span class="fact-label">Forma</span>
+    <span class="form-dots" aria-hidden="true">{% for x in form.rows %}<span class="form-dot {{ x.res }}">{{ x.res }}</span>{% endfor %}</span>
+    <span class="fact-value">{{ form.points }} pt</span>
+  </span>
+  {% endif %}
+{%- endmacro %}
+
 {% macro row(m) -%}
-<div class="matchrow">
-  <div class="mut small">{{ m.utc_kickoff.strftime('%H:%M') }}<br><span class="tag">{{ m.league_name }}</span></div>
-  <div class="home"><a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }}</a></div>
-  <div class="score">{% if m.home_goals is not none %}{{ m.home_goals }} - {{ m.away_goals }}{% else %}{{ m.utc_kickoff.strftime('%d/%m') }}{% endif %}</div>
-  <div><a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.away_name }}</a></div>
-  <div class="probs">{% if m.prediction %}
-    {% set ph = m.prediction.p_home %}{% set pd = m.prediction.p_draw %}{% set pa = m.prediction.p_away %}
-    {% set top = '1' if ph >= pd and ph >= pa else ('X' if pd >= pa else '2') %}
-    {% set top_p = ph if top == '1' else (pd if top == 'X' else pa) %}
-    <div class="bar"><span class="h" style="width:{{ (ph*100)|round }}%">{{ (ph*100)|round|int }}</span><span class="d" style="width:{{ (pd*100)|round }}%">{{ (pd*100)|round|int }}</span><span class="a" style="width:{{ (pa*100)|round }}%">{{ (pa*100)|round|int }}</span></div>
-    <span class="lean">Il modello punta su <b>{{ top }}</b> ({{ (top_p*100)|round|int }}%)</span>
-    <span class="mut"> · λ {{ m.prediction.lambda_home|dec }}–{{ m.prediction.lambda_away|dec }} · O2.5 {{ (m.prediction.p_over25*100)|round|int }}%</span>
-  {% else %}<span class="mut">previsione non disponibile</span>{% endif %}
-    {% if m.status != 'finished' and (m.abs_home or m.abs_away) %}<br><span class="mut small">Infermeria: {{ m.home_name }} {{ m.abs_home|it_plural('assente') }} · {{ m.away_name }} {{ m.abs_away|it_plural('assente') }}</span>{% endif %}</div>
-</div>
+{% set p = m.prediction %}
+{% set meta = p.meta if p else none %}
+{% set ctx = m.context %}
+<article class="match-card" data-match-card data-league="{{ m.league_key }}" data-status="{{ m.status_bucket }}"
+         data-search="{{ m.home_name }} {{ m.away_name }} {{ m.league_name }}">
+  <div class="match-card-head">
+    <div class="match-meta">
+      <span class="status status-{{ m.status_bucket }}"><span class="status-dot" aria-hidden="true"></span>{{ m.status_label }}</span>
+      <time datetime="{{ m.utc_kickoff.isoformat() }}" class="kickoff">{{ m.utc_kickoff.strftime('%H:%M') }}</time>
+      <span class="tag">{{ m.league_name }}</span>
+    </div>
+    <a class="match-open" href="{{ root }}partite/{{ m.match_id }}.html" aria-label="Apri l'analisi di {{ m.home_name }} - {{ m.away_name }}">Analisi <span aria-hidden="true">↗</span></a>
+  </div>
+
+  <div class="match-teams">
+    <div class="match-team home-team">
+      <a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }}</a>
+      {% if ctx and ctx.home.standing %}<span class="team-rank">{{ ctx.home.standing.rank }}ª · {{ ctx.home.standing.points|int }} pt</span>{% endif %}
+    </div>
+    <div class="match-score">
+      {% if m.home_goals is not none %}<strong>{{ m.home_goals }}–{{ m.away_goals }}</strong>{% else %}<strong>vs</strong>{% endif %}
+      <span>{% if m.status_bucket == 'finished' %}finale{% else %}calcio d'inizio{% endif %}</span>
+    </div>
+    <div class="match-team away-team">
+      <a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.away_name }}</a>
+      {% if ctx and ctx.away.standing %}<span class="team-rank">{{ ctx.away.standing.rank }}ª · {{ ctx.away.standing.points|int }} pt</span>{% endif %}
+    </div>
+  </div>
+
+  {% if p %}
+  <div class="match-projection">
+    <div class="projection-copy">
+      <span class="eyebrow">Lettura del modello</span>
+      {% if meta %}<strong>{{ meta.top_name }} <span class="projection-p">{{ (meta.top_probability * 100)|round|int }}%</span></strong>
+      <span class="projection-note">esito più probabile · margine {{ meta.margin_pp|dec(1) }} punti sul 2°</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
+    </div>
+    <div class="mini-probability">
+      <div class="bar" role="img" aria-label="Probabilità: 1 {{ (p.p_home * 100)|round|int }}%, pareggio {{ (p.p_draw * 100)|round|int }}%, 2 {{ (p.p_away * 100)|round|int }}%">
+        <span class="h" style="width:{{ (p.p_home * 100)|round }}%"></span><span class="d" style="width:{{ (p.p_draw * 100)|round }}%"></span><span class="a" style="width:{{ (p.p_away * 100)|round }}%"></span>
+      </div>
+      <div class="prob-labels"><span>1 {{ (p.p_home * 100)|round|int }}%</span><span>X {{ (p.p_draw * 100)|round|int }}%</span><span>2 {{ (p.p_away * 100)|round|int }}%</span></div>
+    </div>
+  </div>
+  {% if meta %}<div class="signal signal-{{ meta.signal_tone }}"><span aria-hidden="true">{% if meta.signal_tone == 'agree' %}✓{% elif meta.signal_tone == 'split' %}↔{% else %}·{% endif %}</span> {{ meta.signal_label }}{% if meta.elo_gap_pp is not none %} · scarto massimo {{ meta.elo_gap_pp|dec(1) }} pp{% endif %}</div>{% endif %}
+  <div class="model-foot">λ {{ p.lambda_home|dec }}–{{ p.lambda_away|dec }} · Over 2,5 {{ (p.p_over25 * 100)|round|int }}% · modello {{ p.model }}</div>
+  {% else %}<p class="mut small">Previsione non disponibile per questa partita.</p>{% endif %}
+
+  <div class="match-facts" aria-label="Contesto rapido della partita">
+    {% if ctx and ctx.home.form.n %}{{ form_pills(ctx.home, m.home_name) }}{% endif %}
+    {% if ctx and ctx.away.form.n %}<span class="fact-separator" aria-hidden="true">·</span>{{ form_pills(ctx.away, m.away_name) }}{% endif %}
+    {% if m.status_bucket != 'finished' and (m.abs_home or m.abs_away) %}<span class="fact fact-absence">⚕ <span><b>Infermeria:</b> {{ m.home_name }} {{ m.abs_home|it_plural('assente') }} · {{ m.away_name }} {{ m.abs_away|it_plural('assente') }}</span></span>{% endif %}
+    {% if ctx and ctx.weather and ctx.weather.desc %}<span class="fact">☁ <span>{{ ctx.weather.desc }}{% if ctx.weather.temp is not none %} · {{ ctx.weather.temp|round|int }}°C{% endif %}</span></span>{% endif %}
+    {% if ctx and ctx.referee and ctx.referee.name %}<span class="fact">⚑ <span>{{ ctx.referee.name }}{% if ctx.referee.yellows is not none %} · {{ ctx.referee.yellows|dec(1) }} gialli/gara{% endif %}</span></span>{% endif %}
+    {% if ctx and ctx.h2h_n %}<span class="fact">↔ <span>{{ ctx.h2h_n|it_plural('precedente') }}</span></span>{% endif %}
+  </div>
+</article>
 {%- endmacro %}

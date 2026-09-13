@@ -181,7 +181,10 @@ def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int =
             df = simulate_league(hist, rem, base_pts, base_gd, base_played, w_dc=w_dc,
                                  n_sims=n_sims, seed=seed, rel_count=REL_COUNTS.get(lg.key, 3))
             df.insert(0, "league_key", lg.key)
-            store.upsert("season_sim", df.to_dict("records"))
+            # È uno snapshot per lega: rimuove anche eventuali righe con una vecchia grafia
+            # della squadra (es. «Nottm Forest» → «Nottingham Forest») rimaste da un run
+            # precedente, invece di lasciarle concorrere alla somma delle probabilità.
+            store.upsert("season_sim", df.to_dict("records"), replace_by="league_key")
             out.append(df)
             top = df.sort_values("exp_points", ascending=False).head(3)
             log.info("%s: %d simulazioni su %d gare restanti — %s", lg.name, n_sims, len(rem),

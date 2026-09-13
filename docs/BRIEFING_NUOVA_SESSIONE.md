@@ -2,14 +2,14 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-09-12 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto.
+> **Ultimo aggiornamento:** 2026-09-13 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo dell'ultimo lavoro è in cima a `docs/STATO.md`.
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
 ---
 
 ## 0. Cos'è il progetto (in una riga)
 
-**football-deep-analyzer** = portale personale, gratuito e automatico di **analisi calcistica profonda**: per ogni partita produce previsioni probabilistiche calibrate (xG, Dixon-Coles, Elo, ensemble), indisponibili, arbitro, meteo, contesto, quote-vs-modello e report **in italiano** pre/post partita. Tutto gira su GitHub Actions (cron) e viene pubblicato su GitHub Pages; i dati sono versionati nel repo (Parquet + DuckDB).
+**football-deep-analyzer** = portale personale, gratuito e automatico di **analisi calcistica profonda**: per ogni partita produce previsioni probabilistiche calibrate (xG, Dixon-Coles, Elo, ensemble), indisponibili, arbitro, meteo, contesto e report **in italiano** pre/post partita. Le quote bookmaker non sono un obiettivo editoriale. Tutto gira su GitHub Actions (cron) e viene pubblicato su GitHub Pages; i dati sono versionati nel repo (Parquet + DuckDB).
 
 ## 1. Architettura e flusso (niente server, costo zero)
 
@@ -25,6 +25,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
 
+- **Sessione corrente `arena/01a09a3b-football-deep-analyzer` (2026-09-13):** implementata la P0 UX di «Oggi» e delle schede: riepilogo giornata, filtri stato/lega/ricerca, card responsive con probabilità 1X2, margine a una cifra decimale, DC/Elo, classifica, forma, assenze, meteo, arbitro e H2H; hero, indice ancorato e contesto nella scheda. Snapshot offline: **21 partite, 7/7 leghe, 21/21 previsioni, 42/42 classifiche, 21/21 meteo/arbitri, 20/21 H2H ≥3**. **Verifiche completate:** 118 test, build 376/2364/7392, audit `scripts/verify_site.py` 4087 pagine e 1860 controlli numerici senza problemi. Ricerca e misure: [`docs/12_oggi_schede_ux_quantitativa_2026-09-13.md`](12_oggi_schede_ux_quantitativa_2026-09-13.md). Resta solo il controllo visuale manuale a 375 px/desktop prima della PR.
 - **Fase 0–7b CONCLUSA E VALIDATA DAL VIVO** (PR #1–#9 mergiate): scaffolding, client FotMob, client ESPN+Understat, storage+collect, modelli (Dixon-Coles+Elo, backtest RPS 0,212), sito+workflow+Pages, run dal vivo OK, resilienza, storico NED1/POR1 da mirror dedicato **confermato in produzione** (run `34232722943` del 2026-09-08: NED1 11 / POR1 11 predizioni, `n_train=960`, commit dati `6a31d39`).
 - **PR #9 (2026-09-08) porta su `main`**: policy «il merge lo esegue SEMPRE l'utente» (sez. D + avviso in cima qui), Accuratezza con Δ vs naive/calibrazione/RPS per gara, cartina dei tiri SVG nei post-partita, card Momentum (barre + marker gol), ultimi precedenti reali V/N/P, **italianizzazione completa** (ora italiana ovunque, virgole decimali, meteo e rientri tradotti), script `scripts/verify_ned_por.py`. Commit di merge in `git log` (HEAD di `main`).
 - **Accuratezza oggi**: 20 gare valutate su 7 leghe (incluse le prime NED1/POR1), RPS **0,205** vs naive 0,239 (il modello batte la base in ogni lega).
@@ -33,6 +34,8 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 - **Ultimo aggiornamento STATO.md**: 2026-09-12 — sessione `arena/01a092ab` (**laboratorio analitico** sulle schede: matrice DC, scontro tattico, corsa xG, qualità tiri, WP in-play). PR #1–#21 mergiate.
 
 ## 3. Prossimi passi (in ordine — da `docs/STATO.md`)
+
+0. **Controllo visuale finale della UX P0 corrente**: usare la preview sulla porta 3000 a desktop e 375 px; verificare focus da tastiera, filtri e assenza di overflow. I controlli automatici sono già verdi: `.venv/bin/pytest -q` (118), `.venv/bin/fda build` (376/2364/7392), `scripts/verify_site.py` (4087 pagine, 1860 numerici, 0 problemi).
 
 > 🎯 **Direttiva utente (2026-09-08, prioritaria su tutto)**: «tutti i contenuti delle partite devono essere accurati, precisi, profondi e di qualità» — le schede di **tutte** le partite ancora da giocare (tutte le 7 leghe) devono essere **piene di contenuti e servizi**, nessuna lega di serie B. **Raggiunta** (verificato 2026-09-08): classifica FotMob 7/7, xG stagione completo NED1/POR1, meteo con fallback Open-Meteo, audit 0 «mancante» su 73 partite.
 
@@ -69,6 +72,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/03_decisioni_e_funzionamento.md` | Decisioni utente (7 leghe, uso personale, quote) + spiegazione automazione + verifiche tecniche salvate. |
 | `docs/07_fase3_giocatori.md` | Progetto fase 3 schede giocatore: dati misurati, metodologia, decisioni. |
 | `docs/08_laboratorio_analitico.md` | Matrice DC, scontro tattico, corsa xG, qualità tiri, WP in-play. |
+| `docs/12_oggi_schede_ux_quantitativa_2026-09-13.md` | Ricerca UX, misure di copertura, criteri di accettazione e limiti della P0 «Oggi»/schede. |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file. |
 | `src/fda/` | Codice: `cli.py`, `config.py`, `collect.py`, `store.py`, `http.py`, `teams.py`, `sources/` (fotmob, espn, understat, history), `models/` (predict, season_sim), `site/` (build, analysis, **advanced**, **players**, audit, fmt, templates). |
 | `config/leagues.yaml` | Le 7 leghe + coppe; aggiungere una lega = aggiungere una voce qui. |
@@ -113,6 +117,15 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 ### Ricerca insights FotMob 2026-09-09
 - Catalogo misurato su 1274 righe / 211 match (`insights.parquet`): template inglesi fissi, non NL libero. Squadra: scored N in last K, haven't scored, haven't lost in N, haven't won in N attempts, lost/won last N, haven't kept a clean sheet, H2H (haven't lost to / won previous N / not drawn / drawn last N). Giocatore: top scorer, most big chances, most shots on target/match, ranked in saves / big chances.
 - Nessun traduttore OSS riusabile per questi template (Sportmonks Match Facts è a pagamento e strutturato). Scelta: mappa regex + drop dei non tradotti (mai inglese a schermo). Hype «most X in the competition» escluso di proposito.
+
+### Ricerca UX «Oggi» e schede 2026-09-13
+- **Progressive disclosure**: [Nielsen Norman Group](https://www.nngroup.com/articles/progressive-disclosure/) — portare nel primo livello identità, stato e previsione; lasciare il dettaglio avanzato nella scheda ma renderlo raggiungibile con indice/ancore.
+- **Confronti quantitativi**: [Nielsen Norman Group](https://www.nngroup.com/articles/dashboards-preattentive/) — lunghezza e posizione sono più confrontabili di superfici decorative; adottata barra 1X2 con valori testuali e margine, senza donut.
+- **Card**: [Material Design](https://m2.material.io/develop/web/components/cards) — una card per soggetto, gerarchia titolo/supporto/azione; adottata card partita autonoma con link Analisi esplicito.
+- **Accessibilità**: [WCAG 2.2](https://www.w3.org/TR/WCAG22/) — focus, tastiera, contrasto, testo oltre al colore e target adeguati; implementati filtri semantici, `aria-live`, label della barra e breakpoint mobile. Da completare con verifica visuale a 375 px.
+- **Forecast probabilistici**: [arXiv 1908.08980](https://arxiv.org/abs/1908.08980) — valutare con RPS/Brier/log score, non con la sola accuracy; la UI dichiara stime e margine, non certezze. Le metriche di accuratezza restano separate dalla copertura UX.
+- **Scelta integrazioni**: nessun nuovo provider è stato importato. La P0 riusa Parquet già raccolti (FotMob/Understat e derivati locali) e degrada quando il campo è assente. Nessuna quota bookmaker è stata aggiunta come requisito.
+- Dettagli, tabella di copertura 21 gare/7 leghe, criteri e link sono in [`docs/12_oggi_schede_ux_quantitativa_2026-09-13.md`](12_oggi_schede_ux_quantitativa_2026-09-13.md).
 
 ### Ricerca fonti/progetti 2026-09-08
 - `probberechts/soccerdata`: scraper multi-fonte (ESPN, FBref, Football-Data, SofaScore, Understat, WhoScored, ClubElo); utile come riferimento per fallback e normalizzazione, non da importare alla cieca.
