@@ -622,3 +622,18 @@ Audit per campo (`audit_match`, 13 campi × 95 schede): **0 «mancante»** dopo 
 - crescita del dato committato: `predictions.parquet` 218 kB → ~550 kB a run, 5 run/giorno
   (+~1,6 MB/giorno di blob, ~11% della cartella `data/processed` che oggi pesa 3,0 MB) — accettata,
   è il prezzo di 14× la copertura.
+
+### 9.7 Merge PR #28 — miglioramenti modello, fonti, card + regole affinati (2026-09-13, deroga esplicita)
+
+**Contenuto PR #28** (commit `f387100` → `14c9dec` → merge `cc80795`):
+- fix `lab.yml` quoting bug: da `EXTRA="--candidates $CANDS"` senza virgolette (solo `dc_elo_prod` in `e6da512`) a `if [ -n "$CANDS" ]; then fda lab ... --candidates "$CANDS" --save else ... fi` — ora dispatch con 5 candidati funziona (verificato locale 1.518 gare, tilt Δ−0,000397 IC negativo 5/7 leghe);
+- `info.html` IL MODELLO: badge calibrazione live λ×0,914 ρ-0,04 da `calibration.parquet`, spiegazione 70/30 misurata (0,5 peggiore +0,000488, 0,85 5/7 non significativo), limiti λ≤4,0 totale 70-135% (1,19% gare), RPS/Brier in italiano semplice, link lab 22 candidati;
+- LE FONTI: Open-Meteo fallback >48h, FotMob→Understat→FotMob per xG NED1/POR1, ESPN 403→FotMob standings, mirror per-lega `datahub_base` in `leagues.yaml`;
+- card compatta `_matchlist.html`: forma con legenda V/N/P, lettura modello "favorito · +31,6 pp sul 2° (Pareggio 24%)", segnale "Modelli d'accordo/divisi" con tooltip DC vs Elo scarto, gol attesi con tooltip totale e Over "51 partite su 100 con 3+ gol", infermeria/meteo/arbitro con titolo fonte, H2H bilancio 2-3-12 (2,6 gol/gara, BTTS 59%);
+- `accuracy.html` RPS per anticipo bucket 0-7/8-14/15-30/31-60/61+ da `made_at` vs `utc_kickoff`;
+- `verify_site.py` regex tolleranti a `title`, `tests/test_site.py` assert tollerante;
+- `docs/00_regole_di_lavoro.md` 4 affinamenti logici: A5 anti-crescita STATO archivio ogni 10 giri o >80k, A8bis WIP ammesso con prefisso `WIP:`, B4 mai committare segreti, D deroga merge esplicita.
+
+**Deroga merge PR #28**: utente ha scritto "Please merge the pull request" + "si applicale" per regole (2026-09-13 20:46 UTC). Secondo nuova regola D (eccezione con deroga esplicita) agente ha eseguito `gh pr merge 28 --merge` il 2026-09-13 20:49 UTC dopo verifica check verdi (test SUCCESS, 172 passed) e mergeable MERGEABLE. Merge commit `cc80795` su `main`. Documentata qui e in `STATO.md` nono giro. Precedenti deroghe: PR #23 (2026-09-12) e PR #27 (2026-09-13 15:46 UTC) su ordine esplicito utente, registrate in STATO.md settimo giro.
+
+**Verifiche finali prima del merge**: suite 172 passed, build 376/2364/7434, `verify_site` 0 problemi 12.130 controlli, `site/index.html` Famalicão-Sporting 17 precedenti 2-3-12 (2,6 gol/gara, BTTS 59%), gol attesi 0,97-1,75 Over 51%, modelli d'accordo scarto 6,8pp.
