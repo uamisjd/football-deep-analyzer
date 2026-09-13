@@ -1,0 +1,118 @@
+# Laboratorio modelli: confronto fuori campione fra famiglie di modelli, iperparametri e
+# miscele, sullo storico di allenamento salvato dai run giornalieri (history.parquet).
+# Non sta nel daily perché un fit della copula di Weibull costa secondi, non millisecondi:
+# qui gira una volta alla settimana (e a richiesta), con finestre più larghe.
+name: lab
+
+on:
+  schedule:
+    - cron: "30 3 * * 1"    # lunedì 05:30 IT (04:30 in inverno)
+  workflow_dispatch:
+    inputs:
+      step_days:
+        description: "Ampiezza della finestra di valutazione (giorni)"
+        required: false
+        default: "90"
+      min_train:
+        description: "Partite minime di storico prima di valutare"
+        required: false
+        default: "800"
+      candidates:
+        description: "Solo questi candidati, separati da spazio (vuoto = tutti)"
+        required: false
+        default: ""
+      league_keys:
+        description: "Campionati, es. ITA1 ENG1 (vuoto = tutti)"
+        required: false
+        default: ""
+
+# un laboratorio alla volta: scrive data/processed/model_lab.parquet
+concurrency:
+  group: lab
+  cancel-in-progress: false
+
+permissions:
+  contents: write     # per committare il riepilogo del laboratorio
+
+jobs:
+  lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Installa il pacchetto (con dipendenze dev per i test)
+        run: pip install -q -e ".[dev]"
+
+      - name: Test di modelli e laboratorio (offline)
+        run: python -m pytest -q tests/test_calibration.py tests/test_lab.py tests/test_models.py
+
+      - name: Laboratorio walk-forward sullo storico salvato
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -euo pipefail
+          HIST=data/processed/history.parquet
+          if [ ! -f "$HIST" ]; then
+            echo "history.parquet assente: lo salva 'fda simulate' durante un run daily."
+            echo "Laboratorio saltato (nessun numero inventato: servono partite reali)."
+            exit 0
+          fi
+          STEP="${{ github.event.inputs.step_days || '90' }}"
+          MIN="${{ github.event.inputs.min_train || '800' }}"
+          CANDS="${{ github.event.inputs.candidates || '' }}"
+          LEAGUES="${{ github.event.inputs.league_keys || '' }}"
+          EXTRA=""
+          if [ -n "$CANDS" ]; then EXTRA="--candidates $CANDS"; fi
+          # shellcheck disable=SC2086
+          fda lab $LEAGUES --history "$HIST" --step-days "$STEP" --min-train "$MIN" $EXTRA --save \
+            2>&1 | tee lab.log | tail -140
+
+      - name: Salva log e riepilogo come artifact
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: lab-${{ github.run_number }}
+          path: |
+            lab.log
+            data/processed/model_lab.parquet
+          retention-days: 30
+          if-no-files-found: ignore
+
+      - name: Commit del riepilogo del laboratorio
+        run: |
+          if [ ! -f data/processed/model_lab.parquet ]; then
+            echo "nessun riepilogo da pubblicare"
+            exit 0
+          fi
+          git config user.name "fda-bot"
+          git config user.email "fda-bot@users.noreply.github.com"
+          git add data/processed/model_lab.parquet
+          if git diff --cached --quiet; then
+            echo "riepilogo invariato"
+            exit 0
+          fi
+          git commit -m "lab: confronto modelli $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
+          pushed=false
+          for attempt in 1 2 3; do
+            git fetch origin "${{ github.ref_name }}"
+            git rebase "origin/${{ github.ref_name }}"
+            if git push origin "HEAD:${{ github.ref_name }}"; then
+              pushed=true
+              break
+            fi
+            echo "push concorrente fallito (tentativo ${attempt}/3), ritento"
+            sleep $((attempt * 5))
+          done
+          if [ "$pushed" != true ]; then
+            echo "impossibile pubblicare il riepilogo dopo 3 tentativi" >&2
+            exit 1
+          fi
