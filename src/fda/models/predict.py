@@ -20,11 +20,15 @@ import numpy as np
 import pandas as pd
 import penaltyblog as pb
 
+from .calibration import Calibration
 from .dc_grid import probability_grid
 
 log = logging.getLogger(__name__)
 
-MODEL_VERSION = "dc-elo-ens-0.2"   # 0.2: shrinkage dei parametri DC verso la media di lega
+# 0.2: shrinkage dei parametri DC verso la media di lega.
+# 0.3: calibrazione fuori campione della griglia (λ×m, ρ+Δ) stimata da `fda calibrate` sul
+#      backtest: rimuove il bias misurato di +8,6% sui gol totali e la sottostima del pareggio.
+MODEL_VERSION = "dc-elo-ens-0.3"
 
 # Pseudo-partite del prior sui parametri attacco/difesa (shrinkage verso la media di lega).
 SHRINK_PRIOR = 8.0
@@ -228,14 +232,50 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     return out
 
 
+def calibrated_prediction(out: dict[str, Any], cal: Calibration | None) -> dict[str, Any]:
+    """Applica la calibrazione e ripubblica **tutta** la previsione dalla griglia calibrata.
+
+    La calibrazione agisce su λ e ρ, cioè sugli unici due ingressi della matrice: 1X2,
+    doppia chance, risultati esatti, Over/Under, BTTS, porte inviolate e λ restano quindi
+    coerenti fra loro e con la matrice mostrata nella scheda (una sola superficie di
+    probabilità). Il vettore 1X2 precedente (media pesata DC+Elo prima della calibrazione)
+    viene conservato in ``blend_p_*`` per trasparenza, non sostituito di nascosto.
+    """
+    cal = cal or Calibration()
+    res = dict(out)
+    res["lambda_home_raw"] = float(out.get("lambda_home", 0.0) or 0.0)
+    res["lambda_away_raw"] = float(out.get("lambda_away", 0.0) or 0.0)
+    res["rho_raw"] = float(out.get("dc_rho", 0.0) or 0.0)
+    if cal.is_identity:
+        return res
+    lh, la, rho = cal.apply(res["lambda_home_raw"], res["lambda_away_raw"], res["rho_raw"])
+    grid = probability_grid(lh, la, rho, size=10)
+    markets = _grid_markets(grid)
+    res["blend_p_home"] = float(out.get("p_home", 0.0))
+    res["blend_p_draw"] = float(out.get("p_draw", 0.0))
+    res["blend_p_away"] = float(out.get("p_away", 0.0))
+    res.update(markets)
+    res.update({"lambda_home": lh, "lambda_away": la, "dc_rho": rho})
+    return res
+
+
 def fair_odds(p: float) -> float | None:
     return None if not p or p <= 0 else round(1.0 / p, 2)
 
 
 def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.0018,
                     w_dc: float = 0.7,
-                    shrink_prior: float = SHRINK_PRIOR) -> tuple[pd.DataFrame, DixonColesModel, EloModel]:
-    """Addestra DC+Elo su `hist` e prevede le righe di `fixtures` (colonne: match_id, home, away, ...)."""
+                    shrink_prior: float = SHRINK_PRIOR,
+                    calibration: Calibration | None = None,
+                    ) -> tuple[pd.DataFrame, DixonColesModel, EloModel]:
+    """Addestra DC+Elo su `hist` e prevede le righe di `fixtures` (colonne: match_id, home, away, ...).
+
+    ``calibration`` (vedi :mod:`fda.models.calibration`) è opzionale: se assente la previsione
+    è quella non calibrata, identica al comportamento precedente. I parametri applicati sono
+    sempre scritti nelle righe di output, così ogni numero pubblicato è riconducibile alla
+    versione che lo ha prodotto.
+    """
+    cal = calibration or Calibration()
     dc = DixonColesModel(xi=xi, shrink_prior=shrink_prior).fit(hist)
     elo = EloModel().fit(hist)
     made_at = datetime.now(timezone.utc)
@@ -247,8 +287,11 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
             log.warning("previsione saltata %s: %s", getattr(f, "match_id", "?"), exc)
             continue
         e = elo.predict(f.home, f.away) if f.home in elo.ratings and f.away in elo.ratings else None
-        r = ensemble(d, e, w_dc=w_dc)
+        r = calibrated_prediction(ensemble(d, e, w_dc=w_dc), cal)
         r.update({
+            "lambda_scale": float(cal.lambda_scale), "rho_shift": float(cal.rho_shift),
+            "calibration_version": cal.version if not cal.is_identity else "identity",
+            "calibration_n_fit": int(cal.n_fit),
             "match_id": getattr(f, "match_id", None), "home": f.home, "away": f.away,
             "utc_kickoff": getattr(f, "utc_kickoff", None), "league_key": getattr(f, "league_key", None),
             "made_at": made_at, "model_version": MODEL_VERSION, "n_train": dc.n_matches,

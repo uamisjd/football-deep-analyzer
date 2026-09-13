@@ -19,7 +19,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
     <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th>
     <th class="r">segnale</th></tr>
   {% for m in markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
-    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
+    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k }}/{{ m.n }})</span></td>
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
@@ -57,7 +57,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
     <th class="r">osservato</th><th class="r">intervallo 95%</th><th class="r">Brier</th>
     <th class="r">Brier base</th><th class="r">Δ</th><th class="r">segnale</th></tr>
   {% for m in bt.markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
-    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
+    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k }}/{{ m.n }})</span></td>
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>

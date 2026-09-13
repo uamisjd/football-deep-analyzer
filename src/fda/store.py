@@ -47,6 +47,13 @@ TABLE_KEYS: dict[str, list[str]] = {
     "predictions": ["match_id", "model", "made_at"],
     "odds_snapshots": ["match_id", "bookmaker", "market", "taken_at"],
     "source_status": ["run_at", "source"],
+    # storico dei risultati usato per addestrare i modelli: salvato a ogni run così il
+    # laboratorio e la calibrazione possono girare offline ed essere riprodotti (docs/13).
+    "history": ["league_key", "date", "home", "away"],
+    # parametri di calibrazione della griglia (una riga per fit: audit trail)
+    "calibration": ["version", "fitted_at"],
+    # risultati del laboratorio modelli (solo riepilogo: le righe per gara si rigenerano)
+    "model_lab": ["candidate", "league_key"],
 }
 
 

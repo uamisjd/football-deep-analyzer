@@ -63,6 +63,73 @@ def tau_grid(lh: float, la: float, rho: float = 0.0, size: int = 12) -> np.ndarr
     return grid
 
 
+def tau_grid_many(lh: np.ndarray, la: np.ndarray, rho: np.ndarray | None = None,
+                  size: int = 11) -> np.ndarray:
+    """Versione vettorizzata di :func:`tau_grid` per ``n`` partite: array ``(n, size, size)``.
+
+    Esiste per il laboratorio e la calibrazione, che valutano decine di migliaia di griglie
+    (una per partita e per combinazione di iperparametri): la versione scalare impiegherebbe
+    minuti. La formula è la stessa identica — il test ``test_tau_grid_many_matches_scalar``
+    verifica l'uguaglianza a 1e-15, così resta vero il principio di questo modulo: **una sola
+    implementazione del τ** per modelli, calibrazione e sito.
+    """
+    lh = np.maximum(np.asarray(lh, dtype=float), MIN_LAMBDA)
+    la = np.maximum(np.asarray(la, dtype=float), MIN_LAMBDA)
+    rho = np.zeros_like(lh) if rho is None else np.asarray(rho, dtype=float)
+    rho = np.where(np.isfinite(rho), rho, 0.0)
+    rho = clamp_rho_many(lh, la, rho)
+    k = np.arange(max(int(size), 1))
+    home = poisson.pmf(k[None, :], lh[:, None])          # (n, size)
+    away = poisson.pmf(k[None, :], la[:, None])          # (n, size)
+    grid = home[:, :, None] * away[:, None, :]           # (n, size, size)
+    grid[:, 0, 0] *= 1.0 - lh * la * rho
+    if size >= 2:
+        grid[:, 0, 1] *= 1.0 + lh * rho
+        grid[:, 1, 0] *= 1.0 + la * rho
+        grid[:, 1, 1] *= 1.0 - rho
+    grid = np.maximum(grid, 0.0)
+    total = grid.sum((1, 2), keepdims=True)
+    return grid / np.where(total > 0, total, 1.0)
+
+
+def clamp_rho_many(lh: np.ndarray, la: np.ndarray, rho: np.ndarray) -> np.ndarray:
+    """:func:`clamp_rho` vettorizzata (stessi bound: max(−1/λ, −1/μ) ≤ ρ ≤ min(1, 1/(λμ)))."""
+    lh = np.maximum(np.asarray(lh, dtype=float), MIN_LAMBDA)
+    la = np.maximum(np.asarray(la, dtype=float), MIN_LAMBDA)
+    lo = np.maximum(-1.0 / lh, -1.0 / la)
+    hi = np.minimum(1.0, 1.0 / (lh * la))
+    return np.clip(np.asarray(rho, dtype=float), lo, hi)
+
+
+def grid_markets_many(grids: np.ndarray) -> dict[str, np.ndarray]:
+    """Probabilità dei mercati principali per ogni griglia ``(n, size, size)``.
+
+    Restituisce array di lunghezza ``n``: la media dei gol della griglia (che è la λ
+    *effettiva* dopo la correzione τ, non il parametro grezzo), 1X2, Over 1,5/2,5/3,5,
+    BTTS e porte inviolate. Sono esattamente le somme che il sito mostra, quindi la
+    calibrazione ottimizza le stesse quantità pubblicate.
+    """
+    g = np.asarray(grids, dtype=float)
+    size = g.shape[1]
+    i, j = np.indices((size, size))
+    total = i + j
+    out = {
+        "lambda_total": (g * total).sum((1, 2)),
+        "lambda_home": (g * i).sum((1, 2)),
+        "lambda_away": (g * j).sum((1, 2)),
+        "p_home": g[:, i > j].sum(1),
+        "p_draw": g[:, i == j].sum(1),
+        "p_away": g[:, i < j].sum(1),
+        "p_over15": g[:, total > 1.5].sum(1),
+        "p_over25": g[:, total > 2.5].sum(1),
+        "p_over35": g[:, total > 3.5].sum(1),
+        "p_btts": g[:, 1:, 1:].sum((1, 2)),
+        "p_home_clean_sheet": g[:, :, 0].sum(1),
+        "p_away_clean_sheet": g[:, 0, :].sum(1),
+    }
+    return out
+
+
 def probability_grid(lh: float, la: float, rho: float = 0.0, size: int = 11) -> Any:
     """``FootballProbabilityGrid`` di penaltyblog costruita sulla griglia τ corretta.
 

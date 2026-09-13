@@ -226,9 +226,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
             lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
             kn = re.search(r"\((\d+)/(\d+)\)", row)
-            if kn:                                    # riga di calibrazione: k/n esplicito
+            if kn and len(cells) >= 7:                # riga di mercato: k/n esplicito, 9-10 celle
+                k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[2])
+            elif kn:                                  # riga di calibrazione: k/n esplicito, 5 celle
                 k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[1])
-            else:                                     # riga di mercato: k = osservato × n
+            else:                                     # nessuna k/n pubblicata: k ≈ osservato × n
                 n = int(_n(cells[1]))
                 prev, obs = _n(cells[2]), _n(cells[3])
                 k = int(round(obs * n / 100.0))

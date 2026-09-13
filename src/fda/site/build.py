@@ -383,7 +383,7 @@ class SiteBuilder:
                     k_mk = int(round(float(y.sum())))
                     lo_mk, hi_mk = wilson_interval(k_mk, n_mk)
                     prev_mk = float(pr.mean())
-                    markets.append({"label": label, "n": n_mk, "prev": prev_mk,
+                    markets.append({"label": label, "n": n_mk, "k": k_mk, "prev": prev_mk,
                                     "obs": float(base), "brier": float(((pr - y) ** 2).mean()),
                                     "brier_base": float(((base - y) ** 2).mean()),
                                     "hit": float((((pr >= 0.5).astype(float)) == y).mean()),

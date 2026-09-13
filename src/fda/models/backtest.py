@@ -160,7 +160,8 @@ def backtest_summary(df: pd.DataFrame,
         prev = float(pr.mean())
         brier = float(((pr - y) ** 2).mean())
         base = float(y.mean())
-        markets.append({"label": label, "n": n_mk, "prev": prev, "obs": base, "lo": lo, "hi": hi,
+        markets.append({"label": label, "n": n_mk, "k": k_mk, "prev": prev, "obs": base,
+                        "lo": lo, "hi": hi,
                         "outside": bool(not (lo <= prev <= hi)), "brier": brier,
                         "brier_base": float(((base - y) ** 2).mean()),
                         "delta": brier - float(((base - y) ** 2).mean())})
