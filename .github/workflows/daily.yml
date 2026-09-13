@@ -74,13 +74,29 @@ jobs:
         run: |
           git config user.name "fda-bot"
           git config user.email "fda-bot@users.noreply.github.com"
-          git add data/processed docs/STATO.md 2>/dev/null || true
+          git add data/processed docs/STATO.md
           if git diff --cached --quiet; then
             echo "nessun dato nuovo"
           else
             git commit -m "data: run $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
-            git pull --rebase origin ${{ github.ref_name }} || true
-            git push origin HEAD:${{ github.ref_name }}
+            # Un merge/commit può arrivare mentre il run è ancora in corso. Il vecchio
+            # `|| true` ignorava il rebase e lasciava fallire il push senza retry: in quel
+            # caso il collect/build riusciva ma Pages non veniva mai preparato.
+            pushed=false
+            for attempt in 1 2 3; do
+              git fetch origin "${{ github.ref_name }}"
+              git rebase "origin/${{ github.ref_name }}"
+              if git push origin "HEAD:${{ github.ref_name }}"; then
+                pushed=true
+                break
+              fi
+              echo "push concorrente fallito (tentativo ${attempt}/3), ritento"
+              sleep $((attempt * 5))
+            done
+            if [ "$pushed" != true ]; then
+              echo "impossibile pubblicare il commit dati dopo 3 tentativi" >&2
+              exit 1
+            fi
           fi
 
       - name: Prepara il sito per Pages

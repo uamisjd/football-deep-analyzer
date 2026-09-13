@@ -1,14 +1,99 @@
 {% extends "base.html" %}{% import "_matchlist.html" as ml %}
 {% block title %}{{ title }} — CalcioMetro{% endblock %}
 {% block content %}
-<h1>{{ title }}</h1>
-<p class="mut" style="max-width:760px">{{ subtitle }}</p>
-{% for day, items in days %}
-<div class="card">
-  <h2>{{ day }}</h2>
-  {% for m in items %}{{ ml.row(m) }}{% endfor %}
+<div class="page-heading{% if view_kind == 'today' %} page-heading-today{% endif %}">
+  <div>
+    {% if view_kind == 'today' %}<span class="kicker">CENTRO PARTITE · AGGIORNATO {{ generated_at|it_utc }}</span>{% endif %}
+    <h1>{{ title }}</h1>
+    <p class="mut page-subtitle">{{ subtitle }}</p>
+  </div>
+  {% if view_kind == 'today' and summary %}
+  <div class="today-overview" aria-label="Riepilogo della giornata">
+    <div class="overview-metric"><strong>{{ summary.matches }}</strong><span>partite</span></div>
+    <div class="overview-metric"><strong>{{ summary.leagues }}</strong><span>campionati</span></div>
+    <div class="overview-metric"><strong>{{ summary.predicted }}/{{ summary.prediction_total }}</strong><span>con modello</span></div>
+    <div class="overview-metric overview-next"><strong>{% if summary.next_time %}{{ summary.next_time }}{% else %}—{% endif %}</strong><span>prossimo calcio d'inizio</span>{% if summary.next_match %}<small>{{ summary.next_match }}</small>{% endif %}</div>
+  </div>
+  {% endif %}
 </div>
+
+{% if view_kind == 'today' and summary %}
+<div class="today-status-strip" aria-label="Stato delle partite">
+  <span><i class="status-dot status-dot-live" aria-hidden="true"></i><b>{{ summary.live }}</b> in corso</span>
+  <span><i class="status-dot status-dot-scheduled" aria-hidden="true"></i><b>{{ summary.scheduled }}</b> in programma</span>
+  <span><i class="status-dot status-dot-finished" aria-hidden="true"></i><b>{{ summary.finished }}</b> terminate</span>
+  <span class="mut">Dati e probabilità sono quelli dell'ultimo aggiornamento indicato in alto.</span>
+</div>
+{% endif %}
+
+<div class="match-toolbar" data-match-toolbar>
+  <div class="filter-label">Filtra partite</div>
+  <div class="filter-buttons" role="group" aria-label="Stato partita">
+    <button type="button" class="filter-button" data-status-filter="all" aria-pressed="true">Tutte</button>
+    <button type="button" class="filter-button" data-status-filter="live" aria-pressed="false"><span class="status-dot status-dot-live" aria-hidden="true"></span> In corso</button>
+    <button type="button" class="filter-button" data-status-filter="scheduled" aria-pressed="false">In programma</button>
+    <button type="button" class="filter-button" data-status-filter="finished" aria-pressed="false">Terminate</button>
+  </div>
+  {% if filters %}<label class="filter-select"> <span class="sr-only">Campionato</span><select data-league-filter aria-label="Filtra per campionato"><option value="all">Tutti i campionati</option>{% for f in filters %}<option value="{{ f.key }}">{{ f.name }}</option>{% endfor %}</select></label>{% endif %}
+  <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Cerca squadra o campionato</span><input type="search" data-match-search placeholder="Cerca squadra…" autocomplete="off"></label>
+  <span class="filter-result" data-filter-result role="status" aria-live="polite">{{ summary.matches if summary else '' }}{% if summary %} partite{% endif %}</span>
+</div>
+
+<div class="match-list" data-match-list>
+{% for day, items in days %}
+<section class="day-group card" data-day-group aria-labelledby="day-{{ loop.index }}">
+  <div class="day-heading"><h2 id="day-{{ loop.index }}">{{ day }}</h2><span class="day-count">{{ items|length }} {{ 'partita' if items|length == 1 else 'partite' }}</span></div>
+  {% for m in items %}{{ ml.row(m) }}{% endfor %}
+  <p class="empty-filter" data-empty-filter hidden>Nessuna partita corrisponde ai filtri.</p>
+</section>
 {% else %}
-<div class="card">Nessuna partita nel periodo per i campionati seguiti.</div>
+<div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessuna partita nel periodo</strong><span class="mut">I campionati seguiti non hanno gare in questa vista.</span></div>
 {% endfor %}
+</div>
+
+<script>
+(() => {
+  const list = document.querySelector('[data-match-list]');
+  const toolbar = document.querySelector('[data-match-toolbar]');
+  if (!list || !toolbar) return;
+  const cards = [...list.querySelectorAll('[data-match-card]')];
+  const groups = [...list.querySelectorAll('[data-day-group]')];
+  const result = toolbar.querySelector('[data-filter-result]');
+  const search = toolbar.querySelector('[data-match-search]');
+  const league = toolbar.querySelector('[data-league-filter]');
+  let status = 'all';
+
+  function apply() {
+    const query = (search?.value || '').trim().toLocaleLowerCase('it-IT');
+    const leagueValue = league?.value || 'all';
+    let visible = 0;
+    cards.forEach(card => {
+      const okStatus = status === 'all' || card.dataset.status === status;
+      const okLeague = leagueValue === 'all' || card.dataset.league === leagueValue;
+      const okQuery = !query || (card.dataset.search || '').toLocaleLowerCase('it-IT').includes(query);
+      const shown = okStatus && okLeague && okQuery;
+      card.hidden = !shown;
+      if (shown) visible += 1;
+    });
+    groups.forEach(group => {
+      const shown = group.querySelectorAll('[data-match-card]:not([hidden])').length;
+      group.hidden = shown === 0;
+      const empty = group.querySelector('[data-empty-filter]');
+      if (empty) empty.hidden = true;
+    });
+    if (result) result.textContent = `${visible} ${visible === 1 ? 'partita' : 'partite'}`;
+  }
+
+  toolbar.querySelectorAll('[data-status-filter]').forEach(button => {
+    button.addEventListener('click', () => {
+      status = button.dataset.statusFilter;
+      toolbar.querySelectorAll('[data-status-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      apply();
+    });
+  });
+  search?.addEventListener('input', apply);
+  league?.addEventListener('change', apply);
+  apply();
+})();
+</script>
 {% endblock %}

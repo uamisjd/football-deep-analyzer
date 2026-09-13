@@ -76,3 +76,19 @@ def test_verify_site_content_checks(tmp_path):
     assert any("residuo 'nan'" in k for k in kinds)
     assert any("decimale col punto '1.69'" in k for k in kinds)
     assert any("inglese" in k for k in kinds)
+
+
+def test_verify_site_accepts_existing_fragment_and_decimal_plural(tmp_path):
+    """Le ancore della jump nav sono link validi; 3,1 gialli non è una concordanza errata."""
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "match.html").write_text(
+        '<nav><a href="#contesto">Dati e contesto</a></nav>'
+        '<p id="contesto">Arbitro · 3,1 gialli/gara</p>', encoding="utf-8")
+    fails, pages = vs.check_pages(site)
+    assert pages == 1 and fails == []
+
+    (site / "broken.html").write_text('<a href="#missing">no</a>', encoding="utf-8")
+    fails, _ = vs.check_pages(site)
+    assert any("ancora interna mancante #missing" in f for f in fails)

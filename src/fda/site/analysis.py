@@ -382,6 +382,59 @@ def _signed_int(v: Any) -> str:
     return f"+{d}" if d > 0 else str(d)
 
 
+def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
+                    away_name: str | None = None) -> dict[str, Any] | None:
+    """Riassunto leggibile della previsione, senza trasformare una probabilità in un pronostico.
+
+    La scheda pubblica tre cose verificabili: esito più probabile, margine sul secondo esito
+    e concordanza (o divergenza) fra Dixon-Coles ed Elo. Il margine non viene chiamato
+    «confidenza»: una probabilità del 57% resta un evento incerto. ``None`` viene restituito
+    se il vettore 1X2 non è completo, così il template non stampa valori inventati.
+    """
+    if not pred:
+        return None
+
+    def _prob(key: str) -> float | None:
+        try:
+            value = float(pred.get(key))
+        except (TypeError, ValueError):
+            return None
+        return None if pd.isna(value) else value
+
+    names = {"1": home_name or "Casa", "X": "Pareggio", "2": away_name or "Trasferta"}
+    values = {key: _prob(f"p_{suffix}") for key, suffix in (("1", "home"), ("X", "draw"), ("2", "away"))}
+    if any(v is None for v in values.values()):
+        return None
+    ordered = sorted(values.items(), key=lambda item: (-float(item[1]), ("1", "X", "2").index(item[0])))
+    top_key, top_probability = ordered[0]
+    second_probability = float(ordered[1][1])
+
+    elo_keys = (("1", "elo_p_home"), ("X", "elo_p_draw"), ("2", "elo_p_away"))
+    elo_values = {key: _prob(field) for key, field in elo_keys}
+    has_elo = all(v is not None for v in elo_values.values())
+    elo_top = None
+    elo_gap_pp = None
+    if has_elo:
+        elo_ordered = sorted(elo_values.items(), key=lambda item: (-float(item[1]), ("1", "X", "2").index(item[0])))
+        elo_top = elo_ordered[0][0]
+        elo_gap_pp = round(max(abs(float(values[k]) - float(elo_values[k])) for k in values) * 100, 1)
+
+    return {
+        "top_key": top_key,
+        "top_name": names[top_key],
+        "top_probability": float(top_probability),
+        "second_probability": second_probability,
+        "margin_pp": round((float(top_probability) - second_probability) * 100, 1),
+        "signal_label": ("DC + Elo concordano" if has_elo and top_key == elo_top
+                         else "DC ed Elo divergono" if has_elo else "Segnale DC"),
+        "signal_tone": ("agree" if has_elo and top_key == elo_top
+                        else "split" if has_elo else "single"),
+        "elo_top": elo_top,
+        "elo_top_name": names[elo_top] if elo_top else None,
+        "elo_gap_pp": elo_gap_pp,
+    }
+
+
 class MatchAnalysis:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -426,6 +479,39 @@ class MatchAnalysis:
         if prev.empty:
             return None
         return int((kickoff - prev.utc_kickoff.max()).total_seconds() // 86400)
+
+    @staticmethod
+    def form_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
+        """Forma compatta per le liste: sequenza V/N/P e punti, sempre dal più vecchio al più recente."""
+        points = sum(3 if row["res"] == "V" else 1 if row["res"] == "N" else 0 for row in rows)
+        return {"rows": rows, "sequence": "".join(row["res"] for row in rows),
+                "points": points, "n": len(rows)}
+
+    def list_context(self, match_id: int, home_id: int, away_id: int,
+                     home_name: str, away_name: str, kickoff: pd.Timestamp) -> dict[str, Any]:
+        """Contesto a colpo d'occhio per una riga della pagina «Oggi».
+
+        È deliberatamente più leggero di :meth:`build`: usa solo segnali già raccolti e non
+        costruisce grafici, cronaca o tabelle avanzate. In questo modo l'elenco può mostrare
+        la profondità disponibile su tutte le partite senza duplicare la scheda completa.
+        """
+        home_st, away_st = self.standing(home_name), self.standing(away_name)
+        info = _first(self.info[self.info.match_id == match_id]) if not self.info.empty else {}
+        weather = self._weather(match_id, _val(info, "weather_desc"),
+                                _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
+        weather["wind"] = _val(info, "weather_wind")
+        h2h_n = len(self._h2h_core(match_id, home_id, away_id, kickoff, n=60))
+        return {
+            "home": {"standing": home_st,
+                     "form": self.form_summary(self.form(home_id, kickoff, n=5))},
+            "away": {"standing": away_st,
+                     "form": self.form_summary(self.form(away_id, kickoff, n=5))},
+            "prediction": self.prediction(match_id, home_name, away_name),
+            "weather": weather,
+            "referee": {"name": _val(info, "referee_name"),
+                        "yellows": _val(info, "referee_yellows_per_match")},
+            "h2h_n": h2h_n,
+        }
 
     # ---- xG di stagione (Understat se c'è, altrimenti FotMob) ---------------------------------
     @staticmethod
@@ -1443,7 +1529,8 @@ class MatchAnalysis:
                 "btts": sum(1 for r in rows if r["hg"] > 0 and r["ag"] > 0) / len(rows)}
 
     # ---- previsione ---------------------------------------------------------------------------------
-    def prediction(self, match_id: int) -> dict[str, Any] | None:
+    def prediction(self, match_id: int, home_name: str | None = None,
+                   away_name: str | None = None) -> dict[str, Any] | None:
         if self.preds.empty:
             return None
         p = self.preds[self.preds.match_id == match_id].sort_values("made_at").tail(1)
@@ -1457,6 +1544,7 @@ class MatchAnalysis:
             except (ValueError, SyntaxError):
                 top = {}
         d["top_scores"] = top or {}
+        d["meta"] = prediction_meta(d, home_name, away_name)
         return d
 
     def score_matrix(self, pred: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1515,12 +1603,16 @@ class MatchAnalysis:
         h, a = ctx["home_name"], ctx["away_name"]
         p = ctx.get("prediction")
         if p:
-            fav = h if p["p_home"] >= p["p_away"] else a
-            pf = max(p["p_home"], p["p_away"])
-            if pf >= 0.60:
-                s.append(f"Il modello vede {fav} nettamente favorito ({_pct(pf)}).")
+            meta = p.get("meta") or prediction_meta(p, h, a)
+            top_key = meta["top_key"] if meta else None
+            top_name = meta["top_name"] if meta else None
+            pf = meta["top_probability"] if meta else max(p["p_home"], p["p_draw"], p["p_away"])
+            if top_key == "X":
+                s.append(f"Il pareggio è l'esito più probabile ({_pct(pf)}), ma resta una gara aperta.")
+            elif pf >= 0.60:
+                s.append(f"Il modello vede {top_name} nettamente favorito ({_pct(pf)}).")
             elif pf >= 0.45:
-                s.append(f"Il modello indica {fav} favorito ({_pct(pf)}), ma con margine contenuto.")
+                s.append(f"Il modello indica {top_name} favorito ({_pct(pf)}), ma con margine contenuto.")
             else:
                 s.append(f"Partita equilibrata secondo il modello: {h} {_pct(p['p_home'])}, pareggio "
                          f"{_pct(p['p_draw'])}, {a} {_pct(p['p_away'])}.")
@@ -1631,6 +1723,10 @@ class MatchAnalysis:
         kickoff = pd.Timestamp(f["utc_kickoff"])
         home_id, away_id = int(f["home_id"]), int(f["away_id"])
         status = _val(info, "status") or f["status"]
+        weather = self._weather(match_id, _val(info, "weather_desc"),
+                                _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
+        weather["wind"] = _val(info, "weather_wind")
+        prediction = self.prediction(match_id, f["home_name"], f["away_name"])
         ctx: dict[str, Any] = {
             "match_id": match_id, "league_id": int(f["league_id"]), "round": _val(f, "round"),
             "utc_kickoff": kickoff, "status": status,
@@ -1666,13 +1762,12 @@ class MatchAnalysis:
                         "reds": _val(info, "referee_reds_total")},
             "stadium": {"name": _val(info, "stadium_name"), "city": _val(info, "stadium_city"),
                         "attendance": _val(info, "attendance")},
-            "weather": self._weather(match_id, _val(info, "weather_desc"),
-                                     _val(info, "weather_temp_c"), _val(info, "weather_precip_chance")),
+            "weather": weather,
             "h2h": (_val(info, "h2h_home_wins"), _val(info, "h2h_draws"), _val(info, "h2h_away_wins")),
             "h2h_list": self.h2h_list(match_id, home_id, away_id, f["home_name"], f["away_name"], kickoff),
             "h2h_stats": self.h2h_stats(match_id, home_id, away_id, kickoff),
             "momentum": self.momentum(match_id) if status == "finished" else None,
-            "prediction": self.prediction(match_id),
+            "prediction": prediction,
             "home_xg_match": _val(info, "home_xg"), "away_xg_match": _val(info, "away_xg"),
             "home_xgot_match": _val(info, "home_xgot"), "away_xgot_match": _val(info, "away_xgot"),
             "key_stats": self.key_stats(match_id, home_id, away_id) if status == "finished" else [],

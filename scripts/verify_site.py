@@ -31,7 +31,9 @@ ENGLISH = re.compile(
     r"Light Rain|Heavy Rain|Thunder|Doubtful|Day to day|Out for season|Club Friendlies|"
     r"haven't|matches in a row|clean sheet)\b")
 # concordanza: «1 rossi», «1 gare», «1 vittorie»…
-AGREEMENT = re.compile(r"\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti)\b")
+# Non intercettare il finale «,1 gialli» di un decimale (es. 3,1 gialli/gara):
+# si cerca un vero contatore intero all'inizio della parola.
+AGREEMENT = re.compile(r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti)\b")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
 
 
@@ -42,6 +44,7 @@ class Text(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self.hrefs: list[str] = []
+        self.ids: set[str] = set()
         self.skip = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
@@ -49,10 +52,11 @@ class Text(HTMLParser):
             self.skip += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
-        if tag == "a":
-            for k, v in attrs:
-                if k == "href" and v:
-                    self.hrefs.append(v)
+        for k, v in attrs:
+            if k == "id" and v:
+                self.ids.add(v)
+            if tag == "a" and k == "href" and v:
+                self.hrefs.append(v)
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("style", "script", "head", "svg") and self.skip:
@@ -85,9 +89,20 @@ def check_pages(site: Path) -> tuple[list[str], int]:
         for href in parser.hrefs:
             if href.startswith(("http://", "https://", "mailto:")):
                 continue
-            base = site if href.startswith("/") else page.parent
-            if not (base / href.lstrip("/")).exists():
+            target, sep, fragment = href.partition("#")
+            target_page = site / target.lstrip("/") if target.startswith("/") else page.parent / target
+            if target and not target_page.exists():
                 fails.append(f"{rel}: collegamento interno mancante {href}")
+                continue
+            if sep and fragment:
+                if not target:
+                    target_ids = parser.ids
+                else:
+                    target_parser = Text()
+                    target_parser.feed(target_page.read_text(encoding="utf-8"))
+                    target_ids = target_parser.ids
+                if fragment not in target_ids:
+                    fails.append(f"{rel}: ancora interna mancante {href}")
     return fails, len(pages)
 
 

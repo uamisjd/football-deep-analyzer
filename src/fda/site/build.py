@@ -17,7 +17,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..config import REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import outcome_index, wilson_interval
 from ..store import Store
-from .analysis import MatchAnalysis
+from .analysis import MatchAnalysis, prediction_meta
 from .audit import audit_match
 from .fmt import it_plural
 from .players import PlayerCatalog
@@ -139,26 +139,67 @@ class SiteBuilder:
         g = un.groupby(["match_id", "team_id"]).size()
         return {(int(a), int(b)): int(c) for (a, b), c in g.items()}
 
+    @staticmethod
+    def _status_bucket(status: Any) -> str:
+        """Stato stabile per i filtri client-side della lista."""
+        value = str(status or "").lower()
+        if value in {"in_progress", "live", "started", "halftime", "half_time"}:
+            return "live"
+        if value == "finished":
+            return "finished"
+        return "scheduled"
+
+    @staticmethod
+    def _status_label(status: Any) -> str:
+        return {"live": "In corso", "finished": "Terminata", "scheduled": "In programma"}[SiteBuilder._status_bucket(status)]
+
     def _match_rows(self, fx: pd.DataFrame) -> list[dict[str, Any]]:
-        preds = self.store.read("predictions")
-        latest = {}
-        if not preds.empty:
-            for r in preds.sort_values("made_at").itertuples(index=False):
-                latest[int(r.match_id)] = r._asdict()
         absent = self._absence_counts()
         rows = []
         for r in fx.itertuples(index=False):
             local = pd.Timestamp(r.utc_kickoff).tz_convert(self.tz)
+            home_id, away_id = int(r.home_id), int(r.away_id)
+            context = self.analysis.list_context(int(r.match_id), home_id, away_id,
+                                                 r.home_name, r.away_name,
+                                                 pd.Timestamp(r.utc_kickoff))
+            prediction = context.get("prediction")
+            if prediction is not None and prediction.get("meta") is None:
+                prediction["meta"] = prediction_meta(prediction, r.home_name, r.away_name)
+            league_key = self.league_keys.get(int(r.league_id), str(r.league_id))
+            bucket = self._status_bucket(r.status)
             rows.append({
                 "match_id": int(r.match_id), "league_name": self.league_names.get(int(r.league_id), str(r.league_id)),
-                "utc_kickoff": local, "home_name": r.home_name, "away_name": r.away_name,
+                "league_key": league_key, "utc_kickoff": local, "home_name": r.home_name, "away_name": r.away_name,
                 "home_goals": None if pd.isna(r.home_goals) else int(r.home_goals),
                 "away_goals": None if pd.isna(r.away_goals) else int(r.away_goals),
-                "status": r.status, "prediction": latest.get(int(r.match_id)),
-                "abs_home": absent.get((int(r.match_id), int(r.home_id)), 0),
-                "abs_away": absent.get((int(r.match_id), int(r.away_id)), 0),
+                "status": r.status, "status_bucket": bucket, "status_label": self._status_label(r.status),
+                "prediction": prediction, "context": context,
+                "abs_home": absent.get((int(r.match_id), home_id), 0),
+                "abs_away": absent.get((int(r.match_id), away_id), 0),
             })
         return rows
+
+    @staticmethod
+    def _list_filters(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Leghe presenti nella vista, nell'ordine editoriale dei campionati configurati."""
+        found = {str(row["league_key"]): str(row["league_name"]) for row in rows}
+        return [{"key": key, "name": found[key]} for key in sorted(found, key=lambda k: found[k])]
+
+    def _today_summary(self, rows: list[dict[str, Any]]) -> dict[str, Any]:
+        live = sum(row["status_bucket"] == "live" for row in rows)
+        scheduled = sum(row["status_bucket"] == "scheduled" for row in rows)
+        finished = sum(row["status_bucket"] == "finished" for row in rows)
+        predicted = sum(row["prediction"] is not None for row in rows)
+        next_match = next((row for row in sorted(rows, key=lambda item: item["utc_kickoff"])
+                           if row["status_bucket"] == "scheduled"), None)
+        return {
+            "matches": len(rows), "leagues": len({row["league_key"] for row in rows}),
+            "live": live, "scheduled": scheduled, "finished": finished,
+            "predicted": predicted, "prediction_total": len(rows),
+            "next_time": next_match["utc_kickoff"].strftime("%H:%M") if next_match else None,
+            "next_match": (f'{next_match["home_name"]} – {next_match["away_name"]}'
+                           if next_match else None),
+        }
 
     def _group_by_day(self, rows: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
         groups: dict = defaultdict(list)
@@ -175,15 +216,21 @@ class SiteBuilder:
         upcoming = fx[(fx.local_date > today_local) & (fx.local_date <= today_local + timedelta(days=7))]
         results = fx[(fx.local_date < today_local) & (fx.local_date >= today_local - timedelta(days=7))
                      & (fx.status == "finished")]
+        today_rows = self._match_rows(today)
+        upcoming_rows = self._match_rows(upcoming)
+        result_rows = self._match_rows(results)
         self._render("index.html", "index.html", title=f"Partite di oggi — {day_label(today_local)}",
-                     subtitle="Probabilità 1 / X / 2 del modello, gol attesi e Over 2,5. Clicca una partita per l'analisi completa.",
-                     days=self._group_by_day(self._match_rows(today)))
+                     subtitle="Il quadro della giornata, poi il dettaglio verificabile di ogni partita.",
+                     days=self._group_by_day(today_rows), view_kind="today",
+                     summary=self._today_summary(today_rows), filters=self._list_filters(today_rows))
         self._render("index.html", "prossime.html", title="Prossimi 7 giorni",
                      subtitle="Previsioni aggiornate a ogni run (formazioni e assenze incluse quando disponibili).",
-                     days=self._group_by_day(self._match_rows(upcoming)))
+                     days=self._group_by_day(upcoming_rows), view_kind="upcoming", summary=None,
+                     filters=self._list_filters(upcoming_rows))
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
                      subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
-                     days=self._group_by_day(self._match_rows(results)))
+                     days=self._group_by_day(result_rows), view_kind="results", summary=None,
+                     filters=self._list_filters(result_rows))
         return set(pd.concat([today, upcoming, results]).match_id.astype(int))
 
     def build_match_pages(self, match_ids: set[int]) -> set[int]:
@@ -381,7 +428,9 @@ class SiteBuilder:
         (self.out / "robots.txt").write_text("User-agent: *\nDisallow: /\n")
         fx = self.store.read("fixtures")
         if fx.empty:
-            self._render("index.html", "index.html", title="Nessun dato", subtitle="Esegui `fda collect` per popolare il database.", days=[])
+            self._render("index.html", "index.html", title="Nessun dato",
+                         subtitle="Esegui `fda collect` per popolare il database.", days=[],
+                         view_kind="today", summary=None, filters=[])
             self.build_status()
             return {"matches": 0}
         ids = self.build_indexes(fx)

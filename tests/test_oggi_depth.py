@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from fda.site.analysis import POSITION_NAMES, MatchAnalysis
+from fda.site.analysis import POSITION_NAMES, MatchAnalysis, prediction_meta
 from fda.store import Store
 
 KICK = pd.Timestamp("2026-09-12 18:00", tz="UTC")
@@ -252,6 +252,31 @@ def test_referee_profile_against_league_average(tmp_path):
     assert rp["league_yellows"] == 4.0                         # media di 5,0 e 3,0
     assert rp["league_fouls"] == 28.0 and rp["league_matches"] == 2
     assert ma.referee_profile(999) is None                     # partita senza designazione
+
+
+def test_prediction_meta_is_explicit_about_margin_and_agreement():
+    """La lista non chiama «confidenza» ciò che è solo un margine e confronto fra modelli."""
+    pred = {"p_home": 0.381, "p_draw": 0.247, "p_away": 0.372,
+            "elo_p_home": 0.36, "elo_p_draw": 0.25, "elo_p_away": 0.39}
+    meta = prediction_meta(pred, "Alpha", "Beta")
+    assert meta["top_key"] == "1" and meta["top_name"] == "Alpha"
+    assert meta["margin_pp"] == 0.9
+    assert meta["signal_label"] == "DC ed Elo divergono" and meta["signal_tone"] == "split"
+    assert meta["elo_gap_pp"] == 2.1
+    draw = prediction_meta({"p_home": 0.29, "p_draw": 0.43, "p_away": 0.28}, "Alpha", "Beta")
+    assert draw["top_key"] == "X" and draw["top_name"] == "Pareggio"
+    assert prediction_meta({"p_home": 0.5}, "Alpha", "Beta") is None
+
+
+def test_list_context_reuses_form_and_h2h_without_building_post_match_cards(tmp_path):
+    """Il riepilogo della lista espone solo dati già verificabili e mantiene l'ordine della forma."""
+    ma = MatchAnalysis(_store(tmp_path))
+    ctx = ma.list_context(100, 10, 20, "Alpha", "Beta", KICK)
+    assert ctx["home"]["form"]["sequence"] == "VNPN"
+    assert ctx["home"]["form"]["points"] == 5
+    assert ctx["away"]["form"]["n"] == 4
+    assert ctx["h2h_n"] == 5
+    assert ctx["prediction"] is None
 
 
 def test_build_exposes_new_pre_match_keys(tmp_path):

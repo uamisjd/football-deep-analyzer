@@ -1,32 +1,49 @@
 {% extends "base.html" %}
 {% block title %}{{ c.home_name }} - {{ c.away_name }} — analisi · CalcioMetro{% endblock %}
 {% block content %}
-<p class="mut small"><a href="{{ root }}index.html">← Oggi</a> · {{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %} ·
-  {{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</p>
-<h1>{{ c.home_name }} <span class="mut">{% if c.home_goals is not none %}{{ c.home_goals }} - {{ c.away_goals }}{% else %}vs{% endif %}</span> {{ c.away_name }}</h1>
-{% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut">xG {{ c.home_xg_match|dec }} - {{ c.away_xg_match|dec }}{% if c.home_xgot_match is not none %} · xGOT {{ c.home_xgot_match|dec }} - {{ c.away_xgot_match|dec }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ c.stadium.attendance|it_num }}{% endif %}</p>{% endif %}
+{% set p = c.prediction %}
+<p class="crumb"><a href="{{ root }}index.html">← Oggi</a><span aria-hidden="true">·</span><span>{{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %}</span></p>
+<div class="match-hero" id="sintesi">
+  <h1 class="sr-only">{{ c.home_name }} - {{ c.away_name }}{% if c.home_goals is not none %}, {{ c.home_goals }} - {{ c.away_goals }}{% endif %}</h1>
+  <div class="match-hero-meta">
+    <span class="hero-status"><span class="status-dot status-dot-{{ 'finished' if c.status == 'finished' else 'scheduled' }}" aria-hidden="true"></span>{% if c.status == 'finished' %}Finale{% else %}Analisi pre-partita{% endif %}</span>
+    <span>{{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</span>
+  </div>
+  <div class="match-scoreline">
+    <div class="match-hero-team home">{{ c.home_name }}</div>
+    <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% else %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
+    <div class="match-hero-team away">{{ c.away_name }}</div>
+  </div>
+  {% if p and p.meta %}
+  <div class="hero-model">
+    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut">Margine sul 2° esito: {{ p.meta.margin_pp|dec(1) }} punti</span></div>
+    <div class="hero-metrics"><span class="hero-metric"><b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b><span>gol attesi</span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
+    <span class="hero-signal">{{ p.meta.signal_label }}</span>
+  </div>
+  {% elif p %}<p class="small mut" style="margin:0">Probabilità del modello disponibili nella scheda qui sotto.</p>{% endif %}
+</div>
+{% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut small match-result-note">xG {{ c.home_xg_match|dec }} - {{ c.away_xg_match|dec }}{% if c.home_xgot_match is not none %} · xGOT {{ c.home_xgot_match|dec }} - {{ c.away_xgot_match|dec }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ c.stadium.attendance|it_num }}{% endif %}</p>{% endif %}
+<nav class="match-jump" aria-label="Sezioni della scheda partita"><a href="#lettura">Sintesi</a>{% if p %}<a href="#previsione">Previsione</a>{% endif %}<a href="#contesto">Dati e contesto</a>{% if c.status == 'finished' %}<a href="#postpartita">Post-partita</a>{% else %}<a href="#squadre">Squadre</a>{% endif %}</nav>
 
-<div class="card">
+<div class="card detail-card" id="lettura">
   <h2>{% if c.status == 'finished' %}Lettura della partita{% else %}Analisi pre-partita{% endif %}</h2>
   {% if c.narrative %}<ul class="narr">{% for s in c.narrative %}<li>{{ s }}</li>{% endfor %}</ul>
   {% else %}<p class="mut">Dati insufficienti per un'analisi automatica.</p>{% endif %}
 </div>
 
-{% set p = c.prediction %}
 {% if p %}
-<div class="grid">
+<div class="grid detail-card" id="previsione">
   <div class="card">
     <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
     <div class="bar" style="height:30px;font-size:14px"><span class="h" style="width:{{ (p.p_home*100)|round }}%">1 · {{ (p.p_home*100)|round|int }}%</span><span class="d" style="width:{{ (p.p_draw*100)|round }}%">X · {{ (p.p_draw*100)|round|int }}%</span><span class="a" style="width:{{ (p.p_away*100)|round }}%">2 · {{ (p.p_away*100)|round|int }}%</span></div>
     <table style="margin-top:10px">
       <tr><th>Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
-      <tr><th>Quota equa 1 / X / 2</th><td colspan="2" class="r">{{ p.fair_home|dec }} / {{ p.fair_draw|dec }} / {{ p.fair_away|dec }}</td></tr>
       <tr><th>Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ (p.p_over15*100)|round|int }}% / {{ (p.p_over25*100)|round|int }}% / {{ (p.p_over35*100)|round|int }}%</td></tr>
       <tr><th>Entrambe a segno</th><td colspan="2" class="r">{{ (p.p_btts*100)|round|int }}%</td></tr>
       <tr><th>Doppia chance 1X / 12 / X2</th><td colspan="2" class="r">{{ (p.p_1x*100)|round|int }}% / {{ (p.p_12*100)|round|int }}% / {{ (p.p_x2*100)|round|int }}%</td></tr>
       <tr><th>Porta inviolata casa / trasferta</th><td colspan="2" class="r">{{ (p.p_home_clean_sheet*100)|round|int }}% / {{ (p.p_away_clean_sheet*100)|round|int }}%</td></tr>
     </table>
-    <p class="small mut">Dixon-Coles pesato nel tempo + Elo (peso DC {{ p.w_dc|dec(1) }}) · addestrato su {{ p.n_train|it_plural('partita') }} · calcolato {{ p.made_at|it_utc }} (ora italiana)</p>
+    <p class="small mut">Sono stime del modello, non certezze né quote: Dixon-Coles pesato nel tempo + Elo (peso DC {{ p.w_dc|dec(1) }}) · addestrato su {{ p.n_train|it_plural('partita') }} · calcolato {{ p.made_at|it_utc }} (ora italiana).</p>
   </div>
   <div class="card">
     <h2>Risultati esatti più probabili</h2>
@@ -39,7 +56,7 @@
 
 {% if c.score_matrix %}
 {% set m = c.score_matrix %}
-<div class="card">
+<div class="card detail-card" id="probabilita">
   <h2>Matrice dei punteggi</h2>
   <p class="small mut">Probabilità Dixon-Coles di ogni risultato 0–{{ m.cap }} (righe = gol {{ c.home_name }}, colonne = gol {{ c.away_name }}). La cella evidenziata è la più probabile ({{ m.mode }}). Coda 6+ gol: {{ (m.p_tail*100)|dec(1) }}%.</p>
   <div class="tablewrap">
@@ -153,7 +170,7 @@
 </div>
 {% endif %}
 
-<div class="grid">
+<div class="grid detail-card" id="squadre">
 {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
   <div class="card">
     <h2>{{ name }}</h2>
@@ -197,12 +214,12 @@
 </div>
 {% endif %}
 
-<div class="grid">
+<div class="grid detail-card" id="contesto">
   <div class="card">
     <h2>Contesto</h2>
     <table>
       {% if c.referee.name %}{% set rf = c.referee_profile or {} %}<tr><th>Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} ({{ c.referee.matches|int|it_plural('gara') }}){% endif %}{% if c.referee.yellows %} · {{ c.referee.yellows|dec }} {{ 'giallo/gara' if c.referee.yellows|round == 1 else 'gialli/gara' }}{% if rf.league_yellows %} <span class="small mut">(media del campionato {{ rf.league_yellows|dec }} su {{ rf.league_matches }} designazioni)</span>{% endif %}{% endif %}{% if c.referee.fouls is defined and c.referee.fouls %}{% endif %}{% if rf.fouls %} · {{ rf.fouls|dec }} falli/gara{% if rf.league_fouls %} <span class="small mut">(media {{ rf.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
-      {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
+      {% if c.weather.desc %}<tr><th>Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th>Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
       {% if c.h2h[0] is not none and not c.h2h_pattern %}<tr><th>Precedenti</th><td>{{ c.h2h[0]|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ c.h2h[1]|it_plural('pareggio') }} · {{ c.h2h[2]|it_plural('vittoria','vittorie') }} {{ c.away_name }}</td></tr>{% endif %}
       {% if c.h2h_pattern %}{% set hp = c.h2h_pattern %}<tr><th>Precedenti ({{ hp.n }})</th><td>{{ hp.wins|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ hp.draws|it_plural('pareggio') }} · {{ hp.losses|it_plural('vittoria','vittorie') }} {{ c.away_name }} — archivio dal {{ hp.first|it_dt_full }} al {{ hp.last|it_dt_full }}<br><span class="small">{{ hp.gpg|dec }} gol a gara · entrambe a segno nel {{ (hp.btts * 100)|round|int }}% · più di 2,5 gol nel {{ (hp.over25 * 100)|round|int }}%{% if hp.draw_drought is not none and hp.draw_drought > 0 %} · nessun pareggio negli ultimi {{ hp.draw_drought }}{% elif hp.draw_drought == 0 %} · l'ultimo precedente è finito in pareggio{% endif %}{% if hp.top_scores %} · risultato più frequente {{ hp.top_scores[0].score }} ({{ hp.top_scores[0].n }} {{ 'volta' if hp.top_scores[0].n == 1 else 'volte' }}){% endif %}</span><br><span class="small mut">Esiti dal punto di vista di {{ c.home_name }}. Con {{ hp.n }} casi le frequenze indicano una tendenza, non una regola.</span></td></tr>{% endif %}
     </table>
@@ -285,7 +302,7 @@
 </div>
 
 {% if c.status == 'finished' %}
-<div class="grid">
+<div class="grid detail-card" id="postpartita">
   {% if c.timeline %}
   <div class="card"><h2>Cronaca essenziale</h2><table>
     {% for e in c.timeline %}<tr><td class="r mut" style="width:48px">{{ e.minute }}{% if e.added %}+{{ e.added }}{% endif %}'</td>

@@ -337,3 +337,69 @@ lì si legge se lo scarto sulla vittoria in casa regge su migliaia di gare o era
 2. **Metriche fisiche** su 30 partite: la copertura dipende dalla fonte, non da noi.
 3. **`goals_prevented`/`errors_led_to_goal`** mancano su alcune partite (93/239 per gli errori):
    il «—» a schermo significa «non registrato dalla fonte», non zero (nota nella card).
+
+---
+
+## G. P0 UX «Oggi» e schede — implementazione corrente (2026-09-13)
+
+Il piano P0 è stato applicato senza introdurre una fonte o un provider nuovo. La descrizione
+quantitativa completa, le fonti UX e i criteri di accettazione sono in
+[`docs/12_oggi_schede_ux_quantitativa_2026-09-13.md`](12_oggi_schede_ux_quantitativa_2026-09-13.md).
+
+### G1. Risultato a colpo d'occhio
+
+- **Riepilogo giornata**: 21 partite, 7 campionati, 21/21 con modello e prossimo calcio d'inizio.
+- **Stato esplicito**: `In corso`, `In programma`, `Terminata`, con filtri separati e indicatore
+testuale oltre al colore.
+- **Card autonoma** per partita: ora/lega, link Analisi, squadre e classifica, barra 1/X/2 con
+  valori, esito più probabile, margine sul secondo esito con **una cifra decimale**, λ, Over 2,5,
+  segnale DC/Elo, forma V/N/P + punti, assenze, meteo, arbitro e numero di H2H.
+- **Ricerca locale** per squadra/lega e filtro lega; le sezioni giorno vuote vengono nascoste senza
+  richieste di rete.
+
+### G2. Scheda partita
+
+- Hero con stato, ora/stadio, risultato o kickoff, KPI del modello e segnale DC/Elo.
+- Indice sticky `Sintesi / Previsione / Dati e contesto / Post-partita` (oppure `Squadre` prima
+  della gara), con ancore valide anche nella scheda finita priva di una previsione storica.
+- Sezione modello più onesta: il pareggio può essere l'esito più probabile; la narrativa non sceglie
+  forzatamente una delle due squadre. «Quota equa» rimossa: le percentuali sono dichiarate stime,
+  non quote né certezze.
+- Vento mostrato solo quando `match_info` lo contiene; se una fonte non lo pubblica la riga non
+  viene riempita con zero o con una stima.
+
+### G3. Copertura e degradazione sullo snapshot del 13/09
+
+| Campo | Presente | Regola se manca |
+|---|---:|---|
+| previsione 1X2 | 21/21 | testo «Previsione non disponibile», niente margine inventato |
+| classifica | 42/42 squadre | la riga di classifica non viene mostrata se assente |
+| forma ≥3 gare per entrambe | 19/21 | mostra la sequenza realmente disponibile; se vuota, omette la forma |
+| meteo e arbitro | 21/21 | nella scheda futura compare il messaggio «pubblicata a ridosso» se assente |
+| H2H ≥3 | 20/21 | omette il conteggio/card quando non è sufficiente |
+| assenze | 145 righe: 63 lato casa + 82 lato ospite; almeno un'assenza in 21/21 partite (39/42 squadre) | stampa solo nomi/motivi presenti; mai zero come sostituto del dato |
+
+Il conteggio è quello delle righe `unavailable` della distinta; il numero di assenti non equivale
+alla copertura della fonte: una successiva raccolta può cambiare sia il dato presente sia lo stato
+«atteso dalla fonte».
+
+### G4. Verifiche del 13/09
+
+- Suite: **118 passed**.
+- Build: **376** schede partita, **2364** fixture, **7392** giocatori.
+- Audit: **4087** pagine e **1860 controlli numerici**, **0 problemi**. Include 136 matrici, 55
+  pagine in-play, RPS su 60 gare, 630 ruoli, 76 infermerie, 73 archivi H2H, 599 assist e 271 split
+  primo/secondo tempo.
+- Il verificatore controlla anche le ancore della jump navigation e non segnala più come errore il
+  decimale «3,1 gialli/gara». Sono state eliminate due righe `season_sim` obsolete (grafie vecchie
+  `Nottm Forest` e `Frankfurt`); lo snapshot per lega viene ora sostituito in blocco per evitare
+  duplicati se una fonte rinomina una squadra.
+- Preview avviata su `0.0.0.0:3000`; il controllo visuale mobile 375 px resta l'ultimo passo manuale.
+
+### G5. Cosa resta aperto
+
+1. Controllare manualmente la preview a 375 px e da tastiera (focus, filtri, ricerca, link Analisi).
+2. Dopo il merge utente, verificare nel primo `daily` la copertura degli stati e del vento con dati
+   aggiornati; non confondere una migliore presentazione con maggiore accuratezza del modello.
+3. Per valutare il modello, usare RPS/Brier/log-loss e calibrazione su gare risolte; non introdurre
+   quote bookmaker nella UI.
