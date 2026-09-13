@@ -18,8 +18,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from .calibration import Calibration
 from .dc_grid import probability_grid
-from .predict import MODEL_VERSION, DixonColesModel, EloModel, ensemble
+from .predict import MODEL_VERSION, DixonColesModel, EloModel, calibrated_prediction, ensemble
 
 log = logging.getLogger(__name__)
 
@@ -30,12 +31,32 @@ REL_COUNTS: dict[str, int] = {"ITA1": 3, "ESP1": 3, "ENG1": 3, "GER1": 3, "FRA1"
 TOP_N = 4
 
 
+def persist_history(store: Any, hist: pd.DataFrame, league_key: str) -> int:
+    """Salva lo storico usato dai modelli nella tabella ``history``.
+
+    Perché: oggi lo storico viene riscaricato a ogni run e non resta traccia di **su quali
+    partite** sono state addestrate le previsioni pubblicate. Salvarlo rende riproducibile
+    ogni numero (regola B1), permette al laboratorio e alla calibrazione di girare offline
+    (anche dal sandbox dell'agente, dove i mirror non sono raggiungibili) e costa poche
+    decine di kB per run. È uno snapshot per lega: ``replace_by="league_key"``.
+    """
+    if store is None or hist is None or hist.empty:
+        return 0
+    df = hist.copy()
+    df["league_key"] = league_key
+    df["date"] = pd.to_datetime(df["date"])
+    cols = [c for c in ("league_key", "date", "season", "home", "away", "home_goals", "away_goals",
+                        "odds_home", "odds_draw", "odds_away") if c in df.columns]
+    return int(store.upsert("history", df[cols], replace_by="league_key"))
+
+
 def build_hist(lg: Any, fixtures: pd.DataFrame, history_client: Any,
-               seasons_back: int = 3, yr: int | None = None) -> pd.DataFrame:
+               seasons_back: int = 3, yr: int | None = None, store: Any = None) -> pd.DataFrame:
     """Storico di una lega: stagioni datahub + risultati correnti dal calendario FotMob.
 
     Nomi mappati sui canonici (come in `fda predict`): un'unica fonte di verità
-    per predict e simulate.
+    per predict e simulate. Con ``store`` lo storico viene anche salvato in ``history``
+    (vedi :func:`persist_history`).
     """
     from ..config import season, season_start_year
     from ..teams import canonical
@@ -53,15 +74,24 @@ def build_hist(lg: Any, fixtures: pd.DataFrame, history_client: Any,
     if not hist.empty:
         hist["home"] = hist["home"].map(canonical)
         hist["away"] = hist["away"].map(canonical)
+        if store is not None:
+            try:
+                persist_history(store, hist, getattr(lg, "key", str(lg)))
+            except Exception as exc:                                # salvare non deve bloccare i modelli
+                log.warning("storico non salvato per %s (%s: %s)", getattr(lg, "name", lg),
+                            type(exc).__name__, exc)
     return hist
 
 
 def _match_grid(dc: DixonColesModel, elo: EloModel, home: str, away: str, w_dc: float,
-                neutral: tuple[float, float]) -> tuple[np.ndarray, float, float]:
+                neutral: tuple[float, float],
+                calibration: Calibration | None = None) -> tuple[np.ndarray, float, float]:
     """Griglia punteggi (matrice 11×11 normalizzata) + λ per una gara restante.
 
-    Ensemble 70/30 come le previsioni; senza storico DC per una squadra → λ neutre
-    (medie gol di lega, già inclusive del fattore campo).
+    Ensemble 70/30 come le previsioni e **la stessa calibrazione**: le proiezioni di
+    stagione e le schede partita devono derivare dalle identiche probabilità, altrimenti
+    «Proiezioni» e «Analisi» raccontano due campionati diversi. Senza storico DC per una
+    squadra → λ neutre (medie gol di lega, già inclusive del fattore campo).
     """
     try:
         d = dc.predict(home, away)
@@ -73,7 +103,7 @@ def _match_grid(dc: DixonColesModel, elo: EloModel, home: str, away: str, w_dc: 
         m = np.asarray(grid.grid, dtype=float)
         return m / m.sum(), lm, la
     e = elo.predict(home, away) if home in elo.ratings and away in elo.ratings else None
-    r = ensemble(d, e, w_dc=w_dc)
+    r = calibrated_prediction(ensemble(d, e, w_dc=w_dc), calibration)
     lm, la = float(r["lambda_home"]), float(r["lambda_away"])
     rho = float(r.get("dc_rho") or 0.0)
     grid = probability_grid(lm, la, rho=rho, size=11)
@@ -84,7 +114,7 @@ def _match_grid(dc: DixonColesModel, elo: EloModel, home: str, away: str, w_dc: 
 def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: dict[str, float],
                     base_gd: dict[str, float], base_played: dict[str, int], w_dc: float = 0.7,
                     xi: float = 0.0018, n_sims: int = 10000, seed: int | None = None,
-                    rel_count: int = 3) -> pd.DataFrame:
+                    rel_count: int = 3, calibration: Calibration | None = None) -> pd.DataFrame:
     """Simula `n_sims` volte il resto di stagione; ritorna una riga per squadra.
 
     `remaining`: colonne home/away (nomi canonici); `base_*`: stato attuale dal
@@ -111,7 +141,7 @@ def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: di
         h, a = f.home, f.away
         if h not in ti or a not in ti:
             continue  # gara fuori perimetro (squadra non simulabile): esclusa
-        m, _, _ = _match_grid(dc, elo, h, a, w_dc, neutral)
+        m, _, _ = _match_grid(dc, elo, h, a, w_dc, neutral, calibration)
         cum = m.ravel().cumsum()
         idx = np.searchsorted(cum, rng.random(n_sims))
         k = m.shape[1]
@@ -145,7 +175,8 @@ def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: di
 
 
 def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int = 10000,
-                 seasons_back: int = 3, seed: int | None = None, w_dc: float = 0.7) -> pd.DataFrame:
+                 seasons_back: int = 3, seed: int | None = None, w_dc: float = 0.7,
+                 calibration: Calibration | None = None) -> pd.DataFrame:
     """Simula tutte le leghe richieste e salva la tabella `season_sim`."""
     from ..config import leagues
     from ..sources.history import HistoryClient
@@ -154,10 +185,14 @@ def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int =
     store = store or Store()
     hc = HistoryClient()
     fixtures = store.read("fixtures")
+    if calibration is None:
+        from .calibration import from_store
+
+        calibration = from_store(store)
     out = []
     for lg in leagues(keys or None):
         try:
-            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back)
+            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, store=store)
             if hist.empty or len(hist) < 50:
                 log.warning("%s: storico insufficiente (%s), simulazione saltata", lg.name, len(hist))
                 continue
@@ -179,7 +214,8 @@ def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int =
                 base_played[h] = base_played.get(h, 0) + 1
                 base_played[a] = base_played.get(a, 0) + 1
             df = simulate_league(hist, rem, base_pts, base_gd, base_played, w_dc=w_dc,
-                                 n_sims=n_sims, seed=seed, rel_count=REL_COUNTS.get(lg.key, 3))
+                                 n_sims=n_sims, seed=seed, rel_count=REL_COUNTS.get(lg.key, 3),
+                                 calibration=calibration)
             df.insert(0, "league_key", lg.key)
             # È uno snapshot per lega: rimuove anche eventuali righe con una vecchia grafia
             # della squadra (es. «Nottm Forest» → «Nottingham Forest») rimaste da un run

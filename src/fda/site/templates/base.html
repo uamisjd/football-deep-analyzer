@@ -236,6 +236,35 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .scoregrid td{border-radius:8px;color:var(--txt);background:var(--surface2)}
 .scoregrid td.mode{outline:2px solid var(--accent);color:#06231a;font-weight:800}
 
+/* ---- Gol totali: istogramma + dotplot quantile (scheda partita) ----
+   Due viste della stessa matrice Dixon-Coles pubblicata: nessuna stima aggiunta.
+   Il dotplot segue la letteratura sulla comunicazione dell'incertezza (Hullman/Kay):
+   frequenze discrete («1 punto = 5 partite su 100») invece di una densità continua,
+   e il valore numerico è sempre scritto, così il significato non passa solo dal colore. */
+.goalgrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;margin:10px 0 2px}
+.goalbars{align-items:end;height:136px}
+.gb{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;min-width:0}
+.gb .fill{width:100%;min-height:3px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--brand-a),var(--accent-soft))}
+.gb.mode .fill{background:linear-gradient(180deg,var(--brand-b),#a9762a)}
+.gb.tail .fill{background:var(--draw)}
+.gb .v,.gb .x{font-size:11px;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
+.gb .v{color:var(--txt2);font-weight:700}
+.gb.mode .v{color:var(--amber)}
+.gb .x{color:var(--mut)}
+.dotplot{align-items:end;margin-top:4px}
+.dp{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
+.dp .stack{display:flex;flex-direction:column-reverse;gap:3px;min-height:10px}
+.dp .stack i{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 1px rgba(12,17,24,.5)}
+.dp .x{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+/* ---- Scomposizione della probabilità pubblicata ---- */
+.steps{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:14px}
+.steps .step-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.steps .step-head strong{font-size:14px;color:var(--txt)}
+.steps .delta{font-size:11.5px;font-weight:700;color:var(--txt2);background:var(--surface3);
+  border:1px solid var(--line2);border-radius:999px;padding:1px 8px;font-variant-numeric:tabular-nums}
+.steps .bar{height:26px;font-size:12px;border-radius:8px}
+@media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}}
+
 /* ---- Hero / KPI / chart (home) ---- */
 .hero{margin:4px 0 20px;padding:30px 30px;border-radius:var(--radius);background:var(--surface);
   border:1px solid var(--line)}
@@ -287,6 +316,53 @@ footer .cols li{margin:6px 0}
 @media (max-width:900px){
   nav{margin-left:0;width:100%}
   nav a{padding:7px 11px;font-size:13.5px}
+}
+/* ---- Calendario completo (vista "Prossime") ----
+   Le schede ricche restano per i prossimi 7 giorni; qui il compito è orientare nella
+   stagione: data, gara, 1X2, gol attesi, Over/Under. Stessa gerarchia cromatica delle
+   liste (1 verde / X grigio / 2 rosso), cifre tabulari, e il preferito è anche in
+   grassetto — il colore non è mai l'unico canale (WCAG 1.4.1). */
+.cal-intro{margin:26px 0 12px;padding:16px 18px;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius)}
+.cal-title{margin:0 0 6px;font:800 17px var(--font-head)}
+.cal-nav{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}
+.cal-nav a{font:700 11.5px var(--font-body);color:var(--txt2);background:var(--bg2);border:1px solid var(--line2);
+  border-radius:999px;padding:4px 10px;text-decoration:none;font-variant-numeric:tabular-nums}
+.cal-nav a:hover,.cal-nav a:focus-visible{color:var(--txt);border-color:var(--accent-soft)}
+.cal-nav a span{color:var(--mut);font-weight:600;margin-left:4px}
+.cal-month{margin:12px 0 0;background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+.cal-month[hidden]{display:none}
+.cal-month>summary{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;
+  cursor:pointer;list-style:none;font:700 14.5px var(--font-head);color:var(--txt)}
+.cal-month>summary::-webkit-details-marker{display:none}
+.cal-month>summary::before{content:"▸";color:var(--mut);margin-right:9px;font-size:11px}
+.cal-month[open]>summary::before{content:"▾"}
+.cal-month>summary:hover{background:var(--surface2)}
+.cal-count{color:var(--mut);font:600 12px var(--font-body);font-variant-numeric:tabular-nums}
+.cal-head,.cal-row{display:grid;grid-template-columns:8.5rem minmax(0,1fr) 8rem 4.6rem 5rem;gap:10px;align-items:center}
+.cal-head{padding:9px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg2);
+  color:var(--mut);font:700 10.5px var(--font-body);letter-spacing:.06em;text-transform:uppercase}
+.cal-row{padding:7px 16px;border-bottom:1px solid var(--line);font-size:13px}
+.cal-row:last-of-type{border-bottom:0}
+.cal-row:hover{background:var(--bg2)}
+.cal-row[hidden]{display:none}
+.cal-head span:nth-child(n+3),.cal-p,.cal-gol,.cal-o{text-align:right}
+.cal-when{color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+.cal-when b{color:var(--txt2);font-weight:700}
+.cal-teams{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:600;color:var(--txt)}
+.cal-teams a{color:inherit;text-decoration:none;border-bottom:1px solid transparent}
+.cal-teams a:hover,.cal-teams a:focus-visible{color:var(--accent);border-bottom-color:var(--accent-soft)}
+.cal-lg{margin-left:8px;color:var(--mut);font:700 10.5px var(--font-body);letter-spacing:.05em;text-transform:uppercase}
+.cal-p,.cal-gol,.cal-o{font-variant-numeric:tabular-nums;color:var(--txt2);white-space:nowrap}
+.cal-p b{font-weight:800}
+.cal-fav-h .cal-p b{color:var(--win)}.cal-fav-d .cal-p b{color:var(--draw)}.cal-fav-a .cal-p b{color:var(--lose)}
+.cal-gol,.cal-o{color:var(--mut)}
+.cal-none{color:var(--mut);font-style:italic;text-align:right}
+.empty-filter{margin:0;padding:14px 16px;color:var(--mut);font-size:13px}
+@media (max-width:760px){
+  .cal-head,.cal-row{grid-template-columns:6.4rem minmax(0,1fr) 7rem;gap:8px;padding:8px 12px}
+  .cal-head span:nth-child(n+4),.cal-gol,.cal-o{display:none}
+  .cal-lg{display:block;margin:2px 0 0}
+  .cal-intro{padding:14px}.cal-month>summary{padding:12px 14px}
 }
 @media (max-width:760px){
   h1{font-size:26px}.hero h1{font-size:32px}
@@ -386,7 +462,7 @@ footer .cols li{margin:6px 0}
         <h4>Naviga</h4>
         <ul>
           <li><a href="{{ root }}index.html">Partite di oggi</a></li>
-          <li><a href="{{ root }}prossime.html">Prossimi 7 giorni</a></li>
+          <li><a href="{{ root }}prossime.html">Prossime partite e calendario</a></li>
           <li><a href="{{ root }}risultati.html">Risultati recenti</a></li>
           <li><a href="{{ root }}accuratezza.html">Accuratezza del modello</a></li>
         </ul>

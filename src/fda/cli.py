@@ -205,16 +205,25 @@ def db_cmd(query: str = typer.Argument(None, help="Query SQL opzionale sulle tab
 def predict_cmd(
     league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     seasons_back: int = typer.Option(3, help="Stagioni storiche da scaricare oltre a quella corrente"),
-    days_ahead: int = typer.Option(7, help="Prevedi le partite nei prossimi N giorni"),
+    days_ahead: int = typer.Option(0, help="Prevedi le partite nei prossimi N giorni (0 = tutto il calendario)"),
 ) -> None:
-    """Addestra Dixon-Coles + Elo (storico datahub + risultati FotMob correnti) e salva `predictions`."""
+    """Addestra Dixon-Coles + Elo (storico datahub + risultati FotMob correnti) e salva `predictions`.
+
+    Con `days_ahead=0` (default) prevede **tutte le partite in programma** del calendario già
+    raccolto: non costa una richiesta in più, perché l'elenco delle partite arriva da una sola
+    chiamata per lega (`fixtures`) e il modello ha bisogno solo di squadre e storico. Ciò che
+    resta legato alla vicinanza della gara sono i **dettagli** (formazioni, infermeria, meteo,
+    arbitro), raccolti da `fda collect` nella finestra `future_days`: la scheda di una partita
+    lontana mostra il modello e i segnaposto onesti per ciò che la fonte non ha ancora pubblicato.
+    """
     import warnings
     from datetime import datetime, timedelta, timezone
 
     import pandas as pd
 
     from .config import leagues, season_start_year
-    from .models.predict import predict_matches
+    from .models.calibration import from_store
+    from .models.predict import latest_per_match, predict_matches
     from .sources.history import HistoryClient
     from .store import Store
     from .teams import canonical
@@ -225,23 +234,41 @@ def predict_cmd(
     fixtures = store.read("fixtures")
     now = datetime.now(timezone.utc)
     yr = season_start_year()
+    cal = from_store(store)
+    if not cal.is_identity:
+        console.print(f"calibrazione attiva: λ×{cal.lambda_scale:.4f} ρ{cal.rho_shift:+.2f} "
+                      f"({cal.estimator}, {cal.fitted_at:%Y-%m-%d %H:%M} UTC)")
+        console.print(f"  campione: {cal.corpus}")
+    else:
+        console.print("calibrazione: identità (esegui `fda calibrate` dopo un `fda backtest`)")
+    # una riga per partita: le versioni accumulate dai run precedenti vengono collassate
+    # sull'ultima (migrazione della chiave vecchia e garanzia a regime)
+    vecchie = store.read("predictions")
+    if not vecchie.empty:
+        collassate = latest_per_match(vecchie)
+        if len(collassate) != len(vecchie):
+            store.write("predictions", collassate)
+            console.print(f"previsioni: {len(vecchie)} righe → {len(collassate)} (una per partita)")
     total = 0
     for lg in leagues(league_keys or None):
         try:
             from .models.season_sim import build_hist
 
-            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr)
+            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr, store=store)
             if hist.empty:
                 console.print(f"[yellow]{lg.name}: nessuno storico disponibile, previsione saltata[/yellow]")
                 continue
             upcoming = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "scheduled")
-                                & (fixtures.utc_kickoff <= now + timedelta(days=days_ahead))] if not fixtures.empty else pd.DataFrame()
+                                & (fixtures.utc_kickoff >= now)] if not fixtures.empty else pd.DataFrame()
+            if days_ahead > 0 and not upcoming.empty:
+                upcoming = upcoming[upcoming.utc_kickoff <= now + timedelta(days=days_ahead)]
             if upcoming.empty:
-                console.print(f"{lg.name}: storico {len(hist)} partite, nessuna partita in programma nei prossimi {days_ahead} giorni")
+                orizzonte = f"nei prossimi {days_ahead} giorni" if days_ahead > 0 else "in programma"
+                console.print(f"{lg.name}: storico {len(hist)} partite, nessuna partita {orizzonte}")
                 continue
             up = pd.DataFrame({"match_id": upcoming.match_id, "league_key": lg.key, "utc_kickoff": upcoming.utc_kickoff,
                                "home": upcoming.home_name.map(canonical), "away": upcoming.away_name.map(canonical)})
-            pred, dc, _ = predict_matches(hist, up)
+            pred, dc, _ = predict_matches(hist, up, calibration=cal)
             n = store.upsert("predictions", pred)
             total += n
             console.print(f"{lg.name}: storico {len(hist)} partite → {n} previsioni "
@@ -305,7 +332,7 @@ def backtest_cmd(
         try:
             from .models.season_sim import build_hist
 
-            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr)
+            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr, store=store)
             if hist.empty:
                 console.print(f"[yellow]{lg.name}: nessuno storico disponibile, backtest saltato[/yellow]")
                 continue
@@ -322,6 +349,142 @@ def backtest_cmd(
         except Exception as exc:  # una lega senza storico non deve interrompere le altre
             console.print(f"[yellow]{lg.name}: backtest saltato ({type(exc).__name__}: {exc})[/yellow]")
     console.print(f"backtest salvato: {totale} gare | richieste storico={hc.http.stats.requests}")
+    store.close()
+
+
+@app.command("calibrate")
+def calibrate_cmd(
+    min_rows: int = typer.Option(1200, help="Gare fuori campione minime per stimare i parametri"),
+    folds: int = typer.Option(6, help="Finestre cronologiche per la validazione walk-forward"),
+    dry_run: bool = typer.Option(False, help="Mostra i parametri senza salvarli"),
+) -> None:
+    """Stima la calibrazione della griglia (λ×m, ρ+Δ) dal `backtest` e la salva.
+
+    Usa **solo** stime fuori campione già prodotte: nessun risultato futuro entra nel fit.
+    Va eseguito dopo `fda backtest`; `fda predict` applica l'ultima calibrazione salvata.
+    """
+    from .models.calibration import fit
+    from .store import Store
+
+    store = Store()
+    bt = store.read("backtest")
+    if bt.empty:
+        console.print("[yellow]nessun backtest nello store: esegui prima `fda backtest`[/yellow]")
+        store.close()
+        return
+    cal = fit(bt, folds=folds, min_rows=min_rows)
+    m = cal.metrics
+    console.print(f"campione: {cal.corpus}")
+    if cal.is_identity:
+        console.print("[yellow]calibrazione identica (campione insufficiente o nessun guadagno)[/yellow]")
+    else:
+        console.print(f"parametri: λ×{cal.lambda_scale:.4f} · ρ{cal.rho_shift:+.2f} ({cal.version})")
+        console.print(f"stimatore: {cal.estimator} · finestra {cal.window_days or 'tutto lo storico'} "
+                      f"giorni ({int(m.get('stima_n', 0))} gare) · la griglia di punteggio avrebbe scelto "
+                      f"λ×{m.get('confronto_scale_griglia', float('nan')):.2f} "
+                      f"ρ{m.get('confronto_shift_griglia', float('nan')):+.2f}")
+    if m:
+        console.print(
+            f"walk-forward ({int(m.get('holdout_n', 0))} gare tenute fuori): "
+            f"RPS {m.get('holdout_rps_prima', 0):.4f} → {m.get('holdout_rps_dopo', 0):.4f} "
+            f"({m.get('holdout_rps_delta', 0):+.4f}) · Brier mercati "
+            f"{m.get('holdout_brier_prima', 0):.4f} → {m.get('holdout_brier_dopo', 0):.4f} "
+            f"({m.get('holdout_brier_delta', 0):+.4f}) · bias λ "
+            f"{m.get('holdout_bias_lambda_prima', 0):+.3f} → {m.get('holdout_bias_lambda_dopo', 0):+.3f} gol")
+        console.print(
+            f"sul campione pieno: bias λ {m.get('campione_bias_lambda', 0):+.3f} → "
+            f"{m.get('dopo_bias_lambda', 0):+.3f} gol · pareggio previsto "
+            f"{m.get('campione_pareggio_previsto', 0):.1%} → {m.get('dopo_pareggio_previsto', 0):.1%} "
+            f"(osservato {m.get('campione_pareggio_osservato', 0):.1%})")
+    if not dry_run:
+        store.upsert("calibration", [cal.as_row()])
+        console.print("calibrazione salvata in data/processed/calibration.parquet")
+    store.close()
+
+
+@app.command("lab")
+def lab_cmd(
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
+    seasons_back: int = typer.Option(3, help="Stagioni storiche oltre a quella corrente"),
+    step_days: int = typer.Option(28, help="Ampiezza della finestra di valutazione, in giorni"),
+    min_train: int = typer.Option(600, help="Partite minime di storico prima di valutare"),
+    candidates: str = typer.Option("", help="Solo questi candidati, separati da spazio (vuoto = tutti)"),
+    history: str = typer.Option("", help="Parquet con lo storico (offline) invece di scaricarlo"),
+    max_windows: int = typer.Option(0, help="Limite di finestre per lega (0 = nessun limite)"),
+    self_calibrate: bool = typer.Option(True, help="Ogni candidato corregge il proprio livello dei gol"),
+    save: bool = typer.Option(True, help="Salva il riepilogo in data/processed/model_lab.parquet"),
+) -> None:
+    """Laboratorio: confronto fuori campione di famiglie di modelli, iperparametri e miscele."""
+    import warnings
+
+    import pandas as pd
+
+    from .models import lab
+    from .models.calibration import from_store
+    from .store import Store
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    store = Store()
+    cal = from_store(store)
+    if history:
+        hist_all = pd.read_parquet(history)
+        console.print(f"storico da {history}: {len(hist_all)} gare, "
+                      f"{hist_all['league_key'].nunique() if 'league_key' in hist_all else 1} leghe")
+    else:
+        from .config import leagues, season_start_year
+        from .models.season_sim import build_hist
+        from .sources.history import HistoryClient
+
+        hc = HistoryClient()
+        fixtures = store.read("fixtures")
+        yr = season_start_year()
+        frames = []
+        for lg in leagues(league_keys or None):
+            try:
+                h = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr, store=store)
+                if not h.empty:
+                    h = h.copy()
+                    h["league_key"] = lg.key
+                    frames.append(h)
+                    console.print(f"{lg.name}: {len(h)} gare di storico")
+            except Exception as exc:  # noqa: BLE001 — una lega senza storico non ferma il laboratorio
+                console.print(f"[yellow]{lg.name}: storico saltato ({type(exc).__name__}: {exc})[/yellow]")
+        hist_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+    if hist_all.empty:
+        console.print("[yellow]nessuno storico disponibile: laboratorio saltato[/yellow]")
+        store.close()
+        return
+
+    wanted = lab.CANDIDATES
+    if candidates.strip():
+        keys = set(candidates.split())
+        wanted = tuple(c for c in lab.CANDIDATES if c.key in keys)
+        if not wanted:
+            console.print(f"[red]nessun candidato noto fra {sorted(keys)}; disponibili: "
+                          f"{[c.key for c in lab.CANDIDATES]}[/red]")
+            store.close()
+            return
+    console.print(f"candidati: {len(wanted)} · finestre di {step_days} giorni · min_train {min_train}"
+                  f" · calibrazione {'λ×%.2f ρ%+.2f' % (cal.lambda_scale, cal.rho_shift) if not cal.is_identity else 'identità'}")
+    rows = lab.walk_forward(hist_all, wanted, step_days=step_days, min_train=min_train,
+                            calibration=cal, max_windows=max_windows or None,
+                            self_calibrate=self_calibrate)
+    if rows.empty:
+        console.print("[yellow]nessuna gara valutata (storico troppo breve?)[/yellow]")
+        store.close()
+        return
+    summary = lab.summarize(rows)
+    by_league = lab.per_league(rows)
+    console.print(f"\ngare valutate: {rows.drop_duplicates(['date', 'league_key', 'home', 'away']).shape[0]}")
+    with pd.option_context("display.width", 200, "display.max_columns", 30):
+        console.print(summary[["candidate", "n", "rps", "delta_rps", "delta_rps_lo95", "delta_rps_hi95",
+                               "logloss", "hit", "bias_lambda", "brier_mercati", "migliore_in"]]
+                      .round(4).to_string(index=False))
+    if save:
+        all_rows = summary.assign(league_key="ALL")
+        store.upsert("model_lab", pd.concat([all_rows, by_league], ignore_index=True).to_dict("records"),
+                     replace_by="candidate")
+        console.print("riepilogo salvato in data/processed/model_lab.parquet")
     store.close()
 
 
@@ -350,8 +513,12 @@ def daily_cmd(
     collect_cmd(league_keys=league_keys, past_days=3, future_days=7,
                 max_matches=40, max_backfill=40)
     if not skip_predict:
-        try:
-            predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
+        try:  # calibrazione della griglia dal backtest del run precedente (solo dati passati)
+            calibrate_cmd()
+        except Exception as exc:  # noqa: BLE001 — senza calibrazione si pubblica il modello grezzo
+            console.print(f"[red]calibrate fallito: {exc}[/red]")
+        try:  # tutto il calendario: zero richieste in più, il modello usa solo storico e squadre
+            predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=0)
         except Exception as exc:  # i modelli non devono bloccare la pubblicazione dei dati
             console.print(f"[red]predict fallito: {exc}[/red]")
         try:  # backtest fuori campione: campione ampio per leggere la calibrazione senza rumore

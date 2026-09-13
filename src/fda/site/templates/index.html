@@ -49,6 +49,28 @@
 {% else %}
 <div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessuna partita nel periodo</strong><span class="mut">I campionati seguiti non hanno gare in questa vista.</span></div>
 {% endfor %}
+
+{% if view_kind == 'upcoming' and calendar %}
+{% set cal_total = calendar|sum(attribute='count') %}
+<div class="cal-intro">
+  <h2 class="cal-title">Tutto il calendario</h2>
+  <p class="mut small">Altre {{ cal_total|it_num }} partite in programma dopo i primi {{ calendar_days }} giorni: per ognuna c'è già
+    la previsione del modello (1X2, gol attesi, Over 2,5), ricalcolata a ogni aggiornamento.
+    La scheda completa — forma, classifica, assenze, meteo, precedenti — arriva quando la fonte
+    pubblica i dettagli, cioè a ridosso della gara.{% if calendar_missing %}
+    <strong>{{ calendar_missing|it_num }}</strong> {{ 'partita' if calendar_missing == 1 else 'partite' }} senza previsione:
+    storico insufficiente per una o entrambe le squadre.{% endif %}</p>
+  <nav class="cal-nav" aria-label="Vai al mese">{% for mo in calendar %}<a href="#{{ mo.id }}">{{ mo.label_short }}<span>{{ mo.count }}</span></a>{% endfor %}</nav>
+</div>
+{% for mo in calendar %}
+<details class="cal-month" id="{{ mo.id }}" data-day-group{% if loop.first %} open{% endif %}>
+  <summary>{{ mo.label }}<span class="cal-count">{{ mo.count|it_num }} {{ 'partita' if mo.count == 1 else 'partite' }}</span></summary>
+  <div class="cal-head" aria-hidden="true"><span>data</span><span>partita</span><span>1 · X · 2</span><span>gol att.</span><span>over 2,5</span></div>
+  {% for m in mo.matches %}{{ ml.cal_row(m) }}{% endfor %}
+  <p class="empty-filter" data-empty-filter hidden>Nessuna partita corrisponde ai filtri.</p>
+</details>
+{% endfor %}
+{% endif %}
 </div>
 
 <script>
@@ -57,6 +79,11 @@
   const toolbar = document.querySelector('[data-match-toolbar]');
   if (!list || !toolbar) return;
   const cards = [...list.querySelectorAll('[data-match-card]')];
+  // le righe compatte del calendario non duplicano data-search (peso pagina): la chiave
+  // di ricerca si ricava dal testo una volta sola, poi il filtro resta veloce
+  cards.forEach(card => {
+    if (!card.dataset.search) card.dataset.search = (card.textContent || '').replace(/\s+/g, ' ').trim();
+  });
   const groups = [...list.querySelectorAll('[data-day-group]')];
   const result = toolbar.querySelector('[data-filter-result]');
   const search = toolbar.querySelector('[data-match-search]');

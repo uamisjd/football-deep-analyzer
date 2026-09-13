@@ -106,6 +106,111 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     return fails, len(pages)
 
 
+# ---- calendario completo (vista «Prossime») ---------------------------------------------------
+# Una riga per partita, compatta: le regole da rispettare sono le stesse delle schede, ma il
+# lettore qui non ha contesto, quindi un arrotondamento sbagliato non sarebbe riconoscibile.
+CAL_ROW = re.compile(
+    r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)">(.*?)</div>',
+    re.S)
+CAL_PCT = re.compile(r'<span class="cal-p" aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%">(.*?)</span>')
+CAL_MONTH = re.compile(
+    r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
+    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.S)
+MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+           "settembre", "ottobre", "novembre", "dicembre"]
+
+
+def check_calendar(site: Path) -> tuple[list[str], int]:
+    """[11] Calendario completo: righe coerenti, 1X2 che somma 100, mesi dichiarati correttamente."""
+    fails: list[str] = []
+    checks = 0
+    righe_totali = 0
+    for page in sorted(site.rglob("*.html")):
+        rel = str(page.relative_to(site))
+        h = page.read_text(encoding="utf-8", errors="replace")
+        righe = list(CAL_ROW.finditer(h))
+        mesi = list(CAL_MONTH.finditer(h))
+        if not righe and not mesi:
+            continue
+        if rel != "prossime.html":
+            fails.append(f"{rel}: calendario completo fuori dalla vista «Prossime» ({len(righe)} righe)")
+        righe_totali += len(righe)
+
+        for m in righe:
+            classi, lega, stato, corpo = m.groups()
+            checks += 1
+            if "cal-fav-" not in classi and "senza previsione" not in corpo:
+                fails.append(f"{rel}: riga di calendario senza esito preferito né «senza previsione»")
+            if stato != "scheduled":
+                fails.append(f"{rel}: riga di calendario con stato {stato!r} (atteso «scheduled»)")
+            when = re.search(r'<time class="cal-when" datetime="(\d{4})-(\d{2})-(\d{2})">([^<]*)<b>(\d{2}:\d{2})</b>', corpo)
+            if not when:
+                fails.append(f"{rel}: riga di calendario senza data/ora leggibili")
+            else:
+                checks += 1
+                anno, mese, giorno, testo, ora = when.groups()
+                if not 1 <= int(mese) <= 12 or not 1 <= int(giorno) <= 31:
+                    fails.append(f"{rel}: data di calendario impossibile {anno}-{mese}-{giorno}")
+                if f" {int(giorno)} " not in f" {testo.strip()} ":
+                    fails.append(f"{rel}: data {anno}-{mese}-{giorno} ma testo «{testo.strip()}»")
+                if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", ora):
+                    fails.append(f"{rel}: ora non valida {ora!r}")
+            prob = CAL_PCT.search(corpo)
+            if prob:
+                checks += 1
+                uno, x, due, visibile = (int(prob.group(1)), int(prob.group(2)),
+                                         int(prob.group(3)), prob.group(4))
+                if uno + x + due != 100:
+                    fails.append(f"{rel}: 1X2 di calendario {uno}+{x}+{due} != 100")
+                numeri = [int(v) for v in re.findall(r"\d+", re.sub(r"</?b>", "", visibile))]
+                if numeri != [uno, x, due]:
+                    fails.append(f"{rel}: 1X2 letto {numeri} != aria-label {[uno, x, due]}")
+                grassetto = re.findall(r"<b>(\d+)</b>", visibile)
+                if len(grassetto) != 1 or int(grassetto[0]) != max(uno, x, due):
+                    fails.append(f"{rel}: preferito in grassetto {grassetto} su 1X2 {[uno, x, due]}")
+                fav = re.search(r"cal-fav-([hda])", classi)
+                atteso = ("h", "d", "a")[[uno, x, due].index(max(uno, x, due))]
+                if not fav or fav.group(1) != atteso:
+                    fails.append(f"{rel}: classe cal-fav-{fav.group(1) if fav else '?'} ma il preferito è {atteso}")
+                gol = re.search(r'<span class="cal-gol">([^<]*)</span>', corpo)
+                over = re.search(r'<span class="cal-o">([^<]*)</span>', corpo)
+                if not gol or not re.fullmatch(r"\d+,\d", gol.group(1)):
+                    fails.append(f"{rel}: gol attesi non in formato italiano {gol.group(1) if gol else None!r}")
+                else:
+                    checks += 1
+                if not over or not re.fullmatch(r"\d{1,3}%", over.group(1)):
+                    fails.append(f"{rel}: Over 2,5 non in percentuale {over.group(1) if over else None!r}")
+                else:
+                    checks += 1
+            elif "senza previsione" not in corpo:
+                fails.append(f"{rel}: riga di calendario senza probabilità e senza «senza previsione»")
+            else:
+                checks += 1
+
+        # mesi: etichetta, ordine e conteggio dichiarato devono tornare con le righe stampate
+        precedente: tuple[int, int] | None = None
+        for m in mesi:
+            checks += 1
+            anno, mese, etichetta, conto, plurale, blocco = m.groups()
+            anno, mese = int(anno), int(mese)
+            if etichetta.strip() != f"{MESI_IT[mese - 1].capitalize()} {anno}":
+                fails.append(f"{rel}: mese {anno}-{mese:02d} con etichetta «{etichetta.strip()}»")
+            if precedente is not None and (anno, mese) <= precedente:
+                fails.append(f"{rel}: mesi non in ordine ({precedente} → {(anno, mese)})")
+            precedente = (anno, mese)
+            n = len(CAL_ROW.findall(blocco))
+            if int(conto.replace(".", "")) != n:
+                fails.append(f"{rel}: {etichetta.strip()} dichiara {conto} partite ma ne stampa {n}")
+            if plurale.strip() != ("partita" if n == 1 else "partite"):
+                fails.append(f"{rel}: {etichetta.strip()} «{plurale.strip()}» con {n} righe")
+        nav = set(re.findall(r'<a href="#mese-(\d{4}-\d{2})"', h))
+        dettagli = {f"{m.group(1)}-{m.group(2)}" for m in mesi}
+        if nav != dettagli:
+            fails.append(f"{rel}: navigazione mesi {sorted(nav)} != sezioni {sorted(dettagli)}")
+    print(f"[11] righe di calendario verificate: {righe_totali}")
+    return fails, checks
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -226,9 +331,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
             lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
             kn = re.search(r"\((\d+)/(\d+)\)", row)
-            if kn:                                    # riga di calibrazione: k/n esplicito
+            if kn and len(cells) >= 7:                # riga di mercato: k/n esplicito, 9-10 celle
+                k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[2])
+            elif kn:                                  # riga di calibrazione: k/n esplicito, 5 celle
                 k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[1])
-            else:                                     # riga di mercato: k = osservato × n
+            else:                                     # nessuna k/n pubblicata: k ≈ osservato × n
                 n = int(_n(cells[1]))
                 prev, obs = _n(cells[2]), _n(cells[3])
                 k = int(round(obs * n / 100.0))
@@ -239,15 +346,28 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"accuratezza: intervallo pubblicato {lo_p}–{hi_p}% vs ricalcolato "
                              f"{lo * 100:.1f}–{hi * 100:.1f}% (k={k}, n={n})")
             fuori = "fuori intervallo" in row
-            if fuori != bool(not (lo <= prev / 100 <= hi)):
+            # il previsto in pagina è arrotondato a 0,1 punti: se cade a meno di mezzo decimo dal
+            # bordo dell'intervallo, la pagina ha deciso con il valore non arrotondato e il
+            # confronto sul testo stampato non può essere esatto (misurato: 2 falsi positivi su
+            # 24 righe, una prevista al 31,59% con estremo 31,60% e una al 23,40% con 23,40%)
+            ambiguo = min(abs(prev / 100 - lo), abs(prev / 100 - hi)) < 5e-4
+            if not ambiguo and fuori != bool(not (lo <= prev / 100 <= hi)):
                 fails.append(f"accuratezza: segnale {'fuori intervallo' if fuori else 'compatibile'} "
                              f"incoerente con previsto {prev}% e intervallo {lo * 100:.1f}–{hi * 100:.1f}%")
         if righe:
             print(f"[7] accuratezza: {righe} righe con intervallo di Wilson ricalcolate")
 
-    # 8) backtest fuori campione: numerosità e RPS ricalcolati dalla tabella pubblicata
-    bt = st.read("backtest")
-    if not bt.empty and acc_path.exists():
+    # 8) backtest fuori campione: numerosità, RPS, bias dei gol e calibrazione ricalcolati.
+    #    La pagina descrive il modello **calibrato** (come viene pubblicato), quindi il
+    #    confronto applica la stessa calibrazione dello store alle righe grezze.
+    bt_raw = st.read("backtest")
+    if not bt_raw.empty and acc_path.exists():
+        from fda.models.backtest import backtest_summary, calibrate_rows
+        from fda.models.calibration import from_store
+
+        cal = from_store(st)
+        bt = calibrate_rows(bt_raw, cal)
+        somm, somm_raw = backtest_summary(bt), backtest_summary(bt_raw)
         text = acc_path.read_text(encoding="utf-8")
         i = text.find("Backtest storico fuori campione")
         if i < 0:
@@ -268,6 +388,43 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if abs(rps_bt - mine) > 0.002:
                     fails.append(f"backtest: RPS pagina {rps_bt} vs ricalcolato {mine:.4f}")
                 print(f"[8] backtest: {len(bt)} gare fuori campione, RPS pagina {rps_bt} = ricalcolato {mine:.4f}")
+
+            def _num(pattern: str, what: str) -> float | None:
+                m = re.search(pattern, card, re.S)
+                if not m:
+                    fails.append(f"accuratezza.html: {what} non pubblicato nella card backtest")
+                    return None
+                return float(m.group(1).replace(",", "."))
+
+            # bias dei gol e pareggio: i due numeri che la calibrazione deve tenere a posto
+            got = _num(r"Gol attesi <b>(-?\d+,\d+)</b>", "gol attesi medi")
+            if got is not None:
+                checks += 1
+                if abs(got - somm["lambda_media"]) > 0.002:
+                    fails.append(f"backtest: gol attesi {got} vs ricalcolati {somm['lambda_media']:.3f}")
+            got = _num(r"pareggio previsto <b>(\d+,\d+)%</b>", "pareggio previsto")
+            if got is not None:
+                checks += 1
+                if abs(got - somm["pareggio_previsto"] * 100) > 0.06:
+                    fails.append(f"backtest: pareggio previsto {got}% vs {somm['pareggio_previsto'] * 100:.1f}%")
+            if not cal.is_identity:
+                got = _num(r"λ × (\d+,\d+)", "moltiplicatore della calibrazione")
+                if got is not None:
+                    checks += 1
+                    if abs(got - cal.lambda_scale) > 0.0015:
+                        fails.append(f"backtest: calibrazione pubblicata λ×{got} vs salvata λ×{cal.lambda_scale:.3f}")
+                if "versione <code>" not in card:
+                    fails.append("backtest: versione della calibrazione non pubblicata")
+                # il confronto "senza calibrazione" deve coincidere con la tabella grezza
+                got = _num(r"Senza calibrazione lo stesso campione darebbe RPS (\d+,\d+)", "RPS grezza")
+                if got is not None:
+                    checks += 1
+                    if abs(got - somm_raw["rps"]) > 0.002:
+                        fails.append(f"backtest: RPS grezza {got} vs ricalcolata {somm_raw['rps']:.4f}")
+                print(f"[8b] backtest calibrato: λ×{cal.lambda_scale:.3f} ρ{cal.rho_shift:+.2f} "
+                      f"({cal.version}) · bias gol {somm_raw['bias_lambda']:+.3f} → {somm['bias_lambda']:+.3f} "
+                      f"· pareggio {somm_raw['pareggio_previsto'] * 100:.1f}% → {somm['pareggio_previsto'] * 100:.1f}%"
+                      f" (osservato {somm['pareggio_osservato'] * 100:.1f}%)")
 
     # 4) proiezioni di stagione: le probabilità di ogni lega sommano come devono
     sim = st.read("season_sim")
@@ -419,6 +576,106 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: xG 1T/2T {got} vs {want} da team_stats")
     print(f"[6] post-partita: {n_assist} assist, {n_half} split 1T/2T")
 
+    # 9) distribuzione dei gol totali + dotplot quantile: ricalcolate dalla λ/ρ salvate
+    from fda.site.advanced import goals_view, probability_steps
+
+    n_goals = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="gol-totali"' not in html:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index:
+            fails.append(f"{pg.name}: distribuzione gol senza previsione")
+            continue
+        r = preds.loc[mid]
+        gv = goals_view(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
+        barre = re.findall(r'<div class="gb([^"]*)"><span class="v">(\d+)</span>'
+                           r'<span class="fill" style="height:[^"]*"></span>'
+                           r'<span class="x">([^<]+)</span></div>', html)
+        checks += 1
+        n_goals += 1
+        if len(barre) != len(gv["bars"]):
+            fails.append(f"{pg.name}: barre gol {len(barre)} (attese {len(gv['bars'])})")
+            continue
+        somma = 0
+        for (_cls, v_txt, x_txt), b in zip(barre, gv["bars"]):
+            somma += int(v_txt)
+            if int(v_txt) != b["per100"]:
+                fails.append(f"{pg.name}: barra {x_txt} gol = {v_txt} su 100, ricalcolato {b['per100']}")
+            if x_txt != b["label"]:
+                fails.append(f"{pg.name}: etichetta barra {x_txt} != {b['label']}")
+        if somma != 100:
+            fails.append(f"{pg.name}: le barre dei gol sommano {somma} su 100")
+        # didascalia: moda, mediana, intervallo 10-90% e coda devono essere quelli ricalcolati
+        cap = re.search(r"il totale più frequente è <b>(\d+) gol</b>\s*\((\d+) su 100\)", html)
+        if not cap or int(cap.group(1)) != gv["moda"] or int(cap.group(2)) != gv["bars"][gv["moda"]]["per100"]:
+            fails.append(f"{pg.name}: moda dei gol in didascalia != ricalcolata ({gv['moda']})")
+        med = re.search(r"la mediana è (\d+) e nel 90% dei casi il totale resta fra\s*(\d+) e (\d+) gol", html)
+        if not med or (int(med.group(1)), int(med.group(2)), int(med.group(3))) != (gv["mediana"], gv["q10"], gv["q90"]):
+            fails.append(f"{pg.name}: mediana/intervallo dei gol in didascalia != ricalcolati")
+        coda = re.search(rf"Totale {re.escape(gv['coda_label'])} gol: (\d+,\d)%", html)
+        if not coda or abs(float(coda.group(1).replace(",", ".")) - gv["p_coda"] * 100) > 0.06:
+            fails.append(f"{pg.name}: coda dei gol in didascalia != ricalcolata ({gv['p_coda']:.4f})")
+        # dotplot: i punti sono esattamente n_dots e stanno nelle colonne giuste
+        # la cattura si ferma alla chiusura del contenitore (a capo + </div>), non al primo
+        # </div></div>: altrimenti l'ultima colonna resta fuori e il confronto salta proprio
+        # quella. Difetto rimasto nascosto finché la coda era sempre vuota (0 punti): con la
+        # calibrazione a momenti alcune partite hanno punti anche nella colonna «7+».
+        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)\n\s*</div>', html, re.S)
+        if not dp:
+            fails.append(f"{pg.name}: dotplot dei gol non trovato")
+        else:
+            colonne = re.findall(r'<div class="dp"><div class="stack">((?:<i></i>)*)</div>'
+                                 r'<span class="x">([^<]+)</span>', dp.group(1))
+            if len(colonne) != len(gv["columns"]):
+                fails.append(f"{pg.name}: colonne dotplot {len(colonne)} (attese {len(gv['columns'])})")
+            else:
+                for (dots, label), col in zip(colonne, gv["columns"]):
+                    if dots.count("<i>") != col["n"] or label != col["label"]:
+                        fails.append(f"{pg.name}: colonna dotplot {label} = {dots.count('<i>')} punti, "
+                                     f"attesi {col['n']} su {col['label']}")
+            n_punti = sum(dots.count("<i>") for dots, _ in colonne)
+            if n_punti != gv["n_dots"]:
+                fails.append(f"{pg.name}: punti dotplot {n_punti} (attesi {gv['n_dots']})")
+    print(f"[9] distribuzioni dei gol totali verificate: {n_goals}")
+
+    # 10) scomposizione della probabilità: i passi pubblicati sono quelli salvati nella riga
+    n_steps = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="scomposizione"' not in html:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index:
+            fails.append(f"{pg.name}: scomposizione senza previsione")
+            continue
+        r = preds.loc[mid]
+        steps = probability_steps(r.to_dict())
+        blocco = html.split('id="scomposizione"', 1)[1].split("</ol>", 1)[0]
+        resi = re.findall(r'<span class="h" style="width:[^"]*">1 · (\d+,\d)%</span>'
+                          r'<span class="d" style="width:[^"]*">X · (\d+,\d)%</span>'
+                          r'<span class="a" style="width:[^"]*">2 · (\d+,\d)%</span>', blocco)
+        labels = re.findall(r"<strong>(\d+) · ([^<]+)</strong>", blocco)
+        checks += 1
+        n_steps += 1
+        if len(resi) != len(steps) or len(labels) != len(steps):
+            fails.append(f"{pg.name}: passi pubblicati {len(resi)}/{len(labels)}, attesi {len(steps)}")
+            continue
+        # `passo`, non `st`: il nome `st` è lo Store aperto in testa alla funzione e un ciclo
+        # che lo ombreggia lo fa diventare un dict, facendo esplodere `st.close()` in fondo
+        for (h, x, a), (_n, lab), passo in zip(resi, labels, steps):
+            if lab != passo["label"]:
+                fails.append(f"{pg.name}: passo «{lab}» != «{passo['label']}»")
+            for shown, key in ((h, "p_home"), (x, "p_draw"), (a, "p_away")):
+                if abs(float(shown.replace(",", ".")) - passo[key] * 100) > 0.06:
+                    fails.append(f"{pg.name}: {passo['label']} {key} = {shown}% vs {passo[key] * 100:.1f}%")
+        # la catena deve chiudersi sull'1X2 pubblicato in cima alla scheda
+        for key in ("p_home", "p_draw", "p_away"):
+            if abs(steps[-1][key] - float(r[key])) > 1e-6:
+                fails.append(f"{pg.name}: ultimo passo {key} {steps[-1][key]:.4f} != pubblicato {r[key]:.4f}")
+    print(f"[10] scomposizioni della probabilità verificate: {n_steps}")
+
     st.close()
     return fails, checks
 
@@ -437,10 +694,12 @@ def main() -> int:
 
     fails, pages = check_pages(site)
     print(f"pagine analizzate: {pages}")
-    checks = 0
+    calendario, checks = check_calendar(site)
+    fails += calendario
     if not args.content_only:
-        numeric, checks = check_numbers(site, Path(args.data) if args.data else None)
+        numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
+        checks += numeric_checks
 
     by_kind: Counter[str] = Counter(f.split(": ", 1)[1].split(" ")[0] for f in fails)
     print()

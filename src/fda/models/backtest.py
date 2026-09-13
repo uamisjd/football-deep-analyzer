@@ -19,8 +19,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .predict import (SHRINK_PRIOR, DixonColesModel, EloModel, ensemble, log_loss, outcome_index,
-                      wilson_interval)
+from .calibration import Calibration
+from .dc_grid import grid_markets_many, tau_grid_many
+from .predict import (MODEL_VERSION, SHRINK_PRIOR, DixonColesModel, EloModel, ensemble, log_loss,
+                      outcome_index, wilson_interval)
 
 log = logging.getLogger("fda.backtest")
 
@@ -108,9 +110,45 @@ def _walk(g: pd.DataFrame, league_key: str, step_days: int, min_train: int, xi: 
             out.update({"date": r.date, "league_key": league_key, "home": r.home, "away": r.away,
                         "home_goals": int(r.home_goals), "away_goals": int(r.away_goals),
                         "outcome": outcome_index(int(r.home_goals), int(r.away_goals)),
-                        "n_train": int(dc.n_matches)})
+                        "n_train": int(dc.n_matches), "model_version": MODEL_VERSION})
             rows.append(out)
     return pd.DataFrame(rows)
+
+
+def calibrate_rows(df: pd.DataFrame, cal: Calibration | None) -> pd.DataFrame:
+    """Copia del backtest con le probabilità ripubblicate dalla griglia calibrata.
+
+    Perché: la pagina Accuratezza deve descrivere il modello **come viene pubblicato oggi**
+    (previsioni calibrate), mentre ``backtest.parquet`` resta grezzo di proposito — è il
+    campione su cui ``fda calibrate`` stima i parametri, e calibrarlo prima renderebbe la
+    stima circolare (troverebbe un moltiplicatore ≈1 e le previsioni tornerebbero grezze).
+    I valori grezzi restano nelle colonne ``*_raw``: la pagina può mostrarli a confronto.
+    L'effetto **fuori campione** della calibrazione non è questo: è misurato walk-forward da
+    ``fda calibrate`` e salvato in ``calibration.metrics``.
+    """
+    if df.empty or cal is None or cal.is_identity:
+        return df
+    out = df.copy()
+    lh = pd.to_numeric(out["lambda_home"], errors="coerce").to_numpy(float)
+    la = pd.to_numeric(out["lambda_away"], errors="coerce").to_numpy(float)
+    rho = (np.nan_to_num(pd.to_numeric(out["dc_rho"], errors="coerce").to_numpy(float), nan=0.0)
+           if "dc_rho" in out.columns else np.zeros(len(out)))
+    s_lh, s_la, s_rho = cal.apply_many(lh, la, rho)
+    m = grid_markets_many(tau_grid_many(s_lh, s_la, s_rho, size=11))
+    for key in ("p_home", "p_draw", "p_away", "p_over15", "p_over25", "p_over35", "p_btts",
+                "p_home_clean_sheet", "p_away_clean_sheet"):
+        if key in out.columns:
+            out[f"{key}_raw"] = out[key].to_numpy()
+            out[key] = m[key]
+    out["p_1x"] = m["p_home"] + m["p_draw"]
+    out["p_12"] = m["p_home"] + m["p_away"]
+    out["p_x2"] = m["p_draw"] + m["p_away"]
+    out["lambda_home_raw"], out["lambda_away_raw"], out["rho_raw"] = lh, la, rho
+    out["lambda_home"], out["lambda_away"], out["dc_rho"] = s_lh, s_la, s_rho
+    out["lambda_scale"] = float(cal.lambda_scale)
+    out["rho_shift"] = float(cal.rho_shift)
+    out["calibration_version"] = cal.version
+    return out
 
 
 def observed_flags(df: pd.DataFrame) -> dict[str, np.ndarray]:
@@ -121,6 +159,13 @@ def observed_flags(df: pd.DataFrame) -> dict[str, np.ndarray]:
     return {"over15": tot > 1.5, "over25": tot > 2.5, "over35": tot > 3.5,
             "btts": (hg > 0) & (ag > 0), "d1x": hg >= ag, "d12": hg != ag, "dx2": hg <= ag,
             "cs_h": ag == 0, "cs_a": hg == 0}
+
+
+def _mean_or_nan(x: Any) -> float:
+    """Media senza avvisi quando non c'è niente da mediare (λ assenti, mercati non calcolati)."""
+    a = np.asarray(x, dtype=float)
+    a = a[np.isfinite(a)]
+    return float(a.mean()) if a.size else float("nan")
 
 
 def backtest_summary(df: pd.DataFrame,
@@ -160,12 +205,35 @@ def backtest_summary(df: pd.DataFrame,
         prev = float(pr.mean())
         brier = float(((pr - y) ** 2).mean())
         base = float(y.mean())
-        markets.append({"label": label, "n": n_mk, "prev": prev, "obs": base, "lo": lo, "hi": hi,
+        markets.append({"label": label, "n": n_mk, "k": k_mk, "prev": prev, "obs": base,
+                        "lo": lo, "hi": hi,
                         "outside": bool(not (lo <= prev <= hi)), "brier": brier,
                         "brier_base": float(((base - y) ** 2).mean()),
                         "delta": brier - float(((base - y) ** 2).mean())})
-    return {"n": n, "leagues": int(df["league_key"].nunique()) if "league_key" in df.columns else 1,
-            "rps": rps, "naive": rps_naive, "delta": rps - rps_naive,
-            "brier": float(((probs - onehot) ** 2).sum(1).mean()),
-            "logloss": float(np.mean([log_loss(float(x)) for x in p_real])),
-            "hit": float((probs.argmax(1) == oc).mean()), "calib": calib, "markets": markets}
+    tot = df["home_goals"].to_numpy(dtype=float) + df["away_goals"].to_numpy(dtype=float)
+    lam = (pd.to_numeric(df["lambda_home"], errors="coerce").to_numpy(float)
+           + pd.to_numeric(df["lambda_away"], errors="coerce").to_numpy(float)) \
+        if {"lambda_home", "lambda_away"} <= set(df.columns) else np.full(n, np.nan)
+    w = np.array([float(m["n"]) for m in markets]) if markets else np.zeros(0)
+    brier_mercati = (float(np.average([m["brier"] for m in markets], weights=w))
+                     if markets else float("nan"))
+    brier_mercati_base = (float(np.average([m["brier_base"] for m in markets], weights=w))
+                          if markets else float("nan"))
+    out = {"n": n, "leagues": int(df["league_key"].nunique()) if "league_key" in df.columns else 1,
+           "rps": rps, "naive": rps_naive, "delta": rps - rps_naive,
+           "brier": float(((probs - onehot) ** 2).sum(1).mean()),
+           "logloss": float(np.mean([log_loss(float(x)) for x in p_real])),
+           "hit": float((probs.argmax(1) == oc).mean()), "calib": calib, "markets": markets,
+           "brier_mercati": brier_mercati, "brier_mercati_base": brier_mercati_base,
+           "lambda_media": _mean_or_nan(lam), "gol_osservati": _mean_or_nan(tot),
+           "bias_lambda": _mean_or_nan(lam - tot),
+           "pareggio_previsto": float(probs[:, 1].mean()),
+           "pareggio_osservato": float((oc == 1).mean())}
+    if "calibration_version" in df.columns:
+        out["calibration_version"] = str(df["calibration_version"].iloc[0])
+        out["lambda_scale"] = float(pd.to_numeric(df["lambda_scale"], errors="coerce").iloc[0])
+        out["rho_shift"] = float(pd.to_numeric(df["rho_shift"], errors="coerce").iloc[0])
+    if "model_version" in df.columns:
+        mix = df["model_version"].astype(str).value_counts()
+        out["model_versions"] = " · ".join(f"{k}: {v} gare" for k, v in mix.items())
+    return out
