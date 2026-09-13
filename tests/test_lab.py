@@ -6,6 +6,7 @@ import pytest
 
 from fda.models import lab
 from fda.models.calibration import Calibration
+from fda.models.predict import LAMBDA_TOTAL_MAX_REL
 from fda.models.dc_grid import tau_grid
 from fda.models.lab import (BASELINE, CANDIDATES, Candidate, convex_weights, per_league,
                             summarize, walk_forward)
@@ -29,6 +30,18 @@ def synthetic_hist(n_teams: int = 12, seasons: int = 3, seed: int = 3) -> pd.Dat
                 rows.append({"date": day, "league_key": "TEST", "home": home, "away": away,
                              "home_goals": int(rng.poisson(lh)), "away_goals": int(rng.poisson(la))})
     return pd.DataFrame(rows)
+
+
+class _SpyGonfia:
+    """Modello sui gol con λ deliberatamente troppo alte (3,5 gol a partita)."""
+
+    def __init__(self, train: pd.DataFrame) -> None:
+        self.teams = set(train["home"]) | set(train["away"])
+        self.train_max = pd.to_datetime(train["date"]).max()
+        self.n_train = len(train)
+
+    def grid(self, home: str, away: str) -> np.ndarray:
+        return tau_grid(2.0, 1.5, -0.05, size=lab.GRID_SIZE)
 
 
 class SpyGoals:
@@ -207,3 +220,149 @@ def test_lab_runs_on_a_real_offline_corpus(tmp_path):
     assert set(rows["candidate"]) <= {"dc_puro", "elo", "mix_50"}
     tab = summarize(rows, baseline="dc_puro", draws=100)
     assert "rps" in tab.columns and len(tab) >= 1
+
+
+def test_tilt_grid_conserva_i_gol_attesi_del_modello_sui_gol():
+    """L'alternativa alla ricetta di produzione: l'Elo inclina, non gonfia i gol attesi.
+
+    ``goal_expectancy`` cerca due λ libere che riproducano il vettore mediato e il totale si
+    gonfia (+14% medio misurato sul backtest, +8,6% sopra i gol osservati). Qui il totale
+    resta quello del modello sui gol e cambia solo il rapporto casa/trasferta.
+    """
+    lh, la, rho = 1.80, 0.90, -0.10
+    ga = tau_grid(lh, la, rho, size=lab.GRID_SIZE)
+    i, j = np.indices(ga.shape)
+    probs_b = (0.75, 0.15, 0.10)          # rating molto più fiducioso sulla vittoria casalinga
+    g, lh_t, la_t = lab._tilt_grid(lh, la, rho, probs_b, 0.7)
+    assert g.sum() == pytest.approx(1.0, abs=1e-9) and (g >= 0).all()
+    assert lh_t + la_t == pytest.approx(lh + la, abs=1e-9), "il totale dei gol attesi deve restare"
+    assert lh_t / la_t > lh / la, "l'inclinazione deve seguire il rating"
+    assert float(g[i > j].sum()) > float(ga[i > j].sum())
+    # anche i gol attesi **effettivi** (media della matrice, τ compreso) restano gli stessi
+    assert float((g * (i + j)).sum()) == pytest.approx(float((ga * (i + j)).sum()), abs=1e-3)
+    # con un rating identico al modello sui gol la griglia non si muove
+    probs_a = (float(ga[i > j].sum()), float(ga[i == j].sum()), float(ga[i < j].sum()))
+    g0, lh0, la0 = lab._tilt_grid(lh, la, rho, probs_a, 0.7)
+    assert (lh0, la0) == pytest.approx((lh, la), abs=1e-6)
+    assert np.allclose(g0, ga / ga.sum(), atol=1e-9)
+
+
+def test_mix_grids_non_gonfia_le_lambda_su_vettori_irraggiungibili():
+    """Un pareggio al 9,5% non è riproducibile da una griglia DC: l'inversione scappava a 8,9 gol.
+
+    Misurato sui dati H2H (Elo degenerato): λ_B 5,80+3,14, miscela a 5,7 gol attesi. Senza il
+    limite la miscela veniva bocciata per un difetto dell'inversione, non del candidato.
+    """
+    lh, la, rho = 1.80, 0.90, -0.18
+    g, _, _ = lab._mix_grids(lh, la, rho, (0.761, 0.095, 0.144), 0.5)
+    i, j = np.indices(g.shape)
+    totale = float((g * (i + j)).sum())
+    assert g.sum() == pytest.approx(1.0, abs=1e-9)
+    assert totale <= (lh + la) * LAMBDA_TOTAL_MAX_REL + 1e-6, f"miscela a {totale:.2f} gol attesi"
+    assert totale < 4.0, "prima del limite la stessa miscela dava 5,7 gol attesi"
+
+
+def test_walk_forward_corregge_ogni_candidato_solo_sul_passato(monkeypatch):
+    """Ogni candidato riceve la propria correzione del livello dei gol, dalle gare già valutate.
+
+    Senza, il confronto è iniquo: la produzione è pubblicata calibrata e un candidato con λ più
+    basse verrebbe penalizzato due volte. La correzione non può guardare avanti.
+    """
+    monkeypatch.setattr(lab, "fit_goals", lambda train, cand: _SpyGonfia(train))
+    hist = synthetic_hist(seasons=6)
+    cand = (Candidate("spy", "Modello spia gonfiata", "goals", "poisson"),)
+    on = walk_forward(hist, cand, step_days=28, min_train=120, self_calibrate=True)
+    off = walk_forward(hist, cand, step_days=28, min_train=120, self_calibrate=False)
+    assert not on.empty and len(on) == len(off)
+    # la spia prevede 3,5 gol a partita, lo storico sintetico ne produce ~2,6 → servirebbe 0,73,
+    # che il limite di sicurezza della calibrazione riporta a 0,85
+    scale = on["lambda_scale"].to_numpy(float)
+    assert 0.85 - 1e-9 <= scale.min() <= 1.0 + 1e-9
+    assert scale.max() <= 1.05 + 1e-9
+    assert (scale == 1.0).any(), "le prime finestre non hanno ancora gare valutate: niente correzione"
+    assert (scale < 1.0).any(), "dopo le prime finestre la correzione deve scattare"
+    tab_on = summarize(on, baseline="spy", draws=50)
+    tab_off = summarize(off, baseline="spy", draws=50)
+    assert abs(tab_on["bias_lambda"].iloc[0]) < abs(tab_off["bias_lambda"].iloc[0])
+    assert tab_on["scala_media"].iloc[0] == pytest.approx(scale.mean(), abs=1e-9)
+    assert tab_on["rps"].iloc[0] <= tab_off["rps"].iloc[0] + 1e-9
+
+
+def test_tilt_total_cambia_il_livello_senza_cambiare_la_forma():
+    """L'inclinazione esponenziale sposta solo la media dei gol: la forma della famiglia resta.
+
+    Per Poisson indipendenti θ^(i+j) equivale a λ·θ, quindi il meccanismo è la generalizzazione
+    del moltiplicatore di calibrazione a una matrice di punteggi qualunque (binomiale negativa,
+    zero-inflazionata, copula Weibull), che non hanno λ né ρ da scalare.
+    """
+    lh, la = 1.6, 1.1
+    g = tau_grid(lh, la, 0.0, size=lab.GRID_SIZE)
+    i, j = np.indices(g.shape)
+    k = (i + j).astype(float)
+    prima = float((g * k).sum())
+    for fattore in (0.85, 1.0, 1.12):
+        t = lab._tilt_total(g, prima * fattore)
+        assert t.sum() == pytest.approx(1.0, abs=1e-12) and (t >= 0).all()
+        assert float((t * k).sum()) == pytest.approx(prima * fattore, abs=1e-9)
+    # la direzione casa/trasferta non cambia: il rapporto fra le due medie resta quello
+    # (a 1e-5, perché la matrice è troncata a 10 gol e la coda che esce cambia di poco)
+    t = lab._tilt_total(g, prima * 0.9)
+    assert float((t * i).sum()) / float((t * j).sum()) == pytest.approx(
+        float((g * i).sum()) / float((g * j).sum()), abs=1e-4)
+    # il rapporto di due celle con lo stesso totale gol è invariato (la forma non viene toccata)
+    assert t[3, 1] / t[2, 2] == pytest.approx(g[3, 1] / g[2, 2], abs=1e-9)
+    # target irraggiungibili restano entro i limiti invece di produrre NaN o zeri
+    estremo = lab._tilt_total(g, 1e6)
+    assert np.isfinite(estremo).all() and estremo.sum() == pytest.approx(1.0, abs=1e-9)
+    assert lab._tilt_total(np.zeros_like(g), 2.0).sum() == pytest.approx(0.0)
+
+
+def test_le_famiglie_senza_rho_ricevono_la_correzione_del_livello():
+    """Regione del laboratorio che non era coperta: Poisson/binomiale negativa/non calibrate.
+
+    Prima la correzione del livello dei gol toccava solo Dixon-Coles, miscele e produzione:
+    le altre famiglie venivano confrontate con λ non corrette, cioè penalizzate o favorite
+    dal loro livello di gol invece che dalla loro forma.
+    """
+    from fda.models.calibration import Calibration
+
+    class GrigliaFissa:
+        teams = {"A", "B"}
+
+        def grid(self, home: str, away: str) -> np.ndarray:
+            return tau_grid(1.9, 1.4, 0.0, size=lab.GRID_SIZE)
+
+    row = lab._row_from_grid(GrigliaFissa().grid("A", "B"), 1.9, 1.4, 0.0)
+    out = lab._apply_grid_level(row, GrigliaFissa().grid("A", "B"),
+                                Calibration(lambda_scale=0.9, rho_shift=-0.04))
+    assert out["lambda_home_raw"] == pytest.approx(1.9)
+    assert out["lambda_total"] == pytest.approx(row["lambda_total"] * 0.9, abs=1e-6)
+    assert out["p_home"] + out["p_draw"] + out["p_away"] == pytest.approx(1.0, abs=1e-9)
+    # senza ρ il pareggio non viene spostato di proposito: cambia solo il livello
+    assert out["p_draw"] > row["p_draw"]
+    # calibrazione identica → riga intatta
+    same = lab._apply_grid_level(row, GrigliaFissa().grid("A", "B"), Calibration())
+    assert same["lambda_home"] == pytest.approx(1.9) and "lambda_home_raw" not in same
+
+
+def test_con_calibrazione_attiva_la_miscela_resta_diversa_dal_dc():
+    """Regressione: con una calibrazione non identica mix_50 diventava identico a dc_puro.
+
+    `_apply_calibration` ricostruisce una griglia di Dixon-Coles dalle λ, e la miscela
+    dichiarava le λ del DC: la forma mista spariva e il candidato smetteva di misurare ciò
+    per cui esiste. Misurato il 2026-09-13 sul corpus H2H (405 gare, tutte identiche).
+    """
+    cal = Calibration(lambda_scale=0.9135, rho_shift=-0.04)
+    hist = synthetic_hist(seasons=2)
+    c_mix = next(c for c in CANDIDATES if c.key == "mix_50")
+    c_dc = next(c for c in CANDIDATES if c.key == "dc_puro")
+    f_mix, f_dc = lab._fit_candidate(c_mix, hist), lab._fit_candidate(c_dc, hist)
+    home, away = hist.home.iloc[-1], hist.away.iloc[-1]
+    mix = lab._predict_candidate(c_mix, f_mix, f_mix, home, away, cal)
+    dc = lab._predict_candidate(c_dc, f_dc, f_dc, home, away, cal)
+    assert mix is not None and dc is not None
+    assert abs(mix["p_home"] - dc["p_home"]) > 1e-6, "la miscela deve restare diversa dal DC"
+    assert mix["lambda_total"] != pytest.approx(dc["lambda_total"], abs=1e-6)
+    assert mix["p_home"] + mix["p_draw"] + mix["p_away"] == pytest.approx(1.0, abs=1e-9)
+    # le λ pubblicate descrivono la griglia pubblicata, non quella di un altro candidato
+    assert mix["lambda_home"] == pytest.approx(mix["lambda_home_raw"] * 0.9135, rel=0.15)

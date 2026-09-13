@@ -45,7 +45,23 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   15-20 gare al giorno).</p>
   <p class="kpi">RPS <b>{{ bt.rps|dec(4) }}</b> <span class="mut">(base {{ bt.naive|dec(4) }},
   Δ {{ bt.delta|dec(4, true) }})</span> · log-loss <b>{{ bt.logloss|dec(4) }}</b> ·
-  esito azzeccato <b>{{ (bt.hit*100)|round|int }}%</b></p>
+  esito azzeccato <b>{{ (bt.hit*100)|round|int }}%</b> · Brier 9 mercati
+  <b>{{ bt.brier_mercati|dec(4) }}</b> <span class="mut">(base {{ bt.brier_mercati_base|dec(4) }})</span></p>
+  <p class="kpi small">Gol attesi <b>{{ bt.lambda_media|dec(3) }}</b> contro
+  <b>{{ bt.gol_osservati|dec(3) }}</b> osservati (scarto {{ bt.bias_lambda|dec(3, true) }}) ·
+  pareggio previsto <b>{{ (bt.pareggio_previsto*100)|dec(1) }}%</b> contro
+  <b>{{ (bt.pareggio_osservato*100)|dec(1) }}%</b> osservato</p>
+  {% if bt.calibration_version %}<p class="small mut">Questi numeri includono la calibrazione
+  <b>λ × {{ bt.lambda_scale|dec(3) }} · ρ {{ bt.rho_shift|dec(2, true) }}</b>
+  (versione <code>{{ bt.calibration_version }}</code>), cioè la stessa correzione applicata alle
+  previsioni pubblicate: la tabella descrive il modello com'è oggi, non una versione precedente.
+  {% if bt.grezzo %}Senza calibrazione lo stesso campione darebbe RPS {{ bt.grezzo.rps|dec(4) }},
+  Brier mercati {{ bt.grezzo.brier_mercati|dec(4) }}, gol attesi {{ bt.grezzo.lambda_media|dec(3) }}
+  (scarto {{ bt.grezzo.bias_lambda|dec(3, true) }}) e pareggio {{ (bt.grezzo.pareggio_previsto*100)|dec(1) }}%.
+  L'effetto <b>fuori campione</b> della calibrazione non è questo confronto (che è sullo stesso
+  campione usato per stimarla): è misurato walk-forward da <code>fda calibrate</code>.{% endif %}</p>{% endif %}
+  {% if bt.model_versions %}<p class="small mut">Versioni del modello nel campione: {{ bt.model_versions }}.
+  Confronta fra loro righe prodotte dalla stessa versione.</p>{% endif %}
   <div class="tablewrap"><table><tr><th>esito</th><th class="r">previsto</th><th class="r">osservato</th>
     <th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
   {% for c in bt.calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td>

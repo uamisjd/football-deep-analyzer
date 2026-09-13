@@ -241,15 +241,28 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"accuratezza: intervallo pubblicato {lo_p}–{hi_p}% vs ricalcolato "
                              f"{lo * 100:.1f}–{hi * 100:.1f}% (k={k}, n={n})")
             fuori = "fuori intervallo" in row
-            if fuori != bool(not (lo <= prev / 100 <= hi)):
+            # il previsto in pagina è arrotondato a 0,1 punti: se cade a meno di mezzo decimo dal
+            # bordo dell'intervallo, la pagina ha deciso con il valore non arrotondato e il
+            # confronto sul testo stampato non può essere esatto (misurato: 2 falsi positivi su
+            # 24 righe, una prevista al 31,59% con estremo 31,60% e una al 23,40% con 23,40%)
+            ambiguo = min(abs(prev / 100 - lo), abs(prev / 100 - hi)) < 5e-4
+            if not ambiguo and fuori != bool(not (lo <= prev / 100 <= hi)):
                 fails.append(f"accuratezza: segnale {'fuori intervallo' if fuori else 'compatibile'} "
                              f"incoerente con previsto {prev}% e intervallo {lo * 100:.1f}–{hi * 100:.1f}%")
         if righe:
             print(f"[7] accuratezza: {righe} righe con intervallo di Wilson ricalcolate")
 
-    # 8) backtest fuori campione: numerosità e RPS ricalcolati dalla tabella pubblicata
-    bt = st.read("backtest")
-    if not bt.empty and acc_path.exists():
+    # 8) backtest fuori campione: numerosità, RPS, bias dei gol e calibrazione ricalcolati.
+    #    La pagina descrive il modello **calibrato** (come viene pubblicato), quindi il
+    #    confronto applica la stessa calibrazione dello store alle righe grezze.
+    bt_raw = st.read("backtest")
+    if not bt_raw.empty and acc_path.exists():
+        from fda.models.backtest import backtest_summary, calibrate_rows
+        from fda.models.calibration import from_store
+
+        cal = from_store(st)
+        bt = calibrate_rows(bt_raw, cal)
+        somm, somm_raw = backtest_summary(bt), backtest_summary(bt_raw)
         text = acc_path.read_text(encoding="utf-8")
         i = text.find("Backtest storico fuori campione")
         if i < 0:
@@ -270,6 +283,43 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if abs(rps_bt - mine) > 0.002:
                     fails.append(f"backtest: RPS pagina {rps_bt} vs ricalcolato {mine:.4f}")
                 print(f"[8] backtest: {len(bt)} gare fuori campione, RPS pagina {rps_bt} = ricalcolato {mine:.4f}")
+
+            def _num(pattern: str, what: str) -> float | None:
+                m = re.search(pattern, card, re.S)
+                if not m:
+                    fails.append(f"accuratezza.html: {what} non pubblicato nella card backtest")
+                    return None
+                return float(m.group(1).replace(",", "."))
+
+            # bias dei gol e pareggio: i due numeri che la calibrazione deve tenere a posto
+            got = _num(r"Gol attesi <b>(-?\d+,\d+)</b>", "gol attesi medi")
+            if got is not None:
+                checks += 1
+                if abs(got - somm["lambda_media"]) > 0.002:
+                    fails.append(f"backtest: gol attesi {got} vs ricalcolati {somm['lambda_media']:.3f}")
+            got = _num(r"pareggio previsto <b>(\d+,\d+)%</b>", "pareggio previsto")
+            if got is not None:
+                checks += 1
+                if abs(got - somm["pareggio_previsto"] * 100) > 0.06:
+                    fails.append(f"backtest: pareggio previsto {got}% vs {somm['pareggio_previsto'] * 100:.1f}%")
+            if not cal.is_identity:
+                got = _num(r"λ × (\d+,\d+)", "moltiplicatore della calibrazione")
+                if got is not None:
+                    checks += 1
+                    if abs(got - cal.lambda_scale) > 0.0015:
+                        fails.append(f"backtest: calibrazione pubblicata λ×{got} vs salvata λ×{cal.lambda_scale:.3f}")
+                if "versione <code>" not in card:
+                    fails.append("backtest: versione della calibrazione non pubblicata")
+                # il confronto "senza calibrazione" deve coincidere con la tabella grezza
+                got = _num(r"Senza calibrazione lo stesso campione darebbe RPS (\d+,\d+)", "RPS grezza")
+                if got is not None:
+                    checks += 1
+                    if abs(got - somm_raw["rps"]) > 0.002:
+                        fails.append(f"backtest: RPS grezza {got} vs ricalcolata {somm_raw['rps']:.4f}")
+                print(f"[8b] backtest calibrato: λ×{cal.lambda_scale:.3f} ρ{cal.rho_shift:+.2f} "
+                      f"({cal.version}) · bias gol {somm_raw['bias_lambda']:+.3f} → {somm['bias_lambda']:+.3f} "
+                      f"· pareggio {somm_raw['pareggio_previsto'] * 100:.1f}% → {somm['pareggio_previsto'] * 100:.1f}%"
+                      f" (osservato {somm['pareggio_osservato'] * 100:.1f}%)")
 
     # 4) proiezioni di stagione: le probabilità di ogni lega sommano come devono
     sim = st.read("season_sim")
@@ -463,12 +513,16 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not coda or abs(float(coda.group(1).replace(",", ".")) - gv["p_coda"] * 100) > 0.06:
             fails.append(f"{pg.name}: coda dei gol in didascalia != ricalcolata ({gv['p_coda']:.4f})")
         # dotplot: i punti sono esattamente n_dots e stanno nelle colonne giuste
-        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)</div>\s*</div>', html, re.S)
+        # la cattura si ferma alla chiusura del contenitore (a capo + </div>), non al primo
+        # </div></div>: altrimenti l'ultima colonna resta fuori e il confronto salta proprio
+        # quella. Difetto rimasto nascosto finché la coda era sempre vuota (0 punti): con la
+        # calibrazione a momenti alcune partite hanno punti anche nella colonna «7+».
+        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)\n\s*</div>', html, re.S)
         if not dp:
             fails.append(f"{pg.name}: dotplot dei gol non trovato")
         else:
             colonne = re.findall(r'<div class="dp"><div class="stack">((?:<i></i>)*)</div>'
-                                 r'<span class="x">([^<]+)</span></div>', dp.group(1))
+                                 r'<span class="x">([^<]+)</span>', dp.group(1))
             if len(colonne) != len(gv["columns"]):
                 fails.append(f"{pg.name}: colonne dotplot {len(colonne)} (attese {len(gv['columns'])})")
             else:
@@ -503,12 +557,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if len(resi) != len(steps) or len(labels) != len(steps):
             fails.append(f"{pg.name}: passi pubblicati {len(resi)}/{len(labels)}, attesi {len(steps)}")
             continue
-        for (h, x, a), (_n, lab), st in zip(resi, labels, steps):
-            if lab != st["label"]:
-                fails.append(f"{pg.name}: passo «{lab}» != «{st['label']}»")
+        # `passo`, non `st`: il nome `st` è lo Store aperto in testa alla funzione e un ciclo
+        # che lo ombreggia lo fa diventare un dict, facendo esplodere `st.close()` in fondo
+        for (h, x, a), (_n, lab), passo in zip(resi, labels, steps):
+            if lab != passo["label"]:
+                fails.append(f"{pg.name}: passo «{lab}» != «{passo['label']}»")
             for shown, key in ((h, "p_home"), (x, "p_draw"), (a, "p_away")):
-                if abs(float(shown.replace(",", ".")) - st[key] * 100) > 0.06:
-                    fails.append(f"{pg.name}: {st['label']} {key} = {shown}% vs {st[key] * 100:.1f}%")
+                if abs(float(shown.replace(",", ".")) - passo[key] * 100) > 0.06:
+                    fails.append(f"{pg.name}: {passo['label']} {key} = {shown}% vs {passo[key] * 100:.1f}%")
         # la catena deve chiudersi sull'1X2 pubblicato in cima alla scheda
         for key in ("p_home", "p_draw", "p_away"):
             if abs(steps[-1][key] - float(r[key])) > 1e-6:

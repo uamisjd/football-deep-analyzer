@@ -203,8 +203,15 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         note = "nessuna correzione applicata"
         if calibrated:
             try:
-                note = (f"λ × {_dec(scale, 2)} stimata su {_int_it(pred.get('calibration_n_fit'))} "
-                        f"gare fuori campione")
+                come = ""
+                est = str(pred.get("calibration_estimator") or "")
+                win = pred.get("calibration_window_days")
+                if est and win and not pd.isna(win) and float(win) > 0:
+                    come = f" ({est}, ultimi {_int_it(float(win))} giorni)"
+                elif est:
+                    come = f" ({est})"
+                note = (f"λ × {_dec(scale, 2)}{come} stimata su "
+                        f"{_int_it(pred.get('calibration_n_fit'))} gare fuori campione")
             except (TypeError, ValueError):
                 note = "correzione storica delle λ"
         steps.append({"label": "Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)",

@@ -6,9 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fda.models.calibration import (BRIER_WEIGHT, LAMBDA_SCALE_GRID, MIN_ROWS, Calibration,
-                                    evaluate, fit, from_store)
-from fda.models.dc_grid import grid_markets_many, probability_grid, tau_grid, tau_grid_many
+from fda.models.calibration import (BRIER_WEIGHT, FIT_WINDOW_DAYS, MIN_ROWS, Calibration,
+                                    evaluate, fit, from_store, moment_scale)
+from fda.models.dc_grid import GRID_SIZE, grid_markets_many, probability_grid, tau_grid, tau_grid_many
 from fda.models.predict import _grid_markets, calibrated_prediction
 from fda.store import Store
 
@@ -88,8 +88,8 @@ def test_fit_recovers_a_known_lambda_bias():
     df = sample_backtest(n=3000, scale_true=1 / 0.94)
     before = evaluate(df, Calibration())
     cal = fit(df)
-    assert cal.lambda_scale in LAMBDA_SCALE_GRID
-    assert cal.lambda_scale <= 0.96, f"atteso un moltiplicatore ≤0,96, ottenuto {cal.lambda_scale}"
+    assert cal.estimator == "momenti"
+    assert abs(cal.lambda_scale - 0.94) < 0.02, f"atteso ≈0,94, ottenuto {cal.lambda_scale}"
     after = evaluate(df, cal)
     assert before["bias_lambda"] > 0.15
     assert abs(after["bias_lambda"]) < abs(before["bias_lambda"]) / 2
@@ -145,7 +145,9 @@ def test_calibrated_prediction_is_coherent_with_the_grid():
     cal = Calibration(lambda_scale=0.94, rho_shift=-0.04)
     res = calibrated_prediction(out, cal)
     lh, la, rho = cal.apply(1.9, 1.4, -0.07)
-    ref = _grid_markets(probability_grid(lh, la, rho, size=10))
+    # la griglia è quella condivisa (11×11): la calibrazione stima i parametri su quella
+    # superficie, quindi pubblicare da una 10×10 ottimizzerebbe una cosa e ne mostrerebbe un'altra
+    ref = _grid_markets(probability_grid(lh, la, rho, size=GRID_SIZE))
     assert res["p_home"] == pytest.approx(ref["p_home"], abs=1e-9)
     assert res["p_draw"] == pytest.approx(ref["p_draw"], abs=1e-9)
     assert res["p_away"] == pytest.approx(ref["p_away"], abs=1e-9)
@@ -171,8 +173,9 @@ def test_calibration_roundtrip_through_the_store(tmp_path):
     cal = fit(sample_backtest(n=2600, scale_true=1 / 0.96))
     store.upsert("calibration", [cal.as_row()])
     back = from_store(store)
-    assert back.lambda_scale == pytest.approx(cal.lambda_scale)
-    assert back.rho_shift == pytest.approx(cal.rho_shift)
+    assert back.lambda_scale == pytest.approx(cal.lambda_scale, abs=1e-6)
+    assert back.rho_shift == pytest.approx(cal.rho_shift, abs=1e-6)
+    assert back.window_days == cal.window_days and back.estimator == cal.estimator
     assert back.n_fit == cal.n_fit and back.version == cal.version
     assert back.metrics["holdout_brier_dopo"] == pytest.approx(cal.metrics["holdout_brier_dopo"], abs=1e-6)
     store.close()
@@ -229,8 +232,79 @@ def test_predict_matches_publishes_the_calibrated_grid():
     assert np.allclose(adj["p_1x"], adj["p_home"] + adj["p_draw"], atol=1e-9)
     # coerenza con la matrice: l'1X2 pubblicato è quello della griglia calibrata
     for row in adj.itertuples(index=False):
-        ref = _grid_markets(probability_grid(row.lambda_home, row.lambda_away, row.dc_rho, size=10))
+        ref = _grid_markets(probability_grid(row.lambda_home, row.lambda_away, row.dc_rho,
+                                                 size=GRID_SIZE))
         assert row.p_home == pytest.approx(ref["p_home"], abs=1e-9)
         assert row.p_over25 == pytest.approx(ref["p_over25"], abs=1e-9)
     # la λ più bassa alza la massa del pareggio: è l'effetto cercato, non un arrotondamento
     assert adj["p_draw"].mean() > raw["p_draw"].mean()
+
+
+def test_moment_scale_reproduces_the_observed_goals():
+    """Il moltiplicatore a momenti riproduce la media dei gol: è la sua definizione."""
+    rng = np.random.default_rng(17)
+    n = 4000
+    lh_true, la_true = rng.uniform(0.9, 2.2, n), rng.uniform(0.7, 1.9, n)
+    goals = rng.poisson(lh_true) + rng.poisson(la_true)
+    m = moment_scale(lh_true * 1.12, la_true * 1.12, goals)     # λ gonfiate del 12%
+    assert m == pytest.approx(1 / 1.12, abs=0.01)
+    assert (lh_true * 1.12 * m + la_true * 1.12 * m).mean() == pytest.approx(goals.mean(), abs=1e-9)
+    # λ degenerate: nessuna correzione invece di un rapporto assurdo
+    assert moment_scale(np.zeros(10), np.zeros(10), goals[:10]) == 1.0
+    # limiti di sicurezza: un modello che dichiara il triplo dei gol non si "calibra"
+    assert moment_scale(lh_true * 3, la_true * 3, goals) == 0.85
+
+
+def test_fit_follows_the_recent_regime_when_the_bias_drifts():
+    """Il bias delle λ non è stazionario: la finestra recente deve pesare più dello storico."""
+    rng = np.random.default_rng(23)
+    frames = []
+    # prima metà senza bias, seconda metà con λ gonfiate del 25%
+    for i, (days, scale_true) in enumerate(((0, 1.0), (900, 1.12))):
+        n = 1600
+        lh, la = rng.uniform(0.9, 2.1, n), rng.uniform(0.7, 1.8, n)
+        dates = (pd.Timestamp("2023-01-01") + pd.Timedelta(days=days)
+                 + pd.to_timedelta(np.sort(rng.integers(0, 800, n)), unit="D"))
+        frames.append(pd.DataFrame({
+            "date": dates, "league_key": "TEST", "home": [f"H{j % 18}" for j in range(n)],
+            "away": [f"A{j % 15}" for j in range(n)],
+            "home_goals": rng.poisson(lh), "away_goals": rng.poisson(la),
+            "lambda_home": lh * scale_true, "lambda_away": la * scale_true,
+            "dc_rho": np.full(n, -0.05)}))
+    df = pd.concat(frames, ignore_index=True)
+    tutta = fit(df, window_days=None)
+    recente = fit(df, window_days=FIT_WINDOW_DAYS)
+    assert tutta.lambda_scale > recente.lambda_scale + 0.03, (tutta.lambda_scale, recente.lambda_scale)
+    assert recente.lambda_scale == pytest.approx(1 / 1.12, abs=0.02)
+    assert recente.metrics["stima_n"] < len(df)
+    # la finestra è dichiarata nella traccia, non nascosta
+    assert str(FIT_WINDOW_DAYS) in recente.corpus and recente.window_days == FIT_WINDOW_DAYS
+    # sui dati più recenti il bias residuo è minore con la stima finestrata
+    tail = df[df["date"] >= df["date"].max() - pd.Timedelta(days=365)]
+    assert abs(evaluate(tail, recente)["bias_lambda"]) < abs(evaluate(tail, tutta)["bias_lambda"])
+
+
+def test_fit_records_the_score_grid_choice_for_comparison():
+    """La calibrazione pubblicata dice anche quale moltiplicatore avrebbe scelto il punteggio."""
+    cal = fit(sample_backtest(n=2600, scale_true=1 / 0.96))
+    assert "confronto_scale_griglia" in cal.metrics
+    assert 0.90 <= cal.metrics["confronto_scale_griglia"] <= 1.03
+    assert "holdout_bias_lambda_prima" in cal.metrics and "holdout_bias_lambda_dopo" in cal.metrics
+    assert abs(cal.metrics["holdout_bias_lambda_dopo"]) < abs(cal.metrics["holdout_bias_lambda_prima"])
+
+
+def test_n_fit_dichiara_le_gare_usate_per_la_stima_non_il_campione():
+    """La scheda scrive «stimata su N gare fuori campione»: N deve essere la finestra di stima.
+
+    Con la finestra a 730 giorni i due numeri divergono (misurato sul backtest reale: 4.743 gare
+    di stima su 5.791 di campione) e dichiarare il campione sarebbe una precisione falsa.
+    """
+    cal = fit(sample_backtest(n=3000, scale_true=1 / 0.94))
+    assert cal.n_fit == int(cal.metrics["stima_n"])
+    assert cal.n_fit <= int(cal.metrics["campione_n"])
+    # il corpus dichiara entrambi i numeri: il campione valutato e la finestra di stima
+    assert "gare fuori campione" in cal.corpus
+    assert f"ultimi {FIT_WINDOW_DAYS} giorni" in cal.corpus
+    assert f"{int(cal.metrics['campione_n'])} gare" in cal.corpus
+    assert f"stimati su {cal.n_fit} gare" in cal.corpus
+    assert cal.estimator == "momenti" and cal.window_days == FIT_WINDOW_DAYS

@@ -1,9 +1,22 @@
-import pandas as pd
-import pytest
 from pathlib import Path
 
+import numpy as np
+import pandas as pd
+import pytest
+
 from fda.config import league
-from fda.models.predict import DixonColesModel, EloModel, ensemble, outcome_index, predict_matches, rps
+from fda.models.dc_grid import GRID_SIZE, tau_grid
+from fda.models.predict import (
+    LAMBDA_MAX,
+    LAMBDA_TOTAL_MAX_ABS,
+    DixonColesModel,
+    EloModel,
+    _clamp_lambda,
+    ensemble,
+    outcome_index,
+    predict_matches,
+    rps,
+)
 from fda.sources.history import HistoryClient, season_code
 from fda.teams import canonical, same_team
 
@@ -188,3 +201,66 @@ def test_ensemble_double_chance_matches_1x2():
     assert abs(out["p_12"] - (out["p_home"] + out["p_away"])) < 1e-12
     assert abs(out["p_x2"] - (out["p_draw"] + out["p_away"])) < 1e-12
     assert abs(out["p_1x"] - (1.0 - out["p_away"])) < 1e-12
+
+
+def test_lambda_estreme_rientrano_nei_limiti_di_sicurezza():
+    """L'inversione dell'1X2 mediato non può inventare partite da otto reti.
+
+    Misurato sulle previsioni pubblicate: Barcellona-Racing Santander λ 6,17+2,25 = 8,4 gol
+    attesi (Over 2,5 al 99%, risultati esatti centrati sul 5-1). Il modello sui gol, da solo,
+    su 5.791 gare fuori campione non supera mai 3,84 per squadra né 4,73 totali.
+    """
+    # caso reale: l'Elo spinge l'1X2, l'inversione gonfia le λ
+    out = _clamp_lambda(6.17, 2.25, 2.60, 0.62)
+    assert out is not None
+    assert out[0] + out[1] == pytest.approx((2.60 + 0.62) * 1.35, abs=1e-9)
+    assert out[0] / out[1] == pytest.approx(6.17 / 2.25, abs=1e-9)   # l'inclinazione si conserva
+    # λ entro i limiti: nessun intervento
+    assert _clamp_lambda(1.60, 1.10, 1.55, 1.05) is None
+    # anche all'ingiù: l'inversione non deve svuotare la partita
+    basso = _clamp_lambda(1.00, 0.40, 1.90, 0.90)
+    assert basso is not None and basso[0] + basso[1] == pytest.approx(2.80 * 0.70, abs=1e-9)
+    # il tetto assoluto vale anche se è il modello sui gol a esagerare
+    tetto = _clamp_lambda(5.0, 3.0, 4.8, 2.6)
+    assert tetto is not None and tetto[0] + tetto[1] <= LAMBDA_TOTAL_MAX_ABS + 1e-9
+    assert max(tetto) <= LAMBDA_MAX + 1e-9
+    # senza λ di riferimento valgono i limiti assoluti, e i NaN non fanno esplodere nulla
+    assert _clamp_lambda(9.0, 1.0, float("nan"), float("nan")) is not None
+    assert _clamp_lambda(float("nan"), 1.0, 1.5, 1.2) is None
+
+
+def test_ensemble_con_elo_estremo_resta_leggibile_e_coerente():
+    """Se la media pesata chiede l'impossibile, si pubblica la griglia limitata: 1X2 e mercati
+    restano coerenti fra loro invece di mostrare un 1X2 estremo accanto a mercati prudenti."""
+    dc = {"p_home": 0.86, "p_draw": 0.09, "p_away": 0.05, "dc_rho": -0.10,
+          "lambda_home": 3.40, "lambda_away": 0.45}
+    elo = {"elo_p_home": 0.96, "elo_p_draw": 0.03, "elo_p_away": 0.01}
+    out = ensemble(dc, elo, w_dc=0.7)
+    assert out["lambda_limitata"] is True
+    assert out["lambda_home"] <= LAMBDA_MAX + 1e-9 and out["lambda_away"] <= LAMBDA_MAX + 1e-9
+    assert out["lambda_home"] + out["lambda_away"] <= LAMBDA_TOTAL_MAX_ABS + 1e-9
+    assert out["lambda_home"] + out["lambda_away"] <= (3.40 + 0.45) * 1.35 + 1e-9
+    # l'1X2 pubblicato è quello della griglia limitata, non il vettore mediato irraggiungibile
+    g = tau_grid(out["lambda_home"], out["lambda_away"], out["dc_rho"], size=GRID_SIZE)
+    i, j = np.indices(g.shape)
+    assert out["p_home"] == pytest.approx(float(g[i > j].sum()), abs=1e-9)
+    assert out["p_draw"] == pytest.approx(float(g[i == j].sum()), abs=1e-9)
+    # la griglia limitata è più prudente del vettore mediato: il pareggio risale, non scende
+    assert out["p_draw"] > 0.7 * dc["p_draw"] + 0.3 * elo["elo_p_draw"]
+    assert abs(out["p_1x"] - (out["p_home"] + out["p_draw"])) < 1e-12
+    # la scomposizione mostrata in scheda conserva sia il modello sui gol sia i rating
+    assert out["dc_p_home"] == pytest.approx(0.86) and out["elo_p_home"] == pytest.approx(0.96)
+
+
+def test_ensemble_non_tocca_le_lambda_quando_la_media_e_normale():
+    """Il limite di sicurezza non deve scattare sulle partite ordinarie (misurato: 1,2% delle gare)."""
+    dc = {"p_home": 0.50, "p_draw": 0.27, "p_away": 0.23, "dc_rho": -0.08,
+          "lambda_home": 1.70, "lambda_away": 1.00}
+    elo = {"elo_p_home": 0.46, "elo_p_draw": 0.28, "elo_p_away": 0.26}
+    out = ensemble(dc, elo, w_dc=0.7)
+    assert out["lambda_limitata"] is False
+    assert out["lambda_home"] + out["lambda_away"] < 3.2
+    # senza Elo non c'è inversione: le λ restano quelle del modello sui gol
+    solo = ensemble(dc, None)
+    assert solo["model"] == "dc" and solo["lambda_limitata"] is False
+    assert solo["lambda_home"] == pytest.approx(1.70)

@@ -53,9 +53,15 @@ poi **ricalcola le λ** dalle probabilità mediate con `penaltyblog.models.goal_
 verifiche hanno isolato il difetto **[offline]**:
 
 - la τ di Dixon-Coles non c'entra: media della griglia contro λ dichiarata, scarto **0,0003**;
-- le λ «DC puro» (senza Elo) riproducono i gol osservati entro ±0,05, mentre quelle dell'ensemble
-  stanno **+15/20%** sopra: il passaggio per `goal_expectancy` su un 1X2 mescolato è ciò che gonfia
-  i gol attesi, e con essi Over/Under, BTTS, porte inviolate e risultati esatti.
+- le λ del **solo modello sui gol** — ricostruite invertendo il suo 1X2 (`dc_p_*`, già salvato in
+  ogni riga) con la stessa `goal_expectancy`, su tutte le 5.791 gare — valgono in media **2,730**
+  gol contro **2,862** osservati (−0,13: leggermente *sotto*, non sopra), mentre quelle pubblicate
+  dall'ensemble valgono **3,107** (+0,245). Il rapporto invertite/DC è **1,14 in media, 1,28 al p95,
+  1,35 al p99, 1,55 al massimo**: il passaggio per `goal_expectancy` su un 1X2 mescolato è ciò che
+  gonfia i gol attesi, e con essi Over/Under, BTTS, porte inviolate e risultati esatti. Ne segue che
+  il moltiplicatore di calibrazione 0,9135 sta *annullando quasi esattamente* quel rapporto
+  (1,14 × 0,9135 = 1,04): è un tampone globale a un difetto locale, ed è il motivo per cui il
+  candidato `dc_elo_tilt` (§5.1) e i limiti di sicurezza (§3.3) contano più della calibrazione stessa.
 
 Conseguenza progettuale: la correzione deve agire su **λ e ρ insieme** (gli unici due ingressi della
 matrice), non con una temperatura sulle probabilità 1X2 — quella sposta l'1X2, che non è il problema,
@@ -87,46 +93,114 @@ github.com, api.github.com e PyPI): dove il fetch diretto non è riuscito è ind
 
 ## 3. Intervento quantitativo: calibrazione della griglia (implementato)
 
-### 3.1 Che cosa fa
+### 3.1 Che cosa fa (versione 1.1, stimatore a momenti)
 
-`models/calibration.py` sceglie su griglia il paio **(moltiplicatore delle λ, spostamento di ρ)** che
-minimizza `RPS + 0,5 · Brier(mercati)` sulle partite **fuori campione** del backtest:
+`models/calibration.py` stima il paio **(moltiplicatore delle λ, spostamento di ρ)** sulle partite
+**fuori campione** del backtest. Dalla versione `cal-momenti-1.1` il moltiplicatore **non** esce più da
+una griglia di punteggio: è stimato per **uguaglianza dei momenti**, cioè
 
-- griglia: λ × 0,88…1,02 (passo 0,01), Δρ −0,08…0,00 (passo 0,01);
+    m = gol osservati / gol attesi dalla griglia     (finestra: ultimi 730 giorni)
+
+perché il difetto da correggere è un *livello* (le λ gonfiate), e una griglia con passo 0,01 su una
+funzione obiettivo piatta sceglie quasi a caso fra 0,93 e 0,95: il valore pubblicato era quindi meno
+preciso del fenomeno che doveva correggere. Misurato: la griglia di punteggio, sullo stesso campione,
+sceglie 0,94 contro **0,9135** dei momenti, e la differenza si vede tutta sul bias dei gol
+(+0,128 contro **+0,053** fuori campione). Lo spostamento di ρ resta su griglia (−0,06…+0,02, passo
+0,02) perché agisce sulla massa del pareggio, che non ha un momento chiuso altrettanto diretto.
+
+- finestra di stima: **ultimi 730 giorni** (`FIT_WINDOW_DAYS`), scelta misurando il bias per
+  semestre: `m` vale 0,963 / 0,935 / 0,881 / 0,917 / 0,902 / 1,034, cioè il fenomeno **non è
+  stazionario** e stimarlo su tutto lo storico mescola regimi diversi. 730 giorni è il compromesso
+  misurato fra aderenza al regime corrente (4.743 gare) e rumore (365 giorni dà lo stesso Brier ma
+  metà campione);
+- limiti di sicurezza `SCALE_BOUNDS = (0,85; 1,05)`: se la finestra chiedesse una correzione più
+  forte, significa che è cambiato il modello o il dato, non il calcio — si applica il limite e si
+  avvisa nel log;
 - la correzione è applicata a **λ e ρ**, poi l'intera previsione (1X2, doppia chance, risultati esatti,
   Over/Under, BTTS, porte inviolate) è **ripubblicata dalla griglia corretta**: una sola superficie di
   probabilità, coerente con la matrice mostrata in scheda;
-- valutazione **walk-forward a 4 fold cronologici**: il guadagno dichiarato non è in-sample;
-- soglia di sicurezza: sotto **1.200 partite** di backtest non si corregge nulla (identità);
-- `models/dc_grid.py` ha ricevuto le versioni vettorizzate (`tau_grid_many`, `grid_markets_many`,
-  `clamp_rho_many`): stessa formula della scalare, verificata cella per cella nei test, e migliaia di
-  righe corrette in pochi secondi (fit completo: **3,2 s**);
-- CLI: **`fda calibrate [--dry-run]`**, che stampa prima/dopo e salva la tabella `calibration`
-  (versione `grid-cal-1.0`); `fda predict` applica l'ultima calibrazione salvata e scrive nella riga
-  `lambda_scale`, `rho_shift`, `calibration_version`, `calibration_n_fit` e i valori grezzi
-  (`lambda_home_raw`, `lambda_away_raw`, `rho_raw`, `blend_p_*`) — ogni numero pubblicato resta
-  riconducibile alla versione che lo ha prodotto;
-- `fda daily` ora esegue **collect → calibrate → predict → backtest → simulate → build**: si calibra
-  sui dati del run precedente (solo passato) e si pubblica subito; se `calibrate` fallisce il run
-  degrada al modello grezzo invece di bloccarsi. La simulazione di stagione usa la stessa
-  calibrazione delle schede (altrimenti «Proiezioni» e «Analisi» racconterebbero due campionati).
+- valutazione **walk-forward a 6 fold cronologici** (`FOLDS`): il guadagno dichiarato non è in-sample;
+- soglia di sicurezza: sotto **1.200 partite** (`MIN_ROWS`) di backtest non si corregge nulla (identità);
+- guardia sul residuo: se dopo la correzione il bias λ walk-forward resta sopra **0,10 gol** il fit
+  avvisa nel log (la calibrazione non deve nascondere un difetto strutturale);
+- `as_row` arrotonda λ e ρ a **6 decimali** (prima 4: con un moltiplicatore continuo il giro
+  parquet→memoria non restituiva più lo stesso numero);
+- `models/dc_grid.py` ha le versioni vettorizzate (`tau_grid_many`, `grid_markets_many`,
+  `clamp_rho_many`) e ora anche **`GRID_SIZE = 11` come unica costante condivisa**: modelli,
+  laboratorio, calibrazione e schede usano la stessa matrice. Prima `calibrated_prediction` pubblicava
+  da una 10×10 mentre la calibrazione era stimata su una 11×11 (differenza misurata ~4e-7 su una
+  probabilità: piccola, ma era ottimizzare una superficie e mostrarne un'altra);
+- CLI: **`fda calibrate [--dry-run]`**, che stampa stimatore, finestra, confronto con la scelta su
+  griglia, prima/dopo e salva la tabella `calibration` (versione `cal-momenti-1.1`); `fda predict`
+  applica l'ultima calibrazione salvata e scrive nella riga `lambda_scale`, `rho_shift`,
+  `calibration_version`, `calibration_n_fit` e i valori grezzi (`lambda_home_raw`, `lambda_away_raw`,
+  `rho_raw`, `blend_p_*`) — ogni numero pubblicato resta riconducibile alla versione che lo ha prodotto;
+- `fda daily` esegue **collect → calibrate → predict → backtest → simulate → build**: si calibra sui
+  dati del run precedente (solo passato) e si pubblica subito; se `calibrate` fallisce il run degrada
+  al modello grezzo invece di bloccarsi.
 
-### 3.2 Risultati misurati **[offline, su `backtest.parquet` reale]**
+### 3.2 Risultati misurati **[offline, su `backtest.parquet` reale: 5.791 gare fuori campione, 7 leghe]**
 
-Parametri scelti: **λ × 0,94 · Δρ −0,04**.
+Parametri pubblicati: **λ × 0,9135 · Δρ −0,04** (`cal-momenti-1.1`, stimati su 4.743 gare degli
+ultimi 730 giorni).
 
-| Misura | Prima | Dopo | Lettura |
+| Misura | Identità | Griglia 0,94 (v1.0) | **Momenti 730 gg (v1.1)** |
 |---|---|---|---|
-| bias λ (gol totali) | +0,245 | **+0,058** | il difetto principale è ridotto di ~4× |
-| pareggio dichiarato | 23,9% | **25,7%** (osservato 25,6%) | dentro l'intervallo |
-| Brier mercati, **walk-forward** (4.825 gare tenute fuori) | 0,2065 | **0,2055** | −0,0010: piccolo ma nella direzione giusta e misurato onestamente |
-| RPS 1X2, walk-forward | 0,2006 | 0,2007 | +0,0001: **invariato entro il rumore** |
+| Brier mercati, walk-forward (4.825 gare tenute fuori) | 0,20646 | 0,20548 | **0,20516** |
+| RPS 1X2, walk-forward | **0,20056** | 0,20070 | 0,20081 |
+| bias λ fuori campione | +0,264 | +0,128 | **+0,053** |
+| bias λ sul campione pieno | +0,245 | +0,058 | **−0,024** |
+| pareggio previsto (osservato 25,6%) | 23,9% | 25,7% | **26,2%** |
+| Brier 9 mercati, campione pieno | 0,2025 | — | **0,2017** |
 
-Il punto da comunicare senza sconti: **l'1X2 è al pavimento informativo** di questa famiglia di modelli
-(±0,0001…0,0004 su RPS). Ricalibrare non lo migliora; migliora la coerenza dei gol e dei mercati, che
-è dove il modello dichiarava numeri sbagliati. Per guadagnare sull'1X2 serve **informazione nuova**
-(xG storici, assenze pesate) o un **modello strutturale diverso** (copula, dinamica temporale): è il
-compito del laboratorio, non della calibrazione.
+Scelte e rinunce, senza sconti:
+
+- **l'1X2 è al pavimento informativo** di questa famiglia di modelli: la calibrazione lo peggiora di
+  +0,0003 RPS (0,20056 → 0,20081) mentre migliora Brier mercati di −0,0013 e azzera il bias dei gol.
+  Il compromesso è deliberato: i mercati e i gol attesi sono ciò che la scheda *dichiara* in decine di
+  punti (Over/Under, BTTS, risultati esatti, «quanti gol in pratica», proiezioni), l'RPS 1X2 è una
+  metrica sola. La pagina Accuratezza mostra entrambi i numeri e il confronto «senza calibrazione»;
+- per guadagnare sull'1X2 serve **informazione nuova** (xG storici, assenze pesate) o un **modello
+  strutturale diverso** (copula, dinamica temporale): è il compito del laboratorio (§5);
+- la calibrazione **per lega** è stata misurata e **scartata**: guadagno sul Brier 0,20510 contro
+  0,20514 globale, cioè rumore, a fronte di 7 parametri in più da stimare su campioni da 300-900 gare.
+
+### 3.3 Limiti di sicurezza sulle λ invertite (nuovo, misurato)
+
+`ensemble()` ricava le λ della griglia pubblicata **invertendo l'1X2 mediato** con
+`pb.models.goal_expectancy`, che risolve due λ libere senza alcun vincolo. Quando l'Elo spinge il
+vettore verso esiti estremi (pareggio al 5-6%) l'unico modo di riprodurlo è gonfiare i gol attesi:
+
+- misurato sul backtest reale: il modello sui gol **da solo** non supera mai λ 3,84 per squadra né
+  4,73 totali (media 2,730); dopo l'inversione la media è 3,107, il p99 4,82, il massimo **6,77**;
+  il rapporto invertite/DC è 1,14 in media, 1,28 al p95, 1,35 al p99, **1,55** al massimo;
+- sulle previsioni pubblicate (`predictions.parquet`) il caso limite è
+  **Barcellona-Racing Santander λ 6,17 + 2,25 = 8,4 gol attesi**: Over 2,5 al 99%, risultati esatti
+  centrati sul 5-1. Numeri che un lettore riconosce come assurdi e che trascinano con sé ogni mercato
+  derivato e la matrice mostrata in scheda.
+
+Correzione (`LAMBDA_MAX = 4,0`, `LAMBDA_TOTAL_MAX_REL = 1,35`, `LAMBDA_TOTAL_MIN_REL = 0,70`,
+`LAMBDA_TOTAL_MAX_ABS = 5,5`): il totale resta fra il 70% e il 135% di quello del modello sui gol e
+sotto il tetto assoluto, ogni λ sotto 4,0, **l'inclinazione casa/trasferta si conserva** (si scala il
+totale). Quando il limite lega, l'1X2 pubblicato è quello della griglia limitata, non il vettore
+mediato irraggiungibile: la scheda resta coerente con se stessa (e `lambda_limitata` lo registra).
+
+Effetto misurato sulle 5.791 gare fuori campione:
+
+| Misura | Prima | Dopo |
+|---|---|---|
+| gare toccate | — | **69 (1,19%)**, in tutte e 7 le leghe (POR1 21, NED1 15, ITA1 9, GER1 7, FRA1 7, ENG1 6, ESP1 4) |
+| λ massima per squadra | 5,09 | **4,00** |
+| λ totali massime | 6,77 | **5,49** |
+| RPS / logloss (tutte le gare) | 0,1993 / 0,9869 | 0,1993 / 0,9869 (**invariati**) |
+| bias λ (tutte le gare) | +0,245 | **+0,242** |
+| sulle 69 gare toccate: logloss | 0,5676 | **0,5664** |
+| sulle 69 gare toccate: Brier 9 mercati | 0,1471 | **0,1450** |
+| sulle 69 gare toccate: bias λ (poi calibrato) | +0,791 (+0,395) | **+0,561 (+0,184)** |
+| sulle 69 gare toccate: pareggio previsto (osservato 10,1%) | 12,3% | **13,0%** |
+
+Nessun costo in accuratezza, mercati migliori proprio dove il modello esagerava, e nessuna scheda che
+promette otto gol. La stessa protezione è applicata dentro `_mix_grids` del laboratorio (§5.2).
 
 ---
 
@@ -152,7 +226,7 @@ Due blocchi nuovi nella scheda partita, entrambi derivati **solo** dai numeri gi
 |---|---|---|
 | 1 · Modello sui gol (Dixon-Coles) | nuove colonne `dc_p_*` salvate in previsione | 46,1 / 26,8 / 27,0 |
 | 2 · Media con i rating Elo | `blend_p_*` (media pesata 0,7/0,3 già salvata dalla calibrazione) | 48,0 / 26,1 / 25,9 (Δ +1,9 pp) |
-| 3 · Calibrazione | `p_*` pubblicati, con la nota «λ × 0,94 stimata su 5.791 gare fuori campione» | 46,9 / 27,4 / 25,7 (Δ −1,1 pp) |
+| 3 · Calibrazione | `p_*` pubblicati, con la nota «λ × 0,91 (momenti, ultimi 730 giorni) stimata su 4.743 gare fuori campione» — stimatore e finestra sono scritti nella riga di previsione (`calibration_estimator`, `calibration_window_days`) | 46,9 / 27,4 / 25,7 (Δ −1,1 pp) |
 
 Ogni barra è un vettore 1X2 **realmente calcolato e salvato**, non una ricostruzione a posteriori; se
 un passaggio non è tracciato nei dati (righe prodotte prima di questa modifica) il blocco mostra solo
@@ -177,7 +251,7 @@ matrice sia la distribuzione invece di stampare valori NaN — difetto trovato s
 `models/lab.py` + **`fda lab`**: confronto **walk-forward** fra famiglie di modelli, iperparametri e
 miscele, con la stessa procedura per tutti e nessuna informazione dal futuro.
 
-### 5.1 Candidati (15)
+### 5.1 Candidati (22)
 
 | chiave | tipo | famiglia | che cosa mette alla prova |
 |---|---|---|---|
@@ -190,47 +264,99 @@ miscele, con la stessa procedura per tutti e nessuna informazione dal futuro.
 | `neg_binomial` | goals | binomiale negativa | sovradispersione dei gol |
 | `zero_inflated` | goals | Poisson zero-inflazionata | eccesso di 0-0 |
 | `weibull_copula` | goals | Weibull + copula | struttura che in DC manca su Over/Under |
-| `elo` | rating | Elo | solo rating (k 20, vantaggio casa 60) |
+| `elo` | rating | Elo (k 20, HFA 60) | solo rating, con i default di penaltyblog |
+| **`elo_k10` / `elo_k40`** | rating | Elo | **nuovo**: reattività del rating (k mai tarato: è il default) |
+| **`elo_hfa40` / `elo_hfa80`** | rating | Elo | **nuovo**: vantaggio del campo (60 è il default, mai misurato) |
 | `pi_ratings` | rating | Pi-ratings | rating di Constantinou-Fenton |
-| `mix_50` / `mix_85` | blend | Dixon-Coles | miscela **nella griglia** (λ invertite con `goal_expectancy`, matrici mescolate) al 50% e all'85% di DC |
+| `mix_50` / `mix_85` | blend | Dixon-Coles | miscela **nella griglia** (matrici mescolate) al 50% e all'85% di DC |
+| **`dc_elo_tilt`** | blend | Dixon-Coles | **nuovo**: l'Elo **inclina** il rapporto casa/trasferta senza gonfiare i gol attesi (alternativa strutturale a `goal_expectancy`) |
+| **`prod_w50` / `prod_w85`** | production | Dixon-Coles | **nuovo**: il peso 0,7 della media pesata non era mai stato confrontato con 0,50 e 0,85 |
 
 Più `convex_weights()`: stacking convesso dei vettori 1X2 (Nelder-Mead, nessuna dipendenza nuova),
 per sapere se una combinazione pesata batte il migliore dei singoli.
 
-### 5.2 Protocollo
+### 5.2 Protocollo (corretto in due punti che rendevano il confronto iniquo)
 
 - finestre cronologiche per lega: si allena su tutto ciò che precede il taglio e si valuta sulle gare
-  della finestra (default 28 giorni, minimo 600 partite di storico); il test `SpyDC`-style
+  della finestra (default 28 giorni, minimo 600 partite di storico); il test con `SpyGoals`
   (`tests/test_lab.py`) verifica che **nessun fit veda una data successiva alle gare che valuta**;
+- **ogni candidato corregge il proprio livello dei gol** (`self_calibrate`, default attivo): il
+  moltiplicatore a momenti è stimato **solo sulle gare che quel candidato ha già valutato** nelle
+  finestre precedenti (minimo 100, stessi limiti di sicurezza della produzione). Senza, il confronto
+  era truccato: la baseline è pubblicata calibrata, e un candidato con λ più basse veniva penalizzato
+  due volte. `--no-self-calibrate` confronta invece i candidati con la calibrazione salvata così com'è;
+  la colonna `scala_media` del riepilogo dice quanta correzione serve a ciascun candidato;
+- la correzione del livello è **conservativa della forma**: per le griglie non-Dixon-Coles (miscele e
+  famiglie non-DC) si usa un'**inclinazione esponenziale** p′(i,j) ∝ p(i,j)·θ^(i+j) con θ cercato per
+  bisezione (`_tilt_total`), che per Poisson indipendenti coincide con λ·θ e per le altre famiglie
+  sposta la media dei gol senza trasformare una binomiale negativa in un Dixon-Coles;
+- **bug trovato e corretto**: `_apply_calibration` ricostruisce una griglia τ dalle λ, e le miscele
+  dichiaravano le λ del DC → con una calibrazione non identica **`mix_50` diventava identico a
+  `dc_puro` riga per riga** (verificato: 405 gare su 405, p_home, mercati e λ_total uguali). Il
+  candidato che doveva misurare la miscela non misurava niente. Ora le miscele dichiarano le λ della
+  propria matrice e ricevono la correzione sulla propria superficie
+  (`test_con_calibrazione_attiva_la_miscela_resta_diversa_dal_dc`);
+- **bug trovato e corretto**: nelle famiglie non-DC la calibrazione non veniva applicata affatto,
+  quindi Poisson/binomiale negativa/zero-inflazionata/Weibull erano confrontate «grezze» contro una
+  baseline calibrata. Con la correzione, sul corpus surrogato il loro RPS passa da 0,2058 a **0,1968**;
+- `goal_expectancy` dentro `_mix_grids` riceve gli stessi limiti di sicurezza della produzione (§3.3):
+  su un vettore irraggiungibile (pareggio al 9,5%, ottenuto con un Elo degenerato sui dati H2H)
+  l'inversione scappava a λ 5,80+3,14 = 8,9 gol attesi e la miscela veniva bocciata per un difetto
+  dell'inversione;
 - metriche per candidato: **RPS**, log-loss, Brier 1X2 e dei mercati, esito azzeccato, bias delle λ,
-  quota di gare in cui è il migliore/il peggiore;
+  pareggio previsto/osservato, scala applicata, quota di gare in cui è il migliore/il peggiore;
 - **bootstrap appaiato a 95%** sulla differenza di RPS rispetto alla baseline, **sullo stesso insieme
   di partite**: se l'intervallo include 0, la differenza è rumore e non si cambia modello;
 - tabella per lega (`per_league`) per la parità richiesta fra i 7 campionati;
 - output: tabella in console + `data/processed/model_lab.parquet` (chiavi `candidate`, `league_key`).
 
-### 5.3 Primo giro eseguito dal sandbox **[offline, corpus surrogato — indicativo]**
+### 5.3 Giri eseguiti dal sandbox **[offline, corpus surrogato — indicativo, non decisionale]**
 
 Nel sandbox i mirror dei dati storici non sono raggiungibili, quindi il laboratorio è stato provato su
 uno storico **ricostruito** da `data/processed/h2h.parquet` (`scripts/corpus_da_h2h.py`: 4.803 partite,
-7 leghe, dal 2014). Quel corpus è **distorto** (sottostima i gol di ~10%: è un campione di precedenti,
-non un calendario completo): i numeri qui sotto dimostrano che il meccanismo funziona, **non** dicono
-quale modello scegliere. La scelta va presa sul primo giro in Actions con `history.parquet` reale.
+7 leghe, dal 2014). Quel corpus è **distorto** in due modi misurati: sottostima i gol di ~10% (è un
+campione di precedenti, non un calendario completo) e, con così poche partite per squadra, **fa
+degenerare l'Elo** (per Juventus-Torino dà 76/9/21: pareggio al 9,5%, che nel calcio reale non
+esiste). I numeri qui sotto dimostrano che il meccanismo funziona e che il confronto è ora equo;
+**non** dicono quale modello scegliere. La scelta va presa sul primo giro in Actions con
+`history.parquet` reale.
 
-6 candidati, `--min-train 300 --step-days 120`, 6 finestre, **783 partite valutate in 59 s**:
+16 candidati, `--min-train 300 --step-days 120 --max-windows 4`, **519 partite valutate in 95 s**
+(correzione automatica del livello non ancora attiva: 519 gare su 7 leghe sono ~74 per lega, sotto la
+soglia di 100; sul corpus reale scatterà):
 
-| candidato | RPS | Δ RPS vs baseline | IC 95% appaiato | esito azzeccato | bias λ |
-|---|---|---|---|---|---|
-| `dc_elo_prod` (baseline) | **0,2036** | 0,0000 | — | 52,1% | +0,159 |
-| `mix_50` | 0,2038 | +0,0002 | [−0,0005; +0,0008] | 52,6% | +0,652 |
-| `dc_puro` | 0,2040 | +0,0004 | [−0,0006; +0,0014] | 52,5% | −0,203 |
-| `elo` | 0,2057 | +0,0021 | [−0,0003; +0,0045] | 51,9% | — |
-| `neg_binomial` | 0,2058 | +0,0022 | [−0,0029; +0,0071] | 52,1% | +0,041 |
-| `poisson` | 0,2058 | +0,0022 | [−0,0029; +0,0071] | 52,1% | +0,041 |
+| candidato | RPS | Δ RPS | IC 95% appaiato | log-loss | bias λ | pareggio previsto |
+|---|---|---|---|---|---|---|
+| `zero_inflated` | **0,1966** | −0,0031 | [−0,0090; +0,0026] | 0,9779 | +0,064 | 22,0% |
+| `neg_binomial` | 0,1968 | −0,0029 | [−0,0088; +0,0028] | 0,9789 | +0,062 | 22,0% |
+| `poisson` | 0,1968 | −0,0029 | [−0,0089; +0,0029] | 0,9792 | +0,063 | 22,0% |
+| `elo_k40` | 0,1977 | −0,0020 | [−0,0061; +0,0024] | 0,9934 | — | 18,5% |
+| `biv_poisson` | 0,1978 | −0,0018 | [−0,0084; +0,0045] | 0,9917 | +0,066 | 23,4% |
+| **`dc_elo_tilt`** | 0,1996 | −0,0000 | [−0,0003; +0,0003] | 0,9915 | **−0,186** | 25,9% |
+| `dc_elo_prod` (baseline) | 0,1997 | 0,0000 | — | 0,9903 | +0,155 | 25,0% |
+| `prod_w50` | 0,1997 | +0,0001 | [−0,0007; +0,0008] | 0,9913 | +0,386 | 23,9% |
+| `prod_w85` | 0,2001 | +0,0004 | [−0,0002; +0,0011] | 0,9918 | −0,024 | 26,0% |
+| `elo` | 0,2005 | +0,0008 | [−0,0021; +0,0038] | 0,9984 | — | 20,0% |
+| `mix_85` | 0,2006 | +0,0009 | [+0,0002; +0,0016] | 0,9944 | −0,066 | 25,5% |
+| `dc_puro` | 0,2007 | +0,0011 | [−0,0002; +0,0023] | 0,9943 | −0,186 | 26,9% |
+| `mix_50` | 0,2008 | +0,0012 | [+0,0003; +0,0020] | 0,9962 | +0,215 | 24,2% |
+| `elo_hfa40` | 0,2008 | +0,0011 | [−0,0018; +0,0041] | 0,9987 | — | 20,3% |
+| `pi_ratings` | 0,2018 | +0,0022 | [−0,0072; +0,0118] | 1,0115 | — | 29,3% |
+| `elo_k10` | 0,2071 | **+0,0074** | **[+0,0040; +0,0110]** | 1,0161 | — | 21,2% |
 
-Lettura onesta: **nessuna differenza significativa** su questo corpus (tutti gli IC contengono lo 0).
-È esattamente il comportamento atteso e il motivo per cui il laboratorio esiste: senza IC appaiati si
-sarebbe potuto «promuovere» `mix_50` o `dc_puro` su 0,0002 di RPS.
+Lettura onesta, in tre punti:
+
+1. **nessun candidato batte la baseline in modo significativo** (tutti gli IC, tranne uno, contengono
+   lo 0): su 519 partite non si cambia modello. L'unica differenza significativa è in peggio
+   (`elo_k10`, rating troppo lenti);
+2. **`dc_elo_tilt` è il segnale più interessante**: stesso RPS della produzione (0,1996 contro 0,1997,
+   IC [−0,0003; +0,0003]) **senza gonfiare i gol attesi** (bias −0,186 contro +0,155). Se regge sul
+   corpus reale, è la correzione strutturale del difetto che oggi la calibrazione deve tamponare
+   globalmente: l'Elo entra nell'1X2, i gol attesi restano quelli del modello sui gol;
+3. le famiglie Poisson-like in testa sono con ogni probabilità un **artefatto del corpus** (che
+   sottostima i gol e ha pochi precedenti per squadra): in letteratura Dixon-Coles batte Poisson di
+   ~0,0001-0,0002 RPS su dati veri (pena.lt 2025-03: DC 0,19138 contro Poisson 0,19154). Va
+   ricontrollato sul corpus reale, non promosso qui.
 
 ### 5.4 Come gira in produzione
 
@@ -247,18 +373,31 @@ nel `daily`.
 
 ## 6. Criteri di accettazione (da verificare dopo il merge)
 
-1. **[live]** `fda calibrate` nel run giornaliero produce una calibrazione con `n_fit ≥ 1.200` e
-   `bias_lambda` del campione pieno **< 0,10 gol** (oggi +0,058 sul backtest);
+1. **[live]** `fda calibrate` nel run giornaliero produce una calibrazione con `n_fit ≥ 1.200`,
+   stimatore `momenti`, finestra 730 giorni e `bias_lambda` del campione pieno **< 0,10 gol**
+   (oggi **−0,024** sul backtest, +0,053 fuori campione);
 2. **[live]** nella pagina Accuratezza il pareggio dichiarato cade **dentro** l'intervallo di Wilson
    e Over 2,5 / BTTS si avvicinano all'osservato (scarto < 2 pp);
-3. **[live]** Brier mercati del backtest successivo **non peggiora** oltre 0,0005 rispetto a 0,2065;
+3. **[live]** Brier mercati del backtest successivo **non peggiora** oltre 0,0005 rispetto a 0,2065
+   (identità) — con la v1.1 il valore atteso è ~0,2052 fuori campione e 0,2017 sul campione pieno
+   (9 mercati, previsioni calibrate);
+3bis. **[live]** nessuna previsione pubblicata con λ per squadra > 4,00 o λ totali > 5,5; nel log del
+   run compaiono al più poche decine di `λ dall'1X2 mediato fuori dai limiti` (atteso: ~1,2% delle
+   gare, concentrate dove il divario tecnico è massimo — POR1, NED1);
 4. **[live]** `history.parquet` compare in `data/processed` dopo il primo run con `fda simulate`;
 5. **[live]** il primo `lab` in Actions pubblica `model_lab.parquet` con ≥ 1.000 partite valutate per
    candidato e 7 leghe; si cambia modello **solo** se un candidato batte `dc_elo_prod` con IC 95%
-   appaiato interamente negativo, e solo se il vantaggio vale in almeno 5 leghe su 7;
-6. **[offline, già verificato]** suite **150 passed**, `ruff --select F,E9` pulito, `fda build`
-   (376 schede / 2.364 fixture / 7.394 giocatori), `scripts/verify_site.py` **4.088 pagine · 0 problemi**
-   con i nuovi controlli [9] e [10];
+   appaiato interamente negativo, e solo se il vantaggio vale in almeno 5 leghe su 7. Con la
+   correzione automatica del livello (`scala_media` nel riepilogo) il confronto è equo: **verificare
+   che `scala_media` sia < 1 per i candidati della famiglia di produzione e ≈ 1 per quelli che non
+   gonfiano le λ** — è la firma del difetto strutturale, visibile senza dover leggere il codice;
+   priorità di lettura: `dc_elo_tilt` (stesso RPS senza gonfiare i gol) e `prod_w50`/`prod_w85`
+   (il peso 0,7 non era mai stato misurato);
+6. **[offline, già verificato]** suite **163 passed** (0 warning), `ruff --select F,E9` pulito su `src`,
+   `tests` e `scripts`, build di anteprima (376 schede / 2.364 fixture / 7.394 giocatori),
+   `scripts/verify_site.py` **0 problemi · 2.213 controlli numerici superati** con i controlli [8b]
+   (backtest ricalcolato con la calibrazione salvata), [9] (138 distribuzioni dei gol, ultima colonna
+   del dotplot compresa) e [10] (138 scomposizioni della probabilità);
 7. ogni blocco nuovo compare **in tutte le 7 leghe** (la distribuzione dei gol dipende solo da λ/ρ,
    che esistono per ogni partita prevista: 138/138 schede verificate nell'anteprima).
 
@@ -275,6 +414,21 @@ nel `daily`.
    vantaggio per lega stabile, `fda predict` prende ξ da una tabella per lega invece che un valore unico.
 3. **Assenze pesate**: oggi l'infermeria è descrittiva. Prima di farla entrare nel modello serve una
    misura (effetto su xGA/xG per ruolo) altrimenti resta **[presunto]**.
+
+**P2bis — struttura dell'ensemble (la strada aperta da questa sessione)**
+3bis. **`dc_elo_tilt` in produzione**, se il giro reale in Actions conferma il risultato surrogato
+   (stesso RPS della ricetta attuale, bias λ da +0,155 a −0,186): l'Elo inclina il rapporto
+   casa/trasferta, i gol attesi restano quelli del modello sui gol. È la correzione *strutturale* del
+   difetto che oggi la calibrazione tampona con un moltiplicatore globale 0,9135: se entra, la
+   calibrazione dovrebbe tornare vicino a 1,00 e il suo ruolo diventare solo la deriva di regime.
+   Va misurato anche l'effetto sui mercati (Over/BTTS/risultati esatti), non solo sull'1X2.
+3ter. **Orizzonte delle previsioni**: oggi `fda predict` copre **7 giorni** e solo le gare con
+   `status == "scheduled"`, cioè 138 partite previste su 2.091 in calendario (6,6%). Le schede delle
+   partite oltre la settimana non hanno modello. Estendere l'orizzonte costa spazio
+   (`predictions.parquet` accumula una riga per `(match_id, model, made_at)`: ~23 versioni per
+   partita, 3.210 righe per 138 partite) e tempo di run: serve una decisione sulla chiave
+   (sovrascrivere l'ultima versione per partita, o tenere lo storico solo per le gare entro 7 giorni)
+   **prima** di allargare la copertura.
 
 **P3 — struttura del modello**
 4. Copula di Weibull come generatore dei mercati sui gol (1X2 da DC, Over/Under dalla copula), se il
@@ -299,17 +453,18 @@ nel `daily`.
 
 | File | Che cosa contiene |
 |---|---|
-| `src/fda/models/calibration.py` | griglia (m, Δρ), fit walk-forward, `evaluate`, `from_store`, `apply_many` |
-| `src/fda/models/dc_grid.py` | `tau_grid_many`, `clamp_rho_many`, `grid_markets_many` (vettorizzati) |
-| `src/fda/models/lab.py` | candidati, `walk_forward`, `_mix_grids`, `summarize` (bootstrap appaiato), `per_league`, `convex_weights` |
-| `src/fda/models/predict.py` | `calibrated_prediction`, `dc_p_*` salvati, `MODEL_VERSION` `dc-elo-ens-0.3` |
+| `src/fda/models/calibration.py` | stimatore a momenti (`_estimate`, `moment_scale`, `_best_shift`), finestra 730 gg, fit walk-forward, confronto con la scelta su griglia, `evaluate`, `from_store`, `apply_many`, `as_row` a 6 decimali |
+| `src/fda/models/dc_grid.py` | `GRID_SIZE = 11` (costante unica), `tau_grid_many`, `clamp_rho_many`, `grid_markets_many` (vettorizzati) |
+| `src/fda/models/lab.py` | 22 candidati, `walk_forward` con correzione del livello per candidato, `_tilt_grid`, `_tilt_total`, `_apply_grid_level`, `_mix_grids` protetta, `summarize` (bootstrap appaiato, `scala_media`), `per_league`, `convex_weights` |
+| `src/fda/models/predict.py` | `_clamp_lambda` + limiti di sicurezza, `lambda_limitata`, `calibrated_prediction` su griglia 11×11, `dc_p_*` salvati, `MODEL_VERSION` `dc-elo-ens-0.3` |
 | `src/fda/models/season_sim.py` | `persist_history`, calibrazione dentro `_match_grid`/`simulate_league`/`simulate_all` |
 | `src/fda/cli.py` | `fda calibrate`, `fda lab`, ordine del `daily`, storico salvato da `predict`/`backtest` |
 | `src/fda/store.py` | chiavi delle tabelle `history`, `calibration`, `model_lab` |
 | `src/fda/site/advanced.py` | `goals_view`, `probability_steps`, `_per_cento` |
 | `src/fda/site/analysis.py` | `_lambdas` (NaN → nessun blocco), wrapper `goals_view` |
 | `src/fda/site/templates/match.html`, `base.html` | i due blocchi nuovi + CSS |
-| `src/fda/models/backtest.py`, `src/fda/site/build.py`, `templates/accuracy.html` | `(k/n)` pubblicato per mercato |
+| `src/fda/models/backtest.py` | `model_version` per riga, `calibrate_rows` (previsioni ripubblicate dalla griglia calibrata, grezzi in `*_raw`), `backtest_summary` con bias λ / Brier 9 mercati / pareggio / versione di calibrazione e modello, `_mean_or_nan` |
+| `src/fda/site/build.py`, `templates/accuracy.html` | `(k/n)` pubblicato per mercato, riga «modello calibrato» con confronto «senza calibrazione», etichetta della calibrazione e versioni del modello presenti |
 | `scripts/diagnose_model.py`, `scripts/corpus_da_h2h.py`, `scripts/anteprima_scheda.py`, `scripts/verify_site.py` | diagnosi, corpus offline, anteprima locale, controlli [9]/[10] |
 | `.github/workflows/lab.yml` | laboratorio settimanale su storico reale |
-| `tests/test_calibration.py`, `tests/test_lab.py`, `tests/test_advanced.py`, `tests/test_season_sim.py` | 32 test nuovi (suite a **150**) |
+| `tests/test_calibration.py`, `tests/test_lab.py`, `tests/test_models.py`, `tests/test_advanced.py`, `tests/test_season_sim.py`, `tests/test_backtest.py` | test nuovi e aggiornati: stimatore a momenti, deriva di regime, scelta su griglia a confronto, `n_fit` = gare di stima, limiti di sicurezza sulle λ, coerenza 1X2/griglia, inclinazione esponenziale, correzione del livello per candidato, miscela non appiattita (suite a **163**) |

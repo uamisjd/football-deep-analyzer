@@ -395,9 +395,15 @@ class SiteBuilder:
         bt_rows = self.store.read("backtest")
         bt = {}
         if not bt_rows.empty:
-            from ..models.backtest import backtest_summary
+            from ..models.backtest import backtest_summary, calibrate_rows
+            from ..models.calibration import from_store
 
-            bt = backtest_summary(bt_rows)
+            # la card descrive il modello **come viene pubblicato** (previsioni calibrate);
+            # `backtest.parquet` resta grezzo perché è il campione su cui si stima la
+            # calibrazione. Il riepilogo grezzo resta a fianco, per il confronto.
+            cal = from_store(self.store)
+            bt = backtest_summary(calibrate_rows(bt_rows, cal))
+            bt["grezzo"] = backtest_summary(bt_rows)
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
                      markets=markets, bt=bt)
 

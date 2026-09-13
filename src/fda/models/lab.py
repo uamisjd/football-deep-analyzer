@@ -30,13 +30,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from .calibration import Calibration
-from .dc_grid import grid_markets_many, tau_grid, tau_grid_many
-from .predict import DixonColesModel, EloModel, ensemble
+from .calibration import SCALE_BOUNDS, Calibration
+from .dc_grid import GRID_SIZE, grid_markets_many, tau_grid, tau_grid_many
+from .predict import DixonColesModel, EloModel, _clamp_lambda, ensemble
 
 log = logging.getLogger("fda.lab")
 
-GRID_SIZE = 11
+#: gare minime già valutate da un candidato prima di applicargli la correzione del livello dei gol
+MIN_SELF_CAL = 100
 BASELINE = "dc_elo_prod"
 
 #: famiglie di verosimiglianza disponibili in penaltyblog (stessa API: fit + predict → griglia)
@@ -90,6 +91,20 @@ CANDIDATES: tuple[Candidate, ...] = (
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}),
     Candidate("mix_85", "Miscela di griglie DC+Elo 85/15", "blend", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}),
+    # alternativa strutturale alla ricetta di produzione: l'Elo inclina solo il rapporto
+    # casa/trasferta, il totale dei gol attesi resta quello del modello sui gol (vedi _tilt_grid)
+    Candidate("dc_elo_tilt", "DC+Elo a gol attesi invariati (solo inclinazione)", "blend", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "mode": "tilt"}),
+    # il peso della media pesata in produzione (0,7) non è mai stato misurato: ecco 0,5 e 0,85
+    Candidate("prod_w50", "Produzione con peso DC 0,50", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}),
+    Candidate("prod_w85", "Produzione con peso DC 0,85", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}),
+    # iperparametri Elo: k e vantaggio del campo sono quelli di default di penaltyblog, mai tarati
+    Candidate("elo_k10", "Elo k 10 (rating lenti)", "rating", "elo", {"k": 10.0, "hfa": 60.0}),
+    Candidate("elo_k40", "Elo k 40 (rating reattivi)", "rating", "elo", {"k": 40.0, "hfa": 60.0}),
+    Candidate("elo_hfa40", "Elo vantaggio casa 40", "rating", "elo", {"k": 20.0, "hfa": 40.0}),
+    Candidate("elo_hfa80", "Elo vantaggio casa 80", "rating", "elo", {"k": 20.0, "hfa": 80.0}),
 )
 
 
@@ -191,8 +206,11 @@ def _mix_grids(lh_a: float, la_a: float, rho_a: float, probs_b: tuple[float, flo
     Miscele di distribuzioni restano distribuzioni: 1X2, Over, BTTS, risultati esatti e λ
     derivano tutti dalla stessa matrice, quindi la scheda resta coerente con se stessa (è il
     difetto della ricetta attuale, che pubblica l'1X2 mediato accanto ai mercati di un'altra
-    griglia). λ_B sono ricavate dal vettore del rating con ``goal_expectancy`` partendo dalle
-    λ di A come punto iniziale, così l'inversione non "scappa" verso valori irrealistici.
+    griglia). λ_B sono ricavate dal vettore del rating con ``goal_expectancy`` e poi riportate
+    entro gli stessi limiti di sicurezza della produzione (:func:`fda.models.predict.
+    _clamp_lambda`): senza, un vettore irraggiungibile per una griglia (pareggio al 9%) fa
+    "scappare" l'inversione a 8,9 gol attesi e la miscela viene bocciata per un difetto
+    dell'inversione. Restituisce la griglia mista e le **sue** λ (media della matrice).
     """
     import penaltyblog as pb
 
@@ -201,16 +219,73 @@ def _mix_grids(lh_a: float, la_a: float, rho_a: float, probs_b: tuple[float, flo
                                    rho=rho_a, max_goals=GRID_SIZE,
                                    x0=(np.log(max(lh_a, 1e-6)), np.log(max(la_a, 1e-6))),
                                    minimizer_options={"maxiter": 120}, return_details=False)
-    gb = tau_grid(float(ge["home_exp"]), float(ge["away_exp"]), rho_a, size=GRID_SIZE)
+    lh_b, la_b = float(ge["home_exp"]), float(ge["away_exp"])
+    # stessa protezione della produzione: se il vettore del rating è irraggiungibile per una
+    # griglia (pareggio al 9%) l'inversione "scappa" e inventa partite da 9 gol attesi, che
+    # farebbero bocciare la miscela per un difetto dell'inversione e non del candidato
+    limita = _clamp_lambda(lh_b, la_b, lh_a, la_a)
+    if limita is not None:
+        lh_b, la_b = limita
+    gb = tau_grid(lh_b, la_b, rho_a, size=GRID_SIZE)
     g = w * ga + (1.0 - w) * gb
-    return g / g.sum(), lh_a, la_a
+    g = g / g.sum()
+    lh_m, la_m, _ = _family_lambdas(None, g)     # le λ della miscela, non quelle del DC
+    return g, lh_m, la_m
+
+
+#: inclinazioni casa/trasferta provate da ``_tilt_grid`` (1,00 = λ invariate)
+TILT_GRID: tuple[float, ...] = tuple(round(0.85 + 0.01 * i, 3) for i in range(31))
+
+
+def _tilt_grid(lh_a: float, la_a: float, rho_a: float, probs_b: tuple[float, float, float],
+               w: float) -> tuple[np.ndarray, float, float]:
+    """Media pesata sull'1X2 **senza gonfiare i gol attesi**: cambia solo l'inclinazione.
+
+    La ricetta di produzione cerca due λ libere che riproducano il vettore mediato
+    (``goal_expectancy``): il totale che ne esce è +8,6% sopra i gol osservati sul backtest,
+    ed è il difetto che la calibrazione deve poi correggere. Qui il totale dei gol attesi
+    resta quello stimato dal modello sui gol e l'Elo sposta soltanto il rapporto
+    casa/trasferta; il vettore 1X2 pubblicato è quello della griglia risultante, quindi
+    mercati e 1X2 restano coerenti fra loro. Il candidato serve proprio a misurare quanto
+    vale, in RPS e Brier, la libertà di gonfiare le λ.
+    """
+    ii, jj = np.indices((GRID_SIZE, GRID_SIZE))
+    ga = tau_grid(lh_a, la_a, rho_a, size=GRID_SIZE)
+    probs_a = (float(ga[ii > jj].sum()), float(ga[ii == jj].sum()), float(ga[ii < jj].sum()))
+    target = tuple(w * a + (1.0 - w) * b for a, b in zip(probs_a, probs_b))
+    totale = lh_a + la_a
+    best: tuple[float, float, np.ndarray] | None = None
+    for t in TILT_GRID:
+        lh_t, la_t = lh_a * t, la_a / max(t, 1e-9)
+        s = totale / (lh_t + la_t) if (lh_t + la_t) > 0 else 1.0     # il totale non cambia
+        g = tau_grid(lh_t * s, la_t * s, rho_a, size=GRID_SIZE)
+        err = ((float(g[ii > jj].sum()) - target[0]) ** 2
+               + (float(g[ii == jj].sum()) - target[1]) ** 2
+               + (float(g[ii < jj].sum()) - target[2]) ** 2)
+        if best is None or err < best[0]:
+            best = (err, t, g)
+    assert best is not None
+    t = best[1]
+    lh_t, la_t = lh_a * t, la_a / max(t, 1e-9)
+    s = totale / (lh_t + la_t) if (lh_t + la_t) > 0 else 1.0
+    g = best[2]
+    return g / g.sum(), float(lh_t * s), float(la_t * s)
 
 
 # --------------------------------------------------------------------------- walk-forward
 def walk_forward(hist: pd.DataFrame, candidates: tuple[Candidate, ...] = CANDIDATES,
                  step_days: int = 28, min_train: int = 600, calibration: Calibration | None = None,
-                 max_windows: int | None = None) -> pd.DataFrame:
-    """Una riga per (candidato, gara valutata): probabilità, λ, mercati ed esito osservato."""
+                 max_windows: int | None = None, self_calibrate: bool = True) -> pd.DataFrame:
+    """Una riga per (candidato, gara valutata): probabilità, λ, mercati ed esito osservato.
+
+    ``self_calibrate`` (default) dà a **ogni candidato la propria correzione del livello dei
+    gol**, stimata solo sulle gare che quel candidato ha già valutato nelle finestre
+    precedenti (moltiplicatore a momenti, gli stessi limiti di sicurezza della calibrazione
+    di produzione; servono almeno ``MIN_SELF_CAL`` gare). Senza questa correzione il
+    confronto sarebbe iniquo: la produzione è pubblicata calibrata, e un candidato con λ più
+    basse verrebbe penalizzato due volte. Con ``self_calibrate=False`` si applica a tutti la
+    calibrazione salvata, cioè si confronta la ricetta pubblicata così com'è.
+    """
     df = hist.dropna(subset=["home_goals", "away_goals"]).copy()
     if df.empty:
         return pd.DataFrame()
@@ -222,19 +297,22 @@ def walk_forward(hist: pd.DataFrame, candidates: tuple[Candidate, ...] = CANDIDA
     groups = ([(str(k), g.reset_index(drop=True)) for k, g in df.groupby("league_key")]
               if "league_key" in df.columns else [("?", df)])
     for league_key, g in groups:
-        rows.extend(_walk_league(g, league_key, candidates, step_days, min_train, cal, max_windows))
+        rows.extend(_walk_league(g, league_key, candidates, step_days, min_train, cal, max_windows,
+                                 self_calibrate))
     return pd.DataFrame(rows)
 
 
 def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, ...],
                  step_days: int, min_train: int, cal: Calibration,
-                 max_windows: int | None) -> list[dict[str, Any]]:
+                 max_windows: int | None, self_calibrate: bool = True) -> list[dict[str, Any]]:
     if len(g) <= min_train:
         return []
     d = g["date"]
     cutoff = d.iloc[min_train].normalize()
     last = d.max()
     rows: list[dict[str, Any]] = []
+    # per candidato: [gol osservati, λ totali grezze, gare] sulle finestre già valutate
+    acc: dict[str, list[float]] = {c.key: [0.0, 0.0, 0] for c in candidates}
     windows = 0
     while cutoff <= last:
         if max_windows is not None and windows >= max_windows:
@@ -246,6 +324,12 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
         if len(train) < min_train or test.empty:
             continue
         windows += 1
+        scales: dict[str, float] = {}
+        if self_calibrate:
+            for cand in candidates:
+                gol, lam, n = acc[cand.key]
+                scales[cand.key] = (float(np.clip(gol / lam, *SCALE_BOUNDS))
+                                    if n >= MIN_SELF_CAL and lam > 0 else 1.0)
         fitted: dict[str, Any] = {}
         for cand in candidates:
             t0 = time.time()
@@ -261,9 +345,20 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
                    "outcome": 0 if r.home_goals > r.away_goals else (1 if r.home_goals == r.away_goals else 2),
                    "n_train": int(len(train))}
             for cand in candidates:
-                row = _predict_candidate(cand, fitted.get(cand.key), fitted, r.home, r.away, cal)
+                cal_c = (Calibration(scales.get(cand.key, 1.0), cal.rho_shift) if self_calibrate
+                         else cal)
+                row = _predict_candidate(cand, fitted.get(cand.key), fitted, r.home, r.away, cal_c)
                 if row is None:
                     continue
+                row["lambda_scale"] = float(cal_c.lambda_scale)
+                # l'accumulo usa le λ **grezze** del candidato: è su quelle che si stima la correzione
+                lam_raw = float(row.get("lambda_home_raw", row.get("lambda_home", float("nan")))
+                                + row.get("lambda_away_raw", row.get("lambda_away", float("nan"))))
+                if np.isfinite(lam_raw):
+                    a = acc[cand.key]
+                    a[0] += float(r.home_goals) + float(r.away_goals)
+                    a[1] += lam_raw
+                    a[2] += 1
                 rows.append({**obs, "candidate": cand.key, "label": cand.label, "kind": cand.kind,
                              "family": cand.family, **row})
     return rows
@@ -271,12 +366,15 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
 
 def _fit_candidate(cand: Candidate, train: pd.DataFrame) -> Any:
     if cand.kind == "rating" and cand.family == "elo":
-        return EloModel().fit(train)
+        return EloModel(k=float(cand.params.get("k", 20.0)),
+                        home_field_advantage=float(cand.params.get("hfa", 60.0))).fit(train)
     if cand.kind == "rating" and cand.family == "pi":
         return _PiRatings(train)
     model = fit_goals(train, cand)
     if cand.kind == "blend" or cand.kind == "production":
-        return {"goals": model, "elo": EloModel().fit(train)}
+        return {"goals": model,
+                "elo": EloModel(k=float(cand.params.get("k", 20.0)),
+                                home_field_advantage=float(cand.params.get("hfa", 60.0))).fit(train)}
     return model
 
 
@@ -309,11 +407,16 @@ def _predict_candidate(cand: Candidate, fitted: Any, all_fitted: dict[str, Any],
         else:
             lh, la, rho = _dc_lambdas(goals, home, away)
             probs_b = _rating_probs(elo, "elo", home, away) if e else None
+            w = float(cand.params.get("w_dc", 0.7))
             if probs_b is None:
                 grid = tau_grid(lh, la, rho, size=GRID_SIZE)
+            elif cand.params.get("mode") == "tilt":
+                grid, lh, la = _tilt_grid(lh, la, rho, probs_b, w)
             else:
-                grid, _, _ = _mix_grids(lh, la, rho, probs_b, float(cand.params.get("w_dc", 0.7)))
-            row = _row_from_grid(grid, lh, la, rho)
+                grid, lh, la = _mix_grids(lh, la, rho, probs_b, w)
+            # la superficie qui è la miscela (o la griglia inclinata): va corretta nel livello
+            # senza essere sostituita da una griglia DC (vedi _apply_grid_level)
+            return _apply_grid_level(_row_from_grid(grid, lh, la, rho), grid, cal)
         return _apply_calibration(row, cal)
 
     # famiglia sui gol
@@ -327,7 +430,78 @@ def _predict_candidate(cand: Candidate, fitted: Any, all_fitted: dict[str, Any],
     grid = np.asarray(fitted.grid(home, away), dtype=float)
     grid = grid / grid.sum() if grid.sum() > 0 else grid
     lh, la, rho = _family_lambdas(fitted, grid)
-    return _row_from_grid(grid, lh, la, rho)
+    # anche queste famiglie vanno corrette nel livello dei gol: senza, il laboratorio
+    # confronta candidati calibrati (DC, produzione) con candidati che non lo sono
+    return _apply_grid_level(_row_from_grid(grid, lh, la, rho), grid, cal)
+
+
+def _tilt_total(grid: np.ndarray, target: float, lo: float = 0.05, hi: float = 8.0) -> np.ndarray:
+    """Riporta la media dei gol della griglia a ``target`` per **inclinazione esponenziale**.
+
+    p′(i,j) ∝ p(i,j)·θ^(i+j), con θ cercato per bisezione (la media è monotòna in θ). Per
+    Poisson indipendenti coincide esattamente con λ·θ; per le altre famiglie conserva la
+    struttura di dipendenza invece di sostituirla con la superficie di Dixon-Coles. È il modo
+    onesto di togliere a ogni candidato il vantaggio/svantaggio del **livello** dei gol senza
+    toccarne la forma, cioè senza trasformare una binomiale negativa in un Dixon-Coles.
+    """
+    g = np.asarray(grid, dtype=float)
+    tot = float(g.sum())
+    if tot <= 0 or not np.isfinite(target) or target <= 0:
+        return g
+    g = g / tot
+    k = np.sum(np.indices(g.shape), axis=0).astype(float)
+
+    def media(theta: float) -> float:
+        w = g * theta ** k
+        s = float(w.sum())
+        return float((w * k).sum() / s) if s > 0 else 0.0
+
+    if abs(media(1.0) - target) < 1e-12:
+        return g
+    if media(lo) >= target:                      # target sotto il raggiungibile: si usa il limite
+        w = g * lo ** k
+        return w / w.sum()
+    if media(hi) <= target:
+        w = g * hi ** k
+        return w / w.sum()
+    a, b = lo, hi
+    for _ in range(60):
+        m = 0.5 * (a + b)
+        if media(m) < target:
+            a = m
+        else:
+            b = m
+    w = g * (0.5 * (a + b)) ** k
+    return w / w.sum()
+
+
+def _apply_grid_level(row: dict[str, Any], grid: np.ndarray, cal: Calibration) -> dict[str, Any]:
+    """Correzione del **livello** dei gol su una griglia qualunque, conservandone la forma.
+
+    Serve per i candidati la cui superficie non è una griglia di Dixon-Coles parametrizzata da
+    (λ, ρ): le miscele di griglie e le famiglie non-DC (Poisson, binomiale negativa,
+    zero-inflazionata, copula Weibull). Passare da :func:`_apply_calibration` — che ricostruisce
+    una griglia τ dalle λ — cancellerebbe proprio ciò che quei candidati vogliono misurare:
+    misurato il 2026-09-13, con una calibrazione non identica ``mix_50`` diventava identico a
+    ``dc_puro`` riga per riga, perché la miscela restituisce le λ del DC e la ricostruzione
+    buttava via la forma mista. Lo spostamento di ρ resta una proprietà della superficie DC di
+    produzione e qui non viene applicato.
+    """
+    if cal.is_identity or not np.isfinite(row.get("lambda_home", float("nan"))):
+        return row
+    m = float(cal.lambda_scale)
+    if abs(m - 1.0) < 1e-12:
+        return row
+    g = np.asarray(grid, dtype=float)
+    k = np.sum(np.indices(g.shape), axis=0).astype(float)
+    attuale = float((g * k).sum() / g.sum()) if g.sum() > 0 else 0.0
+    g2 = _tilt_total(g, attuale * m)
+    lh, la, _ = _family_lambdas(None, g2)
+    rho = float(row.get("rho", 0.0) or 0.0)
+    out = _row_from_grid(g2, lh, la, rho)
+    out["lambda_home_raw"] = row["lambda_home"]
+    out["lambda_away_raw"] = row["lambda_away"]
+    return out
 
 
 def _row_from_grid(grid: np.ndarray, lh: float, la: float, rho: float) -> dict[str, Any]:
@@ -422,6 +596,11 @@ def summarize(rows: pd.DataFrame, baseline: str = BASELINE, draws: int = 2000) -
         if np.isfinite(lam).any():
             row["lambda_media"] = float(np.nanmean(lam))
             row["bias_lambda"] = float(np.nanmean(lam - goals))
+        if "lambda_scale" in gg.columns:
+            sc = pd.to_numeric(gg["lambda_scale"], errors="coerce").to_numpy(float)
+            if np.isfinite(sc).any():
+                # quanta correzione del livello dei gol serve a questo candidato: 1,00 = nessuna
+                row["scala_media"] = float(np.nanmean(sc))
         mk = _market_rows(gg)
         if mk is not None:
             pred, obs = mk

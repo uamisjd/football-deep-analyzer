@@ -228,8 +228,9 @@ def predict_cmd(
     yr = season_start_year()
     cal = from_store(store)
     if not cal.is_identity:
-        console.print(f"calibrazione attiva: λ×{cal.lambda_scale:.2f} ρ{cal.rho_shift:+.2f} "
-                      f"({cal.n_fit} gare fuori campione, {cal.fitted_at:%Y-%m-%d %H:%M} UTC)")
+        console.print(f"calibrazione attiva: λ×{cal.lambda_scale:.4f} ρ{cal.rho_shift:+.2f} "
+                      f"({cal.estimator}, {cal.fitted_at:%Y-%m-%d %H:%M} UTC)")
+        console.print(f"  campione: {cal.corpus}")
     else:
         console.print("calibrazione: identità (esegui `fda calibrate` dopo un `fda backtest`)")
     total = 0
@@ -358,14 +359,19 @@ def calibrate_cmd(
     if cal.is_identity:
         console.print("[yellow]calibrazione identica (campione insufficiente o nessun guadagno)[/yellow]")
     else:
-        console.print(f"parametri: λ×{cal.lambda_scale:.2f} · ρ{cal.rho_shift:+.2f} ({cal.version})")
+        console.print(f"parametri: λ×{cal.lambda_scale:.4f} · ρ{cal.rho_shift:+.2f} ({cal.version})")
+        console.print(f"stimatore: {cal.estimator} · finestra {cal.window_days or 'tutto lo storico'} "
+                      f"giorni ({int(m.get('stima_n', 0))} gare) · la griglia di punteggio avrebbe scelto "
+                      f"λ×{m.get('confronto_scale_griglia', float('nan')):.2f} "
+                      f"ρ{m.get('confronto_shift_griglia', float('nan')):+.2f}")
     if m:
         console.print(
             f"walk-forward ({int(m.get('holdout_n', 0))} gare tenute fuori): "
             f"RPS {m.get('holdout_rps_prima', 0):.4f} → {m.get('holdout_rps_dopo', 0):.4f} "
             f"({m.get('holdout_rps_delta', 0):+.4f}) · Brier mercati "
             f"{m.get('holdout_brier_prima', 0):.4f} → {m.get('holdout_brier_dopo', 0):.4f} "
-            f"({m.get('holdout_brier_delta', 0):+.4f})")
+            f"({m.get('holdout_brier_delta', 0):+.4f}) · bias λ "
+            f"{m.get('holdout_bias_lambda_prima', 0):+.3f} → {m.get('holdout_bias_lambda_dopo', 0):+.3f} gol")
         console.print(
             f"sul campione pieno: bias λ {m.get('campione_bias_lambda', 0):+.3f} → "
             f"{m.get('dopo_bias_lambda', 0):+.3f} gol · pareggio previsto "
@@ -386,6 +392,7 @@ def lab_cmd(
     candidates: str = typer.Option("", help="Solo questi candidati, separati da spazio (vuoto = tutti)"),
     history: str = typer.Option("", help="Parquet con lo storico (offline) invece di scaricarlo"),
     max_windows: int = typer.Option(0, help="Limite di finestre per lega (0 = nessun limite)"),
+    self_calibrate: bool = typer.Option(True, help="Ogni candidato corregge il proprio livello dei gol"),
     save: bool = typer.Option(True, help="Salva il riepilogo in data/processed/model_lab.parquet"),
 ) -> None:
     """Laboratorio: confronto fuori campione di famiglie di modelli, iperparametri e miscele."""
@@ -441,7 +448,8 @@ def lab_cmd(
     console.print(f"candidati: {len(wanted)} · finestre di {step_days} giorni · min_train {min_train}"
                   f" · calibrazione {'λ×%.2f ρ%+.2f' % (cal.lambda_scale, cal.rho_shift) if not cal.is_identity else 'identità'}")
     rows = lab.walk_forward(hist_all, wanted, step_days=step_days, min_train=min_train,
-                            calibration=cal, max_windows=max_windows or None)
+                            calibration=cal, max_windows=max_windows or None,
+                            self_calibrate=self_calibrate)
     if rows.empty:
         console.print("[yellow]nessuna gara valutata (storico troppo breve?)[/yellow]")
         store.close()

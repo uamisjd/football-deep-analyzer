@@ -21,7 +21,7 @@ import pandas as pd
 import penaltyblog as pb
 
 from .calibration import Calibration
-from .dc_grid import probability_grid
+from .dc_grid import GRID_SIZE, probability_grid, tau_grid
 
 log = logging.getLogger(__name__)
 
@@ -196,6 +196,47 @@ class EloModel:
                 "elo_p_home": float(ph), "elo_p_draw": float(pd_), "elo_p_away": float(pa)}
 
 
+#: limiti di sicurezza sulle λ ricavate dall'1X2 mediato (vedi :func:`_clamp_lambda`).
+#: Tarati sul backtest reale (5.791 gare fuori campione, 7 leghe): il modello sui gol da solo
+#: non supera mai λ 3,84 per squadra né 4,73 totali, mentre l'inversione dell'1X2 mediato
+#: arriva a 5,09 e 6,77 (rapporto medio 1,14, p99 1,35, max 1,55) e sulle previsioni
+#: pubblicate anche a 8,4 gol attesi. Con questi valori i limiti toccano l'1,2% delle gare.
+LAMBDA_MAX = 4.0                 # gol attesi massimi per una singola squadra
+LAMBDA_TOTAL_MAX_REL = 1.35      # totale al massimo +35% rispetto al modello sui gol
+LAMBDA_TOTAL_MIN_REL = 0.70      # e non sotto il 70%
+LAMBDA_TOTAL_MAX_ABS = 5.5       # tetto assoluto: oltre non è una partita di calcio reale
+LAMBDA_TOTAL_ABS = (1.0, LAMBDA_TOTAL_MAX_ABS)   # se le λ del modello sui gol non sono note
+
+
+def _clamp_lambda(lh: float, la: float, dc_lh: float, dc_la: float) -> tuple[float, float] | None:
+    """Riporta le λ invertite entro limiti di sicurezza; ``None`` se non ce n'è bisogno.
+
+    ``goal_expectancy`` risolve le λ che riproducono un vettore 1X2 **senza alcun vincolo**:
+    quando l'Elo spinge l'1X2 verso esiti estremi (pareggio al 5-6%) l'unico modo di
+    riprodurlo è gonfiare i gol attesi, e la griglia descrive partite che nel calcio reale non
+    esistono. Sulle previsioni pubblicate il caso limite misurato è Barcellona-Racing Santander
+    con λ 6,17+2,25 = 8,4 gol attesi (Over 2,5 al 99%, risultati esatti centrati sul 5-1):
+    numeri che un lettore riconosce come assurdi e che trascinano con sé ogni mercato derivato.
+
+    Qui il totale resta fra il 70% e il 135% di quello stimato dal modello sui gol — che i gol
+    li modellerà pure male, ma non inventa partite da otto reti — e ogni λ resta sotto 4,5.
+    Il rapporto casa/trasferta si conserva (si scala il totale, non si tocca l'inclinazione).
+    """
+    tot = float(lh) + float(la)
+    if not np.isfinite(tot) or tot <= 0:
+        return None
+    tot_dc = float(dc_lh) + float(dc_la)
+    lo, hi = ((tot_dc * LAMBDA_TOTAL_MIN_REL, tot_dc * LAMBDA_TOTAL_MAX_REL)
+              if np.isfinite(tot_dc) and tot_dc > 0 else LAMBDA_TOTAL_ABS)
+    hi = min(hi, LAMBDA_TOTAL_MAX_ABS)          # il tetto assoluto vale anche se il modello esagera
+    nuovo = float(min(max(tot, min(lo, hi)), hi))
+    scala = nuovo / tot
+    lh_c, la_c = min(float(lh) * scala, LAMBDA_MAX), min(float(la) * scala, LAMBDA_MAX)
+    if abs(lh_c - float(lh)) < 1e-9 and abs(la_c - float(la)) < 1e-9:
+        return None
+    return lh_c, la_c
+
+
 def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7) -> dict[str, Any]:
     """Media pesata 1X2 tra Dixon-Coles ed Elo; i mercati sui gol restano dal DC (l'Elo non ha λ).
 
@@ -206,6 +247,7 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     out["dc_p_home"] = float(dc["p_home"])
     out["dc_p_draw"] = float(dc["p_draw"])
     out["dc_p_away"] = float(dc["p_away"])
+    out["lambda_limitata"] = False
     if not elo:
         out["model"] = "dc"
         return out
@@ -215,9 +257,21 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     s = ph + pdw + pa
     ph, pdw, pa = ph / s, pdw / s, pa / s
     try:
-        ge = pb.models.goal_expectancy(ph, pdw, pa, dc_adj=True, rho=dc.get("dc_rho", 0.0) or 0.0)
+        rho = float(dc.get("dc_rho", 0.0) or 0.0)
+        limitato = None
+        ge = pb.models.goal_expectancy(ph, pdw, pa, dc_adj=True, rho=rho)
         lh, la = float(ge["home_exp"]), float(ge["away_exp"])
-        grid = probability_grid(lh, la, dc.get("dc_rho", 0.0) or 0.0, size=10)
+        limitato = _clamp_lambda(lh, la, float(dc.get("lambda_home", lh)), float(dc.get("lambda_away", la)))
+        if limitato is not None:
+            log.warning("λ dall'1X2 mediato fuori dai limiti: %.2f+%.2f → %.2f+%.2f (1X2 ripubblicato "
+                        "dalla griglia)", lh, la, limitato[0], limitato[1])
+            lh, la = limitato
+            # la griglia limitata non riproduce più il vettore mediato: si pubblica il **suo** 1X2,
+            # altrimenti la scheda torna incoerente (1X2 estremo accanto a mercati più prudenti)
+            g = tau_grid(lh, la, rho, size=GRID_SIZE)
+            ii, jj = np.indices(g.shape)
+            ph, pdw, pa = float(g[ii > jj].sum()), float(g[ii == jj].sum()), float(g[ii < jj].sum())
+        grid = probability_grid(lh, la, rho, size=GRID_SIZE)
         markets = _grid_markets(grid)
         # la doppia chance è per definizione una somma di esiti 1X2: va ricalcolata sul 1X2
         # mediato, altrimenti la scheda mostra «1X 73%» accanto a «1X2 48/27/26» (100−26=74).
@@ -226,6 +280,7 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
         markets.update({"p_home": ph, "p_draw": pdw, "p_away": pa,
                         "p_1x": ph + pdw, "p_12": ph + pa, "p_x2": pdw + pa})
         out.update(markets)
+        out["lambda_limitata"] = bool(limitato is not None)
     except Exception as exc:  # fallback: solo 1X2 mediato
         log.debug("goal_expectancy fallita (%s): uso 1X2 mediato e mercati DC", exc)
         out.update({"p_home": ph, "p_draw": pdw, "p_away": pa})
@@ -257,7 +312,7 @@ def calibrated_prediction(out: dict[str, Any], cal: Calibration | None) -> dict[
     if cal.is_identity:
         return res
     lh, la, rho = cal.apply(res["lambda_home_raw"], res["lambda_away_raw"], res["rho_raw"])
-    grid = probability_grid(lh, la, rho, size=10)
+    grid = probability_grid(lh, la, rho, size=GRID_SIZE)
     markets = _grid_markets(grid)
     res["blend_p_home"] = float(out.get("p_home", 0.0))
     res["blend_p_draw"] = float(out.get("p_draw", 0.0))
@@ -300,6 +355,9 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
             "lambda_scale": float(cal.lambda_scale), "rho_shift": float(cal.rho_shift),
             "calibration_version": cal.version if not cal.is_identity else "identity",
             "calibration_n_fit": int(cal.n_fit),
+            # come è stata stimata la correzione: la scheda lo dice invece di lasciarlo intuire
+            "calibration_estimator": str(getattr(cal, "estimator", "") or ""),
+            "calibration_window_days": int(getattr(cal, "window_days", 0) or 0),
             "match_id": getattr(f, "match_id", None), "home": f.home, "away": f.away,
             "utc_kickoff": getattr(f, "utc_kickoff", None), "league_key": getattr(f, "league_key", None),
             "made_at": made_at, "model_version": MODEL_VERSION, "n_train": dc.n_matches,

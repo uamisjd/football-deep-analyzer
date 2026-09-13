@@ -30,6 +30,11 @@ from scipy.stats import poisson
 # definita e la matrice resta valida, invece di sollevare come fa l'helper di penaltyblog.
 MIN_LAMBDA = 1e-9
 
+#: lato della matrice dei punteggi usata ovunque (gol da 0 a 10): modelli, laboratorio,
+#: calibrazione e schede. Una sola costante, così non può capitare che i mercati di una
+#: previsione siano calcolati su una griglia e quelli calibrati su un'altra.
+GRID_SIZE = 11
+
 
 def clamp_rho(lh: float, la: float, rho: float) -> float:
     """ρ ammissibile perché ogni τ resti ≥ 0: max(−1/λ, −1/μ) ≤ ρ ≤ min(1, 1/(λμ))."""

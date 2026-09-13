@@ -209,12 +209,14 @@ def test_goals_view_counts_100_matches_and_20_dots():
 
 def test_goals_view_agrees_with_the_published_markets():
     """Le barre derivano dalla stessa griglia dei mercati: Over 1,5/2,5/3,5 devono tornare."""
-    from fda.models.dc_grid import probability_grid
+    from fda.models.dc_grid import GRID_SIZE, probability_grid
     from fda.models.predict import _grid_markets
 
     lh, la, rho = 1.69, 1.13, -0.10
     gv = goals_view(lh, la, rho)
-    m = _grid_markets(probability_grid(lh, la, rho, size=10))
+    # la griglia pubblicata è quella condivisa (11×11): le barre del sito devono tornare con
+    # i mercati che la scheda mostra davvero, non con una matrice più corta
+    m = _grid_markets(probability_grid(lh, la, rho, size=GRID_SIZE))
     for soglia, key in ((2, "p_over15"), (3, "p_over25"), (4, "p_over35")):
         dalle_barre = sum(b["p"] for b in gv["bars"] if b["g"] >= soglia)
         assert dalle_barre == pytest.approx(m[key], abs=3e-3), key
