@@ -1,0 +1,885 @@
+diff --git a/.github/workflows/daily.yml b/.github/workflows/daily.yml
+index f2f663c..e404bb4 100644
+--- a/.github/workflows/daily.yml
++++ b/.github/workflows/daily.yml
+@@ -51,7 +51,7 @@ jobs:
+       - name: Test rapidi (parser offline)
+         run: python -m pytest -q -x tests/test_fotmob.py tests/test_understat_espn.py tests/test_config.py
+ 
+-      - name: Run giornaliero (collect → predict → simulate → build)
++      - name: Run giornaliero (collect → predict → backtest → simulate → build)
+         env:
+           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+           PYTHONUNBUFFERED: "1"
+diff --git a/docs/00_regole_di_lavoro.md b/docs/00_regole_di_lavoro.md
+index b307833..445993d 100644
+--- a/docs/00_regole_di_lavoro.md
++++ b/docs/00_regole_di_lavoro.md
+@@ -14,6 +14,12 @@ Hanno lo scopo di (1) non perdere mai lavoro, (2) lavorare con la massima accura
+ 6. **Risposte brevi.** Spiegazioni lunghe → in un file `docs/`; in chat solo il riassunto e il link.
+ 7. **Niente lavori pesanti nella chat.** Backfill di stagioni, scaricamento di centinaia di partite, backtest: si eseguono in GitHub Actions o con uno script lanciato in background, e in chat si guarda solo il log finale.
+ 8. **Commit piccoli e frequenti** con messaggio chiaro, sul branch di lavoro.
++8bis. **Push immediato: mai commit locali in attesa.** Ogni commit va pushato **subito** sul branch
++`arena/...` (`git push origin <branch>`): il push non richiede né PR né approvazione, ed è ciò che
++mette il lavoro al sicuro (vedi sez. D). Non si accumulano commit locali "in attesa di aprire la PR".
++Se il push fallisce (rete del sandbox), lo si dice **nello stesso turno** e il lavoro viene consegnato
++in un file scaricabile (`handover/` servito dal server di preview), mai lasciato solo nel sandbox:
++i commit locali **non sopravvivono** a una sessione nuova, che riparte da un clone di `origin/main`.
+ 9. **PR e merge: dirlo sempre in modo esplicito** (vedi sezione **D** sotto — *quando è il momento di fare PR / merge*). L'agente lavora sul branch `arena/...`; `main` riceve il lavoro solo tramite pull request.
+ 
+ ## B. Paletti di qualità (nuovi — valgono sempre, su ogni deliverable)
+@@ -51,15 +57,29 @@ L'agente lavora sul branch `arena/...` e il lavoro è già al sicuro grazie ai p
+ - [ ] nessun dato/file spurio o grande committato;
+ - [ ] `docs/STATO.md` aggiornato con quanto fa questa PR;
+ - [ ] messaggio PR chiaro che riassume cosa fa e il motivo;
+-- [ ] la PR parte dal branch di lavoro corretto (`arena/...`) verso `main`.
++- [ ] la PR parte dal branch di lavoro corretto (`arena/...`) verso `main`;
++- [ ] **nessun commit locale non pushato**: `git log --oneline origin/<branch>..HEAD` restituisce vuoto.
+ 
+-**Verifica dell'ordine di lavoro — PRIMA del merge (regola permanente, vale in ogni sessione).** Prima di dichiarare che è il momento di fare il merge, l'agente deve **sempre verificare l'ordine di come fare le cose**: controllare in `docs/STATO.md` («prossimo passo», «decisioni aperte»), nel briefing di sessione e nelle richieste dell'utente se c'è **altro lavoro importante da fare o aggiungere al progetto che deve entrare su `main` nello stesso giro** della PR aperta (per esempio un fix, una direttiva, una regola, un contenuto richiesto poco prima del merge). Se c'è, va aggiunto e pushato **prima** di dare il via libera al merge: finché la PR è aperta un commit in più è immediato; **dopo il merge** quel lavoro richiederebbe una nuova sessione (nuovo branch `arena/...`, nuova PR, nuovo ciclo di check) e diventa molto più difficile e costoso. Solo quando si è verificato che non resta nulla di importante da aggiungere si pronuncia la frase fissa qui sotto. (Esempio reale: la sezione F di queste regole e la regola presente sono state aggiunte alla PR #14 dopo l'apertura, prima del merge.)
++**Verifica dell'ordine di lavoro — PRIMA del merge (regola permanente, vale in ogni sessione).** Prima di dichiarare che è il momento di fare il merge, l'agente deve **sempre verificare l'ordine di come fare le cose**: controllare in `docs/STATO.md` («prossimo passo», «decisioni aperte»), nel briefing di sessione e nelle richieste dell'utente se c'è **altro lavoro importante da fare o aggiungere al progetto che deve entrare su `main` nello stesso giro** della PR aperta (per esempio un fix, una direttiva, una regola, un contenuto richiesto poco prima del merge). Se c'è, va aggiunto e pushato **prima** di dare il via libera al merge: finché la PR è aperta un commit in più è immediato; **dopo il merge** quel lavoro richiederebbe una nuova sessione (nuovo branch `arena/...`, nuova PR, nuovo ciclo di check) e diventa molto più difficile e costoso. La verifica va **eseguita con un comando**, non a memoria: `git log --oneline origin/main..HEAD`
++(deve restare solo il lavoro della PR) e `git status --porcelain` (vuoto). Se esiste lavoro non
++pushato o non incluso nella PR, **il merge non si fa**: prima si pusha e si aggiunge alla PR aperta.
++Solo quando si è verificato che non resta nulla di importante da aggiungere si pronuncia la frase fissa qui sotto. (Esempio reale: la sezione F di queste regole e la regola presente sono state aggiunte alla PR #14 dopo l'apertura, prima del merge.)
+ 
+ **Dopo la PR aperta**: l'agente monitora i check (tests). Quando sono verdi e la PR è mergeable, l'agente **lo comunica e indica il momento del merge** con la frase fissa:
+ > *"👉 Tutto verde: è il momento di fare Merge (PR #N)."*
+ 
+ E spiega in una riga perché è sicuro. **Il merge lo esegue SEMPRE l'utente, MAI l'agente** (decisione del 2026-09-08): dopo la frase fissa l'agente si ferma e aspetta — non preme mai "Merge pull request" (né via UI né via `gh pr merge`), nemmeno se la prassi precedente era diversa. Dopo il merge eseguito dall'utente: l'agente aggiorna STATO.md con il commit di merge e indica il prossimo passo.
+ 
++**Cosa è successo il 2026-09-12/13 (caso reale da non ripetere).** Dopo il merge di PR #23
++(eseguito su richiesta esplicita dell'utente) sono stati fatti altri 4 commit locali — aggiornamento
++di STATO, intervalli di Wilson sull'accuratezza, backtest fuori campione — **senza pusharli**, in
++attesa di una nuova PR. Nel frattempo l'egress HTTPS del sandbox è stato tagliato (TLS resettato
++verso GitHub, allowlist ridotta ai registry di pacchetti) e quel lavoro è rimasto **intrappolato nel
++sandbox**: una sessione nuova, ripartendo da un clone di `origin/main`, non lo vedeva. Due regole ne
++derivano e valgono da ora: **8bis** (push immediato, mai commit in attesa) e la condizione di stop
++qui sopra (niente merge finché `git log origin/main..HEAD` mostra lavoro non pushato o non incluso
++nella PR). Se il push non riesce, il lavoro va consegnato nello stesso turno come file scaricabile.
++
+ ## E. Regole di progetto (dalle tue decisioni)
+ 
+ - **Costo zero**: nessuna API o servizio a pagamento, nemmeno "prova gratuita con carta".
+diff --git a/docs/11_partite_oggi_miglioramenti.md b/docs/11_partite_oggi_miglioramenti.md
+index 1e2eb37..0bdc45f 100644
+--- a/docs/11_partite_oggi_miglioramenti.md
++++ b/docs/11_partite_oggi_miglioramenti.md
+@@ -249,6 +249,87 @@ giornata di run.
+   che ricontrolla **534 assist** contro gli eventi (con la grafia del nome della stessa partita:
+   lo stesso `player_id` ha grafie diverse fra le giornate) e **239 split 1T/2T** contro `team_stats`.
+ 
++### F6b. Rilettura dal vivo dopo il merge (run `daily` 21:30 UTC del 12/09)
++
++PR #23 mergiata in `main` (`6124bb3`, 19:41:12 UTC); il sito pubblicato contiene tutte le nuove
++sezioni (verificate su `partite/5749674.html`, Lazio 2-2 Milan). Con **50 gare valutate** la tabella
++per mercato dà una lettura più solida di quella locale a 28:
++
++- RPS complessivo **0,2203** contro 0,2282 della base naive (Δ **−0,008**).
++- Sottostima dei gol confermata: Over 2,5 **57,4% dichiarato contro 62,0% osservato**, BTTS
++  **57,5% contro 72,0%**, doppia chance X2 **56,1% contro 74,0%**.
++- Il modello batte la frequenza di base **solo su doppia chance 1X** (Δ −0,0052).
++- Calibrazione per esito sbilanciata sulla casa: **44,0% previsto contro 26,0% osservato**,
++  pareggio 24,0% contro 40,0%.
++
++Da qui il prossimo passo analitico: ricalibrare vantaggio casa e λ dei gol, usando questa tabella
++come verifica (ogni modifica si legge subito nei Δ per mercato).
++
++### F6c. Intervalli di confidenza sulla pagina accuratezza (rigore statistico)
++
++La lettura del turno precedente («il modello sottostima i gol») era basata su differenze fra previsto
++e osservato **senza incertezza campionaria**: su 50 gare una differenza di 10 punti è spesso rumore.
++Ora `build_accuracy()` pubblica l'**intervallo di Wilson al 95%** della frequenza osservata e un
++segnale per riga (`compatibile` / `fuori intervallo`), sia nella tabella per mercato sia in quella di
++calibrazione (dove compare anche il conteggio `k/n`). Funzione: `wilson_interval(k, n, z=1.96)` in
++`src/fda/site/build.py`; verificata dal blocco **[7]** di `scripts/verify_site.py` (ricalcola gli
++intervalli pubblicati e la coerenza del segnale) e da `test_wilson_interval_bounds_and_coverage`.
++
++Lettura corretta con gli intervalli (50 gare live del 12/09):
++
++| riga | previsto | osservato | intervallo 95% | esito |
++| --- | --- | --- | --- | --- |
++| vittoria in casa | 44,0% | 26,0% (13/50) | 15,9 – 39,6% | **fuori** |
++| pareggio | 24,0% | 40,0% (20/50) | 27,6 – 53,8% | **fuori** |
++| vittoria in trasferta | 32,0% | 34,0% (17/50) | 22,4 – 47,8% | compatibile |
++| Over 1,5 / 2,5 / 3,5 | 78,9 / 57,4 / 37,0% | 86,0 / 62,0 / 46,0% | 73,8–93,0 / 48,2–74,1 / 33,0–59,6% | **compatibili** |
++| Gol entrambe a segno | 57,5% | 72,0% (36/50) | 58,3 – 82,5% | **fuori** |
++| Doppia chance 1X | 67,8% | 66,0% | 52,2 – 77,6% | compatibile |
++| Doppia chance 12 | 76,0% | 60,0% | 46,2 – 72,4% | **fuori** |
++| Doppia chance X2 | 56,1% | 74,0% | 60,4 – 84,1% | **fuori** |
++| Porta inviolata casa / trasferta | 27,4 / 21,7% | 20,0 / 14,0% | 11,2–33,0 / 7,0–26,2% | compatibili |
++
++**Correzione rispetto al turno precedente:** gli Over 1,5/2,5/3,5 e le porte inviolate **non** sono
++scostamenti significativi su 50 gare; l'unico segnale solido sui gol è **BTTS sottostimato**. I due
++segnali forti restano la **calibrazione 1X2 sbilanciata sulla casa** (casa sovrastimata, pareggio
++sottostimato — sono due facce dello stesso difetto) e la **doppia chance**: 12 sovrastimata, X2
++sottostimata, di nuovo coerente con l'eccesso di peso alla vittoria in casa. 5 righe su 12 fuori
++intervallo a α = 0,05 (attese ~0,6) è già di per sé un segnale reale.
++
++Regola adottata: **nessuna correzione dei parametri senza almeno ~150 gare valutate e scarto
++confermato nella stessa direzione**. Il campione cresce da solo (~15-20 gare/giorno con i run
++`daily`), quindi la verifica è ripetibile senza toccare il modello.
++
++### F6d. Backtest cronologico fuori campione (campione ampio per la calibrazione)
++
++La tabella per mercato cresce solo con i run giornalieri (~15-20 gare/giorno): per decidere se
++correggere un parametro servono centinaia di gare, e soprattutto stime che **non** abbiano visto il
++risultato. Nuovo modulo `src/fda/models/backtest.py`:
++
++- `chronological_backtest(hist, step_days=14, min_train=200, ...)` cammina sullo storico di ogni lega
++  a finestre di `step_days`: il modello (Dixon-Coles + Elo, stessi parametri di `fda predict`,
++  shrinkage compreso) è allenato **solo** sulle partite precedenti l'inizio della finestra e valuta
++  quelle successive. Squadre mai viste nello storico sono saltate (stesso `KeyError` di `predict`).
++- `backtest_summary(df)` → RPS contro la base naive, Brier, log-loss, esito azzeccato, calibrazione
++  1X2 e 9 mercati binari, tutti con **intervallo di Wilson e segnale** (stessa funzione della pagina).
++- Comando **`fda backtest [LEGHE] --seasons-back 3 --step-days 14 --min-train 200`** → tabella
++  `backtest`; è incluso in `fda daily`, quindi i numeri reali li produce GitHub Actions (che ha rete),
++  come vuole la regola B.6.
++- Sulla pagina **Accuratezza** compare la card «Backtest storico fuori campione», **condizionale**:
++  senza tabella non si vede niente (nessun segnaposto).
++- Verifica automatica: blocco **[8]** di `scripts/verify_site.py` (riconteggia le gare e ricalcola
++  l'RPS con `predict.rps`, percorso indipendente da `backtest_summary`).
++- Test `tests/test_backtest.py` (8): **assenza di leakage** (un modello-spy registra l'ultima data di
++  allenamento e la restituisce in ogni previsione: per ogni gara `_train_max < data gara`), squadre
++  sconosciute saltate senza perdere il resto della finestra, metriche ricalcolate in modo indipendente,
++  definizione degli esiti osservati, card presente/assente, finestre configurabili.
++
++**Stato della verifica (regola B.2):** l'intera catena è verificata **offline su dati sintetici**
++(storico generato con Poisson, 14 squadre × 3 stagioni): 63 gare fuori campione, RPS 0,2015 contro
++0,2282 della base, log-loss 0,9997, tutte le righe «compatibile», blocco [8] verde. **Non è una
++misura del modello sul calcio reale**: i numeri veri arriveranno dal primo `fda daily` con rete, e da
++lì si legge se lo scarto sulla vittoria in casa regge su migliaia di gare o era rumore.
++
+ ### F7. Resta aperto (dichiarato)
+ 
+ 1. **Le previsioni pubblicate** cambiano solo al primo `fda predict` con la rete: la tabella dei
+diff --git a/scripts/verify_site.py b/scripts/verify_site.py
+index bd01563..01d779e 100644
+--- a/scripts/verify_site.py
++++ b/scripts/verify_site.py
+@@ -196,6 +196,64 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
+                 fails.append(f"accuratezza: RPS pagina {rps_page} vs ricalcolato {mine:.4f}")
+             print(f"[3] accuratezza: {len(p)} gare, RPS pagina {rps_page} = ricalcolato {mine:.4f}")
+ 
++    # 7) accuratezza: intervalli di Wilson pubblicati, ricalcolati con la funzione del progetto
++    if acc_path.exists():
++        from fda.site.build import wilson_interval
++
++        def _n(txt: str) -> float:
++            return float(re.sub(r"<[^>]+>", "", txt).replace(".", "").replace(",", ".").rstrip("%"))
++
++        righe = 0
++        for row in re.findall(r"<tr><td>.*?</tr>", acc_path.read_text(encoding="utf-8"), re.S):
++            mi = re.search(r'<td class="r mut">(\d+,\d+)\s*[–-]\s*(\d+,\d+)%</td>', row)
++            if not mi:
++                continue
++            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
++            lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
++            kn = re.search(r"\((\d+)/(\d+)\)", row)
++            if kn:                                    # riga di calibrazione: k/n esplicito
++                k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[1])
++            else:                                     # riga di mercato: k = osservato × n
++                n = int(_n(cells[1]))
++                prev, obs = _n(cells[2]), _n(cells[3])
++                k = int(round(obs * n / 100.0))
++            lo, hi = wilson_interval(k, n)
++            checks += 1
++            righe += 1
++            if abs(lo_p - lo * 100) > 0.06 or abs(hi_p - hi * 100) > 0.06:
++                fails.append(f"accuratezza: intervallo pubblicato {lo_p}–{hi_p}% vs ricalcolato "
++                             f"{lo * 100:.1f}–{hi * 100:.1f}% (k={k}, n={n})")
++            fuori = "fuori intervallo" in row
++            if fuori != bool(not (lo <= prev / 100 <= hi)):
++                fails.append(f"accuratezza: segnale {'fuori intervallo' if fuori else 'compatibile'} "
++                             f"incoerente con previsto {prev}% e intervallo {lo * 100:.1f}–{hi * 100:.1f}%")
++        if righe:
++            print(f"[7] accuratezza: {righe} righe con intervallo di Wilson ricalcolate")
++
++    # 8) backtest fuori campione: numerosità e RPS ricalcolati dalla tabella pubblicata
++    bt = st.read("backtest")
++    if not bt.empty and acc_path.exists():
++        text = acc_path.read_text(encoding="utf-8")
++        i = text.find("Backtest storico fuori campione")
++        if i < 0:
++            fails.append("accuratezza.html: tabella `backtest` presente ma nessuna card pubblicata")
++        else:
++            card = text[i:]
++            m_n = re.search(r"su <b>(\d+)</b> partite", card)
++            m_r = re.search(r"RPS <b>(\d+,\d+)</b>", card)
++            if not m_n or not m_r:
++                fails.append("accuratezza.html: card backtest senza numerosità o RPS")
++            else:
++                checks += 1
++                mine = pb_rps(bt[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(),
++                              bt["outcome"].to_numpy(int).tolist())
++                rps_bt = float(m_r.group(1).replace(",", "."))
++                if int(m_n.group(1)) != len(bt):
++                    fails.append(f"backtest: {m_n.group(1)} gare in pagina vs {len(bt)} in tabella")
++                if abs(rps_bt - mine) > 0.002:
++                    fails.append(f"backtest: RPS pagina {rps_bt} vs ricalcolato {mine:.4f}")
++                print(f"[8] backtest: {len(bt)} gare fuori campione, RPS pagina {rps_bt} = ricalcolato {mine:.4f}")
++
+     # 4) proiezioni di stagione: le probabilità di ogni lega sommano come devono
+     sim = st.read("season_sim")
+     if not sim.empty:
+diff --git a/src/fda/cli.py b/src/fda/cli.py
+index 98ea1c1..ec93d1d 100644
+--- a/src/fda/cli.py
++++ b/src/fda/cli.py
+@@ -280,6 +280,51 @@ def simulate_cmd(
+     store.close()
+ 
+ 
++@app.command("backtest")
++def backtest_cmd(
++    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
++    seasons_back: int = typer.Option(3, help="Stagioni storiche da scaricare oltre a quella corrente"),
++    step_days: int = typer.Option(14, help="Ampiezza della finestra di valutazione, in giorni"),
++    min_train: int = typer.Option(200, help="Partite minime di storico prima di iniziare a valutare"),
++) -> None:
++    """Backtest cronologico fuori campione sullo storico → tabella `backtest` (card su Accuratezza)."""
++    import warnings
++
++    from .config import leagues, season_start_year
++    from .models.backtest import backtest_summary, chronological_backtest
++    from .sources.history import HistoryClient
++    from .store import Store
++
++    warnings.filterwarnings("ignore", category=DeprecationWarning)
++    store = Store()
++    hc = HistoryClient()
++    fixtures = store.read("fixtures")
++    yr = season_start_year()
++    totale = 0
++    for lg in leagues(league_keys or None):
++        try:
++            from .models.season_sim import build_hist
++
++            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr)
++            if hist.empty:
++                console.print(f"[yellow]{lg.name}: nessuno storico disponibile, backtest saltato[/yellow]")
++                continue
++            res = chronological_backtest(hist, step_days=step_days, min_train=min_train)
++            if res.empty:
++                console.print(f"[yellow]{lg.name}: storico di {len(hist)} partite, troppo breve "
++                              f"(minimo {min_train}) per il backtest[/yellow]")
++                continue
++            totale += store.upsert("backtest", res, replace_by="league_key")
++            r = backtest_summary(res)
++            console.print(f"{lg.name}: {r['n']} gare fuori campione · RPS {r['rps']:.4f} "
++                          f"(base {r['naive']:.4f}, Δ {r['delta']:+.4f}) · log-loss {r['logloss']:.4f} · "
++                          f"esito azzeccato {r['hit']:.0%}")
++        except Exception as exc:  # una lega senza storico non deve interrompere le altre
++            console.print(f"[yellow]{lg.name}: backtest saltato ({type(exc).__name__}: {exc})[/yellow]")
++    console.print(f"backtest salvato: {totale} gare | richieste storico={hc.http.stats.requests}")
++    store.close()
++
++
+ @app.command("build")
+ def build_cmd() -> None:
+     """Genera il sito statico in site/ (Oggi, Prossime, Risultati, partite, Giocatori, Accuratezza, Stato)."""
+@@ -309,6 +354,10 @@ def daily_cmd(
+             predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
+         except Exception as exc:  # i modelli non devono bloccare la pubblicazione dei dati
+             console.print(f"[red]predict fallito: {exc}[/red]")
++        try:  # backtest fuori campione: campione ampio per leggere la calibrazione senza rumore
++            backtest_cmd(league_keys=league_keys, seasons_back=3, step_days=14, min_train=200)
++        except Exception as exc:  # noqa: BLE001 — il backtest non deve bloccare il sito
++            console.print(f"[red]backtest fallito: {exc}[/red]")
+         try:  # Monte Carlo stagione: fallisce in isolato, il sito esce comunque
+             from .models.season_sim import simulate_all
+             from .store import Store
+diff --git a/src/fda/models/backtest.py b/src/fda/models/backtest.py
+new file mode 100644
+index 0000000..e519797
+--- /dev/null
++++ b/src/fda/models/backtest.py
+@@ -0,0 +1,171 @@
++"""Backtest cronologico fuori campione.
++
++Il campione della pagina accuratezza cresce solo con i run giornalieri (~15-20 gare/giorno): per
++decidere se un parametro del modello va corretto serve un campione molto più ampio, e soprattutto
++serve che le stime valutate **non** abbiano visto il risultato. Qui lo storico di ogni lega viene
++diviso in finestre temporali: il modello è addestrato solo sulle partite precedenti l'inizio della
++finestra e valutato su quelle successive. Dixon-Coles ed Elo ricevono un sottoinsieme troncato per
++data, quindi nessuna informazione futura entra nel fit e i numeri sono fuori campione.
++
++Atteso: RPS intorno a 0,20-0,21 e log-loss intorno a 1,0 su un campionato europeo
++di prima divisione.
++"""
++
++from __future__ import annotations
++
++import logging
++from typing import Any
++
++import numpy as np
++import pandas as pd
++
++from .predict import (SHRINK_PRIOR, DixonColesModel, EloModel, ensemble, log_loss, outcome_index,
++                      wilson_interval)
++
++log = logging.getLogger("fda.backtest")
++
++#: (colonna di probabilità, chiave dell'esito osservato, etichetta italiana) dei mercati binari
++MARKET_KEYS: tuple[tuple[str, str, str], ...] = (
++    ("p_over15", "over15", "Over 1,5 gol"), ("p_over25", "over25", "Over 2,5 gol"),
++    ("p_over35", "over35", "Over 3,5 gol"), ("p_btts", "btts", "Gol · entrambe a segno"),
++    ("p_1x", "d1x", "Doppia chance 1X"), ("p_12", "d12", "Doppia chance 12"),
++    ("p_x2", "dx2", "Doppia chance X2"), ("p_home_clean_sheet", "cs_h", "Porta inviolata casa"),
++    ("p_away_clean_sheet", "cs_a", "Porta inviolata trasferta"),
++)
++
++#: probabilità di riferimento di chi non ha un modello (1X2 medio dei campionati europei)
++NAIVE_1X2: tuple[float, float, float] = (0.45, 0.27, 0.28)
++
++OUTCOME_LABELS: tuple[str, str, str] = ("1 · vittoria in casa", "X · pareggio",
++                                          "2 · vittoria in trasferta")
++
++
++def chronological_backtest(hist: pd.DataFrame, step_days: int = 14, min_train: int = 200,
++                           xi: float = 0.0018, w_dc: float = 0.7,
++                           shrink_prior: float = SHRINK_PRIOR,
++                           leagues: list[str] | None = None) -> pd.DataFrame:
++    """Cammina sullo storico a finestre di ``step_days`` e restituisce una riga per gara valutata.
++
++    ``hist`` deve avere ``date``, ``home``, ``away``, ``home_goals``, ``away_goals`` e, se presente,
++    ``league_key`` (una lega alla volta: attacco/difesa e fattore campo sono stimati per lega).
++    ``min_train`` è il numero minimo di partite di storico richieste prima di iniziare a valutare.
++    """
++    df = hist.dropna(subset=["home_goals", "away_goals"]).copy()
++    if df.empty:
++        return pd.DataFrame()
++    d = pd.to_datetime(df["date"])
++    df["date"] = d.dt.tz_localize(None) if d.dt.tz is not None else d
++    df = df.sort_values("date").reset_index(drop=True)
++    frames = []
++    if "league_key" in df.columns:
++        groups = [(str(lg), g.reset_index(drop=True)) for lg, g in df.groupby("league_key")]
++    else:
++        groups = [("?", df)]
++    for lg, g in groups:
++        if leagues and lg not in leagues:
++            continue
++        try:
++            part = _walk(g, lg, step_days=step_days, min_train=min_train, xi=xi, w_dc=w_dc,
++                         shrink_prior=shrink_prior)
++        except Exception as exc:   # una lega problematica non ferma le altre
++            log.warning("backtest %s saltato: %s: %s", lg, type(exc).__name__, exc)
++            continue
++        if not part.empty:
++            frames.append(part)
++            log.info("backtest %s: %d gare valutate su %d di storico", lg, len(part), len(g))
++    if not frames:
++        return pd.DataFrame()
++    return pd.concat(frames, ignore_index=True)
++
++
++def _walk(g: pd.DataFrame, league_key: str, step_days: int, min_train: int, xi: float,
++          w_dc: float, shrink_prior: float) -> pd.DataFrame:
++    d = g["date"]
++    if len(g) <= min_train:
++        return pd.DataFrame()
++    step = pd.Timedelta(days=step_days)
++    cutoff = d.iloc[min_train].normalize()
++    last = d.max()
++    rows: list[dict[str, Any]] = []
++    while cutoff <= last:
++        window_end = cutoff + step
++        train = g[d < cutoff]
++        test = g[(d >= cutoff) & (d < window_end)]
++        cutoff = window_end
++        if len(train) < min_train or test.empty:
++            continue
++        dc = DixonColesModel(xi=xi, shrink_prior=shrink_prior).fit(train)
++        elo = EloModel().fit(train)
++        for r in test.itertuples(index=False):
++            try:
++                pr = dc.predict(r.home, r.away)
++            except KeyError:
++                continue        # squadra mai vista nello storico (promozione a stagione in corso)
++            note = r.home in elo.ratings and r.away in elo.ratings
++            e = elo.predict(r.home, r.away) if note else None
++            out = ensemble(pr, e, w_dc=w_dc)
++            out.pop("top_scores", None)
++            out.update({"date": r.date, "league_key": league_key, "home": r.home, "away": r.away,
++                        "home_goals": int(r.home_goals), "away_goals": int(r.away_goals),
++                        "outcome": outcome_index(int(r.home_goals), int(r.away_goals)),
++                        "n_train": int(dc.n_matches)})
++            rows.append(out)
++    return pd.DataFrame(rows)
++
++
++def observed_flags(df: pd.DataFrame) -> dict[str, np.ndarray]:
++    """Esiti osservati dei mercati binari (bool per riga), stessa definizione della pagina."""
++    tot = df["home_goals"].to_numpy(dtype=float) + df["away_goals"].to_numpy(dtype=float)
++    hg = df["home_goals"].to_numpy(dtype=float)
++    ag = df["away_goals"].to_numpy(dtype=float)
++    return {"over15": tot > 1.5, "over25": tot > 2.5, "over35": tot > 3.5,
++            "btts": (hg > 0) & (ag > 0), "d1x": hg >= ag, "d12": hg != ag, "dx2": hg <= ag,
++            "cs_h": ag == 0, "cs_a": hg == 0}
++
++
++def backtest_summary(df: pd.DataFrame,
++                     naive: tuple[float, float, float] = NAIVE_1X2) -> dict[str, Any]:
++    """Riepilogo, calibrazione 1X2 e mercati del backtest, con intervalli di Wilson al 95%."""
++    if df.empty:
++        return {}
++    probs = df[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
++    oc = df["outcome"].to_numpy(dtype=int)
++    onehot = np.eye(3)[oc]
++    naive_arr = np.tile(np.asarray(naive, dtype=float), (len(df), 1))
++    rps = float((((probs.cumsum(1) - onehot.cumsum(1)) ** 2).sum(1) / 2).mean())
++    rps_naive = float((((naive_arr.cumsum(1) - onehot.cumsum(1)) ** 2).sum(1) / 2).mean())
++    p_real = probs[np.arange(len(df)), oc]
++    n = int(len(df))
++    calib = []
++    for i, label in enumerate(OUTCOME_LABELS):
++        k = int((oc == i).sum())
++        lo, hi = wilson_interval(k, n)
++        prev = float(probs[:, i].mean())
++        calib.append({"label": label, "prev": prev, "obs": k / n, "k": k, "n": n,
++                      "lo": lo, "hi": hi, "outside": bool(not (lo <= prev <= hi))})
++    flags = observed_flags(df)
++    markets = []
++    for col, key, label in MARKET_KEYS:
++        if col not in df.columns:
++            continue
++        pr = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
++        y = flags[key].astype(float)
++        ok = ~np.isnan(pr)
++        if ok.sum() < 5:
++            continue
++        pr, y = pr[ok], y[ok]
++        n_mk = int(ok.sum())
++        k_mk = int(round(float(y.sum())))
++        lo, hi = wilson_interval(k_mk, n_mk)
++        prev = float(pr.mean())
++        brier = float(((pr - y) ** 2).mean())
++        base = float(y.mean())
++        markets.append({"label": label, "n": n_mk, "prev": prev, "obs": base, "lo": lo, "hi": hi,
++                        "outside": bool(not (lo <= prev <= hi)), "brier": brier,
++                        "brier_base": float(((base - y) ** 2).mean()),
++                        "delta": brier - float(((base - y) ** 2).mean())})
++    return {"n": n, "leagues": int(df["league_key"].nunique()) if "league_key" in df.columns else 1,
++            "rps": rps, "naive": rps_naive, "delta": rps - rps_naive,
++            "brier": float(((probs - onehot) ** 2).sum(1).mean()),
++            "logloss": float(np.mean([log_loss(float(x)) for x in p_real])),
++            "hit": float((probs.argmax(1) == oc).mean()), "calib": calib, "markets": markets}
+diff --git a/src/fda/models/predict.py b/src/fda/models/predict.py
+index ede45a5..a000099 100644
+--- a/src/fda/models/predict.py
++++ b/src/fda/models/predict.py
+@@ -265,6 +265,24 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
+     return df, dc, elo
+ 
+ 
++def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
++    """Intervallo di Wilson al 95% per una frequenza osservata ``k`` su ``n``.
++
++    Serve a distinguere una distorsione reale dal rumore di campionamento: su 50 gare una
++    differenza di 10 punti fra previsto e osservato può essere del tutto compatibile con il
++    caso, e non giustifica una correzione del modello. L'intervallo di Wilson resta sensato
++    anche per ``k = 0`` o ``k = n`` (a differenza dell'approssimazione normale).
++    """
++    if n <= 0:
++        return (0.0, 1.0)
++    p_hat = k / n
++    z2 = z * z
++    den = 1.0 + z2 / n
++    centre = p_hat + z2 / (2 * n)
++    half = z * float(np.sqrt(p_hat * (1 - p_hat) / n + z2 / (4 * n * n)))
++    return ((centre - half) / den, (centre + half) / den)
++
++
+ def rps(probs: list[list[float]], outcomes: list[int]) -> float:
+     """Ranked Probability Score medio (0 = perfetto; ~0.2 tipico per il calcio)."""
+     return float(pb.metrics.rps_average(np.asarray(probs, dtype=float), np.asarray(outcomes, dtype=int)))
+diff --git a/src/fda/site/build.py b/src/fda/site/build.py
+index c4690c6..22c6993 100644
+--- a/src/fda/site/build.py
++++ b/src/fda/site/build.py
+@@ -15,7 +15,7 @@ import pandas as pd
+ from jinja2 import Environment, FileSystemLoader, select_autoescape
+ 
+ from ..config import REPO_ROOT, leagues, load_leagues_config
+-from ..models.predict import outcome_index
++from ..models.predict import outcome_index, wilson_interval
+ from ..store import Store
+ from .analysis import MatchAnalysis
+ from .audit import audit_match
+@@ -297,8 +297,15 @@ class SiteBuilder:
+                 summary.sort(key=lambda r: (r["league"] == "Tutti", r["league"]))
+                 # calibrazione: probabilità media prevista vs frequenza osservata (tutte le gare valutate)
+                 oc_all = p["outcome"].to_numpy()
+-                calib = [{"label": lbl, "prev": float(probs[:, i].mean()), "obs": float((oc_all == i).mean())}
+-                         for i, lbl in enumerate(("1 · vittoria in casa", "X · pareggio", "2 · vittoria in trasferta"))]
++                n_all = int(len(p))
++                calib = []
++                for i, lbl in enumerate(("1 · vittoria in casa", "X · pareggio", "2 · vittoria in trasferta")):
++                    k = int((oc_all == i).sum())
++                    lo, hi = wilson_interval(k, n_all)
++                    prev = float(probs[:, i].mean())
++                    calib.append({"label": lbl, "prev": prev, "obs": k / n_all if n_all else 0.0,
++                                  "k": k, "n": n_all, "lo": lo, "hi": hi,
++                                  "outside": bool(not (lo <= prev <= hi))})
+                 fxn = fx.set_index("match_id")
+                 for r in p.sort_values("utc_kickoff_fx" if "utc_kickoff_fx" in p.columns else "utc_kickoff", ascending=False).head(40).itertuples(index=False):
+                     recent.append({"date": pd.Timestamp(getattr(r, "utc_kickoff_fx", r.utc_kickoff)).tz_convert(self.tz).strftime("%d/%m"),
+@@ -325,13 +332,27 @@ class SiteBuilder:
+                         continue
+                     pr, y = pr[ok], y[ok]
+                     base = y.mean()
+-                    markets.append({"label": label, "n": int(ok.sum()), "prev": float(pr.mean()),
++                    n_mk = int(ok.sum())
++                    k_mk = int(round(float(y.sum())))
++                    lo_mk, hi_mk = wilson_interval(k_mk, n_mk)
++                    prev_mk = float(pr.mean())
++                    markets.append({"label": label, "n": n_mk, "prev": prev_mk,
+                                     "obs": float(base), "brier": float(((pr - y) ** 2).mean()),
+                                     "brier_base": float(((base - y) ** 2).mean()),
+-                                    "hit": float((((pr >= 0.5).astype(float)) == y).mean())})
++                                    "hit": float((((pr >= 0.5).astype(float)) == y).mean()),
++                                    "lo": lo_mk, "hi": hi_mk,
++                                    "outside": bool(not (lo_mk <= prev_mk <= hi_mk))})
+                     markets[-1]["delta"] = markets[-1]["brier"] - markets[-1]["brier_base"]
++        # backtest cronologico fuori campione (tabella prodotta da `fda backtest`): la card
++        # compare solo se esiste, come le sezioni condizionate alla disponibilità della fonte
++        bt_rows = self.store.read("backtest")
++        bt = {}
++        if not bt_rows.empty:
++            from ..models.backtest import backtest_summary
++
++            bt = backtest_summary(bt_rows)
+         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
+-                     markets=markets)
++                     markets=markets, bt=bt)
+ 
+     def build_status(self) -> None:
+         st = self.store.read("source_status")
+diff --git a/src/fda/site/templates/accuracy.html b/src/fda/site/templates/accuracy.html
+index 073905b..3902e42 100644
+--- a/src/fda/site/templates/accuracy.html
++++ b/src/fda/site/templates/accuracy.html
+@@ -15,24 +15,66 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30
+ {% if markets %}
+ <div class="card"><h2>Accuratezza per mercato</h2>
+   <table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th><th class="r">osservato</th>
+-    <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th></tr>
++    <th class="r">intervallo 95%</th>
++    <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th>
++    <th class="r">segnale</th></tr>
+   {% for m in markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
+     <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
++    <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
+     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
+     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
+-    <td class="r">{{ (m.hit*100)|round|int }}%</td></tr>{% endfor %}</table>
++    <td class="r">{{ (m.hit*100)|round|int }}%</td>
++    <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}</table>
+   <p class="small mut">«Previsto» è la probabilità media dichiarata, «osservato» la frequenza reale nello
+   stesso campione: se sono vicini il mercato è calibrato. Il Brier misura l'errore quadratico della
+   probabilità (0 = perfetto); <b>Brier base</b> è l'errore di chi pronostica sempre la frequenza di
+   base, quindi Δ negativo significa che il modello batte quel riferimento. «Scelte indovinate» conta
+-  le volte in cui l'esito reale coincide con il lato indicato da una probabilità ≥ 50%.</p>
++  le volte in cui l'esito reale coincide con il lato indicato da una probabilità ≥ 50%.
++  L'<b>intervallo 95%</b> (Wilson) è l'incertezza della frequenza osservata su questo campione: se il
++  valore «previsto» cade al suo interno la differenza è compatibile con il caso e <b>non</b> giustifica
++  una correzione del modello; la riga è marcata «fuori intervallo» solo quando il previsto resta fuori,
++  cioè quando il segnale è statisticamente distinguibile dal rumore.</p>
++</div>
++{% endif %}
++{% if bt and bt.n %}
++<div class="card"><h2>Backtest storico fuori campione</h2>
++  <p class="small">Lo stesso modello, valutato su <b>{{ bt.n }}</b> partite già giocate in
++  {{ bt.leagues }} campionati: per ogni finestra il modello è stato addestrato <b>solo</b> sulle
++  partite precedenti, quindi nessuna di queste stime ha visto il risultato. È il campione ampio che
++  serve per distinguere un difetto vero dal rumore (la tabella qui sopra cresce solo di
++  15-20 gare al giorno).</p>
++  <p class="kpi">RPS <b>{{ bt.rps|dec(4) }}</b> <span class="mut">(base {{ bt.naive|dec(4) }},
++  Δ {{ bt.delta|dec(4, true) }})</span> · log-loss <b>{{ bt.logloss|dec(4) }}</b> ·
++  esito azzeccato <b>{{ (bt.hit*100)|round|int }}%</b></p>
++  <div class="tablewrap"><table><tr><th>esito</th><th class="r">previsto</th><th class="r">osservato</th>
++    <th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
++  {% for c in bt.calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td>
++    <td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
++    <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
++    <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
++  </table></div>
++  <div class="tablewrap"><table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th>
++    <th class="r">osservato</th><th class="r">intervallo 95%</th><th class="r">Brier</th>
++    <th class="r">Brier base</th><th class="r">Δ</th><th class="r">segnale</th></tr>
++  {% for m in bt.markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
++    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
++    <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
++    <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
++    <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
++    <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}
++  </table></div>
++  <p class="small mut">Stesso criterio della tabella per mercato: «fuori intervallo» segnala uno scarto
++  statisticamente distinguibile dal caso su questo campione.</p>
+ </div>
+ {% endif %}
+ <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
+-<div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th></tr>
+-{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}%</td></tr>{% endfor %}
++<div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th>
++<th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
++{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
++<td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
++<td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
+ </table></div>
+-<p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10.</p>
++<p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10. L'intervallo (Wilson, 95%) dice quanto è incerta la frequenza osservata su <b>{{ calib[0].n if calib else 0 }}</b> gare: finché il previsto resta dentro, lo scarto è rumore di campionamento e non un difetto del modello.</p>
+ </div>
+ {% else %}<div class="card">Nessuna previsione ancora valutata: servono partite giocate dopo la prima previsione.</div>{% endif %}
+ {% if recent %}
+diff --git a/tests/test_backtest.py b/tests/test_backtest.py
+new file mode 100644
+index 0000000..f145a14
+--- /dev/null
++++ b/tests/test_backtest.py
+@@ -0,0 +1,204 @@
++"""Backtest cronologico: assenza di leakage, metriche e pubblicazione sulla pagina accuratezza."""
++
++
++import numpy as np
++import pandas as pd
++import pytest
++
++from fda.models.backtest import backtest_summary, chronological_backtest, observed_flags
++from fda.models.predict import rps as pb_rps
++from fda.models.predict import wilson_interval
++from fda.site.build import SiteBuilder
++
++
++def synthetic_hist(n_teams: int = 12, seasons: int = 3, seed: int = 3) -> pd.DataFrame:
++    """Storico sintetico: forza fissa per squadra, gol Poisson, un turno a settimana."""
++    rng = np.random.default_rng(seed)
++    teams = [f"T{i:02d}" for i in range(n_teams)]
++    att = {t: float(rng.normal(0, 0.3)) for t in teams}
++    dfn = {t: float(rng.normal(0, 0.3)) for t in teams}
++    rows, start = [], pd.Timestamp("2023-08-12")
++    for season in range(seasons):
++        for rnd in range(n_teams - 1):
++            day = start + pd.Timedelta(days=7 * rnd + 365 * season)
++            order = list(rng.permutation(teams))
++            for i in range(0, n_teams, 2):
++                home, away = order[i], order[i + 1]
++                lh = np.exp(0.15 + att[home] - dfn[away])
++                la = np.exp(-0.10 + att[away] - dfn[home])
++                rows.append({"date": day, "league_key": "TEST", "home": home,
++                             "away": away, "home_goals": int(rng.poisson(lh)),
++                             "away_goals": int(rng.poisson(la))})
++    return pd.DataFrame(rows)
++
++
++class SpyDC:
++    """Sostituisce Dixon-Coles: registra l'ultima data di allenamento e la restituisce."""
++
++    def __init__(self, xi: float = 0.0018, shrink_prior: float = 0.0) -> None:
++        self.n_matches = 0
++        self.train_max: pd.Timestamp | None = None
++        self.teams: set[str] = set()
++
++    def fit(self, hist: pd.DataFrame, as_of=None) -> "SpyDC":
++        self.n_matches = len(hist)
++        self.train_max = pd.to_datetime(hist["date"]).max()
++        self.teams = set(hist["home"]) | set(hist["away"])
++        return self
++
++    def predict(self, home: str, away: str) -> dict[str, float]:
++        if home not in self.teams or away not in self.teams:
++            raise KeyError(home)          # come il modello vero: squadra mai vista nello storico
++        return {"p_home": 0.45, "p_draw": 0.28, "p_away": 0.27, "lambda_home": 1.4,
++                "lambda_away": 1.1, "p_over15": 0.72, "p_over25": 0.5, "p_over35": 0.28,
++                "p_btts": 0.52, "p_1x": 0.73, "p_12": 0.72, "p_x2": 0.55,
++                "p_home_clean_sheet": 0.28, "p_away_clean_sheet": 0.24,
++                "_train_max": self.train_max}
++
++
++class StubElo:
++    """Elo senza valutazioni: `_walk` passa `elo=None` e resta la previsione Dixon-Coles pura."""
++
++    def fit(self, hist: pd.DataFrame) -> "StubElo":
++        self.ratings: dict[str, float] = {}
++        return self
++
++    def predict(self, home: str, away: str) -> dict[str, float]:
++        return {}
++
++
++def test_backtest_never_trains_on_the_future(monkeypatch):
++    """Ogni gara valutata è prevista da un modello allenato su partite strettamente precedenti."""
++    monkeypatch.setattr("fda.models.backtest.DixonColesModel", SpyDC)
++    monkeypatch.setattr("fda.models.backtest.EloModel", StubElo)
++    hist = synthetic_hist()
++    res = chronological_backtest(hist, step_days=14, min_train=60)
++
++    assert len(res) > 100, f"attese molte gare valutate, trovate {len(res)}"
++    assert (pd.to_datetime(res["_train_max"]) < pd.to_datetime(res["date"])).all(), \
++        "trovata una previsione allenata su partite non precedenti alla gara"
++    assert (res["n_train"] >= 60).all()
++    # la valutazione inizia solo dopo le prime min_train partite
++    soglia = hist.sort_values("date")["date"].iloc[60]
++    assert pd.to_datetime(res["date"]).min() >= soglia
++    # ogni gara dello storico compare al più una volta (nessuna finestra sovrapposta)
++    assert not res.duplicated(subset=["date", "home", "away"]).any()
++
++
++def test_backtest_skips_teams_missing_from_history(monkeypatch):
++    monkeypatch.setattr("fda.models.backtest.DixonColesModel", SpyDC)
++    monkeypatch.setattr("fda.models.backtest.EloModel", StubElo)
++    hist = synthetic_hist()
++    # una squadra che esordisce nell'ultima finestra: non è nel training di quella finestra,
++    # quindi la sua gara non è valutabile, mentre le altre della stessa finestra restano
++    ultimo = hist["date"].max()
++    extra = pd.DataFrame([
++        {"date": ultimo + pd.Timedelta(days=1), "league_key": "TEST", "home": "T00",
++         "away": "NEOPROMOSSA", "home_goals": 2, "away_goals": 0},
++        {"date": ultimo + pd.Timedelta(days=1), "league_key": "TEST", "home": "T02",
++         "away": "T03", "home_goals": 1, "away_goals": 1},
++    ])
++    tutto = pd.concat([hist, extra], ignore_index=True)
++    res = chronological_backtest(tutto, step_days=14, min_train=60)
++    assert "NEOPROMOSSA" not in set(res["away"]) and "NEOPROMOSSA" not in set(res["home"])
++    ultima_finestra = res[pd.to_datetime(res["date"]) > ultimo]
++    assert len(ultima_finestra) == 1 and ultima_finestra.iloc[0]["home"] == "T02"
++
++
++def test_backtest_summary_metrics_are_recomputed_independently():
++    rng = np.random.default_rng(11)
++    n = 60
++    rows = []
++    for i in range(n):
++        p = np.sort(rng.dirichlet([2, 1.4, 1.4]))[::-1]
++        outcome = int(rng.choice(3, p=p))
++        hg, ag = (2, 0) if outcome == 0 else ((1, 1) if outcome == 1 else (0, 2))
++        rows.append({"date": pd.Timestamp("2025-01-01") + pd.Timedelta(days=i),
++                     "league_key": "TEST", "home": f"H{i}", "away": f"A{i}",
++                     "home_goals": hg, "away_goals": ag,
++                     "outcome": outcome, "p_home": p[0], "p_draw": p[1], "p_away": p[2],
++                     "p_over15": 0.75, "p_over25": 0.5, "p_over35": 0.25, "p_btts": 0.5,
++                     "p_1x": p[0] + p[1], "p_12": p[0] + p[2], "p_x2": p[1] + p[2],
++                     "p_home_clean_sheet": 0.3, "p_away_clean_sheet": 0.3})
++    df = pd.DataFrame(rows)
++    s = backtest_summary(df)
++
++    oc = df["outcome"].to_numpy(int)
++    probs = df[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist()
++    assert abs(s["rps"] - pb_rps(probs, oc.tolist())) < 1e-9          # RPS = funzione indipendente
++    p_real = df[["p_home", "p_draw", "p_away"]].to_numpy(float)[np.arange(n), oc]
++    assert abs(s["logloss"] - float(-np.log(p_real).mean())) < 1e-9
++    assert abs(s["hit"] - float((np.asarray(probs).argmax(1) == oc).mean())) < 1e-9
++    assert s["n"] == n and s["leagues"] == 1
++    assert [c["k"] for c in s["calib"]] == [int((oc == i).sum()) for i in range(3)]
++    assert all(c["n"] == n for c in s["calib"])
++    # Over 1,5 dichiarato 75% su esiti 2-0/1-1/0-2: osservato ben sotto → fuori intervallo
++    o15 = next(m for m in s["markets"] if m["label"] == "Over 1,5 gol")
++    lo, hi = wilson_interval(int(round(o15["obs"] * o15["n"])), o15["n"])
++    assert o15["outside"] is bool(not (lo <= o15["prev"] <= hi))
++    for m in s["markets"]:
++        assert abs(m["delta"] - (m["brier"] - m["brier_base"])) < 1e-12
++    assert backtest_summary(pd.DataFrame()) == {}
++
++
++def test_observed_flags_match_their_definition():
++    df = pd.DataFrame({"home_goals": [2, 0, 1, 3], "away_goals": [0, 0, 1, 1]})
++    f = observed_flags(df)
++    assert f["over15"].tolist() == [True, False, True, True]
++    assert f["btts"].tolist() == [False, False, True, True]
++    assert f["d1x"].tolist() == [True, True, True, True]
++    assert f["d12"].tolist() == [True, False, False, True]
++    assert f["cs_h"].tolist() == [True, True, False, False]
++
++
++def _bt_rows() -> list[dict]:
++    rows = []
++    for i in range(40):
++        rows.append({"date": pd.Timestamp("2025-08-16") + pd.Timedelta(days=7 * i),
++                     "league_key": "TEST", "home": f"H{i}", "away": f"A{i}",
++                     "home_goals": 2, "away_goals": 1, "outcome": 0, "p_home": 0.42,
++                     "p_draw": 0.27, "p_away": 0.31, "p_over15": 0.78, "p_over25": 0.52,
++                     "p_over35": 0.29, "p_btts": 0.55, "p_1x": 0.69, "p_12": 0.73,
++                     "p_x2": 0.58,
++                     "p_home_clean_sheet": 0.26, "p_away_clean_sheet": 0.24})
++    return rows
++
++
++def test_accuracy_page_renders_backtest_card(tmp_path):
++    from tests.test_site import _seed
++
++    st = _seed(tmp_path)
++    st.upsert("backtest", _bt_rows())
++    out = tmp_path / "site"
++    SiteBuilder(store=st, out_dir=out).build_accuracy(st.read("fixtures"))
++    html = (out / "accuratezza.html").read_text(encoding="utf-8")
++
++    assert "Backtest storico fuori campione" in html
++    assert "su <b>40</b> partite già giocate" in html
++    # 40 vittorie interne su 40: osservato 100% e previsto 42% → scarto fuori intervallo
++    assert "100,0% <span class=\"mut\">(40/40)</span>" in html
++    assert "fuori intervallo" in html
++    i = html.find("Backtest storico fuori campione")
++    assert "RPS <b>" in html[i:] and "log-loss <b>" in html[i:]
++    assert "Over 2,5 gol" in html[i:] and "Doppia chance 1X" in html[i:]   # etichette italiane
++
++
++def test_accuracy_page_without_backtest_table_has_no_card(tmp_path):
++    from tests.test_site import _seed
++
++    st = _seed(tmp_path)
++    out = tmp_path / "site"
++    SiteBuilder(store=st, out_dir=out).build_accuracy(st.read("fixtures"))
++    html = (out / "accuratezza.html").read_text(encoding="utf-8")
++    assert "Backtest storico fuori campione" not in html
++    assert (out / "accuratezza.html").exists()
++
++
++@pytest.mark.parametrize("step_days,min_train", [(14, 60), (7, 80)])
++def test_backtest_windows_are_configurable(monkeypatch, step_days, min_train):
++    monkeypatch.setattr("fda.models.backtest.DixonColesModel", SpyDC)
++    monkeypatch.setattr("fda.models.backtest.EloModel", StubElo)
++    hist = synthetic_hist()
++    res = chronological_backtest(hist, step_days=step_days, min_train=min_train)
++    assert not res.empty and (res["n_train"] >= min_train).all()
++    assert (pd.to_datetime(res["_train_max"]) < pd.to_datetime(res["date"])).all()
+diff --git a/tests/test_site.py b/tests/test_site.py
+index d86c4eb..3995c68 100644
+--- a/tests/test_site.py
++++ b/tests/test_site.py
+@@ -363,6 +363,10 @@ def test_site_build_end_to_end(tmp_path):
+     assert "Riepilogo" in acc and "Serie A" in acc     # una partita valutata
+     assert "Δ vs naive" in acc and "Calibrazione" in acc and "Frequenza osservata" in acc
+     assert "✓" in acc          # Inter 4-1 Monza: top=1 (62%) azzeccato
++    # intervalli di Wilson: con 1 sola gara valutata lo scarto previsto/osservato è sempre rumore
++    assert "intervallo 95%" in acc and "compatibile" in acc and "fuori intervallo" not in acc
++    assert "20,7 – 100,0%" in acc      # k=1 su n=1
++    assert "0,0 – 79,3%" in acc        # k=0 su n=1 (79,346% arrotondato a una cifra)
+     assert "0,087" in acc      # RPS della singola previsione 0.62/0.21/0.17 con esito 1
+     # sito italiano: nessun residuo UTC/inglese, orari in ora italiana
+     for page in ("index.html", "partite/5749645.html", "partite/5749669.html", "accuratezza.html"):
+@@ -636,3 +640,24 @@ def test_timeline_drops_goal_out_of_sequence(tmp_path):
+     assert [g["player"] for g in goals] == ["Aouchiche", "Ilic"]
+     assert [g["score"] for g in goals] == ["0-1", "1-1"]
+     st.close()
++
++
++def test_wilson_interval_bounds_and_coverage():
++    """Intervallo di Wilson: bordi, simmetria, copertura e casi degeneri."""
++    from fda.site.build import wilson_interval
++
++    lo, hi = wilson_interval(1, 1)
++    assert abs(lo - 0.20654) < 1e-4 and hi == 1.0            # k = n: il bordo sale a 1
++    lo, hi = wilson_interval(0, 1)
++    assert lo == 0.0 and abs(hi - 0.79346) < 1e-4            # k = 0: non degenera in [0, 0]
++    assert wilson_interval(0, 0) == (0.0, 1.0)               # campione vuoto
++    for k, n in ((7, 50), (26, 50), (1, 10), (48, 50)):
++        lo, hi = wilson_interval(k, n)
++        assert 0.0 <= lo <= k / n <= hi <= 1.0               # contiene sempre la frequenza osservata
++        assert hi - lo > wilson_interval(k, n * 10)[1] - wilson_interval(k, n * 10)[0]   # più dati → più stretto
++    lo_a, hi_a = wilson_interval(13, 50)
++    lo_b, hi_b = wilson_interval(37, 50)
++    assert abs(lo_a - (1 - hi_b)) < 1e-9 and abs(hi_a - (1 - lo_b)) < 1e-9   # simmetrico
++    # su 50 gare il previsto 44% per la vittoria in casa con 13 osservate è fuori intervallo
++    lo, hi = wilson_interval(13, 50)
++    assert not (lo <= 0.44 <= hi)
