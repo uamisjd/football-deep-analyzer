@@ -115,6 +115,5 @@ conversione senza test utente. Al primo run live post-merge verificare:
 
 ## Prossimo passo
 
-Eseguire il controllo visuale finale a 375 px/desktop nel live preview e poi aprire la PR. Dopo il merge,
-il primo `daily` deve confermare dal vivo copertura, vento e stati; solo con dati risolti si valuteranno
-eventuali correzioni quantitative del modello.
+- Il `daily` GitHub Actions `34749412140` del 13/09 09:23 UTC ha completato raccolta, modelli e build ma ha fallito nel commit dei dati; Pages è stato saltato, quindi la produzione mostrava ancora l'ultima build riuscita delle 01:14. La PR #26 include rebase/push con retry e un errore esplicito al posto del precedente `|| true`.
+- Eseguire il controllo visuale finale a 375 px/desktop nel live preview. Dopo il merge, il primo `daily` deve confermare dal vivo copertura, vento e stati; solo con dati risolti si valuteranno eventuali correzioni quantitative del modello.
