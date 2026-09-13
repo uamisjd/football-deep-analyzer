@@ -335,3 +335,24 @@ def test_upsert_events_double_substitution_same_minute(tmp_path):
     df = st.read("events")
     assert len(df) == 2
     st.close()
+
+
+def test_predictions_una_riga_per_partita(tmp_path):
+    """La chiave di `predictions` è (match_id, model): riprevedere non accumula versioni.
+
+    Misurato sui dati 2026-09-13: 3.210 righe per 138 partite (~23 versioni ciascuna) con la
+    chiave vecchia che includeva `made_at`. Il sito legge solo l'ultima previsione pre-partita,
+    quindi le altre sono peso morto — e con tutto il calendario previsto sarebbero esplose.
+    """
+    st = Store(tmp_path / "processed")
+    row = {"match_id": 7, "model": "ensemble", "p_home": 0.40, "p_draw": 0.28, "p_away": 0.32,
+           "made_at": pd.Timestamp("2026-09-13T08:00:00+00:00")}
+    st.upsert("predictions", [row])
+    st.upsert("predictions", [{**row, "p_home": 0.45, "p_draw": 0.26, "p_away": 0.29,
+                               "made_at": pd.Timestamp("2026-09-13T16:00:00+00:00")}])
+    st.upsert("predictions", [{**row, "match_id": 8, "made_at": pd.Timestamp("2026-09-13T16:00:00+00:00")}])
+    lette = st.read("predictions")
+    assert len(lette) == 2                                        # una riga per partita
+    assert lette.loc[lette.match_id == 7, "p_home"].iloc[0] == 0.45   # vince l'ultimo run
+    assert lette.loc[lette.match_id == 7, "made_at"].iloc[0] == pd.Timestamp("2026-09-13T16:00:00+00:00")
+    st.close()

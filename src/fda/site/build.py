@@ -15,7 +15,7 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import REPO_ROOT, leagues, load_leagues_config
-from ..models.predict import outcome_index, wilson_interval
+from ..models.predict import latest_per_match, outcome_index, wilson_interval
 from ..store import Store
 from .analysis import MatchAnalysis, prediction_meta
 from .audit import audit_match
@@ -30,6 +30,28 @@ OUTCOME_LABELS = ("1", "X", "2")
 ITALIAN_DAYS = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
 ITALIAN_MONTHS = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
                   "settembre", "ottobre", "novembre", "dicembre"]
+# forme brevi per il calendario completo: una riga per partita deve stare in poco spazio
+ITALIAN_DAYS_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
+ITALIAN_MONTHS_SHORT = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
+
+
+def pct_triple(vals: tuple[float, float, float]) -> list[int]:
+    """Percentuali intere 1X2 che sommano esattamente 100 (metodo del resto massimo).
+
+    Arrotondare le tre probabilità in modo indipendente produce 99% o 101%: su righe
+    compatte senza contesto il lettore non potrebbe accorgersene, quindi la correzione
+    si fa qui, sul resto più grande.
+    """
+    raw = [float(v) * 100.0 for v in vals]
+    base = [int(np.floor(x)) for x in raw]
+    resto = 100 - sum(base)
+    if resto > 0:
+        for i in np.argsort([base[j] - raw[j] for j in range(3)])[:resto]:
+            base[int(i)] += 1
+    elif resto < 0:
+        for i in np.argsort([raw[j] - base[j] for j in range(3)])[:-resto]:
+            base[int(i)] -= 1
+    return base
 
 
 def day_label(d) -> str:
@@ -201,6 +223,53 @@ class SiteBuilder:
                            if next_match else None),
         }
 
+    def _calendar_rows(self, fx: pd.DataFrame, preds: pd.DataFrame,
+                       with_card: set[int]) -> tuple[list[dict[str, Any]], int]:
+        """Righe compatte per TUTTO il calendario in programma → (mesi, senza_previsione).
+
+        Le righe ricche di ``_match_rows`` costano un contesto per partita (forma, classifica,
+        assenze) e restano limitate alla finestra breve. Qui servono solo data, squadre e
+        l'ultima previsione: così "Prossime" elenca l'intera stagione senza moltiplicare né i
+        tempi di build né il peso della pagina (misurato: ~30 ms per previsione, ~250 B per riga).
+        """
+        by_id: dict[int, Any] = {}
+        if preds is not None and not preds.empty:
+            for r in latest_per_match(preds).itertuples(index=False):
+                by_id[int(r.match_id)] = r
+        mesi: dict[tuple[int, int], list[dict[str, Any]]] = defaultdict(list)
+        senza = 0
+        for r in fx.sort_values("utc_kickoff").itertuples(index=False):
+            local = pd.Timestamp(r.utc_kickoff).tz_convert(self.tz)
+            p = by_id.get(int(r.match_id))
+            prev: dict[str, Any] | None = None
+            if p is not None:
+                pct = pct_triple((float(p.p_home), float(p.p_draw), float(p.p_away)))
+                fav_i = max(range(3), key=lambda i: pct[i])
+                tot = float(p.lambda_home) + float(p.lambda_away)
+                prev = {"pct": pct, "fav": ("h", "d", "a")[fav_i], "fav_i": fav_i,
+                        "gol": it_dec(tot, 1) if np.isfinite(tot) else None,
+                        "over": int(round(float(p.p_over25) * 100)) if np.isfinite(p.p_over25) else None}
+            else:
+                senza += 1
+            mesi[(local.year, local.month)].append({
+                "match_id": int(r.match_id),
+                "league_key": self.league_keys.get(int(r.league_id), str(r.league_id)),
+                "league_name": self.league_names.get(int(r.league_id), str(r.league_id)),
+                "when": f"{ITALIAN_DAYS_SHORT[local.weekday()]} {local.day} {ITALIAN_MONTHS_SHORT[local.month]}",
+                "time": local.strftime("%H:%M"), "date": local.date().isoformat(),
+                "home_name": str(r.home_name), "away_name": str(r.away_name),
+                # la scheda esiste solo nella finestra breve: altrove la riga resta testuale
+                "url": f"partite/{int(r.match_id)}.html" if int(r.match_id) in with_card else None,
+                "prediction": prev,
+            })
+        # la chiave si chiama "matches", non "items": in Jinja `mo.items` risolverebbe al
+        # metodo dict.items invece che alla lista
+        out = [{"id": f"mese-{y}-{m:02d}", "label": f"{ITALIAN_MONTHS[m].capitalize()} {y}",
+                "label_short": f"{ITALIAN_MONTHS_SHORT[m].capitalize()} {str(y)[2:]}",
+                "count": len(rows), "matches": rows}
+               for (y, m), rows in sorted(mesi.items())]
+        return out, senza
+
     def _group_by_day(self, rows: list[dict[str, Any]]) -> list[tuple[str, list[dict[str, Any]]]]:
         groups: dict = defaultdict(list)
         for m in rows:
@@ -219,19 +288,29 @@ class SiteBuilder:
         today_rows = self._match_rows(today)
         upcoming_rows = self._match_rows(upcoming)
         result_rows = self._match_rows(results)
+        ids_breve = set(pd.concat([today, upcoming, results]).match_id.astype(int))
+        # --- calendario completo: ciò che la finestra breve non copre, in forma compatta ---
+        # non costa richieste extra (le partite sono già state raccolte da `fda collect`) e
+        # nemmeno analisi per partita: una riga = data, squadre e ultima previsione disponibile
+        lontano = fx[(fx.status == "scheduled") & (fx.local_date > today_local + timedelta(days=7))]
+        calendar, calendar_missing = self._calendar_rows(lontano, self.store.read("predictions"), ids_breve)
+        log.info("calendario completo: %d partite in %d mesi (%d senza previsione)",
+                 len(lontano), len(calendar), calendar_missing)
         self._render("index.html", "index.html", title=f"Partite di oggi — {day_label(today_local)}",
                      subtitle="Il quadro della giornata, poi il dettaglio verificabile di ogni partita.",
                      days=self._group_by_day(today_rows), view_kind="today",
                      summary=self._today_summary(today_rows), filters=self._list_filters(today_rows))
-        self._render("index.html", "prossime.html", title="Prossimi 7 giorni",
-                     subtitle="Previsioni aggiornate a ogni run (formazioni e assenze incluse quando disponibili).",
+        self._render("index.html", "prossime.html", title="Prossime partite",
+                     subtitle="I prossimi 7 giorni con la scheda completa, poi tutto il calendario "
+                              "della stagione in forma compatta.",
                      days=self._group_by_day(upcoming_rows), view_kind="upcoming", summary=None,
-                     filters=self._list_filters(upcoming_rows))
+                     filters=self._list_filters(upcoming_rows),
+                     calendar=calendar, calendar_missing=calendar_missing, calendar_days=7)
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
                      subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
                      days=self._group_by_day(result_rows), view_kind="results", summary=None,
                      filters=self._list_filters(result_rows))
-        return set(pd.concat([today, upcoming, results]).match_id.astype(int))
+        return ids_breve
 
     def build_match_pages(self, match_ids: set[int]) -> set[int]:
         """Pagine partita: ritorna gli id effettivamente generati (per i link del log giocatori)."""

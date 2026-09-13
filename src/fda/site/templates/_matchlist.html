@@ -67,3 +67,21 @@
   </div>
 </article>
 {%- endmacro %}
+
+{% macro cal_row(m) -%}
+{#- Riga compatta del calendario completo: data, gara, 1X2, gol attesi, Over 2,5.
+    Niente contesto (forma/classifica/assenze): per le partite lontane la fonte non li ha
+    ancora pubblicati, e la scheda completa arriva nella finestra breve. -#}
+{% set p = m.prediction %}
+<div class="cal-row{% if p %} cal-fav-{{ p.fav }}{% endif %}" data-match-card data-league="{{ m.league_key }}" data-status="scheduled">
+  <time class="cal-when" datetime="{{ m.date }}">{{ m.when }} <b>{{ m.time }}</b></time>
+  <span class="cal-teams">{% if m.url %}<a href="{{ root }}{{ m.url }}">{% endif %}{{ m.home_name }} – {{ m.away_name }}{% if m.url %}</a>{% endif %}<span class="cal-lg">{{ m.league_name }}</span></span>
+  {%- if p %}
+  <span class="cal-p" aria-label="1 {{ p.pct[0] }}%, X {{ p.pct[1] }}%, 2 {{ p.pct[2] }}%">{% for v in p.pct %}{% if loop.index0 == p.fav_i %}<b>{{ v }}</b>{% else %}{{ v }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</span>
+  <span class="cal-gol">{{ p.gol if p.gol else '—' }}</span>
+  <span class="cal-o">{{ (p.over ~ '%') if p.over is not none else '—' }}</span>
+  {%- else %}
+  <span class="cal-p cal-none">senza previsione</span><span class="cal-gol">—</span><span class="cal-o">—</span>
+  {%- endif %}
+</div>
+{%- endmacro %}

@@ -422,13 +422,12 @@ nel `daily`.
    difetto che oggi la calibrazione tampona con un moltiplicatore globale 0,9135: se entra, la
    calibrazione dovrebbe tornare vicino a 1,00 e il suo ruolo diventare solo la deriva di regime.
    Va misurato anche l'effetto sui mercati (Over/BTTS/risultati esatti), non solo sull'1X2.
-3ter. **Orizzonte delle previsioni**: oggi `fda predict` copre **7 giorni** e solo le gare con
-   `status == "scheduled"`, cioè 138 partite previste su 2.091 in calendario (6,6%). Le schede delle
-   partite oltre la settimana non hanno modello. Estendere l'orizzonte costa spazio
-   (`predictions.parquet` accumula una riga per `(match_id, model, made_at)`: ~23 versioni per
-   partita, 3.210 righe per 138 partite) e tempo di run: serve una decisione sulla chiave
-   (sovrascrivere l'ultima versione per partita, o tenere lo storico solo per le gare entro 7 giorni)
-   **prima** di allargare la copertura.
+3ter. ~~**Orizzonte delle previsioni**~~ **FATTO — Tappa 1, §9** (decisione utente «procedi»,
+   2026-09-13): chiave di `predictions` = `(match_id, model)` (una riga per partita, con migrazione
+   delle ~23 versioni accumulate), `fda predict --days-ahead 0` = tutto il calendario, pagina
+   «Prossime» estesa al calendario completo in righe compatte. Copertura **6,6% → 96%**
+   (138 → 2.000 partite su 2.083), spazio per partita coperta **1,6 kB → 0,27 kB**. La Tappa 2
+   (schede per le partite lontane) resta rinviata: §9.5.
 
 **P3 — struttura del modello**
 4. Copula di Weibull come generatore dei mercati sui gol (1X2 da DC, Over/Under dalla copula), se il
@@ -468,3 +467,94 @@ nel `daily`.
 | `scripts/diagnose_model.py`, `scripts/corpus_da_h2h.py`, `scripts/anteprima_scheda.py`, `scripts/verify_site.py` | diagnosi, corpus offline, anteprima locale, controlli [9]/[10] |
 | `.github/workflows/lab.yml` | laboratorio settimanale su storico reale |
 | `tests/test_calibration.py`, `tests/test_lab.py`, `tests/test_models.py`, `tests/test_advanced.py`, `tests/test_season_sim.py`, `tests/test_backtest.py` | test nuovi e aggiornati: stimatore a momenti, deriva di regime, scelta su griglia a confronto, `n_fit` = gare di stima, limiti di sicurezza sulle λ, coerenza 1X2/griglia, inclinazione esponenziale, correzione del livello per candidato, miscela non appiattita (suite a **163**) |
+
+---
+
+## 9. Tappa 1 — orizzonte esteso a tutto il calendario (implementata, 2026-09-13)
+
+**Decisione utente**: dopo la diagnosi di copertura (**138 partite previste su 2.083 in calendario =
+6,6%**) l'utente ha approvato con «procedi» la **Tappa 1**: previsione per tutte le partite in
+programma, una riga per partita, pagina «Prossime» estesa al calendario completo. La **Tappa 2**
+(schede complete anche per le partite lontane) resta **rinviata** (§9.5).
+
+### 9.1 Che cosa cambia
+
+| Dove | Prima | Dopo |
+|---|---|---|
+| `store.TABLE_KEYS["predictions"]` | `(match_id, model, made_at)` → una riga per run | `(match_id, model)` → **una riga per partita** |
+| `models/predict.latest_per_match` | — | tiene l'ultima previsione per (partita, modello): **migrazione** delle righe accumulate e garanzia a regime |
+| `cli.predict_cmd` | `--days-ahead 7` | `--days-ahead 0` = **tutto il calendario** (default); con `>0` il tetto resta, per prove |
+| `cli.predict_cmd` (avvio) | — | collassa le versioni precedenti e lo dichiara: «previsioni: 3.210 righe → 138 (una per partita)» |
+| filtro partite | `scheduled & kickoff <= now+7g` | `scheduled & kickoff >= now` (il tetto si applica solo se `days-ahead > 0`) |
+| `site/build.build_indexes` | 3 viste ricche (oggi / 7 giorni / risultati) | **+ calendario completo** in righe compatte, solo nella vista «Prossime», raggruppato per mese |
+| `templates/index.html`, `_matchlist.html`, `base.html` | — | sezione «Tutto il calendario»: navigazione per mese, un `<details>` per mese (il primo aperto), riga = data · gara · 1X2 · gol attesi · Over 2,5 |
+| `scripts/verify_site.py` | controlli [1]-[10] | **+ [11] calendario**: 1X2 che somma 100, `aria-label` = testo visibile, preferito in grassetto e coerente con `cal-fav-*`, gol attesi in formato italiano, data/ora valide, mesi in ordine con etichetta coerente, conteggio dichiarato = righe stampate, navigazione = sezioni |
+
+**Perché non costa richieste in più**: l'elenco delle partite arriva da una sola chiamata `fixtures`
+per lega, che `fda collect` fa già; il modello ha bisogno solo di squadre e storico. Restano legate
+alla vicinanza della gara le raccolte *per partita* (`matchDetails`, formazioni, infermeria, meteo,
+arbitro) che `fda collect` fa nella finestra `future_days`: anticiparle sarebbe spreco, la fonte non
+ha ancora pubblicato quei dati (coerente con la direttiva utente «distinguere assente / non ancora
+pubblicato / recuperato»).
+
+### 9.2 Misure **[offline dal sandbox: storico surrogato da `h2h`, numeri di gioco non decisionali]**
+
+- **Copertura**: 138 → **2.000 partite previste su 2.083 in programma (96%)**. Nel calendario oltre i
+  7 giorni: **1.837 righe con previsione, 150 senza** (7,5%: una o entrambe le squadre non sono nello
+  storico surrogato disponibile nel sandbox).
+- **Costo di previsione**: **29,7 ms per partita** → 1.862 previsioni in **55 s**; su 5 run/giorno
+  ~5 minuti al giorno in più, dentro il budget del `daily` (~11 minuti oggi).
+- **Spazio**: `predictions.parquet` 218 kB per 138 partite (**1,6 kB per partita coperta**) → 549 kB
+  per 2.000 partite (**0,27 kB per partita coperta**): 14× la copertura a 1/6 dello spazio per
+  partita. Il vecchio file comprimeva bene *perché* era 23 copie quasi identiche per gara
+  (69 B/riga contro 469 B/riga delle stesse righe collassate).
+- **Build del sito**: `build_indexes` **2,4 s** col calendario completo (le righe compatte non
+  chiamano `analysis.list_context`, che è il costo delle righe ricche); build completo **146 s**
+  (376 schede, 2.364 fixture, 7.394 giocatori) = invariato.
+- **Peso della pagina**: `prossime.html` 274 kB → **1.102 kB** per 1.987 righe compatte
+  (**+430 B/riga**), **83 kB gzip**; `index.html` e `risultati.html` invariati (il calendario sta in
+  una vista sola, niente duplicati).
+- **Verifiche**: `scripts/verify_site.py` sulla build locale completa → **0 problemi · 11.793
+  controlli**, di cui **[11] 9.643 controlli su 1.987 righe di calendario**; suite **169 passed**
+  (+6 test: `latest_per_match` e casi degeneri, chiave di `predictions` una riga per partita,
+  `pct_triple` mai 99/101, calendario presente in «Prossime» e assente altrove, righe senza
+  previsione dichiarate, nessun link a schede inesistenti).
+
+### 9.3 Scelte di qualità dentro la Tappa 1
+
+- **Percentuali che sommano sempre 100** (`build.pct_triple`, metodo del resto massimo, il punto
+  mancante va all'esito più probabile): in una riga compatta il lettore non ha contesto per
+  accorgersi di un arrotondamento sbagliato.
+- **Preferito marcato due volte** (grassetto + colore della famiglia 1/X/2 già usata nelle liste):
+  il colore non è mai l'unico canale (WCAG 1.4.1).
+- **Degrado onesto**: senza previsione la riga scrive «senza previsione» (niente celle vuote né zeri),
+  l'introduzione conta quante sono e ne dice il motivo; **nessun link a schede che non esistono**
+  (`_calendar_rows` genera l'URL solo per gli id con pagina: quando la Tappa 2 accenderà le schede
+  lontane i link compaiono da soli).
+- **Mesi chiusi di default** (`<details>`, aperto solo il primo): 1.987 righe restano navigabili e la
+  pagina resta veloce su mobile; **filtri e ricerca della toolbar valgono anche sul calendario** (la
+  chiave di ricerca delle righe compatte è ricavata dal testo una volta sola, invece di duplicare
+  `data-search` su 2.000 righe).
+- **Log**: il dettaglio per partita dei limiti di sicurezza sulle λ scende a `DEBUG` e
+  `predict_matches` scrive **un solo riepilogo** col tasso di intervento («limiti di sicurezza su
+  lambda: toccate 29 partite su 2.084 (1,39%)»): su un calendario intero i singoli casi annegavano il log.
+
+### 9.4 Da verificare dal vivo (Actions, dopo il merge)
+
+1. `fda predict` con `days-ahead 0`: partite previste per lega (atteso: tutte quelle in programma,
+   ~2.000), durata del passo (atteso 1-2 minuti), riga di collasso «3.210 → 138» al primo run.
+2. Quante righe restano **senza previsione** con lo storico reale (atteso: molto meno delle 150
+   offline — le neopromosse senza storico datahub ricevono il prior del DC, quindi una previsione
+   ce l'hanno; il caso offline era dovuto allo storico surrogato).
+3. **Effetto dell'orizzonte sulla qualità**: offline **non è misurabile** (esperimento 2026-09-13:
+   RPS 0,2027 / 0,2138 / 0,1934 / 0,1943 per 0-7 / 8-14 / 15-30 / 31-60 giorni di anticipo, non
+   monotono e dentro il rumore, SE ≈ 0,03 per bucket). Con tutto il calendario previsto,
+   `predictions` accumula `made_at` e `utc_kickoff`: la pagina Accuratezza potrà spezzare l'RPS per
+   anticipo **sui dati veri** (§7 voce 7, già in coda).
+
+### 9.5 Tappa 2 (rinviata — serve decisione utente)
+
+Schede complete anche per le partite lontane: ~2.000 pagine in più (**+17 minuti** di build stimati),
+contenuto in gran parte segnaposto («formazioni non ancora pubblicate», «arbitro da definire»), e il
+valore cresce solo a ridosso della gara. Oggi la riga compatta dà già il modello (1X2, gol attesi,
+Over 2,5) per tutta la stagione; la Tappa 2 aggiungerebbe contesto, non informazione predittiva.

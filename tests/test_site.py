@@ -1,10 +1,12 @@
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
+import numpy as np
+
 from fda.collect import collect_league
 from fda.config import league
 from fda.site.analysis import MatchAnalysis
-from fda.site.build import SiteBuilder
+from fda.site.build import SiteBuilder, pct_triple
 from fda.store import Store
 from tests.test_store_collect import FakeEspn, FakeEspnNoStandings, FakeFotMob, FakeUnderstat
 
@@ -661,3 +663,75 @@ def test_wilson_interval_bounds_and_coverage():
     # su 50 gare il previsto 44% per la vittoria in casa con 13 osservate è fuori intervallo
     lo, hi = wilson_interval(13, 50)
     assert not (lo <= 0.44 <= hi)
+
+
+def test_pct_triple_somma_sempre_100():
+    """Percentuali intere 1X2: mai 99% né 101% (resto massimo sull'esito più probabile).
+
+    Nelle righe compatte del calendario non c'è contesto che permetta al lettore di
+    accorgersi di un arrotondamento sbagliato, quindi la correzione sta nel codice.
+    """
+    assert pct_triple((0.5, 0.25, 0.25)) == [50, 25, 25]
+    assert pct_triple((0.424, 0.283, 0.293)) == [43, 28, 29]     # il punto mancante va al preferito
+    assert sum(pct_triple((1 / 3, 1 / 3, 1 / 3))) == 100
+    rng = np.random.default_rng(7)
+    for _ in range(400):
+        x = rng.random(3)
+        x = x / x.sum()
+        pct = pct_triple(tuple(float(v) for v in x))
+        assert sum(pct) == 100 and all(0 <= v <= 100 for v in pct)
+        assert max(abs(p - v * 100) for p, v in zip(pct, x)) <= 1.0   # scarto massimo: 1 punto
+
+
+def _fixture_lontana(match_id: int, giorni: int, home: str, away: str, now) -> dict:
+    return {"match_id": match_id, "league_id": 55, "season": "2026/2027", "round": None,
+            "utc_kickoff": now + timedelta(days=giorni), "home_id": 8686, "home_name": home,
+            "away_id": 8535, "away_name": away, "home_goals": None, "away_goals": None,
+            "status": "scheduled", "source": "test"}
+
+
+def test_build_indexes_calendario_completo(tmp_path):
+    """«Prossime» = 7 giorni con scheda + tutto il calendario in righe compatte.
+
+    Le partite lontane hanno la previsione del modello ma non la scheda (i dettagli arrivano
+    a ridosso della gara): la riga deve dirlo, non mostrare buchi o link rotti.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(timezone.utc)
+    st.upsert("fixtures", [_fixture_lontana(5900001, 40, "Roma", "Fiorentina", now),
+                           _fixture_lontana(5900002, 75, "Napoli", "Bologna", now)])
+    st.upsert("predictions", [{"match_id": 5900001, "model": "ensemble", "league_key": "ITA1",
+                               "p_home": 0.424, "p_draw": 0.283, "p_away": 0.293,
+                               "lambda_home": 1.5, "lambda_away": 1.1, "p_over25": 0.52,
+                               "made_at": now}])
+    out = tmp_path / "sito"
+    ids = SiteBuilder(store=st, out_dir=out).build_indexes(st.read("fixtures"))
+    h = (out / "prossime.html").read_text(encoding="utf-8")
+
+    assert "Tutto il calendario" in h
+    assert h.count('class="cal-row') == 2                       # solo ciò che sta fuori dai 7 giorni
+    assert h.count('<details class="cal-month"') == 2           # raggruppato per mese
+    assert h.count('class="cal-nav"') == 1 and h.count('<a href="#mese-') == 2
+    # previsione in forma italiana, col preferito in grassetto e accessibile
+    assert 'aria-label="1 43%, X 28%, 2 29%">43 · 28 · <b>29</b>' not in h    # il preferito è l'1
+    assert 'aria-label="1 43%, X 28%, 2 29%"><b>43</b> · 28 · 29' in h
+    assert '<span class="cal-gol">2,6</span>' in h and '<span class="cal-o">52%</span>' in h
+    # senza previsione: lo dice, non lascia celle vuote
+    assert "senza previsione" in h and "storico insufficiente" in h
+    # nessuna scheda per le partite lontane → nessun link (e nessun id da generare)
+    assert 'class="cal-teams"><a' not in h
+    assert not ({5900001, 5900002} & ids)
+    # le altre due viste restano senza calendario
+    for pagina in ("index.html", "risultati.html"):
+        assert "Tutto il calendario" not in (out / pagina).read_text(encoding="utf-8")
+    st.close()
+
+
+def test_calendario_senza_partite_lontane_non_appare(tmp_path):
+    """Se non c'è nulla oltre la finestra breve la sezione non si stampa (niente titoli vuoti)."""
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_indexes(st.read("fixtures"))
+    h = (out / "prossime.html").read_text(encoding="utf-8")
+    assert "Tutto il calendario" not in h and 'class="cal-row' not in h
+    st.close()

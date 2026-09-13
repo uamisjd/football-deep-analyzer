@@ -44,7 +44,11 @@ TABLE_KEYS: dict[str, list[str]] = {
     "espn_standings": ["league_code", "team_id"],
     "fotmob_standings": ["league_code", "team_id"],
     "weather_forecast": ["match_id"],
-    "predictions": ["match_id", "model", "made_at"],
+    # una riga per partita (e modello), non una per run: il sito legge comunque solo
+    # l'ultima previsione prima del calcio d'inizio (build_accuracy), e con l'orizzonte
+    # esteso a tutto il calendario tenere ~23 versioni per partita moltiplicherebbe il file
+    # per cinque senza che nessuna pagina le usi (misurato: 3.210 righe per 138 partite).
+    "predictions": ["match_id", "model"],
     "odds_snapshots": ["match_id", "bookmaker", "market", "taken_at"],
     "source_status": ["run_at", "source"],
     # storico dei risultati usato per addestrare i modelli: salvato a ogni run così il

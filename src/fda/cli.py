@@ -205,9 +205,17 @@ def db_cmd(query: str = typer.Argument(None, help="Query SQL opzionale sulle tab
 def predict_cmd(
     league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     seasons_back: int = typer.Option(3, help="Stagioni storiche da scaricare oltre a quella corrente"),
-    days_ahead: int = typer.Option(7, help="Prevedi le partite nei prossimi N giorni"),
+    days_ahead: int = typer.Option(0, help="Prevedi le partite nei prossimi N giorni (0 = tutto il calendario)"),
 ) -> None:
-    """Addestra Dixon-Coles + Elo (storico datahub + risultati FotMob correnti) e salva `predictions`."""
+    """Addestra Dixon-Coles + Elo (storico datahub + risultati FotMob correnti) e salva `predictions`.
+
+    Con `days_ahead=0` (default) prevede **tutte le partite in programma** del calendario già
+    raccolto: non costa una richiesta in più, perché l'elenco delle partite arriva da una sola
+    chiamata per lega (`fixtures`) e il modello ha bisogno solo di squadre e storico. Ciò che
+    resta legato alla vicinanza della gara sono i **dettagli** (formazioni, infermeria, meteo,
+    arbitro), raccolti da `fda collect` nella finestra `future_days`: la scheda di una partita
+    lontana mostra il modello e i segnaposto onesti per ciò che la fonte non ha ancora pubblicato.
+    """
     import warnings
     from datetime import datetime, timedelta, timezone
 
@@ -215,7 +223,7 @@ def predict_cmd(
 
     from .config import leagues, season_start_year
     from .models.calibration import from_store
-    from .models.predict import predict_matches
+    from .models.predict import latest_per_match, predict_matches
     from .sources.history import HistoryClient
     from .store import Store
     from .teams import canonical
@@ -233,6 +241,14 @@ def predict_cmd(
         console.print(f"  campione: {cal.corpus}")
     else:
         console.print("calibrazione: identità (esegui `fda calibrate` dopo un `fda backtest`)")
+    # una riga per partita: le versioni accumulate dai run precedenti vengono collassate
+    # sull'ultima (migrazione della chiave vecchia e garanzia a regime)
+    vecchie = store.read("predictions")
+    if not vecchie.empty:
+        collassate = latest_per_match(vecchie)
+        if len(collassate) != len(vecchie):
+            store.write("predictions", collassate)
+            console.print(f"previsioni: {len(vecchie)} righe → {len(collassate)} (una per partita)")
     total = 0
     for lg in leagues(league_keys or None):
         try:
@@ -243,9 +259,12 @@ def predict_cmd(
                 console.print(f"[yellow]{lg.name}: nessuno storico disponibile, previsione saltata[/yellow]")
                 continue
             upcoming = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "scheduled")
-                                & (fixtures.utc_kickoff <= now + timedelta(days=days_ahead))] if not fixtures.empty else pd.DataFrame()
+                                & (fixtures.utc_kickoff >= now)] if not fixtures.empty else pd.DataFrame()
+            if days_ahead > 0 and not upcoming.empty:
+                upcoming = upcoming[upcoming.utc_kickoff <= now + timedelta(days=days_ahead)]
             if upcoming.empty:
-                console.print(f"{lg.name}: storico {len(hist)} partite, nessuna partita in programma nei prossimi {days_ahead} giorni")
+                orizzonte = f"nei prossimi {days_ahead} giorni" if days_ahead > 0 else "in programma"
+                console.print(f"{lg.name}: storico {len(hist)} partite, nessuna partita {orizzonte}")
                 continue
             up = pd.DataFrame({"match_id": upcoming.match_id, "league_key": lg.key, "utc_kickoff": upcoming.utc_kickoff,
                                "home": upcoming.home_name.map(canonical), "away": upcoming.away_name.map(canonical)})
@@ -498,8 +517,8 @@ def daily_cmd(
             calibrate_cmd()
         except Exception as exc:  # noqa: BLE001 — senza calibrazione si pubblica il modello grezzo
             console.print(f"[red]calibrate fallito: {exc}[/red]")
-        try:
-            predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
+        try:  # tutto il calendario: zero richieste in più, il modello usa solo storico e squadre
+            predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=0)
         except Exception as exc:  # i modelli non devono bloccare la pubblicazione dei dati
             console.print(f"[red]predict fallito: {exc}[/red]")
         try:  # backtest fuori campione: campione ampio per leggere la calibrazione senza rumore

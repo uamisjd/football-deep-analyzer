@@ -106,6 +106,111 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     return fails, len(pages)
 
 
+# ---- calendario completo (vista «Prossime») ---------------------------------------------------
+# Una riga per partita, compatta: le regole da rispettare sono le stesse delle schede, ma il
+# lettore qui non ha contesto, quindi un arrotondamento sbagliato non sarebbe riconoscibile.
+CAL_ROW = re.compile(
+    r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)">(.*?)</div>',
+    re.S)
+CAL_PCT = re.compile(r'<span class="cal-p" aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%">(.*?)</span>')
+CAL_MONTH = re.compile(
+    r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
+    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.S)
+MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+           "settembre", "ottobre", "novembre", "dicembre"]
+
+
+def check_calendar(site: Path) -> tuple[list[str], int]:
+    """[11] Calendario completo: righe coerenti, 1X2 che somma 100, mesi dichiarati correttamente."""
+    fails: list[str] = []
+    checks = 0
+    righe_totali = 0
+    for page in sorted(site.rglob("*.html")):
+        rel = str(page.relative_to(site))
+        h = page.read_text(encoding="utf-8", errors="replace")
+        righe = list(CAL_ROW.finditer(h))
+        mesi = list(CAL_MONTH.finditer(h))
+        if not righe and not mesi:
+            continue
+        if rel != "prossime.html":
+            fails.append(f"{rel}: calendario completo fuori dalla vista «Prossime» ({len(righe)} righe)")
+        righe_totali += len(righe)
+
+        for m in righe:
+            classi, lega, stato, corpo = m.groups()
+            checks += 1
+            if "cal-fav-" not in classi and "senza previsione" not in corpo:
+                fails.append(f"{rel}: riga di calendario senza esito preferito né «senza previsione»")
+            if stato != "scheduled":
+                fails.append(f"{rel}: riga di calendario con stato {stato!r} (atteso «scheduled»)")
+            when = re.search(r'<time class="cal-when" datetime="(\d{4})-(\d{2})-(\d{2})">([^<]*)<b>(\d{2}:\d{2})</b>', corpo)
+            if not when:
+                fails.append(f"{rel}: riga di calendario senza data/ora leggibili")
+            else:
+                checks += 1
+                anno, mese, giorno, testo, ora = when.groups()
+                if not 1 <= int(mese) <= 12 or not 1 <= int(giorno) <= 31:
+                    fails.append(f"{rel}: data di calendario impossibile {anno}-{mese}-{giorno}")
+                if f" {int(giorno)} " not in f" {testo.strip()} ":
+                    fails.append(f"{rel}: data {anno}-{mese}-{giorno} ma testo «{testo.strip()}»")
+                if not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", ora):
+                    fails.append(f"{rel}: ora non valida {ora!r}")
+            prob = CAL_PCT.search(corpo)
+            if prob:
+                checks += 1
+                uno, x, due, visibile = (int(prob.group(1)), int(prob.group(2)),
+                                         int(prob.group(3)), prob.group(4))
+                if uno + x + due != 100:
+                    fails.append(f"{rel}: 1X2 di calendario {uno}+{x}+{due} != 100")
+                numeri = [int(v) for v in re.findall(r"\d+", re.sub(r"</?b>", "", visibile))]
+                if numeri != [uno, x, due]:
+                    fails.append(f"{rel}: 1X2 letto {numeri} != aria-label {[uno, x, due]}")
+                grassetto = re.findall(r"<b>(\d+)</b>", visibile)
+                if len(grassetto) != 1 or int(grassetto[0]) != max(uno, x, due):
+                    fails.append(f"{rel}: preferito in grassetto {grassetto} su 1X2 {[uno, x, due]}")
+                fav = re.search(r"cal-fav-([hda])", classi)
+                atteso = ("h", "d", "a")[[uno, x, due].index(max(uno, x, due))]
+                if not fav or fav.group(1) != atteso:
+                    fails.append(f"{rel}: classe cal-fav-{fav.group(1) if fav else '?'} ma il preferito è {atteso}")
+                gol = re.search(r'<span class="cal-gol">([^<]*)</span>', corpo)
+                over = re.search(r'<span class="cal-o">([^<]*)</span>', corpo)
+                if not gol or not re.fullmatch(r"\d+,\d", gol.group(1)):
+                    fails.append(f"{rel}: gol attesi non in formato italiano {gol.group(1) if gol else None!r}")
+                else:
+                    checks += 1
+                if not over or not re.fullmatch(r"\d{1,3}%", over.group(1)):
+                    fails.append(f"{rel}: Over 2,5 non in percentuale {over.group(1) if over else None!r}")
+                else:
+                    checks += 1
+            elif "senza previsione" not in corpo:
+                fails.append(f"{rel}: riga di calendario senza probabilità e senza «senza previsione»")
+            else:
+                checks += 1
+
+        # mesi: etichetta, ordine e conteggio dichiarato devono tornare con le righe stampate
+        precedente: tuple[int, int] | None = None
+        for m in mesi:
+            checks += 1
+            anno, mese, etichetta, conto, plurale, blocco = m.groups()
+            anno, mese = int(anno), int(mese)
+            if etichetta.strip() != f"{MESI_IT[mese - 1].capitalize()} {anno}":
+                fails.append(f"{rel}: mese {anno}-{mese:02d} con etichetta «{etichetta.strip()}»")
+            if precedente is not None and (anno, mese) <= precedente:
+                fails.append(f"{rel}: mesi non in ordine ({precedente} → {(anno, mese)})")
+            precedente = (anno, mese)
+            n = len(CAL_ROW.findall(blocco))
+            if int(conto.replace(".", "")) != n:
+                fails.append(f"{rel}: {etichetta.strip()} dichiara {conto} partite ma ne stampa {n}")
+            if plurale.strip() != ("partita" if n == 1 else "partite"):
+                fails.append(f"{rel}: {etichetta.strip()} «{plurale.strip()}» con {n} righe")
+        nav = set(re.findall(r'<a href="#mese-(\d{4}-\d{2})"', h))
+        dettagli = {f"{m.group(1)}-{m.group(2)}" for m in mesi}
+        if nav != dettagli:
+            fails.append(f"{rel}: navigazione mesi {sorted(nav)} != sezioni {sorted(dettagli)}")
+    print(f"[11] righe di calendario verificate: {righe_totali}")
+    return fails, checks
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -589,10 +694,12 @@ def main() -> int:
 
     fails, pages = check_pages(site)
     print(f"pagine analizzate: {pages}")
-    checks = 0
+    calendario, checks = check_calendar(site)
+    fails += calendario
     if not args.content_only:
-        numeric, checks = check_numbers(site, Path(args.data) if args.data else None)
+        numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
+        checks += numeric_checks
 
     by_kind: Counter[str] = Counter(f.split(": ", 1)[1].split(" ")[0] for f in fails)
     print()

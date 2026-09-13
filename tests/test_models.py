@@ -13,6 +13,7 @@ from fda.models.predict import (
     EloModel,
     _clamp_lambda,
     ensemble,
+    latest_per_match,
     outcome_index,
     predict_matches,
     rps,
@@ -264,3 +265,39 @@ def test_ensemble_non_tocca_le_lambda_quando_la_media_e_normale():
     solo = ensemble(dc, None)
     assert solo["model"] == "dc" and solo["lambda_limitata"] is False
     assert solo["lambda_home"] == pytest.approx(1.70)
+
+
+def test_latest_per_match_tiene_solo_l_ultima_versione():
+    """Una riga per (partita, modello): è la previsione che l'utente ha davvero visto.
+
+    Con l'orizzonte esteso a tutto il calendario una partita viene riprevista a ogni run
+    (5 al giorno): senza collasso il file cresce di ~23 versioni per partita e nessuna
+    pagina le usa. Il collasso serve anche da migrazione della chiave vecchia.
+    """
+    base = pd.Timestamp("2026-09-13T12:00:00+00:00")
+    df = pd.DataFrame([
+        {"match_id": 1, "model": "ensemble", "made_at": base, "p_home": 0.40},
+        {"match_id": 1, "model": "ensemble", "made_at": base + pd.Timedelta(hours=6), "p_home": 0.44},
+        {"match_id": 1, "model": "ensemble", "made_at": base - pd.Timedelta(hours=6), "p_home": 0.36},
+        {"match_id": 2, "model": "ensemble", "made_at": base, "p_home": 0.55},
+    ])
+    out = latest_per_match(df)
+    assert len(out) == 2 and sorted(out.match_id) == [1, 2]
+    # tiene la più recente, non la prima incontrata: l'ordine in ingresso non conta
+    assert out.loc[out.match_id == 1, "p_home"].iloc[0] == 0.44
+    assert list(out.columns) == list(df.columns)          # nessuna colonna persa
+    # idempotente: rieseguire il collasso non cambia nulla
+    assert len(latest_per_match(out)) == len(out)
+
+
+def test_latest_per_match_casi_degeneri():
+    vuoto = latest_per_match(pd.DataFrame())
+    assert vuoto.empty
+    senza_chiave = pd.DataFrame({"p_home": [0.4]})
+    assert latest_per_match(senza_chiave) is senza_chiave  # nessuna chiave → restituita intatta
+    # due modelli diversi sulla stessa partita restano due righe
+    due = pd.DataFrame([
+        {"match_id": 1, "model": "ensemble", "made_at": pd.Timestamp("2026-09-13", tz="UTC")},
+        {"match_id": 1, "model": "dc", "made_at": pd.Timestamp("2026-09-13", tz="UTC")},
+    ])
+    assert len(latest_per_match(due)) == 2

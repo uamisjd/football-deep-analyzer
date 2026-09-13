@@ -263,8 +263,10 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
         lh, la = float(ge["home_exp"]), float(ge["away_exp"])
         limitato = _clamp_lambda(lh, la, float(dc.get("lambda_home", lh)), float(dc.get("lambda_away", la)))
         if limitato is not None:
-            log.warning("λ dall'1X2 mediato fuori dai limiti: %.2f+%.2f → %.2f+%.2f (1X2 ripubblicato "
-                        "dalla griglia)", lh, la, limitato[0], limitato[1])
+            # dettaglio a DEBUG: su un calendario intero sarebbero decine di righe di log;
+            # il riepilogo con il tasso di intervento lo scrive predict_matches
+            log.debug("λ dall'1X2 mediato fuori dai limiti: %.2f+%.2f → %.2f+%.2f (1X2 ripubblicato "
+                      "dalla griglia)", lh, la, limitato[0], limitato[1])
             lh, la = limitato
             # la griglia limitata non riproduce più il vettore mediato: si pubblica il **suo** 1X2,
             # altrimenti la scheda torna incoerente (1X2 estremo accanto a mercati più prudenti)
@@ -322,6 +324,24 @@ def calibrated_prediction(out: dict[str, Any], cal: Calibration | None) -> dict[
     return res
 
 
+def latest_per_match(df: pd.DataFrame) -> pd.DataFrame:
+    """Una riga per (partita, modello): l'ultima previsione, cioè quella che l'utente ha visto.
+
+    Serve due volte: come **migrazione** delle righe accumulate con la chiave vecchia
+    (`match_id`, `model`, `made_at`) e come garanzia che una partita riprevista a ogni run
+    non si moltiplichi. Le previsioni restano tutte *pre-partita*: `fda predict` lavora solo
+    sulle gare con `status == "scheduled"`, quindi l'ultima riga è per costruzione quella
+    pubblicata prima del calcio d'inizio.
+    """
+    if df.empty or "match_id" not in df.columns:
+        return df
+    keys = ["match_id"] + (["model"] if "model" in df.columns else [])
+    out = df.copy()
+    if "made_at" in out.columns:
+        out = out.sort_values("made_at", kind="stable")
+    return out.drop_duplicates(subset=keys, keep="last").reset_index(drop=True)
+
+
 def fair_odds(p: float) -> float | None:
     return None if not p or p <= 0 else round(1.0 / p, 2)
 
@@ -371,6 +391,10 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     df = pd.DataFrame(rows)
     if not df.empty:
         df = df[[c for c in cols_first if c in df.columns] + [c for c in df.columns if c not in cols_first]]
+        if "lambda_limitata" in df.columns:
+            lim = int(pd.Series(df["lambda_limitata"]).fillna(False).astype(bool).sum())
+            log.info("limiti di sicurezza su lambda: toccate %d partite su %d (%.2f%%)",
+                     lim, len(df), 100.0 * lim / max(len(df), 1))
     return df, dc, elo
 
 
