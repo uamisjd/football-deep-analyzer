@@ -203,6 +203,9 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     (goal_expectancy di penaltyblog) così risultati esatti/Over/BTTS restano allineati.
     """
     out = dict(dc)
+    out["dc_p_home"] = float(dc["p_home"])
+    out["dc_p_draw"] = float(dc["p_draw"])
+    out["dc_p_away"] = float(dc["p_away"])
     if not elo:
         out["model"] = "dc"
         return out
@@ -229,6 +232,11 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     out.update(elo)
     out["model"] = "ensemble"
     out["w_dc"] = w_dc
+    # primo passo della scomposizione mostrata in scheda: le probabilità del solo modello
+    # sui gol, prima della media con i rating (la media è già in p_* qui sopra)
+    out["dc_p_home"] = float(dc["p_home"])
+    out["dc_p_draw"] = float(dc["p_draw"])
+    out["dc_p_away"] = float(dc["p_away"])
     return out
 
 

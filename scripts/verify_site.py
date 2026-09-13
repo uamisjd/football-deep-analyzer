@@ -421,6 +421,100 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: xG 1T/2T {got} vs {want} da team_stats")
     print(f"[6] post-partita: {n_assist} assist, {n_half} split 1T/2T")
 
+    # 9) distribuzione dei gol totali + dotplot quantile: ricalcolate dalla λ/ρ salvate
+    from fda.site.advanced import goals_view, probability_steps
+
+    n_goals = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="gol-totali"' not in html:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index:
+            fails.append(f"{pg.name}: distribuzione gol senza previsione")
+            continue
+        r = preds.loc[mid]
+        gv = goals_view(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
+        barre = re.findall(r'<div class="gb([^"]*)"><span class="v">(\d+)</span>'
+                           r'<span class="fill" style="height:[^"]*"></span>'
+                           r'<span class="x">([^<]+)</span></div>', html)
+        checks += 1
+        n_goals += 1
+        if len(barre) != len(gv["bars"]):
+            fails.append(f"{pg.name}: barre gol {len(barre)} (attese {len(gv['bars'])})")
+            continue
+        somma = 0
+        for (_cls, v_txt, x_txt), b in zip(barre, gv["bars"]):
+            somma += int(v_txt)
+            if int(v_txt) != b["per100"]:
+                fails.append(f"{pg.name}: barra {x_txt} gol = {v_txt} su 100, ricalcolato {b['per100']}")
+            if x_txt != b["label"]:
+                fails.append(f"{pg.name}: etichetta barra {x_txt} != {b['label']}")
+        if somma != 100:
+            fails.append(f"{pg.name}: le barre dei gol sommano {somma} su 100")
+        # didascalia: moda, mediana, intervallo 10-90% e coda devono essere quelli ricalcolati
+        cap = re.search(r"il totale più frequente è <b>(\d+) gol</b>\s*\((\d+) su 100\)", html)
+        if not cap or int(cap.group(1)) != gv["moda"] or int(cap.group(2)) != gv["bars"][gv["moda"]]["per100"]:
+            fails.append(f"{pg.name}: moda dei gol in didascalia != ricalcolata ({gv['moda']})")
+        med = re.search(r"la mediana è (\d+) e nel 90% dei casi il totale resta fra\s*(\d+) e (\d+) gol", html)
+        if not med or (int(med.group(1)), int(med.group(2)), int(med.group(3))) != (gv["mediana"], gv["q10"], gv["q90"]):
+            fails.append(f"{pg.name}: mediana/intervallo dei gol in didascalia != ricalcolati")
+        coda = re.search(rf"Totale {re.escape(gv['coda_label'])} gol: (\d+,\d)%", html)
+        if not coda or abs(float(coda.group(1).replace(",", ".")) - gv["p_coda"] * 100) > 0.06:
+            fails.append(f"{pg.name}: coda dei gol in didascalia != ricalcolata ({gv['p_coda']:.4f})")
+        # dotplot: i punti sono esattamente n_dots e stanno nelle colonne giuste
+        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)</div>\s*</div>', html, re.S)
+        if not dp:
+            fails.append(f"{pg.name}: dotplot dei gol non trovato")
+        else:
+            colonne = re.findall(r'<div class="dp"><div class="stack">((?:<i></i>)*)</div>'
+                                 r'<span class="x">([^<]+)</span></div>', dp.group(1))
+            if len(colonne) != len(gv["columns"]):
+                fails.append(f"{pg.name}: colonne dotplot {len(colonne)} (attese {len(gv['columns'])})")
+            else:
+                for (dots, label), col in zip(colonne, gv["columns"]):
+                    if dots.count("<i>") != col["n"] or label != col["label"]:
+                        fails.append(f"{pg.name}: colonna dotplot {label} = {dots.count('<i>')} punti, "
+                                     f"attesi {col['n']} su {col['label']}")
+            n_punti = sum(dots.count("<i>") for dots, _ in colonne)
+            if n_punti != gv["n_dots"]:
+                fails.append(f"{pg.name}: punti dotplot {n_punti} (attesi {gv['n_dots']})")
+    print(f"[9] distribuzioni dei gol totali verificate: {n_goals}")
+
+    # 10) scomposizione della probabilità: i passi pubblicati sono quelli salvati nella riga
+    n_steps = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="scomposizione"' not in html:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index:
+            fails.append(f"{pg.name}: scomposizione senza previsione")
+            continue
+        r = preds.loc[mid]
+        steps = probability_steps(r.to_dict())
+        blocco = html.split('id="scomposizione"', 1)[1].split("</ol>", 1)[0]
+        resi = re.findall(r'<span class="h" style="width:[^"]*">1 · (\d+,\d)%</span>'
+                          r'<span class="d" style="width:[^"]*">X · (\d+,\d)%</span>'
+                          r'<span class="a" style="width:[^"]*">2 · (\d+,\d)%</span>', blocco)
+        labels = re.findall(r"<strong>(\d+) · ([^<]+)</strong>", blocco)
+        checks += 1
+        n_steps += 1
+        if len(resi) != len(steps) or len(labels) != len(steps):
+            fails.append(f"{pg.name}: passi pubblicati {len(resi)}/{len(labels)}, attesi {len(steps)}")
+            continue
+        for (h, x, a), (_n, lab), st in zip(resi, labels, steps):
+            if lab != st["label"]:
+                fails.append(f"{pg.name}: passo «{lab}» != «{st['label']}»")
+            for shown, key in ((h, "p_home"), (x, "p_draw"), (a, "p_away")):
+                if abs(float(shown.replace(",", ".")) - st[key] * 100) > 0.06:
+                    fails.append(f"{pg.name}: {st['label']} {key} = {shown}% vs {st[key] * 100:.1f}%")
+        # la catena deve chiudersi sull'1X2 pubblicato in cima alla scheda
+        for key in ("p_home", "p_draw", "p_away"):
+            if abs(steps[-1][key] - float(r[key])) > 1e-6:
+                fails.append(f"{pg.name}: ultimo passo {key} {steps[-1][key]:.4f} != pubblicato {r[key]:.4f}")
+    print(f"[10] scomposizioni della probabilità verificate: {n_steps}")
+
     st.close()
     return fails, checks
 

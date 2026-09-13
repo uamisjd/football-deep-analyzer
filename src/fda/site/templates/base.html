@@ -236,6 +236,35 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .scoregrid td{border-radius:8px;color:var(--txt);background:var(--surface2)}
 .scoregrid td.mode{outline:2px solid var(--accent);color:#06231a;font-weight:800}
 
+/* ---- Gol totali: istogramma + dotplot quantile (scheda partita) ----
+   Due viste della stessa matrice Dixon-Coles pubblicata: nessuna stima aggiunta.
+   Il dotplot segue la letteratura sulla comunicazione dell'incertezza (Hullman/Kay):
+   frequenze discrete («1 punto = 5 partite su 100») invece di una densità continua,
+   e il valore numerico è sempre scritto, così il significato non passa solo dal colore. */
+.goalgrid{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));gap:5px;margin:10px 0 2px}
+.goalbars{align-items:end;height:136px}
+.gb{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;min-width:0}
+.gb .fill{width:100%;min-height:3px;border-radius:5px 5px 2px 2px;background:linear-gradient(180deg,var(--brand-a),var(--accent-soft))}
+.gb.mode .fill{background:linear-gradient(180deg,var(--brand-b),#a9762a)}
+.gb.tail .fill{background:var(--draw)}
+.gb .v,.gb .x{font-size:11px;line-height:1.25;font-variant-numeric:tabular-nums;white-space:nowrap}
+.gb .v{color:var(--txt2);font-weight:700}
+.gb.mode .v{color:var(--amber)}
+.gb .x{color:var(--mut)}
+.dotplot{align-items:end;margin-top:4px}
+.dp{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
+.dp .stack{display:flex;flex-direction:column-reverse;gap:3px;min-height:10px}
+.dp .stack i{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 1px rgba(12,17,24,.5)}
+.dp .x{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
+/* ---- Scomposizione della probabilità pubblicata ---- */
+.steps{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:14px}
+.steps .step-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
+.steps .step-head strong{font-size:14px;color:var(--txt)}
+.steps .delta{font-size:11.5px;font-weight:700;color:var(--txt2);background:var(--surface3);
+  border:1px solid var(--line2);border-radius:999px;padding:1px 8px;font-variant-numeric:tabular-nums}
+.steps .bar{height:26px;font-size:12px;border-radius:8px}
+@media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}}
+
 /* ---- Hero / KPI / chart (home) ---- */
 .hero{margin:4px 0 20px;padding:30px 30px;border-radius:var(--radius);background:var(--surface);
   border:1px solid var(--line)}

@@ -14,6 +14,7 @@ import pandas as pd
 
 from ..models.dc_grid import clamp_rho as _clamp_rho  # noqa: F401  (riesportato per i test)
 from ..models.dc_grid import tau_grid
+from .fmt import dec as _dec, int_it as _int_it
 
 # Situazioni FotMob → italiano (valori reali in shots.parquet, 2026-09-11).
 SITUATION_IT = {
@@ -85,6 +86,142 @@ def heat_opacity(p: float, max_p: float) -> float:
     if max_p <= 0:
         return 0.12
     return round(0.12 + 0.88 * min(max(p / max_p, 0.0), 1.0), 3)
+
+
+GOALS_CAP = 6          # barre 0–6 gol; il resto è dichiarato come «7+»
+GOAL_DOTS = 20         # quantile dotplot: 1 punto = 5 partite su 100
+
+
+def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
+               dots: int = GOAL_DOTS) -> dict[str, Any]:
+    """Distribuzione dei gol totali e quantile dotplot, dalla stessa griglia dei mercati.
+
+    Due viste dello stesso oggetto (la matrice Dixon-Coles già pubblicata), perché la
+    ricerca sulla comunicazione dell'incertezza (Hullman/Kay) mostra che le frequenze
+    discrete — «1 punto = 5 partite su 100» — si leggono meglio di una densità continua
+    e non invitano a cercare un valore «vero» dove c'è solo una distribuzione.
+
+    ``cap`` è l'ultimo totale mostrato come barra; la massa oltre finisce in «7+».
+    """
+    g = dixon_coles_grid(lh, la, rho, max_goals=max(cap + 9, 15))
+    ii, jj = np.indices(g.shape)
+    tot = ii + jj
+    p = np.array([float(g[tot == t].sum()) for t in range(cap + 1)])
+    tail = max(0.0, 1.0 - float(p.sum()))
+    pmax = float(max(p.max(), 1e-9))
+    moda = int(p.argmax())
+    per100 = _per_cento(np.append(p, tail))
+    bars = [{"g": t, "label": str(t), "p": round(float(p[t]), 4), "per100": int(per100[t]),
+             "h": round(float(p[t]) / pmax, 4), "mode": bool(t == moda)} for t in range(cap + 1)]
+    bars.append({"g": cap + 1, "label": f"{cap + 1}+", "p": round(tail, 4),
+                 "per100": int(per100[cap + 1]), "h": round(tail / pmax, 4),
+                 "mode": False, "tail": True})
+    # quantili: il k-esimo punto sta a metà del k-esimo ventesimo di massa
+    masses = np.append(p, tail)
+    cdf = np.cumsum(masses)
+
+    def _q(u: float) -> int:
+        """Primo totale di gol la cui cumulata raggiunge ``u`` (mai oltre la coda)."""
+        return int(min(cap + 1, np.searchsorted(cdf, u, side="left")))
+
+    quantiles = [_q((k - 0.5) / dots) for k in range(1, dots + 1)]
+    counts = {t: quantiles.count(t) for t in range(cap + 2)}
+    # tutte le colonne, anche vuote: l'asse dei gol resta allineato con l'istogramma
+    columns = [{"g": t, "n": counts[t], "label": f"{t}" if t <= cap else f"{cap + 1}+"}
+               for t in range(cap + 2)]
+    return {
+        "bars": bars, "cap": cap, "moda": moda, "media": round(float((g * tot).sum()), 2),
+        "mediana": _q(0.5), "q10": _q(0.10), "q90": _q(0.90),
+        "dots": quantiles, "columns": columns, "n_dots": dots,
+        "per_dot": round(100.0 / dots), "p_coda": round(tail, 4), "coda_label": f"{cap + 1}+",
+        "lambda_home": round(float(lh), 3), "lambda_away": round(float(la), 3),
+        "rho": round(float(rho or 0.0), 4),
+    }
+
+
+def _per_cento(masse: np.ndarray) -> np.ndarray:
+    """«Partite su 100» intere la cui somma è esattamente 100 (metodo del resto massimo).
+
+    Arrotondare ogni valore per conto suo darebbe somme da 99 o 101 su 100 partite, e la
+    scheda deve restare verificabile a occhio (regola B1: ogni numero mostrato torna).
+    """
+    raw = np.nan_to_num(np.asarray(masse, dtype=float), nan=0.0, posinf=0.0, neginf=0.0) * 100.0
+    base = np.floor(raw).astype(int)
+    resto = int(round(100.0 - base.sum()))
+    if resto > 0:
+        ordine = np.argsort(-(raw - base), kind="stable")
+        for i in ordine[:resto]:
+            base[int(i)] += 1
+    return base
+
+
+def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """Scomposizione della probabilità pubblicata: modello sui gol → rating → calibrazione.
+
+    Ogni passo è un vettore 1X2 realmente calcolato e salvato nella riga di previsione
+    (``dc_p_*`` dal modello Dixon-Coles, ``blend_p_*`` dalla media pesata con l'Elo,
+    ``p_*`` pubblicato dopo la calibrazione): niente viene ricostruito a posteriori.
+    I passi di cui non c'è traccia nei dati non compaiono (degradazione onesta).
+    """
+    if not pred:
+        return []
+
+    def _vec(prefix: str) -> tuple[float, float, float] | None:
+        vals = [pred.get(f"{prefix}home"), pred.get(f"{prefix}draw"), pred.get(f"{prefix}away")]
+        try:
+            out = [float(v) for v in vals]
+        except (TypeError, ValueError):
+            return None
+        if any(pd.isna(v) for v in out) or abs(sum(out) - 1.0) > 0.02:
+            return None
+        return (out[0], out[1], out[2])
+
+    steps: list[dict[str, Any]] = []
+    labels = [
+        ("dc_p_", "Modello sui gol (Dixon-Coles)", "attacco/difesa pesati nel tempo, senza rating"),
+        ("blend_p_", "Media con i rating Elo", None),
+    ]
+    prev_top: float | None = None
+    for prefix, label, note in labels:
+        v = _vec(prefix)
+        if not v:
+            continue
+        if note is None:
+            w = pred.get("w_dc")
+            note = (f"peso Dixon-Coles {float(w):.0%}, Elo {1 - float(w):.0%}"
+                    if w is not None and not pd.isna(w) else "media pesata con i rating Elo")
+        steps.append({"label": label, "note": note, "p_home": v[0], "p_draw": v[1], "p_away": v[2],
+                      "top": _top_name(v), "delta_pp": None if prev_top is None
+                      else round((_top_value(v) - prev_top) * 100, 1)})
+        prev_top = _top_value(v)
+    pub = _vec("p_")
+    if pub and steps and max(abs(pub[i] - steps[-1][k]) for i, k in
+                             enumerate(("p_home", "p_draw", "p_away"))) > 5e-4:
+        cal_v = pred.get("calibration_version")
+        calibrated = bool(cal_v) and str(cal_v) not in {"", "identity", "nan"}
+        scale = pred.get("lambda_scale")
+        note = "nessuna correzione applicata"
+        if calibrated:
+            try:
+                note = (f"λ × {_dec(scale, 2)} stimata su {_int_it(pred.get('calibration_n_fit'))} "
+                        f"gare fuori campione")
+            except (TypeError, ValueError):
+                note = "correzione storica delle λ"
+        steps.append({"label": "Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)",
+                      "note": note, "p_home": pub[0], "p_draw": pub[1], "p_away": pub[2],
+                      "top": _top_name(pub),
+                      "delta_pp": round((_top_value(pub) - prev_top) * 100, 1)})
+    # un solo passo non è una scomposizione: la scheda non mostra un blocco vuoto
+    return steps if len(steps) >= 2 else []
+
+
+def _top_name(v: tuple[float, float, float]) -> str:
+    names = ("1", "X", "2")
+    return names[int(np.argmax(v))]
+
+
+def _top_value(v: tuple[float, float, float]) -> float:
+    return float(max(v))
 
 
 def state_probs(hg: int, ag: int, lh: float, la: float, minute: float,

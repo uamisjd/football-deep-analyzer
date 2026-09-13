@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from fda.site.advanced import (
     dixon_coles_grid,
+    goals_view,
     grid_1x2,
+    probability_steps,
     score_matrix,
     shot_quality,
     state_probs,
@@ -188,3 +191,83 @@ def test_dixon_coles_grid_uses_the_fitted_model_tau():
         assert np.abs(mine - ref).max() < 1e-12
         # e i mercati della griglia condivisa coincidono con quelli del modello
         assert abs(grid_1x2(mine)[0] - float(np.asarray(m.model.predict(home, away, max_goals=10).home_draw_away)[0])) < 1e-12
+
+
+def test_goals_view_counts_100_matches_and_20_dots():
+    """Istogramma e dotplot devono tornare a occhio: 100 partite e 20 punti, sempre."""
+    for lh, la, rho in [(1.69, 1.13, -0.10), (0.7, 0.6, -0.05), (3.2, 2.8, 0.02), (0.0, 0.0, 0.0)]:
+        gv = goals_view(lh, la, rho)
+        assert sum(b["per100"] for b in gv["bars"]) == 100, f"{lh}+{la}: le barre non sommano 100"
+        assert sum(b["p"] for b in gv["bars"]) == pytest.approx(1.0, abs=1e-3)
+        assert sum(c["n"] for c in gv["columns"]) == gv["n_dots"] == 20
+        assert len(gv["columns"]) == len(gv["bars"])       # assi allineati fra le due viste
+        assert 0 <= gv["q10"] <= gv["mediana"] <= gv["q90"] <= gv["cap"] + 1
+        assert gv["media"] == pytest.approx(lh + la, abs=0.06)   # la media è quella della griglia
+        assert gv["bars"][gv["moda"]]["mode"]
+        assert gv["bars"][-1]["tail"] and gv["bars"][-1]["label"] == gv["coda_label"]
+
+
+def test_goals_view_agrees_with_the_published_markets():
+    """Le barre derivano dalla stessa griglia dei mercati: Over 1,5/2,5/3,5 devono tornare."""
+    from fda.models.dc_grid import probability_grid
+    from fda.models.predict import _grid_markets
+
+    lh, la, rho = 1.69, 1.13, -0.10
+    gv = goals_view(lh, la, rho)
+    m = _grid_markets(probability_grid(lh, la, rho, size=10))
+    for soglia, key in ((2, "p_over15"), (3, "p_over25"), (4, "p_over35")):
+        dalle_barre = sum(b["p"] for b in gv["bars"] if b["g"] >= soglia)
+        assert dalle_barre == pytest.approx(m[key], abs=3e-3), key
+
+
+def test_probability_steps_is_a_real_chain_not_a_reconstruction():
+    row = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
+           "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
+           "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
+           "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
+           "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
+    steps = probability_steps(row)
+    assert [s["label"] for s in steps] == ["Modello sui gol (Dixon-Coles)",
+                                           "Media con i rating Elo", "Calibrazione"]
+    # il passo 2 è davvero la media pesata dichiarata (verificabile dalla pagina)
+    w = row["w_dc"]
+    for k, elo in (("p_home", "elo_p_home"), ("p_draw", "elo_p_draw"), ("p_away", "elo_p_away")):
+        assert steps[1][k] == pytest.approx(w * steps[0][k] + (1 - w) * row[elo], abs=1e-3)
+    assert steps[0]["delta_pp"] is None
+    assert steps[1]["delta_pp"] == pytest.approx(1.9, abs=0.05)
+    assert steps[2]["delta_pp"] == pytest.approx(-1.1, abs=0.05)
+    assert steps[2]["top"] == "1" and "5.791" in steps[2]["note"]
+    for s in steps:
+        assert s["p_home"] + s["p_draw"] + s["p_away"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_probability_steps_degrades_when_nothing_is_traced():
+    assert probability_steps(None) == [] and probability_steps({}) == []
+    # solo il vettore pubblicato: non c'è nessuna catena da mostrare
+    assert probability_steps({"p_home": 0.5, "p_draw": 0.26, "p_away": 0.24}) == []
+    # passi identici: la "scomposizione" sarebbe rumore
+    same = {"dc_p_home": 0.46, "dc_p_draw": 0.27, "dc_p_away": 0.27,
+            "p_home": 0.46, "p_draw": 0.27, "p_away": 0.27}
+    assert probability_steps(same) == []
+    # vettore incoerente (somma 1,05): meglio nessun blocco che un blocco sbagliato
+    bad = {"dc_p_home": 0.5, "dc_p_draw": 0.3, "dc_p_away": 0.25,
+           "p_home": 0.48, "p_draw": 0.29, "p_away": 0.23}
+    assert probability_steps(bad) == []
+
+
+def test_match_analysis_goals_view(tmp_path):
+    """Senza λ la scheda non inventa una distribuzione; con λ la vista è coerente."""
+    st = Store(tmp_path / "processed")
+    st.upsert("predictions", [
+        {"match_id": 1, "lambda_home": 1.7, "lambda_away": 1.1, "dc_rho": -0.06,
+         "p_home": 0.47, "p_draw": 0.27, "p_away": 0.26, "made_at": "2026-09-01T12:00:00+00:00"},
+        {"match_id": 2, "p_home": 0.4, "p_draw": 0.3, "p_away": 0.3,
+         "made_at": "2026-09-01T12:00:00+00:00"},
+    ])
+    ma = MatchAnalysis(st)
+    gv = ma.goals_view(ma.prediction(1))
+    assert gv and sum(b["per100"] for b in gv["bars"]) == 100
+    assert gv["lambda_home"] == pytest.approx(1.7) and gv["rho"] == pytest.approx(-0.06)
+    assert ma.goals_view(ma.prediction(2)) is None      # previsione senza λ → nessun grafico
+    assert ma.goals_view(None) is None
+    st.close()

@@ -18,7 +18,7 @@ from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
-from .advanced import score_matrix, shot_quality, style_rows, wp_path, xg_race
+from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, it_plural
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
@@ -1547,16 +1547,39 @@ class MatchAnalysis:
         d["meta"] = prediction_meta(d, home_name, away_name)
         return d
 
-    def score_matrix(self, pred: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Matrice 0–5 dei punteggi dalla λ e ρ della previsione (None se manca λ)."""
-        if not pred or pred.get("lambda_home") is None or pred.get("lambda_away") is None:
+    @staticmethod
+    def _lambdas(pred: dict[str, Any] | None) -> tuple[float, float, float] | None:
+        """λ casa, λ trasferta e ρ della previsione, oppure None se la previsione non ha λ.
+
+        Nello store i valori mancanti arrivano come NaN (non None): una λ non finita deve
+        far sparire il blocco, non generare una distribuzione di NaN pubblicata in scheda.
+        """
+        if not pred:
             return None
-        rho = pred.get("dc_rho") or 0.0
         try:
-            rho = 0.0 if rho is None or (isinstance(rho, float) and pd.isna(rho)) else float(rho)
+            lh, la = float(pred.get("lambda_home")), float(pred.get("lambda_away"))
+        except (TypeError, ValueError):
+            return None
+        if not (np.isfinite(lh) and np.isfinite(la)) or lh < 0 or la < 0:
+            return None
+        rho = pred.get("dc_rho")
+        try:
+            rho = 0.0 if rho is None or pd.isna(rho) else float(rho)
         except (TypeError, ValueError):
             rho = 0.0
-        return score_matrix(float(pred["lambda_home"]), float(pred["lambda_away"]), rho)
+        if not np.isfinite(rho):
+            rho = 0.0
+        return lh, la, rho
+
+    def score_matrix(self, pred: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Matrice 0–5 dei punteggi dalla λ e ρ della previsione (None se manca λ)."""
+        lam = self._lambdas(pred)
+        return None if lam is None else score_matrix(*lam)
+
+    def goals_view(self, pred: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Distribuzione dei gol totali + dotplot quantile (None se la previsione non ha λ)."""
+        lam = self._lambdas(pred)
+        return None if lam is None else goals_view(*lam)
 
     def clash(self, home_name: str, home_id: int, away_name: str, away_id: int,
               pred: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1786,6 +1809,8 @@ class MatchAnalysis:
             ctx["keepers"] = self.keeper_stats(match_id, home_id, away_id)
             ctx["physical"] = self.physical_stats(match_id, home_id, away_id)
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
+        ctx["goals"] = self.goals_view(ctx["prediction"])
+        ctx["prob_steps"] = probability_steps(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
         ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None

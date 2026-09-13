@@ -52,6 +52,23 @@
     Forza DC (attacco/difesa): {{ p.dc_attack_home|dec }}/{{ p.dc_defence_home|dec }} vs {{ p.dc_attack_away|dec }}/{{ p.dc_defence_away|dec }} · vantaggio casa {{ p.dc_home_advantage|dec }}</p>{% endif %}
   </div>
 </div>
+{% if c.prob_steps %}
+<div class="card detail-card" id="scomposizione">
+  <h2>Come nasce questa probabilità</h2>
+  <p class="small mut">La percentuale in cima alla scheda è l'ultimo passo di una catena leggibile: ogni barra è il
+  vettore 1 / X / 2 di quel passaggio, «Δ pp» è di quanto si sposta l'esito più probabile rispetto al passo
+  precedente. Sono i valori salvati nella previsione al momento del calcolo, non una ricostruzione a posteriori:
+  se un passaggio non è tracciato nei dati, qui non compare.</p>
+  <ol class="steps">
+    {% for st in c.prob_steps %}<li>
+      <div class="step-head"><strong>{{ loop.index }} · {{ st.label }}</strong>
+        {% if st.delta_pp is not none %}<span class="delta">Δ {{ st.delta_pp|dec(1, true) }} pp</span>{% endif %}
+        <span class="small mut">{{ st.note }}</span></div>
+      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ (st.p_home*100)|dec(1) }} per cento, pareggio {{ (st.p_draw*100)|dec(1) }} per cento, vittoria {{ c.away_name }} {{ (st.p_away*100)|dec(1) }} per cento"><span class="h" style="width:{{ (st.p_home*100)|round }}%">1 · {{ (st.p_home*100)|dec(1) }}%</span><span class="d" style="width:{{ (st.p_draw*100)|round }}%">X · {{ (st.p_draw*100)|dec(1) }}%</span><span class="a" style="width:{{ (st.p_away*100)|round }}%">2 · {{ (st.p_away*100)|dec(1) }}%</span></div>
+    </li>{% endfor %}
+  </ol>
+</div>
+{% endif %}
 {% endif %}
 
 {% if c.score_matrix %}
@@ -71,6 +88,28 @@
       </tr>
       {% endfor %}
     </table>
+  </div>
+</div>
+{% endif %}
+
+{% if c.goals %}
+{% set gv = c.goals %}
+<div class="card detail-card" id="gol-totali">
+  <h2>Quanti gol, in pratica</h2>
+  <p class="small mut">La stessa matrice letta per <b>totale dei gol</b> (gol attesi {{ gv.lambda_home|dec(2) }} +
+  {{ gv.lambda_away|dec(2) }}): su 100 partite con queste λ il totale più frequente è <b>{{ gv.moda }} gol</b>
+  ({{ gv.bars[gv.moda].per100 }} su 100), la mediana è {{ gv.mediana }} e nel 90% dei casi il totale resta fra
+  {{ gv.q10 }} e {{ gv.q90 }} gol. Totale {{ gv.coda_label }} gol: {{ (gv.p_coda*100)|dec(1) }}%. I numeri sotto le
+  barre sono «partite su 100» (la somma fa 100), l'altezza è in proporzione.</p>
+  <div class="goalgrid goalbars" role="img" aria-label="Distribuzione dei gol totali: {% for b in gv.bars %}{{ b.label }} gol {{ b.per100 }} su 100{% if not loop.last %}, {% endif %}{% endfor %}">
+    {% for b in gv.bars %}<div class="gb{{ ' mode' if b.mode }}{{ ' tail' if b.tail }}"><span class="v">{{ b.per100 }}</span><span class="fill" style="height:{{ (b.h*100)|round }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
+  </div>
+  <p class="small mut" style="margin:12px 0 0">Lo stesso contenuto contato a partite: <b>{{ gv.n_dots }} punti, ognuno
+  vale {{ gv.per_dot }} partite su 100</b>. Una colonna con 5 punti dice che {{ 5 * gv.per_dot }} partite su 100
+  finiscono con quel totale di gol. Leggere frequenze discrete invece di una curva evita di scambiare la
+  distribuzione per un risultato previsto.</p>
+  <div class="goalgrid dotplot" role="img" aria-label="Dotplot quantile dei gol totali: {{ gv.n_dots }} punti da {{ gv.per_dot }} partite su 100, mediana {{ gv.mediana }} gol">
+    {% for col in gv.columns %}<div class="dp"><div class="stack">{% for _ in range(col.n) %}<i></i>{% endfor %}</div><span class="x">{{ col.label }}</span></div>{% endfor %}
   </div>
 </div>
 {% endif %}
