@@ -196,6 +196,64 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"accuratezza: RPS pagina {rps_page} vs ricalcolato {mine:.4f}")
             print(f"[3] accuratezza: {len(p)} gare, RPS pagina {rps_page} = ricalcolato {mine:.4f}")
 
+    # 7) accuratezza: intervalli di Wilson pubblicati, ricalcolati con la funzione del progetto
+    if acc_path.exists():
+        from fda.site.build import wilson_interval
+
+        def _n(txt: str) -> float:
+            return float(re.sub(r"<[^>]+>", "", txt).replace(".", "").replace(",", ".").rstrip("%"))
+
+        righe = 0
+        for row in re.findall(r"<tr><td>.*?</tr>", acc_path.read_text(encoding="utf-8"), re.S):
+            mi = re.search(r'<td class="r mut">(\d+,\d+)\s*[–-]\s*(\d+,\d+)%</td>', row)
+            if not mi:
+                continue
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+            lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
+            kn = re.search(r"\((\d+)/(\d+)\)", row)
+            if kn:                                    # riga di calibrazione: k/n esplicito
+                k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[1])
+            else:                                     # riga di mercato: k = osservato × n
+                n = int(_n(cells[1]))
+                prev, obs = _n(cells[2]), _n(cells[3])
+                k = int(round(obs * n / 100.0))
+            lo, hi = wilson_interval(k, n)
+            checks += 1
+            righe += 1
+            if abs(lo_p - lo * 100) > 0.06 or abs(hi_p - hi * 100) > 0.06:
+                fails.append(f"accuratezza: intervallo pubblicato {lo_p}–{hi_p}% vs ricalcolato "
+                             f"{lo * 100:.1f}–{hi * 100:.1f}% (k={k}, n={n})")
+            fuori = "fuori intervallo" in row
+            if fuori != bool(not (lo <= prev / 100 <= hi)):
+                fails.append(f"accuratezza: segnale {'fuori intervallo' if fuori else 'compatibile'} "
+                             f"incoerente con previsto {prev}% e intervallo {lo * 100:.1f}–{hi * 100:.1f}%")
+        if righe:
+            print(f"[7] accuratezza: {righe} righe con intervallo di Wilson ricalcolate")
+
+    # 8) backtest fuori campione: numerosità e RPS ricalcolati dalla tabella pubblicata
+    bt = st.read("backtest")
+    if not bt.empty and acc_path.exists():
+        text = acc_path.read_text(encoding="utf-8")
+        i = text.find("Backtest storico fuori campione")
+        if i < 0:
+            fails.append("accuratezza.html: tabella `backtest` presente ma nessuna card pubblicata")
+        else:
+            card = text[i:]
+            m_n = re.search(r"su <b>(\d+)</b> partite", card)
+            m_r = re.search(r"RPS <b>(\d+,\d+)</b>", card)
+            if not m_n or not m_r:
+                fails.append("accuratezza.html: card backtest senza numerosità o RPS")
+            else:
+                checks += 1
+                mine = pb_rps(bt[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(),
+                              bt["outcome"].to_numpy(int).tolist())
+                rps_bt = float(m_r.group(1).replace(",", "."))
+                if int(m_n.group(1)) != len(bt):
+                    fails.append(f"backtest: {m_n.group(1)} gare in pagina vs {len(bt)} in tabella")
+                if abs(rps_bt - mine) > 0.002:
+                    fails.append(f"backtest: RPS pagina {rps_bt} vs ricalcolato {mine:.4f}")
+                print(f"[8] backtest: {len(bt)} gare fuori campione, RPS pagina {rps_bt} = ricalcolato {mine:.4f}")
+
     # 4) proiezioni di stagione: le probabilità di ogni lega sommano come devono
     sim = st.read("season_sim")
     if not sim.empty:

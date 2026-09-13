@@ -280,6 +280,51 @@ def simulate_cmd(
     store.close()
 
 
+@app.command("backtest")
+def backtest_cmd(
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
+    seasons_back: int = typer.Option(3, help="Stagioni storiche da scaricare oltre a quella corrente"),
+    step_days: int = typer.Option(14, help="Ampiezza della finestra di valutazione, in giorni"),
+    min_train: int = typer.Option(200, help="Partite minime di storico prima di iniziare a valutare"),
+) -> None:
+    """Backtest cronologico fuori campione sullo storico → tabella `backtest` (card su Accuratezza)."""
+    import warnings
+
+    from .config import leagues, season_start_year
+    from .models.backtest import backtest_summary, chronological_backtest
+    from .sources.history import HistoryClient
+    from .store import Store
+
+    warnings.filterwarnings("ignore", category=DeprecationWarning)
+    store = Store()
+    hc = HistoryClient()
+    fixtures = store.read("fixtures")
+    yr = season_start_year()
+    totale = 0
+    for lg in leagues(league_keys or None):
+        try:
+            from .models.season_sim import build_hist
+
+            hist = build_hist(lg, fixtures, hc, seasons_back=seasons_back, yr=yr)
+            if hist.empty:
+                console.print(f"[yellow]{lg.name}: nessuno storico disponibile, backtest saltato[/yellow]")
+                continue
+            res = chronological_backtest(hist, step_days=step_days, min_train=min_train)
+            if res.empty:
+                console.print(f"[yellow]{lg.name}: storico di {len(hist)} partite, troppo breve "
+                              f"(minimo {min_train}) per il backtest[/yellow]")
+                continue
+            totale += store.upsert("backtest", res, replace_by="league_key")
+            r = backtest_summary(res)
+            console.print(f"{lg.name}: {r['n']} gare fuori campione · RPS {r['rps']:.4f} "
+                          f"(base {r['naive']:.4f}, Δ {r['delta']:+.4f}) · log-loss {r['logloss']:.4f} · "
+                          f"esito azzeccato {r['hit']:.0%}")
+        except Exception as exc:  # una lega senza storico non deve interrompere le altre
+            console.print(f"[yellow]{lg.name}: backtest saltato ({type(exc).__name__}: {exc})[/yellow]")
+    console.print(f"backtest salvato: {totale} gare | richieste storico={hc.http.stats.requests}")
+    store.close()
+
+
 @app.command("build")
 def build_cmd() -> None:
     """Genera il sito statico in site/ (Oggi, Prossime, Risultati, partite, Giocatori, Accuratezza, Stato)."""
@@ -309,6 +354,10 @@ def daily_cmd(
             predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=7)
         except Exception as exc:  # i modelli non devono bloccare la pubblicazione dei dati
             console.print(f"[red]predict fallito: {exc}[/red]")
+        try:  # backtest fuori campione: campione ampio per leggere la calibrazione senza rumore
+            backtest_cmd(league_keys=league_keys, seasons_back=3, step_days=14, min_train=200)
+        except Exception as exc:  # noqa: BLE001 — il backtest non deve bloccare il sito
+            console.print(f"[red]backtest fallito: {exc}[/red]")
         try:  # Monte Carlo stagione: fallisce in isolato, il sito esce comunque
             from .models.season_sim import simulate_all
             from .store import Store

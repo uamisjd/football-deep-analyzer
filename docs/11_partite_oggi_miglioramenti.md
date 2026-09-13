@@ -249,6 +249,87 @@ giornata di run.
   che ricontrolla **534 assist** contro gli eventi (con la grafia del nome della stessa partita:
   lo stesso `player_id` ha grafie diverse fra le giornate) e **239 split 1T/2T** contro `team_stats`.
 
+### F6b. Rilettura dal vivo dopo il merge (run `daily` 21:30 UTC del 12/09)
+
+PR #23 mergiata in `main` (`6124bb3`, 19:41:12 UTC); il sito pubblicato contiene tutte le nuove
+sezioni (verificate su `partite/5749674.html`, Lazio 2-2 Milan). Con **50 gare valutate** la tabella
+per mercato dà una lettura più solida di quella locale a 28:
+
+- RPS complessivo **0,2203** contro 0,2282 della base naive (Δ **−0,008**).
+- Sottostima dei gol confermata: Over 2,5 **57,4% dichiarato contro 62,0% osservato**, BTTS
+  **57,5% contro 72,0%**, doppia chance X2 **56,1% contro 74,0%**.
+- Il modello batte la frequenza di base **solo su doppia chance 1X** (Δ −0,0052).
+- Calibrazione per esito sbilanciata sulla casa: **44,0% previsto contro 26,0% osservato**,
+  pareggio 24,0% contro 40,0%.
+
+Da qui il prossimo passo analitico: ricalibrare vantaggio casa e λ dei gol, usando questa tabella
+come verifica (ogni modifica si legge subito nei Δ per mercato).
+
+### F6c. Intervalli di confidenza sulla pagina accuratezza (rigore statistico)
+
+La lettura del turno precedente («il modello sottostima i gol») era basata su differenze fra previsto
+e osservato **senza incertezza campionaria**: su 50 gare una differenza di 10 punti è spesso rumore.
+Ora `build_accuracy()` pubblica l'**intervallo di Wilson al 95%** della frequenza osservata e un
+segnale per riga (`compatibile` / `fuori intervallo`), sia nella tabella per mercato sia in quella di
+calibrazione (dove compare anche il conteggio `k/n`). Funzione: `wilson_interval(k, n, z=1.96)` in
+`src/fda/site/build.py`; verificata dal blocco **[7]** di `scripts/verify_site.py` (ricalcola gli
+intervalli pubblicati e la coerenza del segnale) e da `test_wilson_interval_bounds_and_coverage`.
+
+Lettura corretta con gli intervalli (50 gare live del 12/09):
+
+| riga | previsto | osservato | intervallo 95% | esito |
+| --- | --- | --- | --- | --- |
+| vittoria in casa | 44,0% | 26,0% (13/50) | 15,9 – 39,6% | **fuori** |
+| pareggio | 24,0% | 40,0% (20/50) | 27,6 – 53,8% | **fuori** |
+| vittoria in trasferta | 32,0% | 34,0% (17/50) | 22,4 – 47,8% | compatibile |
+| Over 1,5 / 2,5 / 3,5 | 78,9 / 57,4 / 37,0% | 86,0 / 62,0 / 46,0% | 73,8–93,0 / 48,2–74,1 / 33,0–59,6% | **compatibili** |
+| Gol entrambe a segno | 57,5% | 72,0% (36/50) | 58,3 – 82,5% | **fuori** |
+| Doppia chance 1X | 67,8% | 66,0% | 52,2 – 77,6% | compatibile |
+| Doppia chance 12 | 76,0% | 60,0% | 46,2 – 72,4% | **fuori** |
+| Doppia chance X2 | 56,1% | 74,0% | 60,4 – 84,1% | **fuori** |
+| Porta inviolata casa / trasferta | 27,4 / 21,7% | 20,0 / 14,0% | 11,2–33,0 / 7,0–26,2% | compatibili |
+
+**Correzione rispetto al turno precedente:** gli Over 1,5/2,5/3,5 e le porte inviolate **non** sono
+scostamenti significativi su 50 gare; l'unico segnale solido sui gol è **BTTS sottostimato**. I due
+segnali forti restano la **calibrazione 1X2 sbilanciata sulla casa** (casa sovrastimata, pareggio
+sottostimato — sono due facce dello stesso difetto) e la **doppia chance**: 12 sovrastimata, X2
+sottostimata, di nuovo coerente con l'eccesso di peso alla vittoria in casa. 5 righe su 12 fuori
+intervallo a α = 0,05 (attese ~0,6) è già di per sé un segnale reale.
+
+Regola adottata: **nessuna correzione dei parametri senza almeno ~150 gare valutate e scarto
+confermato nella stessa direzione**. Il campione cresce da solo (~15-20 gare/giorno con i run
+`daily`), quindi la verifica è ripetibile senza toccare il modello.
+
+### F6d. Backtest cronologico fuori campione (campione ampio per la calibrazione)
+
+La tabella per mercato cresce solo con i run giornalieri (~15-20 gare/giorno): per decidere se
+correggere un parametro servono centinaia di gare, e soprattutto stime che **non** abbiano visto il
+risultato. Nuovo modulo `src/fda/models/backtest.py`:
+
+- `chronological_backtest(hist, step_days=14, min_train=200, ...)` cammina sullo storico di ogni lega
+  a finestre di `step_days`: il modello (Dixon-Coles + Elo, stessi parametri di `fda predict`,
+  shrinkage compreso) è allenato **solo** sulle partite precedenti l'inizio della finestra e valuta
+  quelle successive. Squadre mai viste nello storico sono saltate (stesso `KeyError` di `predict`).
+- `backtest_summary(df)` → RPS contro la base naive, Brier, log-loss, esito azzeccato, calibrazione
+  1X2 e 9 mercati binari, tutti con **intervallo di Wilson e segnale** (stessa funzione della pagina).
+- Comando **`fda backtest [LEGHE] --seasons-back 3 --step-days 14 --min-train 200`** → tabella
+  `backtest`; è incluso in `fda daily`, quindi i numeri reali li produce GitHub Actions (che ha rete),
+  come vuole la regola B.6.
+- Sulla pagina **Accuratezza** compare la card «Backtest storico fuori campione», **condizionale**:
+  senza tabella non si vede niente (nessun segnaposto).
+- Verifica automatica: blocco **[8]** di `scripts/verify_site.py` (riconteggia le gare e ricalcola
+  l'RPS con `predict.rps`, percorso indipendente da `backtest_summary`).
+- Test `tests/test_backtest.py` (8): **assenza di leakage** (un modello-spy registra l'ultima data di
+  allenamento e la restituisce in ogni previsione: per ogni gara `_train_max < data gara`), squadre
+  sconosciute saltate senza perdere il resto della finestra, metriche ricalcolate in modo indipendente,
+  definizione degli esiti osservati, card presente/assente, finestre configurabili.
+
+**Stato della verifica (regola B.2):** l'intera catena è verificata **offline su dati sintetici**
+(storico generato con Poisson, 14 squadre × 3 stagioni): 63 gare fuori campione, RPS 0,2015 contro
+0,2282 della base, log-loss 0,9997, tutte le righe «compatibile», blocco [8] verde. **Non è una
+misura del modello sul calcio reale**: i numeri veri arriveranno dal primo `fda daily` con rete, e da
+lì si legge se lo scarto sulla vittoria in casa regge su migliaia di gare o era rumore.
+
 ### F7. Resta aperto (dichiarato)
 
 1. **Le previsioni pubblicate** cambiano solo al primo `fda predict` con la rete: la tabella dei

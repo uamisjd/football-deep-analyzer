@@ -363,6 +363,10 @@ def test_site_build_end_to_end(tmp_path):
     assert "Riepilogo" in acc and "Serie A" in acc     # una partita valutata
     assert "Δ vs naive" in acc and "Calibrazione" in acc and "Frequenza osservata" in acc
     assert "✓" in acc          # Inter 4-1 Monza: top=1 (62%) azzeccato
+    # intervalli di Wilson: con 1 sola gara valutata lo scarto previsto/osservato è sempre rumore
+    assert "intervallo 95%" in acc and "compatibile" in acc and "fuori intervallo" not in acc
+    assert "20,7 – 100,0%" in acc      # k=1 su n=1
+    assert "0,0 – 79,3%" in acc        # k=0 su n=1 (79,346% arrotondato a una cifra)
     assert "0,087" in acc      # RPS della singola previsione 0.62/0.21/0.17 con esito 1
     # sito italiano: nessun residuo UTC/inglese, orari in ora italiana
     for page in ("index.html", "partite/5749645.html", "partite/5749669.html", "accuratezza.html"):
@@ -636,3 +640,24 @@ def test_timeline_drops_goal_out_of_sequence(tmp_path):
     assert [g["player"] for g in goals] == ["Aouchiche", "Ilic"]
     assert [g["score"] for g in goals] == ["0-1", "1-1"]
     st.close()
+
+
+def test_wilson_interval_bounds_and_coverage():
+    """Intervallo di Wilson: bordi, simmetria, copertura e casi degeneri."""
+    from fda.site.build import wilson_interval
+
+    lo, hi = wilson_interval(1, 1)
+    assert abs(lo - 0.20654) < 1e-4 and hi == 1.0            # k = n: il bordo sale a 1
+    lo, hi = wilson_interval(0, 1)
+    assert lo == 0.0 and abs(hi - 0.79346) < 1e-4            # k = 0: non degenera in [0, 0]
+    assert wilson_interval(0, 0) == (0.0, 1.0)               # campione vuoto
+    for k, n in ((7, 50), (26, 50), (1, 10), (48, 50)):
+        lo, hi = wilson_interval(k, n)
+        assert 0.0 <= lo <= k / n <= hi <= 1.0               # contiene sempre la frequenza osservata
+        assert hi - lo > wilson_interval(k, n * 10)[1] - wilson_interval(k, n * 10)[0]   # più dati → più stretto
+    lo_a, hi_a = wilson_interval(13, 50)
+    lo_b, hi_b = wilson_interval(37, 50)
+    assert abs(lo_a - (1 - hi_b)) < 1e-9 and abs(hi_a - (1 - lo_b)) < 1e-9   # simmetrico
+    # su 50 gare il previsto 44% per la vittoria in casa con 13 osservate è fuori intervallo
+    lo, hi = wilson_interval(13, 50)
+    assert not (lo <= 0.44 <= hi)
