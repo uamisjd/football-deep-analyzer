@@ -15,24 +15,66 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 {% if markets %}
 <div class="card"><h2>Accuratezza per mercato</h2>
   <table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th><th class="r">osservato</th>
-    <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th></tr>
+    <th class="r">intervallo 95%</th>
+    <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th>
+    <th class="r">segnale</th></tr>
   {% for m in markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
     <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
+    <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
-    <td class="r">{{ (m.hit*100)|round|int }}%</td></tr>{% endfor %}</table>
+    <td class="r">{{ (m.hit*100)|round|int }}%</td>
+    <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}</table>
   <p class="small mut">«Previsto» è la probabilità media dichiarata, «osservato» la frequenza reale nello
   stesso campione: se sono vicini il mercato è calibrato. Il Brier misura l'errore quadratico della
   probabilità (0 = perfetto); <b>Brier base</b> è l'errore di chi pronostica sempre la frequenza di
   base, quindi Δ negativo significa che il modello batte quel riferimento. «Scelte indovinate» conta
-  le volte in cui l'esito reale coincide con il lato indicato da una probabilità ≥ 50%.</p>
+  le volte in cui l'esito reale coincide con il lato indicato da una probabilità ≥ 50%.
+  L'<b>intervallo 95%</b> (Wilson) è l'incertezza della frequenza osservata su questo campione: se il
+  valore «previsto» cade al suo interno la differenza è compatibile con il caso e <b>non</b> giustifica
+  una correzione del modello; la riga è marcata «fuori intervallo» solo quando il previsto resta fuori,
+  cioè quando il segnale è statisticamente distinguibile dal rumore.</p>
+</div>
+{% endif %}
+{% if bt and bt.n %}
+<div class="card"><h2>Backtest storico fuori campione</h2>
+  <p class="small">Lo stesso modello, valutato su <b>{{ bt.n }}</b> partite già giocate in
+  {{ bt.leagues }} campionati: per ogni finestra il modello è stato addestrato <b>solo</b> sulle
+  partite precedenti, quindi nessuna di queste stime ha visto il risultato. È il campione ampio che
+  serve per distinguere un difetto vero dal rumore (la tabella qui sopra cresce solo di
+  15-20 gare al giorno).</p>
+  <p class="kpi">RPS <b>{{ bt.rps|dec(4) }}</b> <span class="mut">(base {{ bt.naive|dec(4) }},
+  Δ {{ bt.delta|dec(4, true) }})</span> · log-loss <b>{{ bt.logloss|dec(4) }}</b> ·
+  esito azzeccato <b>{{ (bt.hit*100)|round|int }}%</b></p>
+  <div class="tablewrap"><table><tr><th>esito</th><th class="r">previsto</th><th class="r">osservato</th>
+    <th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
+  {% for c in bt.calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td>
+    <td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
+    <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
+    <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
+  </table></div>
+  <div class="tablewrap"><table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th>
+    <th class="r">osservato</th><th class="r">intervallo 95%</th><th class="r">Brier</th>
+    <th class="r">Brier base</th><th class="r">Δ</th><th class="r">segnale</th></tr>
+  {% for m in bt.markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
+    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}%</td>
+    <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
+    <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
+    <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
+    <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}
+  </table></div>
+  <p class="small mut">Stesso criterio della tabella per mercato: «fuori intervallo» segnala uno scarto
+  statisticamente distinguibile dal caso su questo campione.</p>
 </div>
 {% endif %}
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
-<div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th></tr>
-{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}%</td></tr>{% endfor %}
+<div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th>
+<th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
+{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
+<td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
+<td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
 </table></div>
-<p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10.</p>
+<p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10. L'intervallo (Wilson, 95%) dice quanto è incerta la frequenza osservata su <b>{{ calib[0].n if calib else 0 }}</b> gare: finché il previsto resta dentro, lo scarto è rumore di campionamento e non un difetto del modello.</p>
 </div>
 {% else %}<div class="card">Nessuna previsione ancora valutata: servono partite giocate dopo la prima previsione.</div>{% endif %}
 {% if recent %}

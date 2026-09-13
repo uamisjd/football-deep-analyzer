@@ -15,7 +15,7 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import REPO_ROOT, leagues, load_leagues_config
-from ..models.predict import outcome_index
+from ..models.predict import outcome_index, wilson_interval
 from ..store import Store
 from .analysis import MatchAnalysis
 from .audit import audit_match
@@ -297,8 +297,15 @@ class SiteBuilder:
                 summary.sort(key=lambda r: (r["league"] == "Tutti", r["league"]))
                 # calibrazione: probabilità media prevista vs frequenza osservata (tutte le gare valutate)
                 oc_all = p["outcome"].to_numpy()
-                calib = [{"label": lbl, "prev": float(probs[:, i].mean()), "obs": float((oc_all == i).mean())}
-                         for i, lbl in enumerate(("1 · vittoria in casa", "X · pareggio", "2 · vittoria in trasferta"))]
+                n_all = int(len(p))
+                calib = []
+                for i, lbl in enumerate(("1 · vittoria in casa", "X · pareggio", "2 · vittoria in trasferta")):
+                    k = int((oc_all == i).sum())
+                    lo, hi = wilson_interval(k, n_all)
+                    prev = float(probs[:, i].mean())
+                    calib.append({"label": lbl, "prev": prev, "obs": k / n_all if n_all else 0.0,
+                                  "k": k, "n": n_all, "lo": lo, "hi": hi,
+                                  "outside": bool(not (lo <= prev <= hi))})
                 fxn = fx.set_index("match_id")
                 for r in p.sort_values("utc_kickoff_fx" if "utc_kickoff_fx" in p.columns else "utc_kickoff", ascending=False).head(40).itertuples(index=False):
                     recent.append({"date": pd.Timestamp(getattr(r, "utc_kickoff_fx", r.utc_kickoff)).tz_convert(self.tz).strftime("%d/%m"),
@@ -325,13 +332,27 @@ class SiteBuilder:
                         continue
                     pr, y = pr[ok], y[ok]
                     base = y.mean()
-                    markets.append({"label": label, "n": int(ok.sum()), "prev": float(pr.mean()),
+                    n_mk = int(ok.sum())
+                    k_mk = int(round(float(y.sum())))
+                    lo_mk, hi_mk = wilson_interval(k_mk, n_mk)
+                    prev_mk = float(pr.mean())
+                    markets.append({"label": label, "n": n_mk, "prev": prev_mk,
                                     "obs": float(base), "brier": float(((pr - y) ** 2).mean()),
                                     "brier_base": float(((base - y) ** 2).mean()),
-                                    "hit": float((((pr >= 0.5).astype(float)) == y).mean())})
+                                    "hit": float((((pr >= 0.5).astype(float)) == y).mean()),
+                                    "lo": lo_mk, "hi": hi_mk,
+                                    "outside": bool(not (lo_mk <= prev_mk <= hi_mk))})
                     markets[-1]["delta"] = markets[-1]["brier"] - markets[-1]["brier_base"]
+        # backtest cronologico fuori campione (tabella prodotta da `fda backtest`): la card
+        # compare solo se esiste, come le sezioni condizionate alla disponibilità della fonte
+        bt_rows = self.store.read("backtest")
+        bt = {}
+        if not bt_rows.empty:
+            from ..models.backtest import backtest_summary
+
+            bt = backtest_summary(bt_rows)
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
-                     markets=markets)
+                     markets=markets, bt=bt)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")

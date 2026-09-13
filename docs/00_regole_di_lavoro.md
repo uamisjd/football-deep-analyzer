@@ -14,6 +14,12 @@ Hanno lo scopo di (1) non perdere mai lavoro, (2) lavorare con la massima accura
 6. **Risposte brevi.** Spiegazioni lunghe → in un file `docs/`; in chat solo il riassunto e il link.
 7. **Niente lavori pesanti nella chat.** Backfill di stagioni, scaricamento di centinaia di partite, backtest: si eseguono in GitHub Actions o con uno script lanciato in background, e in chat si guarda solo il log finale.
 8. **Commit piccoli e frequenti** con messaggio chiaro, sul branch di lavoro.
+8bis. **Push immediato: mai commit locali in attesa.** Ogni commit va pushato **subito** sul branch
+`arena/...` (`git push origin <branch>`): il push non richiede né PR né approvazione, ed è ciò che
+mette il lavoro al sicuro (vedi sez. D). Non si accumulano commit locali "in attesa di aprire la PR".
+Se il push fallisce (rete del sandbox), lo si dice **nello stesso turno** e il lavoro viene consegnato
+in un file scaricabile (`handover/` servito dal server di preview), mai lasciato solo nel sandbox:
+i commit locali **non sopravvivono** a una sessione nuova, che riparte da un clone di `origin/main`.
 9. **PR e merge: dirlo sempre in modo esplicito** (vedi sezione **D** sotto — *quando è il momento di fare PR / merge*). L'agente lavora sul branch `arena/...`; `main` riceve il lavoro solo tramite pull request.
 
 ## B. Paletti di qualità (nuovi — valgono sempre, su ogni deliverable)
@@ -51,14 +57,28 @@ L'agente lavora sul branch `arena/...` e il lavoro è già al sicuro grazie ai p
 - [ ] nessun dato/file spurio o grande committato;
 - [ ] `docs/STATO.md` aggiornato con quanto fa questa PR;
 - [ ] messaggio PR chiaro che riassume cosa fa e il motivo;
-- [ ] la PR parte dal branch di lavoro corretto (`arena/...`) verso `main`.
+- [ ] la PR parte dal branch di lavoro corretto (`arena/...`) verso `main`;
+- [ ] **nessun commit locale non pushato**: `git log --oneline origin/<branch>..HEAD` restituisce vuoto.
 
-**Verifica dell'ordine di lavoro — PRIMA del merge (regola permanente, vale in ogni sessione).** Prima di dichiarare che è il momento di fare il merge, l'agente deve **sempre verificare l'ordine di come fare le cose**: controllare in `docs/STATO.md` («prossimo passo», «decisioni aperte»), nel briefing di sessione e nelle richieste dell'utente se c'è **altro lavoro importante da fare o aggiungere al progetto che deve entrare su `main` nello stesso giro** della PR aperta (per esempio un fix, una direttiva, una regola, un contenuto richiesto poco prima del merge). Se c'è, va aggiunto e pushato **prima** di dare il via libera al merge: finché la PR è aperta un commit in più è immediato; **dopo il merge** quel lavoro richiederebbe una nuova sessione (nuovo branch `arena/...`, nuova PR, nuovo ciclo di check) e diventa molto più difficile e costoso. Solo quando si è verificato che non resta nulla di importante da aggiungere si pronuncia la frase fissa qui sotto. (Esempio reale: la sezione F di queste regole e la regola presente sono state aggiunte alla PR #14 dopo l'apertura, prima del merge.)
+**Verifica dell'ordine di lavoro — PRIMA del merge (regola permanente, vale in ogni sessione).** Prima di dichiarare che è il momento di fare il merge, l'agente deve **sempre verificare l'ordine di come fare le cose**: controllare in `docs/STATO.md` («prossimo passo», «decisioni aperte»), nel briefing di sessione e nelle richieste dell'utente se c'è **altro lavoro importante da fare o aggiungere al progetto che deve entrare su `main` nello stesso giro** della PR aperta (per esempio un fix, una direttiva, una regola, un contenuto richiesto poco prima del merge). Se c'è, va aggiunto e pushato **prima** di dare il via libera al merge: finché la PR è aperta un commit in più è immediato; **dopo il merge** quel lavoro richiederebbe una nuova sessione (nuovo branch `arena/...`, nuova PR, nuovo ciclo di check) e diventa molto più difficile e costoso. La verifica va **eseguita con un comando**, non a memoria: `git log --oneline origin/main..HEAD`
+(deve restare solo il lavoro della PR) e `git status --porcelain` (vuoto). Se esiste lavoro non
+pushato o non incluso nella PR, **il merge non si fa**: prima si pusha e si aggiunge alla PR aperta.
+Solo quando si è verificato che non resta nulla di importante da aggiungere si pronuncia la frase fissa qui sotto. (Esempio reale: la sezione F di queste regole e la regola presente sono state aggiunte alla PR #14 dopo l'apertura, prima del merge.)
 
 **Dopo la PR aperta**: l'agente monitora i check (tests). Quando sono verdi e la PR è mergeable, l'agente **lo comunica e indica il momento del merge** con la frase fissa:
 > *"👉 Tutto verde: è il momento di fare Merge (PR #N)."*
 
 E spiega in una riga perché è sicuro. **Il merge lo esegue SEMPRE l'utente, MAI l'agente** (decisione del 2026-09-08): dopo la frase fissa l'agente si ferma e aspetta — non preme mai "Merge pull request" (né via UI né via `gh pr merge`), nemmeno se la prassi precedente era diversa. Dopo il merge eseguito dall'utente: l'agente aggiorna STATO.md con il commit di merge e indica il prossimo passo.
+
+**Cosa è successo il 2026-09-12/13 (caso reale da non ripetere).** Dopo il merge di PR #23
+(eseguito su richiesta esplicita dell'utente) sono stati fatti altri 4 commit locali — aggiornamento
+di STATO, intervalli di Wilson sull'accuratezza, backtest fuori campione — **senza pusharli**, in
+attesa di una nuova PR. Nel frattempo l'egress HTTPS del sandbox è stato tagliato (TLS resettato
+verso GitHub, allowlist ridotta ai registry di pacchetti) e quel lavoro è rimasto **intrappolato nel
+sandbox**: una sessione nuova, ripartendo da un clone di `origin/main`, non lo vedeva. Due regole ne
+derivano e valgono da ora: **8bis** (push immediato, mai commit in attesa) e la condizione di stop
+qui sopra (niente merge finché `git log origin/main..HEAD` mostra lavoro non pushato o non incluso
+nella PR). Se il push non riesce, il lavoro va consegnato nello stesso turno come file scaricabile.
 
 ## E. Regole di progetto (dalle tue decisioni)
 

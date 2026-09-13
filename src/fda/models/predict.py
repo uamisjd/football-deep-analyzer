@@ -265,6 +265,24 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     return df, dc, elo
 
 
+def wilson_interval(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Intervallo di Wilson al 95% per una frequenza osservata ``k`` su ``n``.
+
+    Serve a distinguere una distorsione reale dal rumore di campionamento: su 50 gare una
+    differenza di 10 punti fra previsto e osservato può essere del tutto compatibile con il
+    caso, e non giustifica una correzione del modello. L'intervallo di Wilson resta sensato
+    anche per ``k = 0`` o ``k = n`` (a differenza dell'approssimazione normale).
+    """
+    if n <= 0:
+        return (0.0, 1.0)
+    p_hat = k / n
+    z2 = z * z
+    den = 1.0 + z2 / n
+    centre = p_hat + z2 / (2 * n)
+    half = z * float(np.sqrt(p_hat * (1 - p_hat) / n + z2 / (4 * n * n)))
+    return ((centre - half) / den, (centre + half) / den)
+
+
 def rps(probs: list[list[float]], outcomes: list[int]) -> float:
     """Ranked Probability Score medio (0 = perfetto; ~0.2 tipico per il calcio)."""
     return float(pb.metrics.rps_average(np.asarray(probs, dtype=float), np.asarray(outcomes, dtype=int)))
