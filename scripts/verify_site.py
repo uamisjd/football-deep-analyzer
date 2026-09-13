@@ -112,7 +112,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
 CAL_ROW = re.compile(
     r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)">(.*?)</div>',
     re.S)
-CAL_PCT = re.compile(r'<span class="cal-p" aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%">(.*?)</span>')
+CAL_PCT = re.compile(r'<span class="cal-p"[^>]*aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%"[^>]*>(.*?)</span>')
 CAL_MONTH = re.compile(
     r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
     r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.S)
@@ -172,8 +172,8 @@ def check_calendar(site: Path) -> tuple[list[str], int]:
                 atteso = ("h", "d", "a")[[uno, x, due].index(max(uno, x, due))]
                 if not fav or fav.group(1) != atteso:
                     fails.append(f"{rel}: classe cal-fav-{fav.group(1) if fav else '?'} ma il preferito è {atteso}")
-                gol = re.search(r'<span class="cal-gol">([^<]*)</span>', corpo)
-                over = re.search(r'<span class="cal-o">([^<]*)</span>', corpo)
+                gol = re.search(r'<span class="cal-gol"[^>]*>([^<]*)</span>', corpo)
+                over = re.search(r'<span class="cal-o"[^>]*>([^<]*)</span>', corpo)
                 if not gol or not re.fullmatch(r"\d+,\d", gol.group(1)):
                     fails.append(f"{rel}: gol attesi non in formato italiano {gol.group(1) if gol else None!r}")
                 else:

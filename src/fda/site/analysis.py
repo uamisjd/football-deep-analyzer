@@ -419,11 +419,27 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         elo_top = elo_ordered[0][0]
         elo_gap_pp = round(max(abs(float(values[k]) - float(elo_values[k])) for k in values) * 100, 1)
 
+    second_key, second_prob = ordered[1]
+    # probabilità DC ed Elo per tooltip dettagliato
+    dc_keys = (("1", "dc_p_home"), ("X", "dc_p_draw"), ("2", "dc_p_away"))
+    dc_values = {k: _prob(f) for k, f in dc_keys}
+    has_dc = all(v is not None for v in dc_values.values())
+    dc_top = None
+    dc_top_prob = None
+    if has_dc:
+        dc_ordered = sorted(dc_values.items(), key=lambda item: (-float(item[1]), ("1", "X", "2").index(item[0])))
+        dc_top, dc_top_prob = dc_ordered[0][0], float(dc_ordered[0][1])
+    elo_top_prob = None
+    if has_elo and elo_top:
+        elo_top_prob = float(elo_values[elo_top])
+
     return {
         "top_key": top_key,
         "top_name": names[top_key],
         "top_probability": float(top_probability),
-        "second_probability": second_probability,
+        "second_key": second_key,
+        "second_name": names[second_key],
+        "second_probability": float(second_probability),
         "margin_pp": round((float(top_probability) - second_probability) * 100, 1),
         "signal_label": ("DC + Elo concordano" if has_elo and top_key == elo_top
                          else "DC ed Elo divergono" if has_elo else "Segnale DC"),
@@ -431,7 +447,13 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
                         else "split" if has_elo else "single"),
         "elo_top": elo_top,
         "elo_top_name": names[elo_top] if elo_top else None,
+        "elo_top_prob": elo_top_prob,
+        "dc_top": dc_top,
+        "dc_top_name": names[dc_top] if dc_top else None,
+        "dc_top_prob": dc_top_prob,
         "elo_gap_pp": elo_gap_pp,
+        "has_dc": has_dc,
+        "has_elo": has_elo,
     }
 
 
@@ -501,6 +523,15 @@ class MatchAnalysis:
                                 _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
         weather["wind"] = _val(info, "weather_wind")
         h2h_n = len(self._h2h_core(match_id, home_id, away_id, kickoff, n=60))
+        # bilancio completo H2H per la card compatta (V/N/P dal punto di vista casa attuale, gol/gara, BTTS)
+        try:
+            h2h_pat = self.h2h_pattern(match_id, home_id, away_id, kickoff, n=60)
+        except Exception:
+            h2h_pat = None
+        try:
+            h2h_stat = self.h2h_stats(match_id, home_id, away_id, kickoff, n=5)
+        except Exception:
+            h2h_stat = None
         return {
             "home": {"standing": home_st,
                      "form": self.form_summary(self.form(home_id, kickoff, n=5))},
@@ -509,8 +540,12 @@ class MatchAnalysis:
             "prediction": self.prediction(match_id, home_name, away_name),
             "weather": weather,
             "referee": {"name": _val(info, "referee_name"),
-                        "yellows": _val(info, "referee_yellows_per_match")},
+                        "yellows": _val(info, "referee_yellows_per_match"),
+                        "pens": _val(info, "referee_penalties_total"),
+                        "reds": _val(info, "referee_reds_total")},
             "h2h_n": h2h_n,
+            "h2h": h2h_pat,
+            "h2h_recent": h2h_stat,
         }
 
     # ---- xG di stagione (Understat se c'è, altrimenti FotMob) ---------------------------------

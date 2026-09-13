@@ -83,6 +83,15 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   statisticamente distinguibile dal caso su questo campione.</p>
 </div>
 {% endif %}
+{% if lead_buckets %}
+<div class="card"><h2>RPS per anticipo</h2>
+<p class="small mut">Quanto prima è stata fatta la previsione? Ora misurabile perché Tappa 1 prevede <b>tutto il calendario</b> (chiave <code>(match_id,model)</code> unica, <code>made_at</code> vs <code>utc_kickoff</code>). Se la qualità peggiora con l'anticipo, lo vedremo qui.</p>
+<div class="tablewrap"><table><tr><th>Anticipo</th><th class="r">Gare</th><th class="r">RPS medio</th><th class="r">Esito azzeccato</th><th class="r">Anticipo medio</th></tr>
+{% for b in lead_buckets %}<tr><td>{{ b.label }}</td><td class="r">{{ b.n }}</td><td class="r">{{ b.rps|dec(4) }}</td><td class="r">{{ (b.hit*100)|round|int }}%</td><td class="r">{{ b.lead_mean|dec(1) }} giorni</td></tr>{% endfor %}
+</table></div>
+<p class="small mut">Bucket: 0–7 giorni (scheda completa con forma/classifica/assenze), 8–14, 15–30, 31–60, 61+ (solo modello, dettagli non ancora pubblicati dalla fonte). Con poche gare per bucket i valori sono indicativi: servono ~30 gare per lettura stabile.</p>
+</div>
+{% endif %}
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
 <div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th>
 <th class="r">intervallo 95%</th><th class="r">segnale</th></tr>

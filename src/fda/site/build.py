@@ -469,6 +469,44 @@ class SiteBuilder:
                                     "lo": lo_mk, "hi": hi_mk,
                                     "outside": bool(not (lo_mk <= prev_mk <= hi_mk))})
                     markets[-1]["delta"] = markets[-1]["brier"] - markets[-1]["brier_base"]
+                # RPS per anticipo (lead time): ora misurabile perché Tappa 1 prevede tutto il calendario
+                # made_at vs utc_kickoff → bucket 0-7/8-14/15-30/31-60/61+ giorni
+                lead_buckets = []
+                try:
+                    # p ha made_at (UTC) e utc_kickoff_fx (UTC)
+                    made = pd.to_datetime(p["made_at"], utc=True)
+                    kick = pd.to_datetime(p["utc_kickoff_fx"] if "utc_kickoff_fx" in p.columns else p["utc_kickoff"], utc=True)
+                    lead_days = (kick - made).dt.total_seconds() / 86400.0
+                    p["_lead_days"] = lead_days
+                    buckets = [
+                        (0, 7, "0–7 giorni"),
+                        (8, 14, "8–14 giorni"),
+                        (15, 30, "15–30 giorni"),
+                        (31, 60, "31–60 giorni"),
+                        (61, 9999, "61+ giorni"),
+                    ]
+                    for lo, hi, label in buckets:
+                        sub = p[(lead_days >= lo) & (lead_days <= hi)]
+                        if sub.empty:
+                            continue
+                        pr_b = sub[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+                        oc_b = sub["outcome"].to_numpy()
+                        rps_b = _rps(pr_b, oc_b)
+                        hit_b = float((pr_b.argmax(1) == oc_b).mean())
+                        lead_buckets.append({
+                            "label": label,
+                            "lo": lo,
+                            "hi": hi,
+                            "n": int(len(sub)),
+                            "rps": float(rps_b),
+                            "hit": hit_b,
+                            "lead_mean": float(lead_days[(lead_days >= lo) & (lead_days <= hi)].mean()),
+                        })
+                except Exception as exc:
+                    # non bloccare la pagina se il calcolo fallisce (dati vecchi senza made_at)
+                    lead_buckets = []
+                    import logging
+                    logging.getLogger(__name__).debug("RPS per anticipo saltato: %s", exc)
         # backtest cronologico fuori campione (tabella prodotta da `fda backtest`): la card
         # compare solo se esiste, come le sezioni condizionate alla disponibilità della fonte
         bt_rows = self.store.read("backtest")
@@ -484,7 +522,7 @@ class SiteBuilder:
             bt = backtest_summary(calibrate_rows(bt_rows, cal))
             bt["grezzo"] = backtest_summary(bt_rows)
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
-                     markets=markets, bt=bt)
+                     markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [])
 
     def build_status(self) -> None:
         st = self.store.read("source_status")
@@ -531,7 +569,27 @@ class SiteBuilder:
         self.build_accuracy(fx)
         self.build_stagione()
         self.build_status()
-        self._render("info.html", "info.html", title="Metodologia e fonti")
+        # info.html ora riceve la calibrazione live e il riepilogo lab per mostrare badge e dettagli misurati
+        try:
+            from ..models.calibration import from_store
+            cal = from_store(self.store)
+            cal_info = {
+                "version": cal.version if not cal.is_identity else None,
+                "lambda_scale": cal.lambda_scale,
+                "rho_shift": cal.rho_shift,
+                "estimator": cal.estimator,
+                "window_days": cal.window_days,
+                "n_fit": cal.n_fit if hasattr(cal, 'n_fit') else None,
+                "is_identity": cal.is_identity,
+            }
+        except Exception:
+            cal_info = {"is_identity": True}
+        try:
+            ml = self.store.read("model_lab")
+            lab_rows = len(ml) if not ml.empty else 0
+        except Exception:
+            lab_rows = 0
+        self._render("info.html", "info.html", title="Metodologia e fonti", cal=cal_info, lab_rows=lab_rows)
         return {"matches": len(built), "fixtures": len(fx), "players": n_players}
 
 

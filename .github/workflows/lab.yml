@@ -70,11 +70,17 @@ jobs:
           MIN="${{ github.event.inputs.min_train || '800' }}"
           CANDS="${{ github.event.inputs.candidates || '' }}"
           LEAGUES="${{ github.event.inputs.league_keys || '' }}"
-          EXTRA=""
-          if [ -n "$CANDS" ]; then EXTRA="--candidates $CANDS"; fi
+          # Nota: CANDS contiene spazi ("dc_elo_prod dc_elo_tilt ..."): va quotato come singolo argomento,
+          # altrimenti Typer prende solo il primo token e gli altri finiscono in league_keys.
+          # LEAGUES invece è intenzionalmente non quotato: sono chiavi posizionali.
           # shellcheck disable=SC2086
-          fda lab $LEAGUES --history "$HIST" --step-days "$STEP" --min-train "$MIN" $EXTRA --save \
-            2>&1 | tee lab.log | tail -140
+          if [ -n "$CANDS" ]; then
+            fda lab $LEAGUES --history "$HIST" --step-days "$STEP" --min-train "$MIN" --candidates "$CANDS" --save \
+              2>&1 | tee lab.log | tail -140
+          else
+            fda lab $LEAGUES --history "$HIST" --step-days "$STEP" --min-train "$MIN" --save \
+              2>&1 | tee lab.log | tail -140
+          fi
 
       - name: Salva log e riepilogo come artifact
         if: always()
