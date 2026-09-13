@@ -8,52 +8,67 @@
 <div class="grid">
   <div class="card">
     <h2>Il modello</h2>
-    <p>La previsione 1X2 nasce da un <b>ensemble 70/30</b> tra:</p>
+    {% if cal and not cal.is_identity %}
+    <p class="small" style="background:rgba(80,200,120,.12);border:1px solid rgba(80,200,120,.25);padding:8px 10px;border-radius:8px">
+      <b>Calibrazione attiva:</b> λ×{{ cal.lambda_scale|dec(3) }} · ρ{{ cal.rho_shift|dec(2, true) }}
+      {% if cal.estimator %}({{ cal.estimator }}, {% if cal.window_days %}{{ cal.window_days }} giorni{% else %}tutto lo storico{% endif %}{% if cal.n_fit %}, {{ cal.n_fit|it_num }} gare{% endif %}){% endif %}
+      — corregge la sovrastima storica dei gol. Versione <code>{{ cal.version }}</code>.
+    </p>
+    {% else %}
+    <p class="small mut" style="border:1px dashed rgba(255,255,255,.15);padding:8px 10px;border-radius:8px">Calibrazione: identità (in attesa di backtest sufficiente).</p>
+    {% endif %}
+    <p>La previsione 1X2 nasce da un <b>ensemble 70/30 misurato</b> tra:</p>
     <ul style="padding-left:20px;margin:0">
-      <li><b>Dixon-Coles</b> pesato nel tempo (attacco/difesa per squadra, λ di gol, ρ per i risultati bassi);</li>
-      <li><b>Elo</b> (forza di squadra aggiornata gara per gara).</li>
+      <li><b>Dixon-Coles</b> pesato nel tempo (attacco/difesa per squadra, λ di gol, ρ per i risultati bassi, ξ=0,0018, shrinkage 8);</li>
+      <li><b>Elo</b> (forza di squadra k 20, HFA 60, aggiornata gara per gara).</li>
     </ul>
-    <p style="margin-top:12px">Da questi escono mercati 1X2, gol attesi, Over/Under, entrambe a segno, doppia chance, porta inviolata e risultati esatti. L'accuratezza è pubblicata in <a href="accuratezza.html">Accuratezza</a> con RPS/Brier rispetto a una base naive.</p>
+    <p style="margin-top:12px">Il peso 0,7 è il miglior compromesso misurato: il laboratorio ha provato 0,5 e 0,85 su 1.518 gare walk-forward — 0,5 è significativamente peggiore (ΔRPS +0,000488 IC positivo), 0,85 batte in 5/7 leghe ma non significativo. Da questi escono mercati 1X2, gol attesi, Over/Under, entrambe a segno, doppia chance, porta inviolata e risultati esatti tramite <b>matrice 0–5</b> (coda oltre 5 dichiarata).</p>
+    <p style="margin-top:8px" class="small"><b>Limiti di sicurezza sulle λ:</b> λ≤4,0, totale 70%-135% del modello gol — evita previsioni assurde tipo 8,4 gol (Barcellona-Racing Santander). Interviene su ~1,2% gare (69/5.791 nel backtest) e migliora Brier sulle toccate 0,1471→0,1450.</p>
+    <p style="margin-top:8px" class="small">Variante strutturale <code>dc_elo_tilt</code>: l'Elo inclina solo il rapporto casa/trasferta, il totale gol resta del modello gol (stesso RPS, bias −0,087 invece di +0,104). Testata in laboratorio con bootstrap 95% — si cambia modello solo se IC interamente negativo E ≥5 leghe vinte ({{ lab_rows }} righe in <code>model_lab.parquet</code>).</p>
+    <p style="margin-top:12px">L'accuratezza è pubblicata in <a href="accuratezza.html">Accuratezza</a> con <b>RPS</b> (0=perfetto, 0,25≈casuale con frequenze medie, 0,19-0,20 bookmaker) e <b>Brier</b> (errore quadratico, più basso meglio) rispetto a una base naive 45/27/28. Δ negativo = batte la base. Intervalli Wilson 95% distinguono rumore da segnale.</p>
   </div>
   <div class="card">
     <h2>Le fonti (gratuite)</h2>
     <ul style="padding-left:20px;margin:0">
-      <li><b>FotMob</b> — calendario, formazioni, indisponibili, arbitro, meteo, xG, statistiche, momentum e classifiche (primaria).</li>
-      <li><b>Understat</b> — xG/xA di stagione e xPTS (dove copre il campionato).</li>
-      <li><b>ESPN</b> — classifica di riserva e scoreboard.</li>
-      <li><b>football-data.co.uk</b> (mirror) — storico per l'addestramento dei modelli.</li>
+      <li><b>FotMob</b> — calendario, formazioni, indisponibili, arbitro, meteo, xG, statistiche, momentum e classifiche (primaria, 7/7 leghe).</li>
+      <li><b>Understat</b> — xG/xA di stagione e xPTS (dove copre: big-5; per NED1/POR1 fallback FotMob).</li>
+      <li><b>Open-Meteo</b> — meteo previsto oltre 48h quando FotMob non lo ha ancora (fallback verificato P0).</li>
+      <li><b>ESPN</b> — classifica di riserva e scoreboard (403 cronico → FotMob standings primaria).</li>
+      <li><b>football-data.co.uk</b> (mirror GitHub <code>raw.githubusercontent.com</code>) — storico per l'addestramento. Mirror dedicato NED1/POR1 configurato in <code>config/leagues.yaml</code> campo per-lega <code>datahub_base</code>, facilmente sostituibile.</li>
+      <li><b>The Odds API</b> — quote opzionali, solo se <code>ODDS_API_KEY</code> configurata (non prioritarie, l'utente non le richiede).</li>
     </ul>
-    <p style="margin-top:12px" class="small mut">Ogni dato è salvato con la sua fonte; quando una fonte non ha ancora pubblicato qualcosa, la pagina mostra un segnaposto onesto («da definire», «previsione a ridosso della gara») — mai valori inventati.</p>
+    <p style="margin-top:12px" class="small mut">Ogni dato è salvato con la sua fonte (<code>source_status</code>); quando una fonte non ha ancora pubblicato qualcosa, la pagina mostra un segnaposto onesto («da definire», «previsione a ridosso della gara», «Nessun indisponibile segnalato nella distinta pubblicata») — mai valori inventati. Stato live in <a href="stato.html">Stato fonti</a> (tabelle, righe, KB, completezza schede: Presente/Atteso/Mancante). Costo zero, nessuna API a pagamento (regola E).</p>
   </div>
 </div>
 
 <div class="card">
   <h2>Come si aggiorna</h2>
-  <p>Un run automatico esegue <code>collect → predict → simulate → build</code> <b>5 volte al giorno</b> (06:00, 12:00, 16:00, 20:00, 23:30 ora italiana). Ad ogni run si aggiornano calendario, classifiche, previsioni, proiezioni di stagione, contenuti e metriche di accuratezza. Nessun aggiornamento manuale richiesto.</p>
+  <p>Un run automatico esegue <code>collect → calibrate → predict → backtest → simulate → build</code> <b>5 volte al giorno</b> (06:00, 12:00, 16:00, 20:00, 23:30 ora italiana). Ad ogni run si aggiornano calendario, classifiche, previsioni (una riga per partita, chiave <code>(match_id,model)</code>), proiezioni di stagione, contenuti e metriche di accuratezza. Nessun aggiornamento manuale richiesto. Crescita dati ~550 kB/run (~11% di <code>data/processed</code>).</p>
 </div>
 
 <div class="card">
   <h2>Leggere una scheda partita</h2>
-  <p>Una scheda pre-partita contiene: previsione del modello, risultati esatti, <b>matrice dei punteggi</b> 0–5 (griglia Dixon-Coles), <b>scontro tattico</b> (λ, attacco/difesa DC, xG azione vs palle inattive, PPDA), forma recente, xG di stagione, <b>xPTS vs punti reali</b>, confronto di stagione, indisponibili, formazione probabile, riposo, arbitro, meteo e precedenti H2H. La scheda post-partita aggiunge lettura della gara, statistiche chiave, cronaca, tiri, cartina, <b>corsa xG</b>, <b>qualità dei tiri</b> (volume, palle inattive, gol−xG, gol−xGOT), <b>probabilità in-play</b> ricostruite dopo ogni gol, e momentum.</p>
+  <p>Una scheda pre-partita contiene: previsione del modello con <b>catena «Come nasce questa probabilità»</b> (modello gol → media con Elo → calibrazione), risultati esatti, <b>matrice dei punteggi</b> 0–5 (griglia Dixon-Coles), <b>distribuzione gol totali</b> in «partite su 100» con <b>dotplot quantile 20 punti</b> (1 punto=5 su 100, moda/mediana/10-90%), <b>scontro tattico</b> (λ, attacco/difesa DC, xG azione vs palle inattive, PPDA), forma recente con legenda V/N/P, xG di stagione, <b>xPTS vs punti reali</b>, confronto di stagione, indisponibili con rientro, formazione probabile, riposo, arbitro con medie gialli/rigori, meteo e precedenti H2H con bilancio. La scheda post-partita aggiunge lettura della gara, statistiche chiave, cronaca, tiri, cartina, <b>corsa xG</b>, <b>qualità dei tiri</b> (volume, palle inattive, gol−xG, gol−xGOT), <b>probabilità in-play</b> ricostruite dopo ogni gol, e momentum.</p>
 </div>
 <div class="card">
   <h2>Laboratorio analitico (come si calcolano)</h2>
   <ul style="padding-left:20px;margin:0">
-    <li><b>Matrice dei punteggi</b> — Poisson bivariato con correzione τ di Dixon-Coles (ρ stimato sul campionato). Coda oltre 5 gol dichiarata a parte; ρ fuori dai bound matematici viene clampato, mai inventato.</li>
-    <li><b>Scontro tattico</b> — parametri attacco/difesa del modello; xG azione manovrata / palle inattive come media sulle partite finite FotMob (parità 7/7); PPDA e passaggi profondi da Understat dove copre.</li>
-    <li><b>Corsa xG</b> — somma cumulativa dell'xG di ogni tiro, autogol esclusi.</li>
-    <li><b>Qualità dei tiri</b> — xG/tiro; split azione manovrata/contropiede vs corner/punizioni/rimesse vs rigori; gol − xG (conversione) e gol − xGOT (tiro in porta vs portiere).</li>
-    <li><b>Probabilità in-play</b> — al minuto t, λ residue = λ pre-partita × (90−t)/90; Poisson indipendente sul residuo (ρ non si scala al tempo parziale). Non è un modello live: è una ricostruzione onesta dopo il fischio finale.</li>
+    <li><b>Matrice dei punteggi</b> — Poisson bivariato con correzione τ di Dixon-Coles (ρ stimato). Coda oltre 5 gol dichiarata; ρ fuori bound clampato, mai inventato. <code>GRID_SIZE=11</code> unica (fix: prima 10 vs 11).</li>
+    <li><b>Scontro tattico</b> — parametri attacco/difesa; xG azione manovrata / palle inattive media FotMob (parità 7/7); PPDA da Understat dove copre.</li>
+    <li><b>Corsa xG</b> — somma cumulativa xG tiri, autogol esclusi.</li>
+    <li><b>Qualità dei tiri</b> — xG/tiro; split manovrata/contropiede vs corner/punizioni/rimesse vs rigori; gol−xG e gol−xGOT.</li>
+    <li><b>Probabilità in-play</b> — al minuto t, λ residue = λ pre × (90−t)/90; Poisson indipendente residuo. Ricostruzione onesta post-gara, non live.</li>
+    <li><b>RPS per anticipo</b> — ora misurabile da <code>made_at</code> vs <code>utc_kickoff</code> su tutto il calendario (Tappa 1). Tabella in Accuratezza per bucket 0-7/8-14/15-30/31-60 giorni.</li>
   </ul>
 </div>
 
 <div class="card">
   <h2>Come leggere una <a href="{{ root }}giocatori/index.html">scheda giocatore</a></h2>
-  <p>Le statistiche di stagione sono sommate dalle statistiche individuali di ogni partita (FotMob) e normalizzate <b>per 90 minuti</b>. I <b>percentili</b> confrontano il giocatore con chi ha lo <b>stesso ruolo nello stesso campionato</b> e almeno <b>90 minuti</b> giocati (minimo 8 pari-ruolo con dato, altrimenti «n.d.»): un valore dell'80° percentile significa meglio dell'80% dei pari-ruolo. Le statistiche «↓» (es. gol subiti, falli) sono capovolte: meno se ne fanno, più alto il percentile. La media voto è ponderata sui minuti giocati. A inizio stagione i campioni sono piccoli: ogni scheda mostra gare e minuti di riferimento, con avviso quando il campione è ridotto.</p>
+  <p>Statistiche sommate da FotMob per partita e normalizzate <b>per 90′</b>. <b>Percentili</b> vs stesso ruolo stesso campionato ≥90′ (min 8 pari-ruolo, altrimenti «n.d.»): 80° percentile = meglio dell'80% pari-ruolo. Stat «↓» (gol subiti, falli) capovolte. Media voto ponderata sui minuti. A inizio stagione campioni piccoli: ogni scheda mostra gare/minuti e avviso campione ridotto.</p>
 </div>
 
 <div class="card">
   <h2>Precisione sul linguaggio</h2>
-  <p>I numeri sono <b>verificabili e misurati</b>. Distinguiamo sempre tra dato <i>verificato dal vivo</i>, <i>verificato offline sui dati</i> e <i>da verificare</i>. Le probabilità sono stime: come da <a href="{{ root }}stato.html">stato fonti</a>, quando una fonte non è raggiungibile il dato è marcato con un avviso, non nascosto.</p>
+  <p>I numeri sono <b>verificabili e misurati</b>. Distinguiamo tra <i>verificato dal vivo</i> (Actions, Pages), <i>verificato offline</i> (fixtures, corpus surrogato) e <i>da verificare</i>. Le probabilità sono stime: come da <a href="{{ root }}stato.html">stato fonti</a>, quando una fonte non è raggiungibile il dato è marcato con avviso, non nascosto. Audit automatico: 0 «mancante» dopo correzioni, attesi 66 formazioni 75 arbitro = finestre editoriali reali.</p>
 </div>
 {% endblock %}
