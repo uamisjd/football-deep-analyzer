@@ -7,6 +7,7 @@ tiri FotMob o delle medie di stagione già nello store.
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 import numpy as np
@@ -447,4 +448,16 @@ def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
         "Passaggi profondi: completamenti negli ultimi ~20 m (Understat).",
         "xG azione / palle inattive: media sulle finite FotMob.",
     ]
-    return {"rows": rows, "notes": notes}
+    # dedup con pattern lasco (case/punteggiatura/spazi) — evita nota globale duplicata per variazioni minime
+    def _norm(s: str) -> str:
+        return re.sub(r"\W+", " ", s.lower().strip()).strip()
+    seen: set[str] = set()
+    uniq: list[str] = []
+    for n in notes:
+        k = _norm(n)
+        if k not in seen:
+            seen.add(k)
+            uniq.append(n)
+    # nota globale singola (pattern lasco già applicato) + lista per retro-compatibilità
+    global_note = " ".join(uniq[:2])
+    return {"rows": rows, "notes": uniq, "global_note": global_note}

@@ -92,7 +92,7 @@
 <div class="card" id="scontro">
   <h2>Scontro tattico</h2>
   <p class="small mut">Come si incontrano gli stili: λ del modello, parametri attacco/difesa Dixon-Coles, xG di stagione (azione vs palle inattive) e pressing (PPDA). Il migliore è <span style="color:var(--accent);font-weight:700">verde + ▲</span>.</p>
-  {% if c.home_xg and c.away_xg and (c.home_xg.ppda is none or c.away_xg.ppda is none) %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">Dati pressing (PPDA) incompleti per questa gara — Understat non copre questa lega per una squadra (FotMob senza PPDA). Confronto limitato a xG e profondità.</p>{% endif %}
+  {% if c.home_xg and c.away_xg and (not c.home_xg.ppda or not c.away_xg.ppda) %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">Dati pressing (PPDA) incompleti per questa gara — Understat non copre questa lega per una squadra (FotMob senza PPDA). Confronto limitato a xG e profondità.</p>{% endif %}
   <table>
     <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
     {% for r in c.clash.rows %}
@@ -103,7 +103,7 @@
     </tr>
     {% endfor %}
   </table>
-  <p class="small mut" style="margin-top:8px">{{ c.clash.notes[0] }} {{ c.clash.notes[1] }}</p>
+  <p class="small mut" style="margin-top:8px">{{ c.clash.global_note if c.clash.global_note is defined else c.clash.notes[0] ~ ' ' ~ c.clash.notes[1] }}</p>
 </div>
 {% endif %}
 
@@ -252,20 +252,19 @@
 </div>
 <p class="small mut" style="margin:4px 0 0">Minuti, gol e assist di stagione sommati dalle statistiche gara; xG+xA per 90 dove la fonte li pubblica. «Titolare» = almeno metà dei minuti medi per giocatore. “Ruolo n.d.” = non ancora visto in distinta.</p>
 
-{% if c.season_compare %}
-<div class="card">
-  <h2>Confronto di stagione</h2>
-  <table>
-    <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
-    {% for r in c.season_compare.rows %}
-    <tr><th>{{ r.label }}</th><td{% if r.best == 'h' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.h }}{% if r.label == 'Posizione' and r.h != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.h|int))/19*100)|round }}%;background:{% if r.best == 'h' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.h }}ª su 20</span>{% endif %}</td><td{% if r.best == 'a' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.a }}{% if r.label == 'Posizione' and r.a != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.a|int))/19*100)|round }}%;background:{% if r.best == 'a' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.a }}ª su 20</span>{% endif %}</td></tr>
-    {% endfor %}
-  </table>
-  <p class="small mut">{{ c.season_compare.note }}</p>
-</div>
-{% endif %}
-
 <div class="grid detail-card" id="contesto">
+  {% if c.season_compare %}
+  <div class="card" id="confronto">
+    <h2>Confronto di stagione</h2>
+    <table>
+      <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
+      {% for r in c.season_compare.rows %}
+      <tr><th>{{ r.label }}</th><td{% if r.best == 'h' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.h }}{% if r.label == 'Posizione' and r.h != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.h|int))/19*100)|round }}%;background:{% if r.best == 'h' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.h }}ª su 20</span>{% endif %}</td><td{% if r.best == 'a' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.a }}{% if r.label == 'Posizione' and r.a != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.a|int))/19*100)|round }}%;background:{% if r.best == 'a' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.a }}ª su 20</span>{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+    <p class="small mut">{{ c.season_compare.note }}</p>
+  </div>
+  {% endif %}
   <div class="card">
     <h2>Contesto</h2>
     <table>
