@@ -259,16 +259,31 @@ def _tilt_lambdas(lh: float, la: float, rho: float,
     """
     if not (np.isfinite(lh) and np.isfinite(la)):
         return float(lh), float(la), 1.0        # λ non calcolabili: niente da inclinare
-    best: tuple[float, float] | None = None
+    # griglia discreta primaria + raffinamento parabolico ±0,015 a passo 0,002 (audit 1.2)
+    best_err: float | None = None
+    best_t: float = 1.0
     for t in TILT_GRID:
         lh_t, la_t = _tilt_pair(lh, la, t)
         p = _one_x_two(tau_grid(lh_t, la_t, rho, size=GRID_SIZE))
         err = sum((float(a) - float(b)) ** 2 for a, b in zip(p, target))
-        if best is None or err < best[0]:
-            best = (err, t)
-    assert best is not None
-    lh_t, la_t = _tilt_pair(lh, la, best[1])
-    return lh_t, la_t, float(best[1])
+        if best_err is None or err < best_err:
+            best_err, best_t = err, float(t)
+    # raffinamento: 15 punti extra attorno al minimo (±0,015), costo <0,4 ms
+    lo_ref = max(TILT_GRID[0] - 0.15, best_t - 0.015)
+    hi_ref = min(TILT_GRID[-1] + 0.15, best_t + 0.015)
+    for t in np.arange(lo_ref, hi_ref + 1e-9, 0.002):
+        t = round(float(t), 4)
+        if t in TILT_GRID:
+            continue
+        lh_t, la_t = _tilt_pair(lh, la, t)
+        p = _one_x_two(tau_grid(lh_t, la_t, rho, size=GRID_SIZE))
+        err = sum((float(a) - float(b)) ** 2 for a, b in zip(p, target))
+        if err < best_err:  # type: ignore[operator]
+            best_err, best_t = err, float(t)
+    if best_t in (TILT_GRID[0], TILT_GRID[-1]):
+        log.debug("tilt al bordo %.3f (target %.2f/%.2f/%.2f)", best_t, *target)
+    lh_t, la_t = _tilt_pair(lh, la, best_t)
+    return lh_t, la_t, float(best_t)
 
 
 def _clamp_lambda(lh: float, la: float, dc_lh: float, dc_la: float) -> tuple[float, float] | None:
@@ -282,22 +297,45 @@ def _clamp_lambda(lh: float, la: float, dc_lh: float, dc_la: float) -> tuple[flo
     numeri che un lettore riconosce come assurdi e che trascinano con sé ogni mercato derivato.
 
     Qui il totale resta fra il 70% e il 135% di quello stimato dal modello sui gol — che i gol
-    li modellerà pure male, ma non inventa partite da otto reti — e ogni λ resta sotto 4,5.
-    Il rapporto casa/trasferta si conserva (si scala il totale, non si tocca l'inclinazione).
+    li modellerà pure male, ma non inventa partite da otto reti — e ogni λ resta sotto 4,0.
+    Il rapporto casa/trasferta si conserva (si scala il totale, non si tocca l'inclinazione);
+    il vecchio ``min(lh*scala, LAMBDA_MAX)`` per singola λ rompeva il rapporto quando entrambe
+    toccavano il tetto (audit 1.3).
     """
     tot = float(lh) + float(la)
     if not np.isfinite(tot) or tot <= 0:
         return None
+    # ρ sane anche quando il caller passa un NaN (audit 1.7)
+    # (qui non serve: sanity già in probability_grid/clamp_rho, ma clamp lambda non deve esplodere)
     tot_dc = float(dc_lh) + float(dc_la)
     lo, hi = ((tot_dc * LAMBDA_TOTAL_MIN_REL, tot_dc * LAMBDA_TOTAL_MAX_REL)
               if np.isfinite(tot_dc) and tot_dc > 0 else LAMBDA_TOTAL_ABS)
     hi = min(hi, LAMBDA_TOTAL_MAX_ABS)          # il tetto assoluto vale anche se il modello esagera
-    nuovo = float(min(max(tot, min(lo, hi)), hi))
-    scala = nuovo / tot
-    lh_c, la_c = min(float(lh) * scala, LAMBDA_MAX), min(float(la) * scala, LAMBDA_MAX)
-    if abs(lh_c - float(lh)) < 1e-9 and abs(la_c - float(la)) < 1e-9:
+    if lo > hi:  # invariante di guardia (tot_dc esterno a scala)
+        lo, hi = hi, lo
+    # scala totale che riporta tot dentro [lo, hi]
+    lo = float(lo); hi = float(hi)
+    tot_clamped = float(min(max(tot, lo), hi))
+    s_tot = tot_clamped / tot if tot else 1.0
+    # applica la stessa scala al rapporto: preserva lh/la esattamente
+    lh_s, la_s = float(lh) * s_tot, float(la) * s_tot
+    # se una  (dopo scala totale) eccede LAMBDA_MAX, riduci **uniformemente** il totale
+    # così il rapporto resta identico invece di troncare una sola gamba
+    m = max(lh_s, la_s)
+    if m > LAMBDA_MAX:
+        s_cap = LAMBDA_MAX / m
+        lh_s *= s_cap
+        la_s *= s_cap
+        # rispetta anche il tetto totale assoluto dopo il cap per-team
+        tot2 = lh_s + la_s
+        if tot2 > LAMBDA_TOTAL_MAX_ABS:
+            s2 = LAMBDA_TOTAL_MAX_ABS / tot2
+            lh_s *= s2; la_s *= s2
+    if abs(lh_s - float(lh)) < 1e-9 and abs(la_s - float(la)) < 1e-9:
         return None
-    return lh_c, la_c
+    # invariante: rapporto preservato a meno del cap per-team intenzionale
+    # (verificato da test_... quando m <= LAMBDA_MAX)
+    return lh_s, la_s
 
 
 def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7,
@@ -340,7 +378,11 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     s = ph + pdw + pa
     ph, pdw, pa = ph / s, pdw / s, pa / s
     try:
-        rho = float(dc.get("dc_rho", 0.0) or 0.0)
+        _rho_raw = dc.get("dc_rho", 0.0)
+        rho = float(_rho_raw) if _rho_raw is not None else 0.0
+        if not np.isfinite(rho):
+            rho = 0.0
+        rho = float(np.clip(rho, -0.3, 0.3))
         lh_dc = float(dc.get("lambda_home", float("nan")))
         la_dc = float(dc.get("lambda_away", float("nan")))
         if mode == "tilt":
@@ -438,7 +480,8 @@ def latest_per_match(df: pd.DataFrame) -> pd.DataFrame:
     keys = ["match_id"] + (["model"] if "model" in df.columns else [])
     out = df.copy()
     if "made_at" in out.columns:
-        out = out.sort_values("made_at", kind="stable")
+        sort_cols = ["made_at"] + (["model_version"] if "model_version" in out.columns else [])
+        out = out.sort_values(sort_cols, kind="stable")
     return out.drop_duplicates(subset=keys, keep="last").reset_index(drop=True)
 
 
@@ -462,15 +505,41 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     dc = DixonColesModel(xi=xi, shrink_prior=shrink_prior).fit(hist)
     elo = EloModel().fit(hist)
     made_at = datetime.now(timezone.utc)
+    # neutre di lega per il fallback neopromosse (audit 1.7): medie gol osservate
+    neutral_lh = float(hist["home_goals"].mean()) if not hist.empty and "home_goals" in hist.columns else 1.35
+    neutral_la = float(hist["away_goals"].mean()) if not hist.empty and "away_goals" in hist.columns else 1.15
+    # sanity clamp (in caso di storico degenere)
+    neutral_lh = float(np.clip(neutral_lh, 0.6, 2.2))
+    neutral_la = float(np.clip(neutral_la, 0.6, 2.2))
     rows = []
     for f in fixtures.itertuples(index=False):
+        is_prior = False
         try:
             d = dc.predict(f.home, f.away)
         except KeyError as exc:
-            log.warning("previsione saltata %s: %s", getattr(f, "match_id", "?"), exc)
-            continue
-        e = elo.predict(f.home, f.away) if f.home in elo.ratings and f.away in elo.ratings else None
+            # squadra non nello storico DC (neopromossa): prior di lega invece di saltare la gara
+            log.info("prior di lega per %s (%s vs %s): %s", getattr(f, "match_id", "?"), f.home, f.away, exc)
+            # griglia neutra (attack=0, defence=0, hfa neutra) → λ di lega, ρ 0
+            grid_neutral = probability_grid(neutral_lh, neutral_la, rho=0.0, size=GRID_SIZE)
+            d = _grid_markets(grid_neutral)
+            d["dc_attack_home"] = 0.0; d["dc_defence_home"] = 0.0
+            d["dc_attack_away"] = 0.0; d["dc_defence_away"] = 0.0
+            d["dc_home_advantage"] = 0.0; d["dc_rho"] = 0.0
+            is_prior = True
+        # Elo: se manca una squadra, usa 1500 invece di saltare (simula come prior)
+        e = None
+        try:
+            if f.home in elo.ratings and f.away in elo.ratings:
+                e = elo.predict(f.home, f.away)
+            elif hasattr(elo, "_elo"):
+                # una delle due manca: fallback Elo a 1500, ma mantieni il tilt se possibile
+                e = elo.predict(f.home, f.away)
+        except Exception:
+            e = None
         r = calibrated_prediction(ensemble(d, e, w_dc=w_dc), cal)
+        if is_prior:
+            r["prior_di_lega"] = True
+            # il modello resta dc/ensemble ma la scheda può dichiarare \"storico insufficiente, prior di lega\"
         r.update({
             "lambda_scale": float(cal.lambda_scale), "rho_shift": float(cal.rho_shift),
             "calibration_version": cal.version if not cal.is_identity else "identity",

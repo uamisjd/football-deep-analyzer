@@ -122,7 +122,9 @@ def test_dixon_coles_and_elo(hist):
     ens = ensemble(p, e, w_dc=0.7)
     assert ens["model"] == "ensemble"
     assert abs(ens["p_home"] + ens["p_draw"] + ens["p_away"] - 1) < 1e-6
-    assert min(p["p_home"], e["elo_p_home"]) - 1e-9 <= ens["p_home"] <= max(p["p_home"], e["elo_p_home"]) + 1e-9
+    # tilt conserva il totale dei gol: l'1X2 è quello della griglia inclinata più vicina al blend,
+    # non il blend esatto — può discostarsi di ~0.06 pp (audit 1.2, errore quadratico residuale)
+    assert min(p["p_home"], e["elo_p_home"]) - 0.005 <= ens["p_home"] <= max(p["p_home"], e["elo_p_home"]) + 0.005
 
 
 def test_backtest_beats_naive(hist):

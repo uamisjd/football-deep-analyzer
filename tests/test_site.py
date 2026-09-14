@@ -375,7 +375,10 @@ def test_site_build_end_to_end(tmp_path):
         html = (out / page).read_text(encoding="utf-8")
         assert "UTC" not in html, page
         assert "(ora italiana)" in html, page
-    assert "noindex" in (out / "index.html").read_text(encoding="utf-8")
+    html_index = (out / "index.html").read_text(encoding="utf-8")
+    assert "index, follow" in html_index and "noindex" not in html_index
+    assert 'rel="canonical"' in html_index and 'sitemap.xml' in (out / "robots.txt").read_text(encoding="utf-8")
+    assert "Allow: /" in (out / "robots.txt").read_text(encoding="utf-8")
 
     # stato fonti: tutte le fonti OK → nessun ERRORE (regressione rumore ESPN standings)
     stato = (out / "stato.html").read_text(encoding="utf-8")

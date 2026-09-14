@@ -14,11 +14,13 @@
     <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% else %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
     <div class="match-hero-team away">{{ c.away_name }}</div>
   </div>
+  {% if c.status in ('postponed','suspended','cancelled','abandoned') %}<div style="margin-top:12px;padding:10px 14px;background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);border-radius:10px;color:var(--amber);font-weight:700;font-size:13px">⚠ Partita {{ 'rinviata' if c.status == 'postponed' else 'sospesa' if c.status in ('suspended','abandoned') else 'annullata' }} — orario da confermare. La previsione resta quella dell'ultimo calcolo prima del rinvio.</div>{% endif %}
+  {% if p and p.prior_di_lega %}<div style="margin-top:10px;padding:8px 12px;background:var(--surface2);border:1px dashed var(--line2);border-radius:8px;color:var(--mut);font-size:12px">Prior di lega: una o entrambe le squadre hanno storico insufficiente (neopromossa) — λ neutre di lega, non stima affidabile.</div>{% endif %}
   {% if p and p.meta %}
   <div class="hero-model">
-    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut">Margine sul 2° esito: {{ p.meta.margin_pp|dec(1) }} punti</span></div>
+    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut">Margine sul secondo esito: {{ p.meta.margin_pp|dec(1) }} punti ({{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}%)</span></div>
     <div class="hero-metrics"><span class="hero-metric"><b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b><span>gol attesi</span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
-    <span class="hero-signal">{{ p.meta.signal_label }}</span>
+    <span class="hero-signal" title="{{ p.meta.signal_label }}{% if p.meta.elo_gap_top_pp is not none %} · scarto {{ p.meta.elo_gap_top_pp|dec(1) }} punti sul preferito{% elif p.meta.elo_gap_pp is not none %} · scarto {{ p.meta.elo_gap_pp|dec(1) }} punti{% endif %}">{{ p.meta.signal_label }}</span>
   </div>
   {% elif p %}<p class="small mut" style="margin:0">Probabilità del modello disponibili nella scheda qui sotto.</p>{% endif %}
 </div>
@@ -43,7 +45,7 @@
       <tr><th>Doppia chance 1X / 12 / X2</th><td colspan="2" class="r">{{ (p.p_1x*100)|round|int }}% / {{ (p.p_12*100)|round|int }}% / {{ (p.p_x2*100)|round|int }}%</td></tr>
       <tr><th>Porta inviolata casa / trasferta</th><td colspan="2" class="r">{{ (p.p_home_clean_sheet*100)|round|int }}% / {{ (p.p_away_clean_sheet*100)|round|int }}%</td></tr>
     </table>
-    <p class="small mut">Sono stime del modello, non certezze né quote: Dixon-Coles pesato nel tempo + Elo (peso DC {{ p.w_dc|dec(1) }}) · addestrato su {{ p.n_train|it_plural('partita') }} · calcolato {{ p.made_at|it_utc }} (ora italiana).</p>
+    <p class="small mut">Sono stime del modello, non certezze né quote: Dixon-Coles pesato nel tempo + Elo (peso DC {{ p.w_dc|dec(1) }}) · addestrato su {{ p.n_train|it_plural('partita') }} · calcolato {{ p.made_at|it_utc }} (ora italiana).<br><span style="color:var(--mut)">λ del modello su ~1 200 gare pesate nel tempo, non media delle ultime 3 (xG/gara nelle schede “Come arrivano”).</span>{% if p.lambda_limitata %} <span class="warn" style="font-weight:700">· λ limitate per coerenza (tetto di sicurezza)</span>{% endif %}{% if p.prior_di_lega %} <span class="warn" style="font-weight:700">· prior di lega</span>{% endif %}</p>
   </div>
   <div class="card">
     <h2>Risultati esatti più probabili</h2>

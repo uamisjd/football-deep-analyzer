@@ -65,3 +65,28 @@ def or_dash(v) -> str:
     """Valore formattato, oppure '—' se manca (dato assente, mai inventato)."""
     s = v if isinstance(v, str) else dec(v)
     return s if s else "—"
+
+
+def pct_triple(p: tuple[float, float, float]) -> list[int]:
+    """Vettore 1X2 continuo → 3 interi che sommano 100 con resto massimo stabile.
+
+    Ramo + e − corretti: resto>0 assegna ai resti maggiori, resto<0 toglie ai resti
+    minori; tie-break sull'ordine (1, X, 2) deterministico (stable argsort).
+    """
+    import math
+    import numpy as np  # type: ignore
+    raw = [float(v) * 100.0 for v in p]
+    base = [int(math.floor(x)) for x in raw]
+    resto = 100 - sum(base)
+    if resto == 0:
+        return base
+    residuals = [r - f for r, f in zip(raw, base)]
+    if resto > 0:
+        order = np.argsort(residuals, kind="stable")[::-1]  # maggiori prima
+        for i in range(resto):
+            base[int(order[i % 3])] += 1
+    else:
+        order = np.argsort(residuals, kind="stable")  # minori prima
+        for i in range(-resto):
+            base[int(order[i % 3])] -= 1
+    return base

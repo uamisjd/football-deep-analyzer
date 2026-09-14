@@ -24,6 +24,9 @@
   <span><i class="status-dot status-dot-finished" aria-hidden="true"></i><b>{{ summary.finished }}</b> terminate</span>
   <span class="mut">Dati e probabilità sono quelli dell'ultimo aggiornamento indicato in alto.</span>
 </div>
+{% if summary.live == 0 and summary.scheduled > 0 %}
+<div style="margin:0 0 12px;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;color:var(--mut);font-size:12.5px">Cerchi domani? Vai a <a href="{{ root }}prossime.html"><b>Prossime</b></a> — lì c'è tutto il calendario fino a maggio, con schede e proiezioni già disponibili.</div>
+{% endif %}
 {% endif %}
 
 <div class="match-toolbar" data-match-toolbar>
@@ -31,6 +34,7 @@
   <div class="filter-buttons" role="group" aria-label="Stato partita">
     <button type="button" class="filter-button" data-status-filter="all" aria-pressed="true">Tutte</button>
     <button type="button" class="filter-button" data-status-filter="live" aria-pressed="false"><span class="status-dot status-dot-live" aria-hidden="true"></span> In corso</button>
+    <button type="button" class="filter-button" data-status-filter="paused" aria-pressed="false">Intervallo</button>
     <button type="button" class="filter-button" data-status-filter="scheduled" aria-pressed="false">In programma</button>
     <button type="button" class="filter-button" data-status-filter="finished" aria-pressed="false">Terminate</button>
   </div>
@@ -79,48 +83,77 @@
   const toolbar = document.querySelector('[data-match-toolbar]');
   if (!list || !toolbar) return;
   const cards = [...list.querySelectorAll('[data-match-card]')];
-  // le righe compatte del calendario non duplicano data-search (peso pagina): la chiave
-  // di ricerca si ricava dal testo una volta sola, poi il filtro resta veloce
+  // indice di ricerca precomputato e già lowercased (niente toLocaleLowerCase nel loop caldo)
   cards.forEach(card => {
     if (!card.dataset.search) card.dataset.search = (card.textContent || '').replace(/\s+/g, ' ').trim();
+    card.dataset.searchLower = (card.dataset.search || '').toLocaleLowerCase('it-IT');
+    // contenuto già indicizzato: libera la stringa lunga non più necessaria
+    // card.dataset.search rimane per debugging, ma il filtro usa searchLower
   });
   const groups = [...list.querySelectorAll('[data-day-group]')];
   const result = toolbar.querySelector('[data-filter-result]');
   const search = toolbar.querySelector('[data-match-search]');
   const league = toolbar.querySelector('[data-league-filter]');
   let status = 'all';
+  let raf = 0;
+  let queryLower = '';
 
-  function apply() {
-    const query = (search?.value || '').trim().toLocaleLowerCase('it-IT');
+  function applyNow() {
     const leagueValue = league?.value || 'all';
     let visible = 0;
-    cards.forEach(card => {
-      const okStatus = status === 'all' || card.dataset.status === status;
+    const statusAliases = {scheduled:['scheduled','postponed','suspended','cancelled','abandoned']};
+    for (const card of cards) {
+      let okStatus = false;
+      if (status === 'all') okStatus = true;
+      else if (statusAliases[status]) okStatus = statusAliases[status].includes(card.dataset.status);
+      else okStatus = card.dataset.status === status;
       const okLeague = leagueValue === 'all' || card.dataset.league === leagueValue;
-      const okQuery = !query || (card.dataset.search || '').toLocaleLowerCase('it-IT').includes(query);
+      const okQuery = !queryLower || (card.dataset.searchLower || '').includes(queryLower);
       const shown = okStatus && okLeague && okQuery;
       card.hidden = !shown;
       if (shown) visible += 1;
-    });
-    groups.forEach(group => {
+    }
+    for (const group of groups) {
       const shown = group.querySelectorAll('[data-match-card]:not([hidden])').length;
       group.hidden = shown === 0;
       const empty = group.querySelector('[data-empty-filter]');
-      if (empty) empty.hidden = true;
-    });
+      if (empty) empty.hidden = shown === 0 && group.querySelectorAll('[data-match-card]').length > 0;
+    }
     if (result) result.textContent = `${visible} ${visible === 1 ? 'partita' : 'partite'}`;
+    // badge sui bottoni di stato (conta bucket non filtrato, alias inclusi)
+    toolbar.querySelectorAll('[data-status-filter]').forEach(btn => {
+      const bucket = btn.dataset.statusFilter;
+      if (bucket && bucket !== 'all') {
+        const alias = statusAliases[bucket] || [bucket];
+        const n = cards.filter(c => alias.includes(c.dataset.status)).length;
+        let badge = btn.querySelector('.filter-count');
+        if (!badge) { badge = document.createElement('span'); badge.className='filter-count'; badge.style.cssText='margin-left:4px;opacity:.7;font-weight:700;min-width:28px;display:inline-block;text-align:left'; btn.appendChild(badge); }
+        badge.textContent = n ? `(${n})` : '';
+        btn.hidden = false;
+        // nascondi bottone Pausa se 0 e non attivo (meno rumore)
+        if (bucket === 'paused' && n === 0 && status !== 'paused') btn.hidden = true;
+      }
+    });
+  }
+
+  function scheduleApply() {
+    if (raf) cancelAnimationFrame(raf);
+    raf = requestAnimationFrame(() => { raf=0; applyNow(); });
   }
 
   toolbar.querySelectorAll('[data-status-filter]').forEach(button => {
     button.addEventListener('click', () => {
       status = button.dataset.statusFilter;
       toolbar.querySelectorAll('[data-status-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-      apply();
+      scheduleApply();
     });
   });
-  search?.addEventListener('input', apply);
-  league?.addEventListener('change', apply);
-  apply();
+  search?.addEventListener('input', () => {
+    queryLower = (search.value || '').trim().toLocaleLowerCase('it-IT');
+    scheduleApply();
+  });
+  league?.addEventListener('change', scheduleApply);
+  applyNow();
 })();
 </script>
 {% endblock %}
