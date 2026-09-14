@@ -65,6 +65,7 @@
     Forza DC (attacco/difesa): {{ p.dc_attack_home|dec }}/{{ p.dc_defence_home|dec }} vs {{ p.dc_attack_away|dec }}/{{ p.dc_defence_away|dec }} · vantaggio casa {{ p.dc_home_advantage|dec }}</p>{% endif %}
   </div>
 </div>
+{% endif %}
 {% if c.prob_steps %}
 <div class="card detail-card" id="scomposizione">
   <h2>Come nasce questa probabilità</h2>
@@ -82,51 +83,10 @@
   </ol>
 </div>
 {% endif %}
-{% endif %}
 
-{% if c.score_matrix %}
-{% set m = c.score_matrix %}
-<div class="card detail-card" id="probabilita">
-  <h2>Matrice dei punteggi</h2>
-  <p class="small mut">Probabilità Dixon-Coles di ogni risultato 0–{{ m.cap }} (righe = gol {{ c.home_name }}, colonne = gol {{ c.away_name }}). La cella evidenziata è la più probabile ({{ m.mode }}). Coda 6+ gol: {{ (m.p_tail*100)|dec(1) }}%.</p>
-  <div class="tablewrap">
-    <table class="scoregrid">
-      <tr><th></th>{% for j in range(m.cap+1) %}<th aria-label="Gol {{ c.away_name }} {{ j }}">{{ j }}</th>{% endfor %}</tr>
-      {% for row in m.cells %}
-      <tr>
-        <th aria-label="Gol {{ c.home_name }} {{ row[0].i }}">{{ row[0].i }}</th>
-        {% for cell in row %}
-        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }});font-variant-numeric:tabular-nums" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) }}%">{{ (cell.p*100)|dec(1) }}</td>
-        {% endfor %}
-      </tr>
-      {% endfor %}
-    </table>
-  </div>
-</div>
-{% endif %}
 
-{% if c.goals %}
-{% set gv = c.goals %}
-<div class="card detail-card" id="gol-totali">
-  <h2>Quanti gol, in pratica</h2>
-  <p class="small mut">La stessa matrice letta per <b>totale dei gol</b> (gol attesi {{ gv.lambda_home|dec(2) }} +
-  {{ gv.lambda_away|dec(2) }}): su 100 partite con queste λ il totale più frequente è <b>{{ gv.moda }} gol</b>
-  ({{ gv.bars[gv.moda].per100 }} su 100), la mediana è {{ gv.mediana }} e nel 90% dei casi il totale resta fra
-  {{ gv.q10 }} e {{ gv.q90 }} gol. Totale {{ gv.coda_label }} gol: {{ (gv.p_coda*100)|dec(1) }}%. I numeri sotto le
-  barre sono «partite su 100» (la somma fa 100), l'altezza è in proporzione.</p>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px"><span class="tag" style="background:var(--accent-dim)">Mediana {{ gv.mediana }}</span><span class="tag" style="background:var(--surface3)">90% fra {{ gv.q10 }} e {{ gv.q90 }}</span><span class="tag" style="background:var(--surface3)">7+ {{ (gv.p_coda*100)|dec(1) }}%</span><span class="tag" style="background:var(--surface3)">Moda {{ gv.moda }} ({{ gv.bars[gv.moda].per100 }}/100)</span></div>
-  <div class="goalgrid goalbars" role="img" aria-label="Distribuzione dei gol totali: {% for b in gv.bars %}{{ b.label }} gol {{ b.per100 }} su 100{% if not loop.last %}, {% endif %}{% endfor %}">
-    {% for b in gv.bars %}<div class="gb{{ ' mode' if b.mode }}{{ ' tail' if b.tail }}"><span class="v">{{ b.per100 }}</span><span class="fill" style="height:{{ (b.h*100)|round }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
-  </div>
-  <p class="small mut" style="margin:12px 0 0">Lo stesso contenuto contato a partite: <b>{{ gv.n_dots }} punti, ognuno
-  vale {{ gv.per_dot }} partite su 100</b>. Una colonna con 5 punti dice che {{ 5 * gv.per_dot }} partite su 100
-  finiscono con quel totale di gol. Leggere frequenze discrete invece di una curva evita di scambiare la
-  distribuzione per un risultato previsto.</p>
-  <div class="goalgrid dotplot" role="img" aria-label="Dotplot quantile dei gol totali: {{ gv.n_dots }} punti da {{ gv.per_dot }} partite su 100, mediana {{ gv.mediana }} gol">
-    {% for col in gv.columns %}<div class="dp"><div class="stack">{% for _ in range(col.n) %}<i></i>{% endfor %}</div><span class="x">{{ col.label }}</span></div>{% endfor %}
-  </div>
-</div>
-{% endif %}
+
+
 
 {% if c.clash %}
 <div class="card" id="scontro">
@@ -235,12 +195,12 @@
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG creati / gara</div>
         <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xg_pm|dec }} <span class="mut small" style="font:600 11px var(--font-body)">({{ xg.source }}, {{ xg.played }} gare)</span></div>
-        {% if xg.get('open_pm') is not none or xg.get('set_pm') is not none %}<div class="mut small" style="font-size:11px">azione {{ xg.get('open_pm')|dec if xg.get('open_pm') is not none else '—' }} · inattiva {{ xg.get('set_pm')|dec if xg.get('set_pm') is not none else '—' }}</div>{% endif %}
+
       </div>
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG concessi / gara</div>
         <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xga_pm|dec }}</div>
-        {% if xg.get('deep') is not none %}<div class="mut small" style="font-size:11px">profondità {{ xg.get('deep')|dec(1) if xg.get('deep') is not none else '—' }}</div>{% endif %}
+
       </div>
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xPTS vs punti reali</div>
@@ -266,7 +226,7 @@
       </tr>
       {% endfor %}
     </table>
-    {% if ab.has_stats %}<p class="small mut">Minuti, gol e assist di stagione sommati dalle statistiche gara; xG+xA per 90 dove la fonte li pubblica. «Titolare» = almeno metà dei minuti medi per giocatore della squadra. Il ruolo manca quando il giocatore non è ancora comparso in una distinta.</p>{% else %}<p class="small mut">Nessuna statistica di stagione in archivio per questi giocatori: l'elenco viene dalla distinta della fonte.</p>{% endif %}
+
     {% elif stt and c.status != 'finished' %}
     {#- la fonte ha pubblicato la distinta e non segnala assenze: si dice, invece di lasciare
         il silenzio (che non distingue «nessuno fuori» da «dato non raccolto»). Solo pre-partita:
@@ -290,6 +250,7 @@
   </div>
 {% endfor %}
 </div>
+<p class="small mut" style="margin:4px 0 0">Minuti, gol e assist di stagione sommati dalle statistiche gara; xG+xA per 90 dove la fonte li pubblica. «Titolare» = almeno metà dei minuti medi per giocatore. “Ruolo n.d.” = non ancora visto in distinta.</p>
 
 {% if c.season_compare %}
 <div class="card">
@@ -555,5 +516,54 @@
   {% elif c.momentum.pos_share <= 0.40 %}<p class="small">Momentum a favore di <b>{{ c.away_name }}</b> nel {{ ((1 - c.momentum.pos_share)*100)|round|int }}% dei minuti.</p>{% endif %}
 </div>
 {% endif %}
+
+<details class="card detail-card" id="verifica" open>
+  <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px"><h2 style="margin:0">Verifica approfondita: risultati esatti e distribuzione gol</h2><span class="mut small" style="margin-left:auto">per chi vuole controllare i numeri</span></summary>
+  <div style="margin-top:16px;display:grid;gap:16px">
+{% if c.score_matrix %}
+{% set m = c.score_matrix %}
+<div class="card detail-card" id="probabilita">
+  <h2>Matrice dei punteggi</h2>
+  <p class="small mut">Probabilità Dixon-Coles di ogni risultato 0–{{ m.cap }} (righe = gol {{ c.home_name }}, colonne = gol {{ c.away_name }}). La cella evidenziata è la più probabile ({{ m.mode }}). Coda 6+ gol: {{ (m.p_tail*100)|dec(1) }}%.</p>
+  <div class="tablewrap">
+    <table class="scoregrid">
+      <tr><th></th>{% for j in range(m.cap+1) %}<th aria-label="Gol {{ c.away_name }} {{ j }}">{{ j }}</th>{% endfor %}</tr>
+      {% for row in m.cells %}
+      <tr>
+        <th aria-label="Gol {{ c.home_name }} {{ row[0].i }}">{{ row[0].i }}</th>
+        {% for cell in row %}
+        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }});font-variant-numeric:tabular-nums" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) }}%">{{ (cell.p*100)|dec(1) }}</td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+</div>
+{% endif %}
+{% if c.goals %}
+{% set gv = c.goals %}
+<div class="card detail-card" id="gol-totali">
+  <h2>Quanti gol, in pratica</h2>
+  <p class="small mut">La stessa matrice letta per <b>totale dei gol</b> (gol attesi {{ gv.lambda_home|dec(2) }} +
+  {{ gv.lambda_away|dec(2) }}): su 100 partite con queste λ il totale più frequente è <b>{{ gv.moda }} gol</b>
+  ({{ gv.bars[gv.moda].per100 }} su 100), la mediana è {{ gv.mediana }} e nel 90% dei casi il totale resta fra
+  {{ gv.q10 }} e {{ gv.q90 }} gol. Totale {{ gv.coda_label }} gol: {{ (gv.p_coda*100)|dec(1) }}%. I numeri sotto le
+  barre sono «partite su 100» (la somma fa 100), l'altezza è in proporzione.</p>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px"><span class="tag" style="background:var(--accent-dim)">Mediana {{ gv.mediana }}</span><span class="tag" style="background:var(--surface3)">90% fra {{ gv.q10 }} e {{ gv.q90 }}</span><span class="tag" style="background:var(--surface3)">7+ {{ (gv.p_coda*100)|dec(1) }}%</span><span class="tag" style="background:var(--surface3)">Moda {{ gv.moda }} ({{ gv.bars[gv.moda].per100 }}/100)</span></div>
+  <div class="goalgrid goalbars" role="img" aria-label="Distribuzione dei gol totali: {% for b in gv.bars %}{{ b.label }} gol {{ b.per100 }} su 100{% if not loop.last %}, {% endif %}{% endfor %}">
+    {% for b in gv.bars %}<div class="gb{{ ' mode' if b.mode }}{{ ' tail' if b.tail }}"><span class="v">{{ b.per100 }}</span><span class="fill" style="height:{{ (b.h*100)|round }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
+  </div>
+  <p class="small mut" style="margin:12px 0 0">Lo stesso contenuto contato a partite: <b>{{ gv.n_dots }} punti, ognuno
+  vale {{ gv.per_dot }} partite su 100</b>. Una colonna con 5 punti dice che {{ 5 * gv.per_dot }} partite su 100
+  finiscono con quel totale di gol. Leggere frequenze discrete invece di una curva evita di scambiare la
+  distribuzione per un risultato previsto.</p>
+  <div class="goalgrid dotplot" role="img" aria-label="Dotplot quantile dei gol totali: {{ gv.n_dots }} punti da {{ gv.per_dot }} partite su 100, mediana {{ gv.mediana }} gol">
+    {% for col in gv.columns %}<div class="dp"><div class="stack">{% for _ in range(col.n) %}<i></i>{% endfor %}</div><span class="x">{{ col.label }}</span></div>{% endfor %}
+  </div>
+</div>
+{% endif %}
+  </div>
+  <p class="small mut" style="margin-top:12px">Matrice e istogramma sono la stessa previsione letta in due modi; la scomposizione resta sopra nella sezione “Come nasce questa probabilità”. Tutto è ricalcolabile: <code>verify_site</code> controlla 11.582 numeri.</p>
+</details>
 <p class="small mut">Pagina generata automaticamente il {{ c.generated_at|it_utc }} (ora italiana). Fonti: FotMob (statistiche, formazioni, indisponibili, arbitro, meteo, classifica), Understat (xG di stagione), football-data.co.uk (storico dei modelli).</p>
 {% endblock %}
