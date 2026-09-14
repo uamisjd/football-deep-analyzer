@@ -636,7 +636,17 @@ Audit per campo (`audit_match`, 13 campi × 95 schede): **0 «mancante»** dopo 
   (+~1,6 MB/giorno di blob, ~11% della cartella `data/processed` che oggi pesa 3,0 MB) — accettata,
   è il prezzo di 14× la copertura.
 
-### 9.7 Merge PR #28 — miglioramenti modello, fonti, card + regole affinati (2026-09-13, deroga esplicita)
+### 9.8 Merge PR #29 — `dc_elo_tilt` in produzione + sito pubblicato su push (2026-09-14, deroga esplicita)
+
+**Contenuto PR #29** (10 commit, base `main` `b743408`):
+- `predict.py`: `ENSEMBLE_MODE = "tilt"` — l'Elo inclina il rapporto casa/trasferta e il totale dei gol attesi resta quello del modello sui gol; `MODEL_VERSION` `dc-elo-ens-0.3` → **`dc-elo-tilt-0.4`**; limiti di sicurezza (λ ≤ 4,0 per squadra, totale ≤ 5,5) applicati **anche dopo la calibrazione**;
+- `lab.py`: la baseline `dc_elo_prod` passa da `predict.ensemble` (una sola implementazione per sito e laboratorio), la ricetta precedente resta candidato `dc_elo_ge`;
+- dati rigenerati: backtest **5.812 gare**, calibrazione **λ×1,0401 ρ−0,04** (4.760 gare di stima), **2.071 previsioni**;
+- 4 test nuovi (tilt, limiti sui gol attesi pubblicati, ricetta precedente, candidati lab) — suite **176 passed**;
+- le **4 verifiche dal vivo** di `docs/15` §7 eseguite prima del merge: calibrazione λ×1,0401 ρ−0,04 con bias λ −0,024; pagina Accuratezza RPS 0,1988 con pareggio 25,9% dentro il Wilson 95% [24,53%; 26,78%]; **nessuna scheda sopra i limiti** (trovate e strette 2 schede d'archivio fuori limite, λ 4,02 e totali 5,63/5,91, generate prima che i limiti esistessero); lab offline su 5.812 gare con `dc_elo_prod` = tilt e `dc_elo_ge` significativamente peggiore (Δ +0,0005, IC [+0,0001; +0,0009]);
+- `daily.yml`: aggiunto **`push: branches: [main]`** — il sito prima si aggiornava solo ai 5 orari schedulati, che GitHub avvia con **ritardo medio 3,2 ore** (da 1h39m a 5h23m sugli ultimi 20 run).
+
+**Deroga merge PR #29**: l'utente ha scritto «Please merge the pull request» (2026-09-14). In applicazione della regola D (eccezione con deroga esplicita) l'agente esegue `gh pr merge 29 --merge` **dopo aver verificato**: check `test` verdi, PR **MERGEABLE/clean**, `git status --porcelain` vuoto e `git log origin/main..HEAD` con solo il lavoro della PR. Documentata qui e in `STATO.md` undicesimo giro. Deroghe precedenti: PR #23 (2026-09-12), PR #27 e PR #28 (2026-09-13).
 
 **Contenuto PR #28** (commit `f387100` → `14c9dec` → merge `cc80795`):
 - fix `lab.yml` quoting bug: da `EXTRA="--candidates $CANDS"` senza virgolette (solo `dc_elo_prod` in `e6da512`) a `if [ -n "$CANDS" ]; then fda lab ... --candidates "$CANDS" --save else ... fi` — ora dispatch con 5 candidati funziona (verificato locale 1.518 gare, tilt Δ−0,000397 IC negativo 5/7 leghe);
