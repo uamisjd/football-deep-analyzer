@@ -150,7 +150,7 @@
   <h2>Fatti rilevanti</h2>
   <p class="small mut">Streak, testa-a-testa e forma recente (FotMob), tradotti e filtrati. Al più cinque per partita; i testi non traducibili non vengono mostrati.</p>
   <ul class="narr">
-    {% for i in c.insights %}<li><b>{{ i.team }}</b>: {{ i.text }}</li>{% endfor %}
+    {% for i in c.insights %}<li><b>{{ i.team }}</b>: {{ i.text }}{% if 'non perde' in i.text and c.h2h_pattern %} <a href="#contesto" class="small" style="white-space:nowrap">→ precedenti</a>{% endif %}</li>{% endfor %}
   </ul>
 </div>
 {% endif %}
@@ -166,7 +166,7 @@
       <h3 style="margin:0 0 8px">{{ name }}</h3>
       {% if a %}
       <table>
-        <tr><th class="mut small" style="width:78px">data</th><th class="mut small">avversario</th><th class="r" style="width:34px">es.</th><th class="r" style="width:46px">ris.</th><th class="r" style="width:44px">xG</th><th class="r" style="width:44px">xGA</th></tr>
+        <tr><th class="mut small" style="width:78px">data</th><th class="mut small">avversario</th><th class="r" style="width:34px">es.</th><th class="r" style="width:46px">ris.</th><th class="r" style="width:54px" title="xG creato">xG</th><th class="r" style="width:54px" title="xG concesso">xGA</th></tr>
         {% for r in a.rows %}
         <tr>
           <td class="mut small">{{ r.date|it_dt_short }}</td>
@@ -282,7 +282,7 @@
       {% if c.h2h_pattern %}{% set hp = c.h2h_pattern %}<tr><th>Precedenti ({{ hp.n }})</th><td>{{ hp.wins|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ hp.draws|it_plural('pareggio') }} · {{ hp.losses|it_plural('vittoria','vittorie') }} {{ c.away_name }} — archivio dal {{ hp.first|it_dt_full }} al {{ hp.last|it_dt_full }}<br><span class="small">{{ hp.gpg|dec }} gol a gara · entrambe a segno nel {{ (hp.btts * 100)|round|int }}% · più di 2,5 gol nel {{ (hp.over25 * 100)|round|int }}%{% if hp.draw_drought is not none and hp.draw_drought > 0 %} · nessun pareggio negli ultimi {{ hp.draw_drought }}{% elif hp.draw_drought == 0 %} · l'ultimo precedente è finito in pareggio{% endif %}{% if hp.top_scores %} · risultato più frequente {{ hp.top_scores[0].score }} ({{ hp.top_scores[0].n }} {{ 'volta' if hp.top_scores[0].n == 1 else 'volte' }}){% endif %}</span><br><span class="small mut">Esiti dal punto di vista di {{ c.home_name }}. Con {{ hp.n }} casi le frequenze indicano una tendenza, non una regola.</span></td></tr>{% endif %}
     </table>
     {% if c.h2h_list %}<p style="margin-top:10px"><b>Ultimi precedenti</b> <span class="small mut">(esito dal punto di vista di {{ c.home_name }})</span></p>
-    <table>{% for g in c.h2h_list %}<tr><td class="mut small" style="width:86px">{{ g.date }}</td><td class="small">{{ g.home }} <b>{{ g.score }}</b> {{ g.away }}</td><td class="mut small">{{ g.league }}</td><td class="r"><span class="pill {{ g.res }}" title="esito di {{ c.home_name }}">{{ g.res }}</span></td></tr>{% endfor %}</table>
+    <table>{% for g in c.h2h_list %}<tr><td class="mut small" style="width:92px">{{ g.date }}<br><span style="font-size:10px;color:var(--mut2)">{{ g.league }}</span></td><td class="small">{{ g.home }} <b>{{ g.score }}</b> {{ g.away }}</td><td class="r"><span class="pill {{ g.res }}" title="{{ g.home }} {{ g.score }} {{ g.away }} — esito {{ c.home_name }}">{{ g.res }}</span></td></tr>{% endfor %}</table>
     {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">{% if c.h2h_stats.n == 1 %}Nel precedente mostrato:{% else %}Nei {{ c.h2h_stats.n }} precedenti mostrati:{% endif %} <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}% dei casi.</p>{% endif %}
     {% endif %}
   </div>
