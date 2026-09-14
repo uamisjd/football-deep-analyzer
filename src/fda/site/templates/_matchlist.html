@@ -44,7 +44,7 @@
     <div class="projection-copy">
       <span class="eyebrow">Lettura del modello</span>
       {% if meta %}<strong>{{ meta.top_name }} <span class="projection-p">{{ (meta.top_probability * 100)|round|int }}%</span></strong>
-      <span class="projection-note">favorito · +{{ meta.margin_pp|dec(1) }} pp sul 2° ({{ meta.second_name }} {{ (meta.second_probability*100)|round|int }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
+      <span class="projection-note">favorito · +{{ meta.margin_pp|dec(1) }} punti sul secondo ({{ meta.second_name }} {{ (meta.second_probability*100)|round|int }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
     </div>
     <div class="mini-probability">
       {% set fav_i = 0 if p.p_home >= p.p_draw and p.p_home >= p.p_away else 1 if p.p_draw >= p.p_away else 2 %}
@@ -54,9 +54,9 @@
       <div class="prob-labels"><span{% if fav_i==0 %} class="is-fav"{% endif %}>1 {{ (p.p_home * 100)|round|int }}%</span><span{% if fav_i==1 %} class="is-fav"{% endif %}>X {{ (p.p_draw * 100)|round|int }}%</span><span{% if fav_i==2 %} class="is-fav"{% endif %}>2 {{ (p.p_away * 100)|round|int }}%</span></div>
     </div>
   </div>
-  {% if meta %}<div class="signal signal-{{ meta.signal_tone }}" title="{% if meta.signal_tone == 'agree' %}Dixon-Coles e Elo concordano sullo stesso preferito{% elif meta.signal_tone == 'split' %}Dixon-Coles ed Elo indicano preferiti diversi{% else %}Solo modello sui gol{% endif %}{% if meta.has_dc and meta.has_elo and meta.dc_top_prob is not none and meta.elo_top_prob is not none %} — DC {{ (meta.dc_top_prob*100)|round|int }}% ({{ meta.dc_top_name }}) vs Elo {{ (meta.elo_top_prob*100)|round|int }}% ({{ meta.elo_top_name }}) scarto sul preferito {{ (meta.elo_gap_top_pp if meta.elo_gap_top_pp is not none else meta.elo_gap_pp)|dec(1) }} punti{% elif meta.elo_gap_pp is not none %} — scarto max {{ meta.elo_gap_pp|dec(1) }} punti{% endif %}">
+  {% if meta %}<div class="signal signal-{{ meta.signal_tone }}" title="{{ meta.signal_label }}{% if meta.has_dc and meta.has_elo and meta.dc_top_prob is not none and meta.elo_top_prob is not none %} — DC {{ (meta.dc_top_prob*100)|round|int }}% ({{ meta.dc_top_name }}) vs Elo {{ (meta.elo_top_prob*100)|round|int }}% ({{ meta.elo_top_name }}){% endif %}">
     <span aria-hidden="true">{% if meta.signal_tone == 'agree' %}✓{% elif meta.signal_tone == 'split' %}↔{% else %}·{% endif %}</span>
-    {% if 'Stesso preferito' in meta.signal_label or meta.signal_tone == 'agree' %}Stesso preferito{% elif 'Preferiti diversi' in meta.signal_label or meta.signal_tone == 'split' %}Preferiti diversi{% else %}{{ meta.signal_label }}{% endif %}{% if meta.elo_gap_top_pp is not none %} · scarto {{ meta.elo_gap_top_pp|dec(1) }} punti sul preferito{% elif meta.elo_gap_pp is not none %} · scarto {{ meta.elo_gap_pp|dec(1) }} punti{% endif %}
+    {{ meta.signal_label }}
   </div>{% endif %}
   <div class="model-foot" title="Gol attesi del modello (non media xG delle ultime gare): {{ p.lambda_home|dec }} casa + {{ p.lambda_away|dec }} trasferta = {{ (p.lambda_home + p.lambda_away)|dec }} totali. Over 2,5 al {{ (p.p_over25*100)|round|int }}% significa {{ (p.p_over25*100)|round|int }} partite su 100 con 3 o più gol">
     <span class="fact-label" style="font-size:10px">Modello</span> Gol attesi <b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b> · Over 2,5 <b>{{ (p.p_over25 * 100)|round|int }}%</b> <span class="mut">({{ (p.p_over25*100)|round|int }} su 100 con 3+ gol)</span>{% if p.prior_di_lega %} · <span class="warn" title="Squadra senza storico sufficiente: usate medie di lega (prior)">prior di lega</span>{% endif %}{% if p.lambda_limitata %} · <span class="mut" title="λ limitate per coerenza (tetto {{ p.lambda_home|dec }}–{{ p.lambda_away|dec }})">λ limitate</span>{% endif %}

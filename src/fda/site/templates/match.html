@@ -18,9 +18,9 @@
   {% if p and p.prior_di_lega %}<div style="margin-top:10px;padding:8px 12px;background:var(--surface2);border:1px dashed var(--line2);border-radius:8px;color:var(--mut);font-size:12px">Prior di lega: una o entrambe le squadre hanno storico insufficiente (neopromossa) — λ neutre di lega, non stima affidabile.</div>{% endif %}
   {% if p and p.meta %}
   <div class="hero-model">
-    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut">Margine sul secondo esito: {{ p.meta.margin_pp|dec(1) }} punti ({{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}%)</span></div>
+    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut">Margine sul secondo esito: +{{ p.meta.margin_pp|dec(1) }} punti ({{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}%)</span></div>
     <div class="hero-metrics"><span class="hero-metric"><b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b><span>gol attesi</span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
-    <span class="hero-signal" title="{{ p.meta.signal_label }}{% if p.meta.elo_gap_top_pp is not none %} · scarto {{ p.meta.elo_gap_top_pp|dec(1) }} punti sul preferito{% elif p.meta.elo_gap_pp is not none %} · scarto {{ p.meta.elo_gap_pp|dec(1) }} punti{% endif %}">{{ p.meta.signal_label }}</span>
+    <span class="hero-signal" title="{{ p.meta.signal_label }}">{{ p.meta.signal_label }}</span>
   </div>
   {% elif p %}<p class="small mut" style="margin:0">Probabilità del modello disponibili nella scheda qui sotto.</p>{% endif %}
 </div>

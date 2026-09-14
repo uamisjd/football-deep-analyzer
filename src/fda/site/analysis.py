@@ -452,22 +452,23 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         except Exception:
             elo_gap_top_pp = elo_gap_pp
 
+    def _comma(x: float | None, nd: int = 1) -> str:
+        return "" if x is None else f"{float(x):.{nd}f}".replace(".", ",")
+
     # etichetta più esplicita per l'utente non specialista (audit 3.1)
     if has_elo and top_key == elo_top:
         if elo_gap_top_pp is not None and elo_gap_top_pp < 5:
-            signal_label = f"Stesso preferito · scarto {elo_gap_top_pp:.1f} punti sul preferito"
+            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito"
             signal_tone = "agree"
         else:
-            signal_label = f"Stesso preferito · scarto {elo_gap_top_pp:.1f} punti sul preferito" if elo_gap_top_pp is not None else "Stesso preferito"
+            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito" if elo_gap_top_pp is not None else "Stesso preferito"
             signal_tone = "agree"
     elif has_elo and top_key != elo_top:
         # quando il blend e l'Elo divergono: se ho entrambi i modelli mostro il confronto DC vs Elo,
         # altrimenti etichetta generica (test con solo blend+Elo, senza DC)
         if has_dc and dc_top is not None and dc_top_prob is not None and elo_top is not None and elo_top_prob is not None:
-            if elo_gap_top_pp is not None and elo_gap_top_pp < 8:
-                signal_label = f"Preferiti diversi · DC {names[dc_top]} {int(round(dc_top_prob*100))}% vs Elo {names[elo_top]} {int(round(elo_top_prob*100))}%"
-            else:
-                signal_label = f"Preferiti diversi · DC {names[dc_top]} {int(round(dc_top_prob*100))}% vs Elo {names[elo_top]} {int(round(elo_top_prob*100))}%"
+            # label già con percentuali intere, non serve virgola
+            signal_label = f"Preferiti diversi · DC {names[dc_top]} {int(round(dc_top_prob*100))}% vs Elo {names[elo_top]} {int(round(elo_top_prob*100))}%"
             signal_tone = "split"
         else:
             signal_label = "DC ed Elo divergono"
