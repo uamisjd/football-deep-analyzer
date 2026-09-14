@@ -73,13 +73,13 @@ e la verifica va fatta in GitHub Actions.
 | § | Riscontro | Sev. | Misura chiave |
 |---|---|---|---|
 | 3.1 | CSS inline duplicato 4.128 volte | **P0** | **144,4 MB su 248,3 MB (58%)**; 65% di ogni scheda giocatore |
-| 3.2 | Tema chiaro da OS: 7 token mancanti | **P0** | `--accent` su bianco = **2,15:1**; hover **1,78:1** |
+| 3.2 | ✅ Tema chiaro: 3 testi **invisibili** (V della forma, selezione, punteggio più probabile) + fallback OS senza 18 token | **P0** | peggio **1,02:1**; la barra 1X2 ospite a **2,92:1** in **entrambi** i temi |
 | 3.3 | Barre 1X2 che sommano 99/101 — la fix esiste già, non è collegata | **P0** | **37/167** hero (22,2%) + **64/277** steps |
 | 3.4 | Barre dei gol oltre il contenitore | **P0** | **5 pagine** con `height:183%`/`163%`/`108%`/`104%` |
-| 3.5 | 21 coppie di colore sotto AA nel tema chiaro | **P0** | peggio **1,36:1**; tabella dei valori corretti inclusa |
+| 3.5 | ✅ Palette chiara ricalcolata su 4 superfici | **P0** | da **21** coppie sotto AA a **0**; 14 test nuovi senza browser |
 | 3.6 | 0 skip-link, 0 `<th scope>` su 99.839, salto h2→h4 ovunque | P1 | **4.128/4.128** pagine |
 | 3.7 | 62 selettori CSS duplicati (fix accodate, non integrate) | P1 | bordo header scuro in tema chiaro |
-| 3.8 | 35 colori hard-coded fuori dai token | P2 | 66 occorrenze su 109 |
+| 3.8 | Colori hard-coded fuori dai token (in parte già risolti con §3.2) | P2 | 66 occorrenze → **19**; 35 colori → **14** |
 | 3.9 | Font esterni: 3 richieste a Google su ogni pagina | P2 | render-blocking + terza parte GDPR |
 | 3.10 | `prossime.html` 1.513 KB, filtro che ricalcola a ogni tasto | P1 | 1.987 card in una pagina |
 | 3.11 | Layout 320px: 8 regole OK, 4 aspetti **NON VERIFICATI** (no browser) | P2 | `.match-open` a 11px candidato sotto i 44 px |
@@ -1704,91 +1704,80 @@ aprire una pagina in `partite/` e una in `giocatori/` e verificare che il tema s
 
 ---
 
-## 3.2 [P0] Tema chiaro da preferenze OS: **7 token mancanti** → testo accent a 2,15:1
+## 3.2 [P0 — ✅ RISOLTO in questa sessione] Tema chiaro: tre testi **invisibili** e un fallback senza 18 token
 
-**Osservato.** `base.html` ha **due** definizioni del tema chiaro:
+**Correzione di una mia valutazione precedente.** In prima lettura avevo attribuito al blocco
+`@media (prefers-color-scheme: light)` incompleto un impatto su "tutti i visitatori in tema chiaro".
+**Era sbagliato**: `base.html:18` esegue uno script inline che legge le preferenze dell'OS e imposta
+subito `data-theme="light"`, quindi la palette completa di `[data-theme="light"]` si applica
+normalmente. Il blocco `@media` è il **fallback per chi non esegue JavaScript**: lì mancavano
+18 token su 30, e solo in quel caso l'accento restava `#28c893` su bianco (2,15:1).
+Impatto reale più stretto di quanto scritto — ma il difetto c'era.
 
-```css
-[data-theme="light"]{            /* 19 token: bg, bg2, surface, surface2, surface3, line, line2,
-+                                   txt, txt2, mut, mut2, accent, accent-soft, accent-dim,
-+                                   win, draw, lose, amber, info                       */ }
+I difetti **gravi** invece colpiscono tutti gli utenti in tema chiaro, e stavano in colori
+hard-coded che nessuna palette copriva. Più uno che colpisce **entrambi** i temi:
 
-@media (prefers-color-scheme: light){
-  :root:not([data-theme="dark"]){ /* 12 token: bg, bg2, surface, surface2, surface3, line, line2,
-+                                    txt, txt2, mut, mut2, accent-dim                     */ }
-}
-```
+| Elemento | Prima | Contrasto | Effetto per chi legge |
+|---|---|---|---|
+| `.form-dot.V` — la «V» della guida-forma | testo `#9df0cf` su `--accent-dim` `#d6f0e6` | **1,11:1** | **invisibile**: su ogni card la prima delle ultime 5 gare spariva (le altre due, N e P, avevano sfondo hard-coded scuro e restavano leggibili → la guida sembrava rotta a caso) |
+| `::selection` — testo selezionato | `#eaf0f6` su velatura chiara | **1,02:1** | **invisibile**: selezionando una frase non si legge cosa si è selezionato |
+| `.scoregrid td.mode` — punteggio più probabile | override chiaro `color:#ffffff` sul verde della heatmap | **2,09:1** | illeggibile proprio la cella che la didascalia indica come «la più probabile» |
+| `a:hover` | `#4cd9a8` hard-coded | **1,78:1** | i link sparivano al passaggio del mouse |
+| `.updated .ver` — pill della versione | `--brand-a` `#2ee59d` su `#d6f0e6` | **1,36:1** | illeggibile |
+| `.prob-labels span:last-child` | `#ef918b` hard-coded | **1,92:1** | illeggibile |
+| legende dei grafici (4 righe) | `#28c893` / `#4c9dd3` / `#e0605a` / `#7f8aa0` | 2,15 / 2,97 / 3,51 / 3,47 | pallini quasi invisibili; il grafico **sopra** invece è leggibile (canvas scuro proprio: contrasto interno 5,0-9,4:1) |
+| `.bar .a` — segmento «2» della barra 1X2 | gradiente con stop scuro `#b2403b`, testo `#06231a` | **2,92:1** | **in entrambi i temi**: la percentuale della squadra ospite illeggibile nella metà bassa della barra |
+| `.bar .h` — segmento «1» | stop scuro `#1b9270` | 4,27:1 | in entrambi i temi, appena sotto AA |
+| tema **scuro**: `--lose` e `--draw` usati come testo | `#e0605a` / `#7f8aa0` su `#212c3a` | 4,03 / 4,07 | `.bad`, `.status-live`, `.cal-fav-*` sotto AA anche al buio (difetto pre-esistente, trovato dal test nuovo) |
 
-Mancano nel blocco `@media`: **`--accent`, `--accent-soft`, `--win`, `--draw`, `--lose`, `--amber`, `--info`**.
+**Soluzione applicata.**
 
-**Misura.** Un visitatore con il sistema operativo in modalità chiara che **non tocca il toggle**
-(è il caso più frequente: il toggle serve solo a chi vuole cambiare) ottiene superfici chiare
-con i colori accent del tema scuro:
+1. **Otto token di foreground nuovi** in `:root`, con i valori **già in uso** (il tema scuro non
+   cambia di una virgola): `--accent-hover`, `--accent-strong`, `--on-accent`, `--sel-bg`/`--sel-fg`,
+   `--lose-soft`, i tre gruppi chip `--v-bg/-fg/-line`, `--n-*`, `--p-*`, e i sei campioni legenda
+   `--leg-home/-away/-save/-draw/-block/-off`.
+2. **Ogni hard-coded sostituito** con il token corrispondente: `a:hover`, `::selection`,
+   `::-moz-selection`, `.updated .ver`, `nav a[aria-current]`, `.posbtn[aria-pressed]`, `.tag`,
+   `.hero-signal`, `.filter-button[aria-pressed]`, `.signal-agree span`, `.V/.N/.P`,
+   `.form-dot.V/.N/.P`, `.prob-labels span:last-child`, il bordo dell'header, le 3 legende di `match.html`.
+3. **Palette chiara ricalcolata** per stare ≥ 4,5:1 su **quattro** superfici (non tre: anche
+   `--surface3 #e2e8f0`, così una regola futura che appoggia un accento su quel fondo non rompe
+   il vincolo). Valori in §3.5.
+4. **Fallback `@media` completato**: dichiara gli stessi 30 token con gli stessi valori.
+5. **Gradienti della barra 1X2 corretti**: `.bar .h` stop scuro `#1b9270` → `#1c9874` (4,59:1);
+   `.bar .a` → `linear-gradient(180deg,#e8685f,#e0605a)`, cioè si schiarisce lo stop **chiaro** e si
+   tiene `#e0605a` — il rosso del marchio — come punto più scuro (4,74:1). Il segmento X resta
+   `#7f8aa0` con testo proprio `#0d1420` (5,31:1).
+6. **Override `[data-theme="light"] .scoregrid td.mode` eliminato**: la cella ha già lo sfondo verde
+   dal template e il testo scuro `#06231a` rende 7,95:1 in entrambi i temi.
+7. **Tema scuro**: `--lose` `#e0605a` → `#f06760` (4,59:1) e `--draw` `#7f8aa0` → `#8793aa` (4,57:1).
+   I gradienti della barra non usano questi token, quindi l'aspetto della barra è invariato.
+8. **14 test nuovi** in `tests/test_tema_contrasto.py`: verificano il contrasto **senza browser**
+   e — punto qualificante — **derivano dal CSS** quali token sono usati come testo, quindi se domani
+   una regola nuova usa `--accent-soft` come colore di testo il test inizia a pretendere 4,5:1 da solo.
 
-| Coppia | Contrasto | WCAG AA (4,5:1) |
+**Eccezioni dichiarate nel test** (non sono falsi positivi nascosti, sono requisiti diversi):
+
+| Caso | Requisito applicato | Motivo |
 |---|---|---|
-| `--accent` scuro `#28c893` su `#ffffff` | **2,15:1** | **FALLISCE** (anche per testo grande: <3:1) |
-| `a:hover{color:#4cd9a8}` su `#ffffff` | **1,78:1** | **FALLISCE** |
-| `a:hover` su `--surface2 #eef2f6` | **1,58:1** | **FALLISCE** |
-| `--brand-a #2ee59d` su `#ffffff` | 1,64:1 | FALLISCE |
-| `--brand-b #e7b23c` su `#ffffff` | 1,94:1 | FALLISCE |
+| `.bar`, `.scoregrid td.mode` | verificati a parte sui loro sfondi reali | lo sfondo non è nella stessa regola (gradienti figli / inline style del template) |
+| `.fact-separator` | nessuno | separatore decorativo «·», colorato come il token del bordo di proposito |
+| `--leg-*` (pallini delle legende) | **3:1** (WCAG 1.4.11, grafica non testuale) | il glifo «●» è un campione di colore, non un carattere da leggere; resta identico al colore della serie nel grafico |
+| superfici e bordi (`--bg`, `--line`, …) | nessuno | WCAG 1.4.11 vale per l'informazione **necessaria a capire il contenuto**; pretendere 3:1 sulle card significherebbe snaturare il design |
+| canvas dei grafici `#101a24` | 3:1 sui colori dei **dati**, 1,3:1 sul tratteggio del campo | scelta deliberata: il pannello è scuro in entrambi i temi; il tratteggio è contesto, non informazione |
 
-**Impatto.** L'accento è usato per **link, numeri chiave, barre dei preferiti, pill "OK", bordi attivi**:
-in tema chiaro da OS è verde brillante su bianco, illeggibile per una fetta ampia di utenti
-(daltonismo + ipovedenti in particolare, ma sotto la luce del sole anche per tutti gli altri).
-È il difetto visivo più grave del sito perché colpisce **la maggioranza dei visitatori**
-(mobile = tema chiaro di default) e **non è visibile sviluppando in tema scuro**.
+**Verifica eseguita.**
 
-**Soluzione.** Il blocco `@media` deve dichiarare **la stessa palette completa**. Meglio: una sola
-fonte, con il tema chiaro come insieme di token riutilizzato.
-
-```css
- /* light mode: stesso design, superfici chiare — toggle manuale + prefers-color-scheme */
- @media (prefers-color-scheme: light){
-   :root:not([data-theme="dark"]){
-     --bg:#f4f6f8; --bg2:#ffffff; --surface:#ffffff; --surface2:#eef2f6; --surface3:#e2e8f0;
-     --line:#d0d8e6; --line2:#b8c4d8;
-     --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#6b7f9a;
-     --accent-dim:#d6f0e6;
-+    /* mancavano 7 token: senza questi, chi ha il sistema in tema chiaro e non tocca il toggle
-+       ottiene superfici chiare con i colori del tema scuro. --accent #28c893 su bianco e'
-+       2,15:1 e a:hover #4cd9a8 e' 1,78:1: illeggibili (docs/19 §3.2). Stessi valori di
-+       [data-theme="light"], che resta l'unica altra definizione della palette chiara. */
-+    --accent:#177d5c; --accent-soft:#1a8a65;
-+    --win:#177c5b; --draw:#5d6e86; --lose:#c5403a; --amber:#866a17; --info:#2671b5;
-   }
- }
+```bash
+$ .venv/bin/python -m pytest -q                        # 190 passed (176 + 14 nuovi)
+$ .venv/bin/ruff check tests/test_tema_contrasto.py    # All checks passed!
+$ .venv/bin/fda build                                  # 2m22s, 4.123 pagine
+$ .venv/bin/python scripts/verify_site.py              # nessun problema · 11.565 controlli
 ```
 
-*(i valori sono quelli calcolati nel §3.3 per rispettare 4,5:1 su tutte e tre le superfici chiare;
-`[data-theme="light"]` va aggiornato agli stessi valori, così le due definizioni coincidono.)*
+**NON verificato qui** (serve un browser): la resa effettiva dei due temi. Da fare in preview o con
+Lighthouse CI (§3.11) — il contrasto è garantito dall'aritmetica, l'estetica no.
 
-E il colore di hover hard-coded deve diventare un token:
-
-```css
--a:hover{color:#4cd9a8}
-+a:hover{color:var(--accent-hover)}
-```
-con `--accent-hover:#4cd9a8` in `:root` (scuro) e `--accent-hover:#146b4f` nel tema chiaro
-(4,98:1 su bianco).
-
-**Verifica.** Script di controllo (da aggiungere come test, non come script usa-e-getta):
-
-```python
-def test_tema_chiaro_completo():
-    """Il blocco @media light deve dichiarare gli stessi token di [data-theme="light"]."""
-    css = (TEMPLATES / "base.html").read_text(encoding="utf-8")
-    def tokens(blocco):
-        return set(re.findall(r"--([a-z0-9-]+)\s*:", blocco))
-    esplicito = tokens(re.search(r'\[data-theme="light"\]\{(.*?)\}', css, re.S).group(1))
-    media = tokens(re.search(r"prefers-color-scheme:\s*light\)\{.*?:root[^{]*\{(.*?)\}", css, re.S).group(1))
-    assert esplicito - media == set(), f"token mancanti nel tema chiaro da OS: {esplicito - media}"
-```
-
-Più: **verifica manuale obbligatoria** (non eseguibile in sandbox) — impostare il sistema in tema
-chiaro, aprire il sito senza toccare il toggle, controllare che link e numeri verdi siano leggibili.
-
----
 
 ## 3.3 [P0] Barre 1X2: il 22% delle schede pubblica percentuali che sommano 99 o 101 — e la correzione esiste già
 
@@ -1935,106 +1924,68 @@ Più il controllo permanente in `verify_site.py` (§2.11b): `height > 100%` → 
 
 ---
 
-## 3.5 [P0] Tema chiaro dichiarato: **21 coppie di colori sotto 4,5:1**, con i valori corretti già calcolati
+## 3.5 [P0 — ✅ RISOLTO in questa sessione] Palette del tema chiaro ricalcolata: da 21 coppie sotto AA a 0
 
-**Osservato.** Anche quando il tema chiaro è attivato **esplicitamente** (toggle), 21 coppie
-colore/superficie non raggiungono il rapporto AA per il testo normale. Misura con la formula WCAG 2.1
-(luminanza relativa, `(L1+0,05)/(L2+0,05)`):
+**Osservato (misura corretta).** La prima versione di questo audit contava 21 coppie sotto 4,5:1
+confrontando i token con **tre** superfici. Rieseguendo la misura su **quattro** superfici (inclusa
+`--surface3 #e2e8f0`, che oggi porta solo testo `--txt`/`--txt2` ma domani potrebbe portare un accento)
+i valori necessari sono leggermente più scuri. Tabella definitiva, con il requisito
+**min 4,5:1 su tutte e quattro**:
 
-| Primo piano | Su | Contrasto | Esito |
-|---|---|---|---|
-| `--mut2 #6b7f9a` | `--surface #ffffff` | 4,10:1 | sotto AA |
-| `--mut2` | `--bg #f4f6f8` | 3,78:1 | sotto AA |
-| `--mut2` | `--surface2 #eef2f6` | 3,64:1 | sotto AA |
-| `--accent #1d9a71` | `--surface` | 3,55:1 | sotto AA |
-| `--accent` | `--bg` | 3,28:1 | sotto AA |
-| `--accent` | `--surface2` | 3,16:1 | sotto AA |
-| `--accent-soft #1a8a65` | `--surface` | 4,31:1 | sotto AA |
-| `--win #1a8a65` | `--surface` | 4,31:1 | sotto AA |
-| `--draw #6b7f9a` | `--surface` | 4,10:1 | sotto AA |
-| `--amber #9a7a1a` | `--surface` | 4,06:1 | sotto AA |
-| `--info #2a7cc7` | `--surface` | 4,37:1 | sotto AA |
-| `--win` | `--bg` | 3,98:1 | sotto AA |
-| `--draw` | `--bg` | 3,78:1 | sotto AA |
-| `--amber` | `--bg` | 3,75:1 | sotto AA |
-| `--info` | `--bg` | 4,03:1 | sotto AA |
-| `--brand-a #2ee59d` | `--surface` | **1,64:1** | FAIL <3 |
-| `--brand-b #e7b23c` | `--surface` | **1,94:1** | FAIL <3 |
-| `--brand-a` | `--bg` | **1,51:1** | FAIL <3 |
-| `--brand-b` | `--bg` | **1,79:1** | FAIL <3 |
-| `--accent` su `--accent-dim #d6f0e6` | — | 2,95:1 | FAIL <3 |
-| `--brand-a` su `--accent-dim` | — | **1,36:1** | FAIL <3 |
-| `.scoregrid td.mode{color:#ffffff}` su `--accent` chiaro | — | 3,55:1 | sotto AA |
+| Token | Prima | **Applicato** | Min su 4 superfici | Dove si vede |
+|---|---|---|---|---|
+| `--accent` | `#1d9a71` (3,16:1) | **`#167657`** | 4,53:1 | tutti i link, `h2`, `.status-scheduled`, `.kicker`, `.projection-p` |
+| `--accent-soft` | `#1a8a65` (3,84:1) | **`#177656`** | 4,53:1 | bordi attivi, riempimenti (grafica → basterebbe 3:1) |
+| `--win` | `#1a8a65` (3,84:1) | **`#177656`** | 4,53:1 | `.good`, `.prob-labels`, `.cal-fav-h` |
+| `--draw` | `#6b7f9a` (3,64:1) | **`#596980`** | 4,53:1 | `.cal-fav-d`, barre coda |
+| `--lose` | `#c5403a` (4,48:1) | **`#b93c37`** | 4,53:1 | `.bad`, `.status-live`, `.cal-fav-a` |
+| `--amber` | `#9a7a1a` (3,61:1) | **`#7f6516`** | 4,51:1 | `.warn`, `.signal-split`, `.fact-absence`, `.gb.mode .v` |
+| `--info` | `#2a7cc7` (3,88:1) | **`#246bad`** | 4,50:1 | link informativi |
+| `--mut2` | `#6b7f9a` (3,64:1) | **`#596980`** | 4,53:1 | date, minuti, didascalie, `.match-score span` |
+| `--brand-a` | `#2ee59d` (1,46:1) | **`#187651`** | 4,54:1 | la «C» del wordmark |
+| `--brand-b` | `#e7b23c` (1,72:1) | **`#816421`** | 4,51:1 | la «M» del wordmark |
+| `--accent-hover` *(nuovo)* | `#4cd9a8` hard-coded (1,78:1) | **`#146b4f`** | 5,25:1 | `a:hover` |
+| `--accent-strong` *(nuovo)* | `--accent` su `--accent-dim` (4,23:1) | **`#146b4f`** | 5,38:1 su `#d6f0e6` | pill versione, `.tag`, filtro attivo, segnale concorde |
+| `--on-accent` *(nuovo)* | `#06231a` hard-coded | **`#ffffff`** | 5,09:1 su `--accent` | nav corrente, posizione attiva |
+| `--lose-soft` *(nuovo)* | `#ef918b` hard-coded (1,92:1) | **`#b23a34`** | 4,80:1 | etichetta probabilità ospite |
+| `--v-fg`/`--n-fg`/`--p-fg` *(nuovi)* | `#9df0cf`/`#cbd5e2`/`#f7b9b2` | **`#14694d`/`#3d4c60`/`#9c322c`** | 5,64 / 7,30 / 5,95:1 sui rispettivi `--*-bg` | chip e form-dot V/N/P |
+| `--sel-fg` *(nuovo)* | `#eaf0f6` (1,02:1) | **`#0f1a2b`** | 14,05:1 | testo selezionato |
 
-Tema **scuro** (quello di sviluppo): tutti i token di testo passano; falliscono solo
-`brand_a/brand_b` su superficie (1,5-1,9:1) e `accent` su `accent-dim` — usati per il logo e per i
-fondi decorativi, dove il requisito è 3:1 (non testi). **Da verificare caso per caso se quei colori
-portano testo**: se sì, vanno corretti anche nel tema scuro.
+Tema **scuro**: invariato tranne `--lose` → `#f06760` (da 4,03 a 4,59:1) e `--draw` → `#8793aa`
+(da 4,07 a 4,57:1), entrambi usati come testo da `.bad`, `.status-live`, `.cal-fav-*`.
 
-**Valori corretti già calcolati** (minimo 4,5:1 su tutte e tre le superfici chiare
-`#ffffff`, `#f4f6f8`, `#eef2f6`):
+**Nota sul wordmark.** Le lettere «C» e «M» a 1,46:1 e 1,72:1 sarebbero **esenti** dal requisito
+WCAG (1.4.3 esclude il testo che fa parte di un logo), quindi non era un obbligo: sono state scurite
+comunque perché a 1,5:1 su bianco il marchio di fatto non si leggeva alla luce del sole.
+Il gradiente del logo **grafico** (la favicon e il `.mark` SVG) resta quello originale: è un'immagine,
+non testo, e il requisito 3:1 per gli elementi grafici non si applica ai logotipi.
 
-| Token | Oggi | **Proposto** | Contrasto minimo ottenuto |
-|---|---|---|---|
-| `--accent` | `#1d9a71` | **`#177d5c`** | 4,53:1 |
-| `--mut2` | `#6b7f9a` | **`#5d6e86`** | 4,62:1 |
-| `--win` | `#1a8a65` | **`#177c5b`** | 4,59:1 |
-| `--draw` | `#6b7f9a` | **`#5d6e86`** | 4,62:1 |
-| `--amber` | `#9a7a1a` | **`#866a17`** | 4,57:1 |
-| `--info` | `#2a7cc7` | **`#2671b5`** | 4,54:1 |
-| `--brand-a` (se porta testo) | `#2ee59d` | **`#197c55`** | 4,60:1 |
-| `--brand-b` (se porta testo) | `#e7b23c` | **`#886923`** | 4,56:1 |
-| `--lose` | `#c5403a` | **`#c33f39`** | 4,56:1 |
-| hover link | `#4cd9a8` (hard-coded) | **`#146b4f`** (token `--accent-hover`) | 4,98:1 |
+**Verifica.** `pytest tests/test_tema_contrasto.py -q` → 14 passed. Il test che protegge questa
+tabella è `test_contrasto_token_di_testo_aa[light]`: ricava l'elenco dei token di testo dal CSS e
+li confronta con le quattro superfici chiare. Per reprodure la misura a mano:
 
-**Impatto.** Il tema chiaro è quello che vede la maggioranza dei visitatori mobili. Testo secondario
-a 3,6:1 (`--mut2` su `--surface2`) è la classe di contenuto che include **date, minuti, didascalie,
-legende delle tabelle**: esattamente le informazioni che servono per interpretare i numeri principali.
-
-**Soluzione.** Sostituire i valori nel blocco `[data-theme="light"]` **e** nel blocco `@media`
-(§3.2) con quelli della tabella. I brand restano `#2ee59d`/`#e7b23c` **solo dove non portano testo**
-(logo, gradienti decorativi): in quel caso il requisito è 3:1 per elementi grafici, e 1,64:1 resta
-sotto — quindi o si scuriscono anche lì, o si aggiunge un contorno/ombra. Scelta consigliata: nel
-tema chiaro il logo usa i token scuriti, nel tema scuro gli originali.
-
-**Verifica.** Test automatico (il contrasto è calcolabile senza browser — questo **è** verificabile
-in sandbox e va messo nei test):
-
-```python
-# tests/test_site.py
-+LIGHT_TOKENS = {  # copia dei valori dichiarati in base.html: il test li rilegge dal CSS, non da qui
-+}
-+
-+
-+def _tokens(blocco_css: str) -> dict[str, str]:
-+    return dict(re.findall(r"--([a-z0-9-]+)\s*:\s*(#[0-9a-fA-F]{6})", blocco_css))
-+
-+
-+def _contrast(fg: str, bg: str) -> float:
-+    def lum(h):
-+        r, g, b = (int(h[i:i + 2], 16) / 255 for i in (1, 3, 5))
-+        f = lambda c: c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
-+        return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b)
-+    a, b = lum(fg), lum(bg)
-+    hi, lo = max(a, b), min(a, b)
-+    return (hi + 0.05) / (lo + 0.05)
-+
-+
-+def test_contrasto_tema_chiaro_aa():
-+    css = (TEMPLATES / "base.html").read_text(encoding="utf-8")
-+    t = _tokens(re.search(r'\[data-theme="light"\]\{(.*?)\}', css, re.S).group(1))
-+    superfici = ("bg", "bg2", "surface", "surface2", "surface3")
-+    testi = ("txt", "txt2", "mut", "mut2", "accent", "accent-soft", "win", "draw", "lose", "amber", "info")
-+    bad = [(fg, bg, round(_contrast(t[fg], t[bg]), 2))
-+           for fg in testi if fg in t for bg in superfici if bg in t
-+           if _contrast(t[fg], t[bg]) < 4.5]
-+    assert not bad, f"coppie sotto AA 4,5:1 nel tema chiaro: {bad}"
+```bash
+$ .venv/bin/python - <<'EOF'
+import re
+def lum(h):
+    h=h.lstrip('#'); r,g,b=[int(h[i:i+2],16)/255 for i in (0,2,4)]
+    f=lambda c: c/12.92 if c<=0.03928 else ((c+0.055)/1.055)**2.4
+    return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b)
+def cr(a,b):
+    la,lb=lum(a),lum(b); return (max(la,lb)+0.05)/(min(la,lb)+0.05)
+css=re.search(r'<style>(.*?)</style>',open('src/fda/site/templates/base.html',encoding='utf-8').read(),re.S).group(1)
+light=dict(re.findall(r'--([a-z0-9-]+)\s*:\s*(#[0-9a-f]{6})',re.search(r'\[data-theme="light"\]\{(.*?)\}',css,re.S).group(1)))
+sup=['#ffffff','#f4f6f8','#eef2f6','#e2e8f0']
+for k,v in sorted(light.items()):
+    m=min(cr(v,s) for s in sup)
+    if m<4.5: print(f"  {k:<12s} {v}  {m:.2f}:1")
+EOF
 ```
 
-Questo test **fallisce oggi con 21 coppie** e passa dopo la sostituzione dei valori: è la verifica
-più solida di tutta l'area visiva, perché non dipende da un browser.
+(Le righe che restano sotto 4,5:1 in quell'elenco sono **superfici e bordi** — `bg`, `line`,
+`accent-dim`, `v-bg`… — per cui il requisito non si applica: il test del progetto le distingue
+automaticamente derivando l'uso di ogni token dal CSS.)
 
----
 
 ## 3.6 [P1] Accessibilità strutturale: 0 skip-link, 99.839 `<th>` senza `scope`, salto di livello in 4.128 pagine su 4.128
 
@@ -2166,9 +2117,16 @@ def test_css_senza_selettori_duplicati():
 
 ## 3.8 [P2] 35 colori hard-coded fuori dai token di design
 
-**Misura.** Nel CSS: **109** occorrenze di colori esadecimali, **20** token distinti in `:root`,
-**66 occorrenze (35 colori distinti) fuori dai token**. Più frequenti: `#ffffff` (7×), `#eef2f6` (5×),
-`#06231a` (4×), `#6b7f9a` (3×), `#f4f6f8` (2×), `#e2e8f0` (2×).
+**Misura (prima dell'intervento §3.2).** Nel CSS: **109** occorrenze di colori esadecimali,
+**20** token distinti in `:root`, **66 occorrenze (35 colori distinti) fuori dai token**.
+Più frequenti: `#ffffff` (7×), `#eef2f6` (5×), `#06231a` (4×), `#6b7f9a` (3×), `#f4f6f8` (2×),
+`#e2e8f0` (2×).
+
+**Misura dopo §3.2 (stessa procedura):** **47** token distinti, **19 occorrenze (14 colori) fuori dai
+token**, di cui 8 sono i gradienti della barra 1X2 (identici nei due temi **per progetto**, con testo
+proprio `#06231a`/`#0d1420`: la verifica di contrasto è `test_barra_1x2_stop_gradiente`) e 5 le
+superfici di header/footer/hero già coperte dagli override chiari. Restano davvero da tokenizzare
+`.gb.mode .fill #a9762a` e il tratteggio `#263142` del bordo header duplicato (§3.7).
 
 **Impatto.** Ogni hard-code è un punto che il tema chiaro **non** raggiunge: sono la causa diretta
 dei difetti §3.2 (hover) e §3.7 (bordo header). Con 35 colori fuori token, aggiungere un terzo tema
@@ -2347,8 +2305,8 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 
 | # | Intervento | File | Rischio | Verifica |
 |---|---|---|---|---|
-| P0.1 | Token mancanti nel tema chiaro da OS (7) + hover come token | `base.html` §3.2 | **basso** (solo CSS) | test `test_tema_chiaro_completo` + prova manuale |
-| P0.2 | 21 coppie di colore sotto AA → valori della tabella §3.5 | `base.html` | **basso** | `test_contrasto_tema_chiaro_aa` |
+| P0.1 | ✅ **FATTO** — 22 token di foreground nuovi (hover, selezione, chip, leggende, `on-accent`), tutti gli hard-coded sostituiti, fallback OS completo | `base.html`, `match.html` §3.2 | **basso** (solo CSS) | `tests/test_tema_contrasto.py`: 14 test; `verify_site.py` 11.565 controlli OK |
+| P0.2 | ✅ **FATTO** — palette chiara ≥4,5:1 su **4** superfici, gradienti della barra 1X2 corretti, override della cella modale eliminato, `--lose`/`--draw` scuri corretti | `base.html` §3.5 | **basso** | `test_contrasto_token_di_testo_aa[dark\|light]`, `test_barra_1x2_stop_gradiente`, `test_cella_punteggio_piu_probabile` |
 | P0.3 | Barre 1X2 con `pct_triple` (la funzione esiste già) + `pct_triple_dec` | `match.html:44,81`, `fmt.py`, `build.py` | **basso** | `verify_site.py [11a]`: 101 → 0 fallimenti |
 | P0.4 | Barre dei gol oltre il 100% (5 pagine) | `advanced.py:goals_view` | **basso** | `grep height:[0-9]*%` → 0 sopra 100 |
 | P0.5 | CSS esterno con cache-busting (−144 MB, −58% del sito) | `build.py`, `base.html` | **medio** (percorsi relativi + flash) | `du -sb site` ≈ 110 MB; controllo visivo in preview |
@@ -2455,10 +2413,10 @@ collegata) e P0.8 (invarianti di pubblicazione in `verify_site.py`).
 | CSS duplicato | 4.128 × 34.984 B = **144,4 MB (58,2%)** su 248,3 MB HTML | §3.1 |
 | Barre 1X2 errate | 37/167 hero (22,2%) + 64/277 steps (23,1%); 57 pagine con larghezze ≠100 | §3.3 |
 | Barre gol in overflow | **5** pagine (`height:183%`, `163%`, `108%`, `104%`) | §3.4 |
-| Contrasto tema chiaro | **21** coppie sotto 4,5:1; peggio 1,36:1 | §3.5 |
+| Contrasto tema chiaro | ✅ **0** coppie sotto 4,5:1 (erano 21); peggio era **1,02:1** | §3.2, §3.5 |
 | Skip-link / `<th scope>` / salti h | **0** / **0 su 99.839** / **4.128 pagine su 4.128** | §3.6 |
 | Selettori CSS duplicati | **62** su 403 regole | §3.7 |
-| Colori hard-coded fuori token | **35** distinti (66 occorrenze) | §3.8 |
+| Colori hard-coded fuori token | **14** distinti (19 occorrenze), erano 35 (66) | §3.8 |
 | Peso `prossime.html` | **1.513 KB**, 1.987 card | §3.10 |
 
 ## Allegato B — Cosa **non** è un difetto (verificato e chiuso)
