@@ -193,14 +193,24 @@ produzione usano lo stesso codice, quindi il confronto è ripetibile.
 - i dati grezzi del confronto (bootstrap, per lega, per mercato) sono ricalcolabili con gli
   stessi comandi descritti qui; `model_lab.parquet` **non** è stato riscritto.
 
-## 7. Da verificare dal vivo (Actions, dopo il merge)
+## 7. Verifiche dal vivo (eseguite in locale prima del merge, 14/09)
 
-1. il primo run `daily` conferma `λ×1,04 ρ−0,04` e un bias λ del campione pieno entro ±0,05;
-2. la pagina Accuratezza mostra RPS ≈ 0,1988 (calibrato) e il pareggio dentro l'intervallo di
-   Wilson 95% dell'osservato;
-3. nessuna scheda pubblicata con λ per squadra > 4,00 o totale > 5,5;
-4. il prossimo `lab` in Actions (lunedì 05:30 IT) riporta `dc_elo_prod` = tilt e `dc_elo_ge`
-   come ricetta precedente.
+1. **Calibrazione confermata** — `fda calibrate --dry-run` (senza scrivere): **λ×1,0401 ρ−0,04**,
+   `cal-momenti-1.1`, stima su 4.760 gare; bias λ sul campione pieno **−0,133 → −0,024**, entro
+   ±0,05. ✔
+2. **Pagina Accuratezza** — RPS **0,1988** (base 0,2315); pareggio previsto **25,9%** contro
+   25,6% osservato, **dentro** l'intervallo di Wilson 95% dell'osservato **[24,53% ; 26,78%]**
+   (1.490 pareggi su 5.812 gare). ✔
+3. **Limiti di sicurezza sulle schede pubblicate** — nessuna scheda con λ per squadra > 4,00 o
+   totale > 5,5; massimi rilevati λ **3,74** e totale **5,50**. ✔ *Due schede di archivio li
+   superavano* (λ 4,02; totali 5,63 e 5,91): righe del 6–11 settembre, generate da
+   `dc-elo-ens-0.1` **prima** che i limiti esistessero. Corrette applicando la stessa regola di
+   clamp usata in produzione (2 righe su 2.152): le 84 schede delle partite in programma, tutte
+   `dc-elo-tilt-0.4`, non avevano mai superato alcun limite.
+4. **Laboratorio** — eseguito offline su 5.812 gare (1.406 valutate): la baseline `dc_elo_prod`
+   è ora il tilt (RPS 0,2019) e la ricetta precedente `dc_elo_ge` risulta **significativamente
+   peggiore** (Δ **+0,0005**, IC **[+0,0001; +0,0009]**, bias λ **+0,107**): immagine speculare
+   del verdetto. ✔
 
 ## 8. Prossimo passo
 
