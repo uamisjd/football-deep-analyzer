@@ -432,6 +432,56 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
     elo_top_prob = None
     if has_elo and elo_top:
         elo_top_prob = float(elo_values[elo_top])
+    # scarto sul preferito (audit 1.4) — più leggibile dello scarto max assoluto
+    elo_gap_top_pp = None
+    if has_dc and has_elo and dc_top_prob is not None and elo_top_prob is not None and top_key in values and top_key in elo_values and top_key in dc_values:
+        # scarto sul preferito effettivo (top del blend), non sul top DC/Elo isolato
+        try:
+            elo_gap_top_pp = round(abs(float(values[top_key]) - float(elo_values[top_key])) * 100, 1)
+        except Exception:
+            elo_gap_top_pp = None
+        # fallback: scarto fra DC ed Elo sul loro top rispettivo se top_key diverso
+        if elo_gap_top_pp is None:
+            try:
+                elo_gap_top_pp = round(abs(float(dc_top_prob) - float(elo_top_prob)) * 100, 1)
+            except Exception:
+                elo_gap_top_pp = elo_gap_pp
+    elif has_elo and elo_top_prob is not None and dc_top_prob is not None:
+        try:
+            elo_gap_top_pp = round(abs(float(dc_top_prob) - float(elo_top_prob)) * 100, 1)
+        except Exception:
+            elo_gap_top_pp = elo_gap_pp
+
+    def _comma(x: float | None, nd: int = 1) -> str:
+        return "" if x is None else f"{float(x):.{nd}f}".replace(".", ",")
+
+    # etichetta più esplicita per l'utente non specialista (audit 3.1)
+    if has_elo and top_key == elo_top:
+        if elo_gap_top_pp is not None and elo_gap_top_pp < 5:
+            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito"
+            signal_tone = "agree"
+        else:
+            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito" if elo_gap_top_pp is not None else "Stesso preferito"
+            signal_tone = "agree"
+    elif has_elo and top_key != elo_top:
+        # quando il blend e l'Elo divergono: se ho entrambi i modelli mostro il confronto DC vs Elo,
+        # altrimenti etichetta generica (test con solo blend+Elo, senza DC)
+        if has_dc and dc_top is not None and dc_top_prob is not None and elo_top is not None and elo_top_prob is not None:
+            # label già con percentuali intere, non serve virgola
+            signal_label = f"Preferiti diversi · DC {names[dc_top]} {int(round(dc_top_prob*100))}% vs Elo {names[elo_top]} {int(round(elo_top_prob*100))}%"
+            signal_tone = "split"
+        else:
+            signal_label = "DC ed Elo divergono"
+            signal_tone = "split"
+    elif has_elo:
+        signal_label = "DC ed Elo divergono"
+        signal_tone = "split"
+    elif has_dc:
+        signal_label = "Solo modello sui gol"
+        signal_tone = "single"
+    else:
+        signal_label = "Segnale unico"
+        signal_tone = "single"
 
     return {
         "top_key": top_key,
@@ -441,10 +491,8 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         "second_name": names[second_key],
         "second_probability": float(second_probability),
         "margin_pp": round((float(top_probability) - second_probability) * 100, 1),
-        "signal_label": ("DC + Elo concordano" if has_elo and top_key == elo_top
-                         else "DC ed Elo divergono" if has_elo else "Segnale DC"),
-        "signal_tone": ("agree" if has_elo and top_key == elo_top
-                        else "split" if has_elo else "single"),
+        "signal_label": signal_label,
+        "signal_tone": signal_tone,
         "elo_top": elo_top,
         "elo_top_name": names[elo_top] if elo_top else None,
         "elo_top_prob": elo_top_prob,
@@ -452,6 +500,7 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         "dc_top_name": names[dc_top] if dc_top else None,
         "dc_top_prob": dc_top_prob,
         "elo_gap_pp": elo_gap_pp,
+        "elo_gap_top_pp": elo_gap_top_pp,
         "has_dc": has_dc,
         "has_elo": has_elo,
     }

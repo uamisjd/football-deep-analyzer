@@ -3,7 +3,18 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
+<meta name="robots" content="index, follow, max-image-preview:large">
+{% set canonical = "https://uamisjd.github.io/football-deep-analyzer/" + (canonical_path if canonical_path is defined else "") %}<link rel="canonical" href="{{ canonical }}">
+<meta name="description" content="{% block meta_description %}{{ page_description if page_description is defined and page_description else 'CalcioMetro — analisi calcistica profonda con previsioni calibrate Dixon-Coles+Elo, xG, forma, indisponibili, arbitro e meteo su 7 campionati.' }}{% endblock %}">
+<meta property="og:type" content="website">
+<meta property="og:locale" content="it_IT">
+<meta property="og:site_name" content="CalcioMetro">
+<meta property="og:url" content="{{ canonical }}">
+<meta property="og:title" content="{% block og_title %}{{ page_title if page_title is defined and page_title else 'CalcioMetro' }}{% endblock %}">
+<meta property="og:description" content="{% block og_description %}{{ page_description if page_description is defined and page_description else 'Previsioni calibrate e analisi pre/post partita in italiano, aggiornate 5 volte al giorno.' }}{% endblock %}">
+<meta name="twitter:card" content="summary">
+{% block head_extra %}{% endblock %}
+{% if json_ld is defined and json_ld %}<script type="application/ld+json">{{ json_ld|safe }}</script>{% endif %}
 <title>{% block title %}CalcioMetro{% endblock %}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233ef0a8'/%3E%3Cstop offset='1' stop-color='%2314925d'/%3E%3C/linearGradient%3E%3ClinearGradient id='m' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd76a'/%3E%3Cstop offset='1' stop-color='%23c1851d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='1' y='1' width='62' height='62' rx='18' fill='%2312202e' stroke='%232f4158' stroke-width='1.5'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='Sora,Inter,Arial,sans-serif' font-weight='800' font-size='32'%3E%3Ctspan fill='url(%23g)'%3EC%3C/tspan%3E%3Ctspan fill='url(%23m)'%3EM%3C/tspan%3E%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -22,8 +33,8 @@
    ============================================================ */
 :root{
   --bg:#0c1118; --bg2:#0f161f; --surface:#131a24; --surface2:#1a2330; --surface3:#212c3a;
-  --line:#1f2836; --line2:#2c3850;
-  --txt:#e9eef6; --txt2:#c4cedc; --mut:#93a0b3; --mut2:#6c7a8d;
+  --line:#263142; --line2:#2c3850;
+  --txt:#e9eef6; --txt2:#c4cedc; --mut:#a8b5c8; --mut2:#8796ac;
   --accent:#28c893; --accent-soft:#1d9a71; --accent-dim:#0f3126;
   --brand-a:#2ee59d; --brand-b:#e7b23c;
   --win:#28c893; --draw:#7f8aa0; --lose:#e0605a; --amber:#e6b34a; --info:#58a6ea;
@@ -49,7 +60,7 @@ h4{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--txt2);text-transfor
 p{margin:0 0 12px}
 a{color:var(--accent);text-decoration:none;transition:color .13s}
 a:hover{color:#4cd9a8}
-a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px}
+a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
 ::selection{background:rgba(120,150,190,.22);color:#eaf0f6}
 ::-moz-selection{background:rgba(120,150,190,.22);color:#eaf0f6}
 
@@ -63,7 +74,7 @@ main{max-width:var(--max);margin:0 auto;padding:28px 26px 44px}
    La riga dell'header riusa la classe .bar (usata anche per le barre-probabilità più sotto):
    qui si dichiarano altezza/overflow espliciti (height:auto; overflow:visible) così gli stili
    generici della barra-probabilità (height fissa + overflow:hidden) non tagliano logo e brand. */
-header{background:linear-gradient(180deg,#0e141d,#0b1017);border-bottom:1px solid var(--line)}
+header{background:linear-gradient(180deg,#0e141d,#0b1017);border-bottom:1px solid var(--line);border-bottom-color:#263142}
 header{overflow:visible}
 header .bar{display:flex;align-items:center;gap:26px;flex-wrap:wrap;padding:24px 0;min-height:84px;height:auto;overflow:visible}
 .brand{display:flex;align-items:center;gap:16px;color:var(--txt);flex:0 0 auto;text-decoration:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
@@ -165,8 +176,11 @@ td.best{font-weight:800;color:var(--accent)}
 .today-status-strip span{display:inline-flex;align-items:center;gap:6px}
 .status-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--mut2);flex:0 0 auto}
 .status-dot-live{background:var(--lose);box-shadow:0 0 0 3px rgba(224,96,90,.15)}
+.status-dot-paused{background:var(--amber);box-shadow:0 0 0 3px rgba(230,179,74,.18)}
 .status-dot-scheduled{background:var(--accent)}
 .status-dot-finished{background:var(--mut2)}
+.status-dot-postponed{background:var(--amber)}
+.status-postponed{color:var(--amber)}
 .match-toolbar{display:flex;align-items:center;gap:9px;flex-wrap:wrap;padding:10px 0 14px;margin-bottom:2px;border-bottom:1px solid var(--line)}
 .filter-label{font-size:12px;font-weight:700;color:var(--txt2);margin-right:2px}
 .filter-buttons{display:flex;gap:5px;flex-wrap:wrap}
@@ -181,20 +195,21 @@ td.best{font-weight:800;color:var(--accent)}
 .filter-result{color:var(--mut);font-size:12px;white-space:nowrap;margin-left:4px}
 .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
 .match-list{display:flex;flex-direction:column;gap:16px}
-.day-group{margin:0;padding:0 14px 10px;overflow:hidden}
-.day-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:17px 8px 10px;border-bottom:1px solid var(--line)}
+.day-group{margin:0;padding:12px 12px 8px;overflow:hidden}
+.day-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 10px;border-bottom:1px solid var(--line)}
 .day-heading h2{margin:0}
 .day-count{color:var(--mut);font-size:12px;font-weight:600}
-.match-card{display:block;margin:10px 0 0;padding:14px 14px 13px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;transition:border-color .14s,background .14s,transform .14s}
+.match-card{display:block;margin:10px 0 0;padding:14px 14px 14px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;transition:border-color .14s,background .14s,transform .14s; content-visibility:auto; contain-intrinsic-size: 280px}
 .match-card:hover{background:var(--surface2);border-color:var(--line2);transform:translateY(-1px)}
 .match-card[hidden],.day-group[hidden]{display:none}
 .match-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .match-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;color:var(--mut);font-size:12px}
 .status{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--txt2)}
-.status-live{color:var(--lose)}.status-finished{color:var(--mut)}.status-scheduled{color:var(--accent)}
+.status-live{color:var(--lose)}.status-paused{color:var(--amber)}.status-finished{color:var(--mut)}.status-scheduled{color:var(--accent)}.status-postponed{color:var(--amber)}.status-suspended{color:var(--amber)}
 .kickoff{font:700 14px var(--font-head);font-variant-numeric:tabular-nums;color:var(--txt)}
 .match-open{font-size:12px;font-weight:700;white-space:nowrap}
-.match-teams{display:grid;grid-template-columns:minmax(0,1fr) 96px minmax(0,1fr);gap:15px;align-items:center;padding:2px 4px 14px}
+.match-teams{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:15px;align-items:center;padding:2px 4px 14px}
+.match-teams .match-score{padding:0 8px; min-width:72px; justify-self:center}
 .match-team{display:flex;flex-direction:column;gap:3px;min-width:0}
 .match-team a{font:700 18px/1.2 var(--font-head);color:var(--txt);overflow-wrap:anywhere}
 .home-team{text-align:right;align-items:flex-end}.away-team{text-align:left;align-items:flex-start}
@@ -207,7 +222,10 @@ td.best{font-weight:800;color:var(--accent)}
 .eyebrow{color:var(--mut);font-size:10px;font-weight:800;letter-spacing:.11em;text-transform:uppercase}
 .projection-copy strong{font:700 16px/1.25 var(--font-head);color:var(--txt);overflow-wrap:anywhere}
 .projection-p{color:var(--accent);font-variant-numeric:tabular-nums}
-.projection-note,.model-foot{color:var(--mut);font-size:11px;line-height:1.35}
+.projection-note,.model-foot{color:var(--mut);font-size:12px;line-height:1.40}
+.projection-copy strong{font-weight:800}
+.prob-labels{font-size:11.5px}
+.prob-labels span.is-fav{font-weight:800;color:var(--txt)}
 .mini-probability{min-width:0}.mini-probability .bar{height:22px;border-radius:6px}.mini-probability .bar span{padding:0}
 .prob-labels{display:flex;justify-content:space-between;gap:6px;color:var(--mut);font-size:10.5px;font-variant-numeric:tabular-nums;margin-top:5px}
 .prob-labels span{white-space:nowrap}.prob-labels span:first-child{color:var(--win)}.prob-labels span:last-child{color:#ef918b}
@@ -215,12 +233,23 @@ td.best{font-weight:800;color:var(--accent)}
 .signal span{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;font-weight:800}
 .signal-agree span{background:var(--accent-dim);color:var(--accent)}.signal-split{color:var(--amber)}.signal-split span{background:rgba(230,179,74,.13);color:var(--amber)}.signal-single{color:var(--mut)}
 .model-foot{padding-top:4px}
-.match-facts{display:flex;align-items:center;gap:8px 12px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);color:var(--mut);font-size:11.5px}
+.match-facts{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px;line-height:1.45}
 .form-line,.fact{display:inline-flex;align-items:center;gap:6px;min-height:24px}
 .fact-label{font-weight:700;color:var(--mut)}.fact-value{font-variant-numeric:tabular-nums;color:var(--txt2);font-weight:700}
-.form-dots{display:inline-flex;gap:3px}.form-dot{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:5px;font-size:10px;font-weight:800}
-.form-dot.V{background:var(--accent-dim);color:#9df0cf}.form-dot.N{background:#2a3242;color:#cbd5e2}.form-dot.P{background:#4a1a18;color:#f7b9b2}
-.fact{color:var(--txt2)}.fact > span:last-child{color:var(--mut)}.fact-absence{color:var(--amber)}.fact-absence > span:last-child{color:var(--txt2)}
+.form-dots{display:inline-flex;gap:3px}.form-dot{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:5px;font-size:10px;font-weight:800;position:relative}
+.form-dot.V{background:var(--accent-dim);color:#9df0cf; border:1px solid #1d9a71}
+.form-dot.N{background:#2a3242;color:#cbd5e2; border:1px solid #3a4a62}
+.form-dot.P{background:#4a1a18;color:#f7b9b2; border:1px solid #a33a36}
+@media (prefers-contrast: more){
+  .form-dot.V{outline:2px solid #1d9a71}
+  .form-dot.P{outline:2px solid #e0605a}
+}
+.form-dot.V::after{content:""; position:absolute; bottom:2px; width:7px; height:2.5px; background:currentColor; border-radius:1px; opacity:.9} /* vittoria: tacca superiore */
+.form-dot.P::after{content:""; position:absolute; top:2px; width:7px; height:2.5px; background:currentColor; border-radius:1px; opacity:.9} /* sconfitta: tacca diversa per pattern */
+.fact{color:var(--txt2); padding:4px 8px; background:var(--surface2); border:1px solid var(--line); border-radius:8px; font-size:12px}
+.fact > span:last-child{color:var(--mut)}.fact-absence{color:var(--amber); background:rgba(230,179,74,.08); border-color:rgba(230,179,74,.25)}.fact-absence > span:last-child{color:var(--txt2)}
+.fact-icon{width:14px;height:14px; flex:0 0 auto; opacity:.9; vertical-align:-2px; margin-right:2px}
+.fact-label{font-weight:700; color:var(--mut); text-transform:uppercase; font-size:10px; letter-spacing:.06em; margin-right:1px}
 .fact-separator{color:var(--line2)}
 .empty-filter{padding:14px 8px 4px;color:var(--mut);font-size:13px}
 .empty-state{display:flex;flex-direction:column;align-items:center;gap:5px;text-align:center;padding:42px 20px}.empty-icon{font-size:28px;color:var(--mut2)}
@@ -254,7 +283,7 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .dotplot{align-items:end;margin-top:4px}
 .dp{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;min-width:0}
 .dp .stack{display:flex;flex-direction:column-reverse;gap:3px;min-height:10px}
-.dp .stack i{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 1px rgba(12,17,24,.5)}
+.dp .stack i{width:10px;height:10px;border-radius:50%;background:var(--accent);box-shadow:inset 0 0 0 1px rgba(12,17,24,.5);border:1px solid var(--bg)}
 .dp .x{font-size:11px;color:var(--mut);font-variant-numeric:tabular-nums}
 /* ---- Scomposizione della probabilità pubblicata ---- */
 .steps{list-style:none;margin:10px 0 0;padding:0;display:grid;gap:14px}
@@ -286,8 +315,8 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .match-hero-center{display:flex;flex-direction:column;align-items:center;gap:7px}.match-hero-center .result{font:800 29px/1 var(--font-head);font-variant-numeric:tabular-nums;color:var(--txt);white-space:nowrap}.match-hero-center .date{font-size:11px;color:var(--mut);text-align:center}
 .hero-model{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:15px}
 .hero-pick{display:flex;flex-direction:column;gap:3px}.hero-pick .eyebrow{color:var(--mut)}.hero-pick strong{font:700 17px/1.25 var(--font-head)}.hero-pick strong em{font-style:normal;color:var(--accent)}
-.hero-metrics{display:flex;align-items:center;gap:16px;flex-wrap:wrap;color:var(--mut);font-size:12px}.hero-metric{display:flex;flex-direction:column;gap:1px}.hero-metric b{color:var(--txt);font:700 15px var(--font-head);font-variant-numeric:tabular-nums}.hero-metric span{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
-.hero-signal{padding:7px 10px;border-radius:8px;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700}
+.hero-metrics{display:flex;align-items:center;gap:16px;flex-wrap:wrap;color:var(--mut);font-size:12px}.hero-metric{display:flex;flex-direction:column;gap:1px}.hero-metric b{color:var(--txt);font:700 15px var(--font-head);font-variant-numeric:tabular-nums;letter-spacing:.02em}.hero-metric span{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.hero-signal{padding:7px 10px;border-radius:8px;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700;max-width:220px;text-align:center;line-height:1.25}
 .match-jump{position:sticky;top:8px;z-index:4;display:flex;gap:4px;overflow-x:auto;padding:5px;margin:0 0 16px;background:rgba(12,17,24,.92);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(10px)}
 .match-jump a{padding:7px 11px;color:var(--mut);font-size:11px;font-weight:700;white-space:nowrap;border-radius:7px}.match-jump a:hover{background:var(--surface2);color:var(--txt)}
 .detail-card{scroll-margin-top:64px}
@@ -381,12 +410,21 @@ footer .cols li{margin:6px 0}
   .filter-select{flex:1;min-width:0}.filter-select select{width:100%;max-width:none}.search-box{margin-left:0;flex:1;min-width:140px}.search-box input{width:100%}.filter-result{width:100%;margin-left:0}
   .day-group{padding-left:9px;padding-right:9px}.day-heading{padding-left:5px;padding-right:5px}
   .match-card{padding:13px 11px}.match-card-head{align-items:flex-start}.match-open{font-size:11px}
-  .match-teams{grid-template-columns:minmax(0,1fr) 58px minmax(0,1fr);gap:8px;padding-bottom:12px}.match-team a{font-size:15px}.team-rank{font-size:10px}.match-score strong{font-size:18px}.match-score span{font-size:9px}
+  .match-teams{grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:6px;padding-bottom:12px}.match-team a{font-size:15px}.team-rank{font-size:10px}.match-score strong{font-size:18px}.match-score span{font-size:9px}
+  .match-teams .match-score{padding:0 6px; min-width:58px}
   .match-projection{display:flex;flex-direction:column;align-items:stretch;gap:10px}.projection-copy strong{font-size:15px}
   .match-facts{gap:6px 9px}.fact-separator{display:none}.form-line{width:100%}
-  .match-hero{padding:18px 15px}.match-scoreline{grid-template-columns:minmax(0,1fr) 66px minmax(0,1fr);gap:8px;padding:18px 0 15px}.match-hero-team{font-size:20px}.match-hero-center .result{font-size:22px}.match-hero-center .date{font-size:10px}.hero-model{align-items:flex-start}.hero-metrics{gap:10px 14px}.hero-signal{width:100%;text-align:center}.match-jump{top:4px}
+  .match-hero{padding:18px 15px}.match-hero-meta{flex-direction:column;align-items:flex-start;gap:4px}.match-scoreline{grid-template-columns:minmax(0,1fr) 66px minmax(0,1fr);gap:8px;padding:18px 0 15px}.match-hero-team{font-size:20px}.match-hero-center .result{font-size:22px}.match-hero-center .date{font-size:10px}.hero-model{align-items:flex-start}.hero-metrics{gap:10px 14px}.hero-signal{width:100%;max-width:none;text-align:center}.match-jump{top:4px}
 }
-@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}.match-card:hover{transform:none}}
+/* performance: calendario chiuso non costa layout */
+.cal-month:not([open]) .cal-head,
+.cal-month:not([open]) .cal-row{content-visibility:auto; contain-intrinsic-size: 0 120px}
+/* 320-375px: evita overflow orizzontale dalle righe compatte */
+@media (max-width:380px){
+  .cal-head,.cal-row{gap:6px}
+  .cal-teams{font-size:12.5px}
+}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}.match-card:hover{transform:none!important}}
 </style>
 </head>
 <body>

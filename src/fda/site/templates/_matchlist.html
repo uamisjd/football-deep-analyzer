@@ -1,9 +1,9 @@
 {% macro form_pills(team, label) -%}
   {% set form = team.form %}
   {% if form and form.n %}
-  <span class="form-line" aria-label="{{ label }}: {{ form.sequence }} nelle ultime {{ form.n }} partite, {{ form.points }} punti. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ form.n }}: {{ form.sequence }} (V=vittoria, N=pareggio, P=sconfitta)">
-    <span class="fact-label">Forma</span>
-    <span class="form-dots" aria-hidden="true">{% for x in form.rows %}<span class="form-dot {{ x.res }}">{{ x.res }}</span>{% endfor %}</span>
+  <span class="form-line" aria-label="{{ label }}: {{ form.sequence }} nelle ultime {{ form.n }} partite, {{ form.points }} punti. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ form.n }}: {{ form.sequence }} (V=vittoria, N=pareggio, P=sconfitta) — V vittoria, N pareggio, P sconfitta">
+      <span class="fact-label">Forma</span>
+    <span class="form-dots" aria-hidden="true">{% for x in form.rows %}<span class="form-dot {{ x.res }}" title="{{ x.res }}">{{ x.res }}</span>{% endfor %}</span>
     <span class="fact-value">{{ form.points }} pt</span>
   </span>
   {% endif %}
@@ -44,34 +44,35 @@
     <div class="projection-copy">
       <span class="eyebrow">Lettura del modello</span>
       {% if meta %}<strong>{{ meta.top_name }} <span class="projection-p">{{ (meta.top_probability * 100)|round|int }}%</span></strong>
-      <span class="projection-note">favorito · +{{ meta.margin_pp|dec(1) }} pp sul 2° ({{ meta.second_name }} {{ (meta.second_probability*100)|round|int }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
+      <span class="projection-note">favorito · +{{ meta.margin_pp|dec(1) }} punti sul secondo ({{ meta.second_name }} {{ (meta.second_probability*100)|round|int }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
     </div>
     <div class="mini-probability">
+      {% set fav_i = 0 if p.p_home >= p.p_draw and p.p_home >= p.p_away else 1 if p.p_draw >= p.p_away else 2 %}
       <div class="bar" role="img" aria-label="Probabilità: 1 {{ (p.p_home * 100)|round|int }}%, pareggio {{ (p.p_draw * 100)|round|int }}%, 2 {{ (p.p_away * 100)|round|int }}%">
         <span class="h" style="width:{{ (p.p_home * 100)|round }}%"></span><span class="d" style="width:{{ (p.p_draw * 100)|round }}%"></span><span class="a" style="width:{{ (p.p_away * 100)|round }}%"></span>
       </div>
-      <div class="prob-labels"><span>1 {{ (p.p_home * 100)|round|int }}%</span><span>X {{ (p.p_draw * 100)|round|int }}%</span><span>2 {{ (p.p_away * 100)|round|int }}%</span></div>
+      <div class="prob-labels"><span{% if fav_i==0 %} class="is-fav"{% endif %}>1 {{ (p.p_home * 100)|round|int }}%</span><span{% if fav_i==1 %} class="is-fav"{% endif %}>X {{ (p.p_draw * 100)|round|int }}%</span><span{% if fav_i==2 %} class="is-fav"{% endif %}>2 {{ (p.p_away * 100)|round|int }}%</span></div>
     </div>
   </div>
-  {% if meta %}<div class="signal signal-{{ meta.signal_tone }}" title="{% if meta.signal_tone == 'agree' %}Dixon-Coles e Elo concordano{% elif meta.signal_tone == 'split' %}Dixon-Coles ed Elo divisi{% else %}Segnale debole{% endif %}{% if meta.has_dc and meta.has_elo and meta.dc_top_prob is not none and meta.elo_top_prob is not none %} — DC {{ (meta.dc_top_prob*100)|round|int }}% ({{ meta.dc_top_name }}) vs Elo {{ (meta.elo_top_prob*100)|round|int }}% ({{ meta.elo_top_name }}) scarto {{ meta.elo_gap_pp|dec(1) }} pp{% elif meta.elo_gap_pp is not none %} — scarto max {{ meta.elo_gap_pp|dec(1) }} pp{% endif %}">
+  {% if meta %}<div class="signal signal-{{ meta.signal_tone }}" title="{{ meta.signal_label }}{% if meta.has_dc and meta.has_elo and meta.dc_top_prob is not none and meta.elo_top_prob is not none %} — DC {{ (meta.dc_top_prob*100)|round|int }}% ({{ meta.dc_top_name }}) vs Elo {{ (meta.elo_top_prob*100)|round|int }}% ({{ meta.elo_top_name }}){% endif %}">
     <span aria-hidden="true">{% if meta.signal_tone == 'agree' %}✓{% elif meta.signal_tone == 'split' %}↔{% else %}·{% endif %}</span>
-    {% if meta.signal_tone == 'agree' %}Modelli d'accordo{% elif meta.signal_tone == 'split' %}Modelli divisi{% else %}{{ meta.signal_label }}{% endif %}{% if meta.elo_gap_pp is not none %} · scarto max {{ meta.elo_gap_pp|dec(1) }} pp{% endif %}
+    {{ meta.signal_label }}
   </div>{% endif %}
-  <div class="model-foot" title="Gol attesi: {{ p.lambda_home|dec }} casa + {{ p.lambda_away|dec }} trasferta = {{ (p.lambda_home + p.lambda_away)|dec }} totali. Over 2,5: {{ (p.p_over25*100)|round|int }}% = {{ (p.p_over25*100)|round|int }} partite su 100 con 3+ gol">
-    Gol attesi {{ p.lambda_home|dec }}–{{ p.lambda_away|dec }} · Over 2,5 {{ (p.p_over25 * 100)|round|int }}% · modello {{ p.model }}
+  <div class="model-foot" title="Gol attesi del modello (non media xG delle ultime gare): {{ p.lambda_home|dec }} casa + {{ p.lambda_away|dec }} trasferta = {{ (p.lambda_home + p.lambda_away)|dec }} totali. Over 2,5 al {{ (p.p_over25*100)|round|int }}% significa {{ (p.p_over25*100)|round|int }} partite su 100 con 3 o più gol">
+    <span class="fact-label" style="font-size:10px">Modello</span> Gol attesi <b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b> · Over 2,5 <b>{{ (p.p_over25 * 100)|round|int }}%</b> <span class="mut">({{ (p.p_over25*100)|round|int }} su 100 con 3+ gol)</span>{% if p.prior_di_lega %} · <span class="warn" title="Squadra senza storico sufficiente: usate medie di lega (prior)">prior di lega</span>{% endif %}{% if p.lambda_limitata %} · <span class="mut" title="λ limitate per coerenza (tetto {{ p.lambda_home|dec }}–{{ p.lambda_away|dec }})">λ limitate</span>{% endif %}
   </div>
   {% else %}<p class="mut small">Previsione non disponibile per questa partita.</p>{% endif %}
 
   <div class="match-facts" aria-label="Contesto rapido della partita">
     {% if ctx and ctx.home.form.n %}{{ form_pills(ctx.home, m.home_name) }}{% endif %}
     {% if ctx and ctx.away.form.n %}<span class="fact-separator" aria-hidden="true">·</span>{{ form_pills(ctx.away, m.away_name) }}{% endif %}
-    {% if m.status_bucket != 'finished' and (m.abs_home or m.abs_away) %}<span class="fact fact-absence" title="Indisponibili dalla distinta FotMob (ruolo unavailable) — dettaglio in scheda">⚕ <span><b>Infermeria:</b> {{ m.home_name }} {{ m.abs_home|it_plural('assente') }} · {{ m.away_name }} {{ m.abs_away|it_plural('assente') }}</span></span>{% endif %}
-    {% if ctx and ctx.weather and ctx.weather.desc %}<span class="fact" title="Meteo previsto: {{ ctx.weather.desc }}{% if ctx.weather.source %} ({{ ctx.weather.source }}){% endif %}">☁ <span>{{ ctx.weather.desc }}{% if ctx.weather.temp is not none %} · {{ ctx.weather.temp|round|int }}°C{% endif %}</span></span>{% endif %}
-    {% if ctx and ctx.referee and ctx.referee.name %}<span class="fact" title="Arbitro: {{ ctx.referee.name }}{% if ctx.referee.yellows is not none %} — {{ ctx.referee.yellows|dec(1) }} gialli/gara{% endif %}{% if ctx.referee.pens is not none %} — {{ ctx.referee.pens }} rigori totali{% endif %}">⚑ <span>{{ ctx.referee.name }}{% if ctx.referee.yellows is not none %} · {{ ctx.referee.yellows|dec(1) }} gialli/gara{% endif %}</span></span>{% endif %}
+    {% if m.status_bucket != 'finished' and (m.abs_home or m.abs_away) %}<span class="fact fact-absence" title="Indisponibili dalla distinta FotMob (ruolo unavailable) — dettaglio in scheda"><svg class="fact-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M8 1.6l1.1 2.2 2.4.35-1.75 1.7.41 2.4L8 7.1 5.84 8.25l.41-2.4L4.5 4.15l2.4-.35z"/><rect x="2" y="10.2" width="12" height="2.2" rx="1" fill="currentColor" opacity=".85"/><path d="M7 12.2h2v2H7z" fill="currentColor"/></svg><span class="fact-label">Infermeria</span><span>{{ m.home_name }} {{ m.abs_home|it_plural('assente') }} · {{ m.away_name }} {{ m.abs_away|it_plural('assente') }}</span></span>{% endif %}
+    {% if ctx and ctx.weather and ctx.weather.desc %}<span class="fact" title="Meteo previsto: {{ ctx.weather.desc }}{% if ctx.weather.source %} ({{ ctx.weather.source }}){% endif %}"><svg class="fact-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M5.2 12.2a3.2 3.2 0 01-.1-6.4 4 4 0 017.8 1.1A2.8 2.8 0 015.2 12.2z" opacity=".95"/><circle cx="5.8" cy="5.2" r="1" fill="#0c1118" opacity=".35"/></svg><span class="fact-label">Meteo</span><span>{{ ctx.weather.desc }}{% if ctx.weather.temp is not none %} · {{ ctx.weather.temp|round|int }}°C{% endif %}</span></span>{% endif %}
+    {% if ctx and ctx.referee and ctx.referee.name %}<span class="fact" title="Arbitro: {{ ctx.referee.name }}{% if ctx.referee.yellows is not none %} — {{ ctx.referee.yellows|dec(1) }} gialli/gara{% endif %}{% if ctx.referee.pens is not none %} — {{ ctx.referee.pens }} rigori totali{% endif %}"><svg class="fact-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="currentColor" d="M3 2.2h2.8L8 6 10.2 2.2H13L8 11.4 3 2.2z"/><rect x="7" y="11.2" width="2" height="3.2" rx="1" fill="currentColor"/></svg><span class="fact-label">Arbitro</span><span>{{ ctx.referee.name }}{% if ctx.referee.yellows is not none %} · {{ ctx.referee.yellows|dec(1) }} gialli/gara{% endif %}</span></span>{% endif %}
     {% if ctx and ctx.h2h and ctx.h2h.n %}
-      <span class="fact" title="Precedenti diretti (vista casa attuale): {{ ctx.h2h.wins }}V {{ ctx.h2h.draws }}N {{ ctx.h2h.losses }}P su {{ ctx.h2h.n }}, {{ ctx.h2h.gpg|dec(1) }} gol/gara, BTTS {{ (ctx.h2h.btts*100)|round|int }}%, Over 2,5 {{ (ctx.h2h.over25*100)|round|int }}%">↔ <span>{{ ctx.h2h_n|it_plural('precedente') }}: {{ ctx.h2h.wins }}-{{ ctx.h2h.draws }}-{{ ctx.h2h.losses }} ({{ ctx.h2h.gpg|dec(1) }} gol/gara, BTTS {{ (ctx.h2h.btts*100)|round|int }}%)</span></span>
+      <span class="fact" title="Precedenti diretti (vista casa attuale): {{ ctx.h2h.wins }}V {{ ctx.h2h.draws }}N {{ ctx.h2h.losses }}P su {{ ctx.h2h.n }}, {{ ctx.h2h.gpg|dec(1) }} gol/gara, BTTS {{ (ctx.h2h.btts*100)|round|int }}%, Over 2,5 {{ (ctx.h2h.over25*100)|round|int }}%"><svg class="fact-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M3 8h10M8 3l5 5-5 5"/></svg><span class="fact-label">Precedenti</span><span>{{ ctx.h2h_n|it_plural('precedente') }}: {{ ctx.h2h.wins }}-{{ ctx.h2h.draws }}-{{ ctx.h2h.losses }} ({{ ctx.h2h.gpg|dec(1) }} gol/gara)</span></span>
     {% elif ctx and ctx.h2h_n %}
-      <span class="fact">↔ <span>{{ ctx.h2h_n|it_plural('precedente') }}</span></span>
+      <span class="fact"><svg class="fact-icon" viewBox="0 0 16 16" aria-hidden="true"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M3 8h10M8 3l5 5-5 5"/></svg><span class="fact-label">Precedenti</span><span>{{ ctx.h2h_n|it_plural('precedente') }}</span></span>
     {% endif %}
   </div>
 </article>

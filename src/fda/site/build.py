@@ -40,18 +40,29 @@ def pct_triple(vals: tuple[float, float, float]) -> list[int]:
 
     Arrotondare le tre probabilità in modo indipendente produce 99% o 101%: su righe
     compatte senza contesto il lettore non potrebbe accorgersene, quindi la correzione
-    si fa qui, sul resto più grande.
+    si fa qui, sul resto più grande. Tie-break stabile su ordine (1, X, 2).
     """
-    raw = [float(v) * 100.0 for v in vals]
-    base = [int(np.floor(x)) for x in raw]
-    resto = 100 - sum(base)
-    if resto > 0:
-        for i in np.argsort([base[j] - raw[j] for j in range(3)])[:resto]:
-            base[int(i)] += 1
-    elif resto < 0:
-        for i in np.argsort([raw[j] - base[j] for j in range(3)])[:-resto]:
-            base[int(i)] -= 1
-    return base
+    # riusa helper condiviso testato con property-based (audit 1.1)
+    try:
+        from .fmt import pct_triple as _pct
+        return _pct(vals)
+    except Exception:
+        import math
+        raw = [float(v) * 100.0 for v in vals]
+        base = [int(math.floor(x)) for x in raw]
+        resto = 100 - sum(base)
+        if resto == 0:
+            return base
+        residuals = [r - f for r, f in zip(raw, base)]
+        if resto > 0:
+            order = np.argsort(residuals, kind="stable")[::-1]
+            for i in range(resto):
+                base[int(order[i % 3])] += 1
+        else:
+            order = np.argsort(residuals, kind="stable")
+            for i in range(-resto):
+                base[int(order[i % 3])] -= 1
+        return base
 
 
 def day_label(d) -> str:
@@ -141,7 +152,9 @@ class SiteBuilder:
         section = self.NAV_SECTIONS.get(rel_path, "")
         if not section:
             section = next((s for prefix, s in self.NAV_PREFIXES if rel_path.startswith(prefix)), "")
-        html = self.env.get_template(template).render(root=root, generated_at=self.now, section=section, **ctx)
+        # SEO: percorso canonico per <link rel="canonical"> e og:url
+        canonical_path = rel_path if rel_path != "index.html" else ""
+        html = self.env.get_template(template).render(root=root, generated_at=self.now, section=section, canonical_path=canonical_path, **ctx)
         path = self.out / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(html, encoding="utf-8")
@@ -164,16 +177,33 @@ class SiteBuilder:
     @staticmethod
     def _status_bucket(status: Any) -> str:
         """Stato stabile per i filtri client-side della lista."""
-        value = str(status or "").lower()
-        if value in {"in_progress", "live", "started", "halftime", "half_time"}:
+        value = str(status or "").lower().strip()
+        if value in {"in_progress", "live", "started", "started_live"}:
             return "live"
-        if value == "finished":
+        if value in {"halftime", "half_time", "paused", "break"}:
+            return "paused"
+        if value in {"finished", "full_time", "ft"}:
             return "finished"
+        if value in {"postponed", "postp", "delayed"}:
+            return "postponed"
+        if value in {"suspended", "abandoned", "cancelled", "canceled"}:
+            return value  # bucket dedicato (filtro Tutti li mostra, banner dedicato)
         return "scheduled"
 
     @staticmethod
     def _status_label(status: Any) -> str:
-        return {"live": "In corso", "finished": "Terminata", "scheduled": "In programma"}[SiteBuilder._status_bucket(status)]
+        bucket = SiteBuilder._status_bucket(status)
+        return {
+            "live": "In corso",
+            "paused": "Intervallo",
+            "finished": "Terminata",
+            "postponed": "Rinviata",
+            "suspended": "Sospesa",
+            "cancelled": "Annullata",
+            "canceled": "Annullata",
+            "abandoned": "Sospesa",
+            "scheduled": "In programma",
+        }.get(bucket, "In programma")
 
     def _match_rows(self, fx: pd.DataFrame) -> list[dict[str, Any]]:
         absent = self._absence_counts()
@@ -292,29 +322,68 @@ class SiteBuilder:
         # --- calendario completo: ciò che la finestra breve non copre, in forma compatta ---
         # non costa richieste extra (le partite sono già state raccolte da `fda collect`) e
         # nemmeno analisi per partita: una riga = data, squadre e ultima previsione disponibile
-        lontano = fx[(fx.status == "scheduled") & (fx.local_date > today_local + timedelta(days=7))]
+        lontano = fx[(fx.status.isin(["scheduled", "postponed", "suspended", "cancelled"])) & (fx.local_date > today_local + timedelta(days=7))]
         calendar, calendar_missing = self._calendar_rows(lontano, self.store.read("predictions"), ids_breve)
         log.info("calendario completo: %d partite in %d mesi (%d senza previsione)",
                  len(lontano), len(calendar), calendar_missing)
         self._render("index.html", "index.html", title=f"Partite di oggi — {day_label(today_local)}",
                      subtitle="Il quadro della giornata, poi il dettaglio verificabile di ogni partita.",
+                     page_title=f"Partite di oggi — {day_label(today_local)} · CalcioMetro",
+                     page_description="Tutte le partite di oggi con analisi pre-partita, previsioni Dixon-Coles+Elo, forma, indisponibili, arbitro e meteo. Aggiornato 5 volte al giorno.",
                      days=self._group_by_day(today_rows), view_kind="today",
                      summary=self._today_summary(today_rows), filters=self._list_filters(today_rows))
         self._render("index.html", "prossime.html", title="Prossime partite",
                      subtitle="I prossimi 7 giorni con la scheda completa, poi tutto il calendario "
                               "della stagione in forma compatta.",
+                     page_title="Prossime partite e calendario completo · CalcioMetro",
+                     page_description="I prossimi 7 giorni con schede dettagliate e l'intero calendario stagionale in forma compatta: pronostici, gol attesi e Over 2,5 per ogni gara.",
                      days=self._group_by_day(upcoming_rows), view_kind="upcoming", summary=None,
                      filters=self._list_filters(upcoming_rows),
                      calendar=calendar, calendar_missing=calendar_missing, calendar_days=7)
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
                      subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
+                     page_title="Risultati recenti e analisi post-partita · CalcioMetro",
+                     page_description="Risultati degli ultimi 7 giorni con lettura post-partita: xG, occasioni, cronaca e verifica delle previsioni.",
                      days=self._group_by_day(result_rows), view_kind="results", summary=None,
                      filters=self._list_filters(result_rows))
         return ids_breve
 
+    @staticmethod
+    def _json_ld_match(ctx: dict[str, Any], league_name: str, base_url: str) -> str:
+        """JSON-LD SportsEvent per SEO (audit 2.3) — una stringa JSON pronta per <script>."""
+        import json
+        try:
+            kick = pd.Timestamp(ctx["utc_kickoff"])
+            if kick.tzinfo is None:
+                kick = kick.tz_localize("UTC")
+            iso = kick.tz_convert(ZoneInfo("Europe/Rome")).isoformat()
+        except Exception:
+            iso = str(ctx.get("utc_kickoff", ""))
+        name = f'{ctx.get("home_name","")} – {ctx.get("away_name","")} ({league_name})' if league_name else f'{ctx.get("home_name","")} – {ctx.get("away_name","")}'
+        url = f'{base_url}/partite/{ctx.get("match_id")}.html'
+        data = {
+            "@context": "https://schema.org",
+            "@type": "SportsEvent",
+            "name": name,
+            "startDate": iso,
+            "sport": "Soccer",
+            "homeTeam": {"@type": "SportsTeam", "name": ctx.get("home_name","")},
+            "awayTeam": {"@type": "SportsTeam", "name": ctx.get("away_name","")},
+            "competitor": [{"@type": "SportsTeam", "name": ctx.get("home_name","")}, {"@type": "SportsTeam", "name": ctx.get("away_name","")}],
+            "location": {"@type": "Place", "name": ctx.get("stadium",{}).get("name") or league_name, "address": ctx.get("stadium",{}).get("city") or ""},
+            "url": url,
+            "eventStatus": "https://schema.org/EventScheduled" if ctx.get("status") != "finished" else "https://schema.org/EventCompleted",
+        }
+        # pulisci campi vuoti per validatore
+        if not data["location"]["address"]:
+            data["location"].pop("address", None)
+        return json.dumps(data, ensure_ascii=False)
+
+
     def build_match_pages(self, match_ids: set[int]) -> set[int]:
         """Pagine partita: ritorna gli id effettivamente generati (per i link del log giocatori)."""
         built: set[int] = set()
+        base_url = "https://uamisjd.github.io/football-deep-analyzer"
         for mid in sorted(match_ids):
             ctx = self.analysis.build(mid)
             if not ctx:
@@ -322,8 +391,20 @@ class SiteBuilder:
             ctx["utc_kickoff"] = pd.Timestamp(ctx["utc_kickoff"]).tz_convert(self.tz)
             if ctx["status"] != "finished":
                 self.audit_rows.append(audit_match(ctx))
+            league_name = self.league_names.get(ctx["league_id"], "")
+            json_ld = self._json_ld_match(ctx, league_name, base_url)
+            # SEO per la scheda: descrizione compatta con 1X2 se disponibile
+            p = ctx.get("prediction")
+            if p and p.get("p_home") is not None:
+                page_desc = (f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name}: '
+                             f'1 {int(round(p["p_home"]*100))}% X {int(round(p["p_draw"]*100))}% 2 {int(round(p["p_away"]*100))}% '
+                             f'· gol attesi {p.get("lambda_home",0):.2f}–{p.get("lambda_away",0):.2f} · Over 2,5 {int(round(p.get("p_over25",0)*100))}%')
+            else:
+                page_desc = f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name} — analisi pre-partita, forma e precedenti.'
+            page_title = f'{ctx.get("home_name")} - {ctx.get("away_name")} — analisi · CalcioMetro'
             self._render("match.html", f"partite/{mid}.html", c=ctx,
-                         league_name=self.league_names.get(ctx["league_id"], ""))
+                         league_name=league_name, json_ld=json_ld,
+                         page_title=page_title, page_description=page_desc)
             built.add(mid)
         return built
 
@@ -543,12 +624,41 @@ class SiteBuilder:
         self._render("status.html", "stato.html", sources=rows, tables=tables,
                      audit=self.audit_rows, audit_counts=by_state)
 
+    def _write_seo_files(self, built_match_ids: set[int] | None = None) -> None:
+        """robots.txt aperto + sitemap.xml per indicizzazione organica (SEO)."""
+        base = "https://uamisjd.github.io/football-deep-analyzer"
+        (self.out / "robots.txt").write_text(
+            "User-agent: *\nAllow: /\nSitemap: " + base + "/sitemap.xml\n"
+        )
+        urls = ["", "index.html", "prossime.html", "risultati.html",
+                "accuratezza.html", "stagione.html", "stato.html", "info.html",
+                "giocatori/index.html"]
+        if built_match_ids:
+            urls += [f"partite/{mid}.html" for mid in sorted(built_match_ids)]
+            # schede giocatore (opzionale, sitemap solo se presenti)
+            try:
+                from ..site.players import PlayerCatalog
+                cat = PlayerCatalog(self.store)
+                urls += [f"giocatori/{pid}.html" for pid in cat.player_ids()[:5000]]
+            except Exception:
+                pass
+        now = self.now.strftime("%Y-%m-%d")
+        lines = ['<?xml version="1.0" encoding="UTF-8"?>',
+                 '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+        for u in urls:
+            loc = f"{base}/{u}" if u else base + "/"
+            lines.append(f"  <url><loc>{loc}</loc><lastmod>{now}</lastmod></url>")
+        lines.append("</urlset>")
+        (self.out / "sitemap.xml").write_text("\n".join(lines), encoding="utf-8")
+
     def build(self) -> dict[str, int]:
         if self.out.exists():
             shutil.rmtree(self.out)
         self.out.mkdir(parents=True)
         (self.out / ".nojekyll").write_text("")
-        (self.out / "robots.txt").write_text("User-agent: *\nDisallow: /\n")
+        (self.out / "robots.txt").write_text(
+            "User-agent: *\nAllow: /\nSitemap: https://uamisjd.github.io/football-deep-analyzer/sitemap.xml\n"
+        )
         fx = self.store.read("fixtures")
         if fx.empty:
             self._render("index.html", "index.html", title="Nessun dato",
@@ -594,6 +704,11 @@ class SiteBuilder:
         except Exception:
             lab_rows = 0
         self._render("info.html", "info.html", title="Metodologia e fonti", cal=cal_info, lab_rows=lab_rows)
+        # sitemap finale con tutte le partite effettivamente generate
+        try:
+            self._write_seo_files(built)
+        except Exception as exc:  # mai bloccare il build per la sitemap
+            log.warning("sitemap non scritta: %s", exc)
         return {"matches": len(built), "fixtures": len(fx), "players": n_players}
 
 
