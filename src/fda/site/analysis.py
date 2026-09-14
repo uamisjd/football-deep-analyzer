@@ -853,9 +853,22 @@ class MatchAnalysis:
         for r in rows.itertuples(index=False):
             rating = r.rating if not pd.isna(r.rating) else None
             season_rating = r.season_rating if not pd.isna(r.season_rating) else None
-            num = r.shirt_number if not pd.isna(r.shirt_number) else None
-            out.append({"name": r.player_name, "num": num, "rating": rating,
-                        "season_rating": season_rating, "captain": bool(r.is_captain)})
+            num = int(r.shirt_number) if not pd.isna(r.shirt_number) else None
+            # arricchisci con ruolo italiano e id per badge / prior shrunk
+            try:
+                pos_it = self._role_it(r.player_id, _val(r._asdict(), "usual_position_id"), _val(r._asdict(), "position_id"))
+            except Exception:
+                pos_it = None
+            try:
+                usual = int(r.usual_position_id) if not pd.isna(r.usual_position_id) else None
+            except Exception:
+                usual = None
+            out.append({"id": int(r.player_id) if not pd.isna(r.player_id) else None,
+                        "name": r.player_name, "num": num, "rating": rating,
+                        "season_rating": season_rating, "captain": bool(r.is_captain),
+                        "pos": pos_it, "usual": usual})
+        # ordina per numero di maglia quando disponibile per lettura 1-11, altrimenti per nome
+        out.sort(key=lambda x: (x["num"] is None, x["num"] if x["num"] is not None else 999, x["name"]))
         return out
 
     def team_key_players(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:

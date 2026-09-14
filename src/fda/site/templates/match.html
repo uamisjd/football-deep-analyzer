@@ -233,14 +233,12 @@
     {% set ab = c[side ~ '_absences'] %}{% set stt = c[side ~ '_starters'] %}{% if ab and ab.players %}
     <p><b>Indisponibili ({{ ab.n }})</b>{% if ab.starters_out %} <span class="mut small">· {{ ab.starters_out }} {{ 'titolare abituale' if ab.starters_out == 1 else 'titolari abituali' }} fuori</span>{% endif %}{% if ab.contrib_lost_p90 %} <span class="mut small">· {{ ab.contrib_lost_p90|dec }} xG+xA a partita in meno</span>{% endif %}</p>
     <table>
-      <tr><th class="mut small">giocatore</th><th class="mut small">motivo</th><th class="r" style="width:44px">min</th><th class="r" style="width:38px">g+a</th><th class="r" style="width:64px">xG+xA/90</th></tr>
+      <tr><th class="mut small">giocatore</th><th class="mut small">motivo · rientro</th><th class="r" style="width:46%">impatto</th></tr>
       {% for u in ab.players %}
-      <tr>
-        <td>{{ u.name }}{% if u.pos %} <span class="mut small">{{ u.pos }}</span>{% endif %}{% if u.starter %} <span class="small" title="almeno metà dei minuti medi per giocatore della squadra">· titolare</span>{% endif %}{% if u.ret %}<span class="mut small"> · {{ u.ret }}</span>{% endif %}</td>
-        <td class="mut small">{{ u.type }}</td>
-        <td class="r small">{{ u.minutes if u.minutes else '—' }}</td>
-        <td class="r small">{% if u.minutes %}{{ u.goals }}+{{ u.assists }}{% else %}—{% endif %}</td>
-        <td class="r small">{{ u.contrib_p90|dec if u.contrib_p90 else '—' }}</td>
+      <tr {% if not u.minutes %}style="opacity:.62"{% endif %}>
+        <td><b>{{ u.name }}</b>{% if u.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ u.pos }}</span>{% endif %}{% if u.starter %} <span class="small" title="almeno metà dei minuti medi per giocatore">· titolare</span>{% endif %}</td>
+        <td class="mut small">{{ u.type }}{% if u.ret %} · {{ u.ret }}{% endif %}</td>
+        <td class="r small">{% if u.minutes %}{{ u.minutes }}′ · {{ u.goals }}+{{ u.assists }} · <b style="color:var(--accent)">{{ u.contrib_p90|dec }}/90</b>{% else %}<span class="mut">fuori rosa · n.d.</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
@@ -252,9 +250,19 @@
         finite misurate il 2026-09-13), quindi il silenzio non è distinguibile da «nessuno fuori». -#}
     <p class="small mut">Nessun indisponibile segnalato nella distinta pubblicata dalla fonte ({{ 'formazione ufficiale' if c.lineup_type == 'official' or c.status == 'finished' else 'formazione probabile' }}).</p>
     {% endif %}
-    {% if stt %}<p style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · <span title="Somma Transfermarkt titolari">valore titolari €{{ (c[side ~ '_value']/1e6)|it_num }}M</span>{% endif %}</p>
-      <p class="small">{% for s in stt %}<span style="white-space:nowrap">{% if s.num %}<b style="color:var(--txt2)">{{ s.num }}</b> {% endif %}{{ s.name }}{% if s.captain %} (C){% endif %}{% if s.rating %} <span class="mut">{{ s.rating|dec(1) }}</span>{% endif %}</span>{{ ' · ' if not loop.last }}{% endfor %}</p>
-      {% if stt|length != 11 %}<p class="small mut">La fonte elenca {{ stt|length|it_plural('giocatore') }} come titolari: la distinta non è ancora definitiva.</p>{% endif %}{% endif %}
+    {% if stt %}
+      <div class="formation-head" style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · <span class="mut small" title="Somma Transfermarkt titolari">€{{ (c[side ~ '_value']/1e6)|it_num }}M titolari</span>{% endif %}</div>
+      <ol class="formation-list">
+        {% for s in stt %}
+        <li class="{% if s.pos == 'portiere' %}is-gk{% endif %}">
+          <span class="num">{{ s.num if s.num is not none else '—' }}</span>
+          {% if s.id %}<a href="{{ root }}giocatori/{{ s.id }}.html" style="flex:1">{{ s.name }}{% if s.captain %} (C){% endif %}</a>{% else %}<span style="flex:1">{{ s.name }}{% if s.captain %} (C){% endif %}</span>{% endif %}
+          <span class="role">{{ s.pos or '' }}</span>{% if s.rating %} <span class="mut small">{{ s.rating|dec(1) }}</span>{% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+      {% if stt|length != 11 %}<p class="small mut" style="margin-top:6px">La fonte elenca {{ stt|length }} titolari: distinta non definitiva.</p>{% endif %}
+    {% endif %}
   </div>
 {% endfor %}
 </div>

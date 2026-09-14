@@ -448,6 +448,14 @@ footer .cols li{margin:6px 0}
 .projection-copy strong{font-weight:800}
 header{border-bottom:1px solid #263142}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
+/* formazione probabile — lista a card con numero e ruolo (audit 3.3) */
+.formation-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;list-style:none;padding:0;margin:8px 0 0}
+.formation-list li{display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--surface2);border:1px solid var(--line);border-radius:8px}
+.formation-list li.is-gk{border-color:var(--accent);background:rgba(40,200,147,.08)}
+.formation-list .num{font:700 12.5px var(--font-head);color:var(--mut);min-width:20px;text-align:right}
+.formation-list .role{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.formation-head{font-size:13px;margin:0 0 2px}
+@media (max-width:520px){.formation-list{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}.match-card:hover{transform:none!important}}
 </style>
 </head>
