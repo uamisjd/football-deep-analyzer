@@ -74,7 +74,7 @@ e la verifica va fatta in GitHub Actions.
 |---|---|---|---|
 | 3.1 | CSS inline duplicato 4.128 volte | **P0** | **144,4 MB su 248,3 MB (58%)**; 65% di ogni scheda giocatore |
 | 3.2 | ✅ Tema chiaro: 3 testi **invisibili** (V della forma, selezione, punteggio più probabile) + fallback OS senza 18 token | **P0** | peggio **1,02:1**; la barra 1X2 ospite a **2,92:1** in **entrambi** i temi |
-| 3.3 | Barre 1X2 che sommano 99/101 — la fix esiste già, non è collegata | **P0** | **37/167** hero (22,2%) + **64/277** steps |
+| 3.3 | ✅ Barre 1X2 che sommano 99/101 — erano **tre** barre, non due | **P0** | **565/2.152** previsioni (26,3%); ora 0 su 565 barre pubblicate |
 | 3.4 | Barre dei gol oltre il contenitore | **P0** | **5 pagine** con `height:183%`/`163%`/`108%`/`104%` |
 | 3.5 | ✅ Palette chiara ricalcolata su 4 superfici | **P0** | da **21** coppie sotto AA a **0**; 14 test nuovi senza browser |
 | 3.6 | 0 skip-link, 0 `<th scope>` su 99.839, salto h2→h4 ovunque | P1 | **4.128/4.128** pagine |
@@ -1882,6 +1882,65 @@ Controllo manuale: `grep -o 'width:[0-9]*%">1 · [0-9]*%' site/partite/5749661.h
 
 ---
 
+### ✅ RISOLTO in questa sessione (P0.3) — e il difetto era più esteso: **tre** barre, 26,3% delle previsioni
+
+Le barre con questo difetto erano **tre**, non due: anche la mini-barra delle liste
+(`_matchlist.html:51`, usata in `index.html`) arrotondava tre volte in modo indipendente — in
+aria-label, nelle larghezze **e** nelle etichette `.prob-labels` — e calcolava il favorito sui
+valori grezzi, quindi poteva evidenziare un esito diverso dal più grande fra quelli stampati.
+
+| Barra | File | Prima | Ora |
+|---|---|---|---|
+| previsione in testa alla scheda | `match.html:44` | tre `\|round` indipendenti; **nessun `aria-label`** | `{% set b1x2 = (…)\|pct3 %}` per larghezze, etichette e `aria-label` (aggiunto) |
+| passi della scomposizione | `match.html:81` | etichette a 1 decimale indipendenti (99,9 / 100,1) e larghezze a intero → **due numeri diversi per lo stesso esito** | `\|pct3(1)` per larghezze, etichette e `aria-label` |
+| mini-barra delle liste | `_matchlist.html:51` | tre `\|round` × 3 posti; favorito dai grezzi | `\|pct3` per tutto + `fav_i` = indice del massimo **stampato** |
+
+**Codice toccato.**
+
+1. `fmt.pct_triple(p, nd=0)` **generalizzato**: il lavoro è fatto in unità intere di `10**-nd`,
+   quindi la somma è esatta e non dipende dall'aritmetica binaria dei decimali. Corretto anche il
+   tie-break: con `argsort(...)[::-1]` la parità premiava l'**ultimo** esito, in contraddizione con
+   la docstring che dichiarava la precedenza a (1, X, 2) — ora `argsort([-r for r in residuals])`,
+   stabile, dà la precedenza al primo. `nd=0` continua a restituire interi (test storici invariati).
+2. `build.py`: **eliminato il wrapper** `pct_triple` con la sua copia di riserva di 15 righe
+   (duplicazione §3.7: se la copia diverge, calendario e scheda pubblicano percentuali diverse per
+   la stessa previsione) → import diretto da `fmt`. Registrato il filtro Jinja `pct3`.
+3. `verify_site.py`: nuovo controllo **[11a]**, invariante di **pubblicazione** (non di calcolo):
+   le tre larghezze sommano 100, ogni etichetta coincide con la propria larghezza, l'`aria-label`
+   ripete gli stessi tre numeri, la barra ha un `aria-label`, `.prob-labels` evidenzia **un solo**
+   favorito ed è il massimo. Il wordmark dell'header (che riusa `class="bar"`) resta fuori senza
+   esclusioni esplicite: i suoi segmenti non hanno `style="width:…"`.
+4. `verify_site.py` **[10]** (scomposizione) **era scritto con la regola sbagliata**: ricalcolava i
+   passi arrotondando i tre valori in modo indipendente e tollerava 0,06 pp. Dopo la correzione
+   segnalava 14 pagine corrette — cioè il verificatore difendeva il difetto. Ora confronta con
+   `pct_triple(…, 1)` e lo scarto ammesso è **zero**, perché pagina e verificatore chiamano la
+   stessa funzione.
+
+**Misura sulla popolazione** (`data/processed/predictions.parquet`, 2.152 previsioni):
+
+| Regola di arrotondamento | vettori che non sommano 100 |
+|---|---|
+| tre arrotondamenti indipendenti, interi (barre hero e liste) | **565 = 26,3%** |
+| tre arrotondamenti indipendenti, 1 decimale (barre dei passi) | **521 = 24,2%** |
+| `pct_triple` | **0** |
+
+La stima iniziale di questo audit (22,2% delle hero pubblicate, 23,1% degli steps) era quindi
+**prudenziale**: sull'intera popolazione il difetto toccava il 26,3% delle previsioni.
+
+**Verifica eseguita.**
+
+```bash
+$ .venv/bin/python -m pytest -q            # 193 passed (3 test nuovi)
+$ .venv/bin/fda build                      # 2m13s → 4.123 pagine
+$ .venv/bin/python scripts/verify_site.py  # nessun problema · 14.108 controlli (erano 11.565)
+                                           # [11a] barre 1X2 verificate: 565
+```
+
+I tre test nuovi: proprietà a 0/1/2 decimali su 400 vettori casuali (somma esatta e scarto ≤ 1
+unità), **scheda generata end-to-end** con il vettore che rompeva (`0,4049 / 0,4049 / 0,1902` →
+40+40+19 = 99%) e il verificatore alimentato con barre sintetiche corrette e rotte (così il
+controllo [11a] è a sua volta verificato, non solo fidato).
+
 ## 3.4 [P0] Barre della distribuzione gol oltre il 100% del contenitore: 5 pagine pubblicate con `height:183%`
 
 **Osservato.** Le barre verticali della distribuzione dei gol usano un'altezza percentuale
@@ -2307,7 +2366,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 |---|---|---|---|---|
 | P0.1 | ✅ **FATTO** — 22 token di foreground nuovi (hover, selezione, chip, leggende, `on-accent`), tutti gli hard-coded sostituiti, fallback OS completo | `base.html`, `match.html` §3.2 | **basso** (solo CSS) | `tests/test_tema_contrasto.py`: 14 test; `verify_site.py` 11.565 controlli OK |
 | P0.2 | ✅ **FATTO** — palette chiara ≥4,5:1 su **4** superfici, gradienti della barra 1X2 corretti, override della cella modale eliminato, `--lose`/`--draw` scuri corretti | `base.html` §3.5 | **basso** | `test_contrasto_token_di_testo_aa[dark\|light]`, `test_barra_1x2_stop_gradiente`, `test_cella_punteggio_piu_probabile` |
-| P0.3 | Barre 1X2 con `pct_triple` (la funzione esiste già) + `pct_triple_dec` | `match.html:44,81`, `fmt.py`, `build.py` | **basso** | `verify_site.py [11a]`: 101 → 0 fallimenti |
+| P0.3 | ✅ **FATTO** — `pct_triple(p, nd)` generalizzato, filtro Jinja `pct3`, tre barre collegate, wrapper duplicato di `build.py` eliminato, controllo `[10]` allineato alla regola di pubblicazione | `fmt.py`, `build.py`, `match.html`, `_matchlist.html`, `verify_site.py` §3.3 | **basso** | `verify_site.py [11a]`: **565 barre, 0 problemi**; 14.108 controlli totali |
 | P0.4 | Barre dei gol oltre il 100% (5 pagine) | `advanced.py:goals_view` | **basso** | `grep height:[0-9]*%` → 0 sopra 100 |
 | P0.5 | CSS esterno con cache-busting (−144 MB, −58% del sito) | `build.py`, `base.html` | **medio** (percorsi relativi + flash) | `du -sb site` ≈ 110 MB; controllo visivo in preview |
 | P0.6 | Composizione del campione in *Accuratezza* (3 su 84 con il modello corrente) | `build.py:479+`, `accuracy.html` | **basso** | la frase compare; `n` coerente con la tabella |
@@ -2411,7 +2470,7 @@ collegata) e P0.8 (invarianti di pubblicazione in `verify_site.py`).
 | Curiosità FotMob scartate | **685 / 2.014 (34,0%)**; 75 schede (20%) con <3 | §2.5 |
 | Gialli arbitro per lega | FRA1 3,85 … **POR1 5,04**; `referee_matches` min **6** | §2.6 |
 | CSS duplicato | 4.128 × 34.984 B = **144,4 MB (58,2%)** su 248,3 MB HTML | §3.1 |
-| Barre 1X2 errate | 37/167 hero (22,2%) + 64/277 steps (23,1%); 57 pagine con larghezze ≠100 | §3.3 |
+| Barre 1X2 errate | ✅ **0** su 565 barre pubblicate (erano 565/2.152 previsioni = 26,3%) | §3.3 |
 | Barre gol in overflow | **5** pagine (`height:183%`, `163%`, `108%`, `104%`) | §3.4 |
 | Contrasto tema chiaro | ✅ **0** coppie sotto 4,5:1 (erano 21); peggio era **1,02:1** | §3.2, §3.5 |
 | Skip-link / `<th scope>` / salti h | **0** / **0 su 99.839** / **4.128 pagine su 4.128** | §3.6 |

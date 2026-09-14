@@ -92,3 +92,48 @@ def test_verify_site_accepts_existing_fragment_and_decimal_plural(tmp_path):
     (site / "broken.html").write_text('<a href="#missing">no</a>', encoding="utf-8")
     fails, _ = vs.check_pages(site)
     assert any("ancora interna mancante #missing" in f for f in fails)
+
+
+def test_verify_site_barre_1x2(tmp_path):
+    """[11a] Il verificatore prende le barre che non chiudono 100 o contraddicono le etichette."""
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+    ok = (
+        '<div class="bar" role="img" aria-label="Probabilità: vittoria Casa 41 per cento, '
+        'pareggio 40 per cento, vittoria Ospite 19 per cento" style="height:30px">'
+        '<span class="h" style="width:41%">1 · 41%</span>'
+        '<span class="d" style="width:40%">X · 40%</span>'
+        '<span class="a" style="width:19%">2 · 19%</span></div>'
+        '<div class="bar" role="img" aria-label="passo: 61,3 per cento, 24,2 per cento, '
+        '14,5 per cento"><span class="h" style="width:61.3%">1 · 61,3%</span>'
+        '<span class="d" style="width:24.2%">X · 24,2%</span>'
+        '<span class="a" style="width:14.5%">2 · 14,5%</span></div>'
+        '<div class="mini-probability"><div class="bar" role="img" aria-label="Probabilità: 1 41%, '
+        'pareggio 40%, 2 19%"><span class="h" style="width:41%"></span>'
+        '<span class="d" style="width:40%"></span><span class="a" style="width:19%"></span></div>'
+        '<div class="prob-labels"><span class="is-fav">1 41%</span><span>X 40%</span>'
+        '<span>2 19%</span></div></div>'
+        '<header><div class="bar"><span class="h"><span class="ca">Calcio</span></span></div></header>')
+    (site / "scheda.html").write_text(ok, encoding="utf-8")
+    fails, checks = vs.check_bars(site)
+    assert fails == [] and checks >= 5, (fails, checks)   # il wordmark dell'header non entra
+
+    rotta = (
+        '<div class="bar" style="height:30px"><span class="h" style="width:40%">1 · 40%</span>'
+        '<span class="d" style="width:40%">X · 40%</span>'
+        '<span class="a" style="width:19%">2 · 19%</span></div>'                      # 99%, no aria
+        '<div class="bar" role="img" aria-label="Probabilità: 41 per cento, 40 per cento, '
+        '19 per cento"><span class="h" style="width:42%">1 · 41%</span>'                # etichetta≠larghezza
+        '<span class="d" style="width:40%">X · 40%</span>'
+        '<span class="a" style="width:19%">2 · 19%</span></div>'
+        '<div class="prob-labels"><span>1 41%</span><span class="is-fav">X 40%</span>'
+        '<span>2 19%</span></div>')                                                    # favorito ≠ massimo
+    (site / "rotta.html").write_text(rotta, encoding="utf-8")
+    fails, _ = vs.check_bars(site)
+    assert any("rotta.html: barra 1X2 larga 99%" in f for f in fails)
+    assert any("rotta.html: barra 1X2 senza aria-label" in f for f in fails)
+    assert any("rotta.html: etichetta 41% ma larghezza 42%" in f for f in fails)
+    assert any("rotta.html: aria-label [41.0, 40.0, 19.0] != larghezze [42.0, 40.0, 19.0]" in f for f in fails)
+    assert any("rotta.html: favorito evidenziato ma non è il massimo" in f for f in fails)
+    assert not [f for f in fails if f.startswith("scheda.html")]

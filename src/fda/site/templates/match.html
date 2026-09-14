@@ -41,7 +41,10 @@
 <div class="grid detail-card" id="previsione">
   <div class="card">
     <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
-    <div class="bar" style="height:30px;font-size:14px"><span class="h" style="width:{{ (p.p_home*100)|round }}%">1 · {{ (p.p_home*100)|round|int }}%</span><span class="d" style="width:{{ (p.p_draw*100)|round }}%">X · {{ (p.p_draw*100)|round|int }}%</span><span class="a" style="width:{{ (p.p_away*100)|round }}%">2 · {{ (p.p_away*100)|round|int }}%</span></div>
+    {# larghezze ed etichette dagli stessi tre numeri, somma esattamente 100: prima tre
+       arrotondamenti indipendenti facevano 99% o 101% e la barra non chiudeva il contenitore #}
+    {% set b1x2 = (p.p_home, p.p_draw, p.p_away)|pct3 %}
+    <div class="bar" role="img" aria-label="Probabilità: vittoria {{ c.home_name }} {{ b1x2[0] }} per cento, pareggio {{ b1x2[1] }} per cento, vittoria {{ c.away_name }} {{ b1x2[2] }} per cento" style="height:30px;font-size:14px"><span class="h" style="width:{{ b1x2[0] }}%">1 · {{ b1x2[0] }}%</span><span class="d" style="width:{{ b1x2[1] }}%">X · {{ b1x2[1] }}%</span><span class="a" style="width:{{ b1x2[2] }}%">2 · {{ b1x2[2] }}%</span></div>
     <table style="margin-top:10px">
       <tr><th></th><th class="r">{{ c.home_name }}</th><th class="r">{{ c.away_name }}</th></tr>
       <tr><th>Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
@@ -78,7 +81,8 @@
       <div class="step-head"><strong>{{ loop.index }} · {{ st.label }}</strong>
         {% if st.delta_pp is not none %}<span class="delta">Δ {{ st.delta_pp|dec(1, true) }} pp</span>{% endif %}
         <span class="small mut">{{ st.note }}</span></div>
-      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ (st.p_home*100)|dec(1) }} per cento, pareggio {{ (st.p_draw*100)|dec(1) }} per cento, vittoria {{ c.away_name }} {{ (st.p_away*100)|dec(1) }} per cento"><span class="h" style="width:{{ (st.p_home*100)|round }}%">1 · {{ (st.p_home*100)|dec(1) }}%</span><span class="d" style="width:{{ (st.p_draw*100)|round }}%">X · {{ (st.p_draw*100)|dec(1) }}%</span><span class="a" style="width:{{ (st.p_away*100)|round }}%">2 · {{ (st.p_away*100)|dec(1) }}%</span></div>
+      {% set sb = (st.p_home, st.p_draw, st.p_away)|pct3(1) %}
+      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ sb[0]|dec(1) }} per cento, pareggio {{ sb[1]|dec(1) }} per cento, vittoria {{ c.away_name }} {{ sb[2]|dec(1) }} per cento"><span class="h" style="width:{{ sb[0] }}%">1 · {{ sb[0]|dec(1) }}%</span><span class="d" style="width:{{ sb[1] }}%">X · {{ sb[1]|dec(1) }}%</span><span class="a" style="width:{{ sb[2] }}%">2 · {{ sb[2]|dec(1) }}%</span></div>
     </li>{% endfor %}
   </ol>
 </div>

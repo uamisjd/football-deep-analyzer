@@ -47,11 +47,16 @@
       <span class="projection-note">favorito · +{{ meta.margin_pp|dec(1) }} punti sul secondo ({{ meta.second_name }} {{ (meta.second_probability*100)|round|int }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
     </div>
     <div class="mini-probability">
-      {% set fav_i = 0 if p.p_home >= p.p_draw and p.p_home >= p.p_away else 1 if p.p_draw >= p.p_away else 2 %}
-      <div class="bar" role="img" aria-label="Probabilità: 1 {{ (p.p_home * 100)|round|int }}%, pareggio {{ (p.p_draw * 100)|round|int }}%, 2 {{ (p.p_away * 100)|round|int }}%">
-        <span class="h" style="width:{{ (p.p_home * 100)|round }}%"></span><span class="d" style="width:{{ (p.p_draw * 100)|round }}%"></span><span class="a" style="width:{{ (p.p_away * 100)|round }}%"></span>
+      {# 1X2 corretto una volta sola: larghezze, etichette, aria-label e favorito leggono gli
+         stessi tre numeri, che sommano esattamente 100 (fmt.pct_triple). Arrotondare tre volte
+         in modo indipendente produceva 99% o 101% e, in caso di parità, poteva evidenziare come
+         favorito un esito diverso dal più grande fra quelli stampati. #}
+      {% set b1x2 = (p.p_home, p.p_draw, p.p_away)|pct3 %}
+      {% set fav_i = b1x2.index(b1x2|max) %}
+      <div class="bar" role="img" aria-label="Probabilità: 1 {{ b1x2[0] }}%, pareggio {{ b1x2[1] }}%, 2 {{ b1x2[2] }}%">
+        <span class="h" style="width:{{ b1x2[0] }}%"></span><span class="d" style="width:{{ b1x2[1] }}%"></span><span class="a" style="width:{{ b1x2[2] }}%"></span>
       </div>
-      <div class="prob-labels"><span{% if fav_i==0 %} class="is-fav"{% endif %}>1 {{ (p.p_home * 100)|round|int }}%</span><span{% if fav_i==1 %} class="is-fav"{% endif %}>X {{ (p.p_draw * 100)|round|int }}%</span><span{% if fav_i==2 %} class="is-fav"{% endif %}>2 {{ (p.p_away * 100)|round|int }}%</span></div>
+      <div class="prob-labels"><span{% if fav_i==0 %} class="is-fav"{% endif %}>1 {{ b1x2[0] }}%</span><span{% if fav_i==1 %} class="is-fav"{% endif %}>X {{ b1x2[1] }}%</span><span{% if fav_i==2 %} class="is-fav"{% endif %}>2 {{ b1x2[2] }}%</span></div>
     </div>
   </div>
   {% if meta %}<div class="signal signal-{{ meta.signal_tone }}" title="{{ meta.signal_label }}{% if meta.has_dc and meta.has_elo and meta.dc_top_prob is not none and meta.elo_top_prob is not none %} — DC {{ (meta.dc_top_prob*100)|round|int }}% ({{ meta.dc_top_name }}) vs Elo {{ (meta.elo_top_prob*100)|round|int }}% ({{ meta.elo_top_name }}){% endif %}">
