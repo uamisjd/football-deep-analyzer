@@ -15,6 +15,7 @@
 <meta name="twitter:card" content="summary">
 {% block head_extra %}{% endblock %}
 {% if json_ld is defined and json_ld %}<script type="application/ld+json">{{ json_ld|safe }}</script>{% endif %}
+<script>(function(){try{var t=localStorage.getItem('cm-theme');if(!t){t=window.matchMedia&&window.matchMedia('(prefers-color-scheme: light)').matches?'light':'dark';}document.documentElement.setAttribute('data-theme',t);}catch(e){}})();</script>
 <title>{% block title %}CalcioMetro{% endblock %}</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%233ef0a8'/%3E%3Cstop offset='1' stop-color='%2314925d'/%3E%3C/linearGradient%3E%3ClinearGradient id='m' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%23ffd76a'/%3E%3Cstop offset='1' stop-color='%23c1851d'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='1' y='1' width='62' height='62' rx='18' fill='%2312202e' stroke='%232f4158' stroke-width='1.5'/%3E%3Ctext x='32' y='45' text-anchor='middle' font-family='Sora,Inter,Arial,sans-serif' font-weight='800' font-size='32'%3E%3Ctspan fill='url(%23g)'%3EC%3C/tspan%3E%3Ctspan fill='url(%23m)'%3EM%3C/tspan%3E%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -42,6 +43,19 @@
   --max:1200px;
   --font-head:Sora,Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   --font-body:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+}
+[data-theme="light"]{
+  --bg:#f4f6f8; --bg2:#ffffff; --surface:#ffffff; --surface2:#eef2f6; --surface3:#e2e8f0;
+  --line:#d0d8e6; --line2:#b8c4d8;
+  --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#6b7f9a;
+  --accent:#1d9a71; --accent-soft:#1a8a65; --accent-dim:#d6f0e6;
+  --win:#1a8a65; --draw:#6b7f9a; --lose:#c5403a; --amber:#9a7a1a; --info:#2a7cc7;
+}
+[data-theme="dark"]{
+  --bg:#0c1118; --bg2:#0f161f; --surface:#131a24; --surface2:#1a2330; --surface3:#212c3a;
+  --line:#263142; --line2:#2c3850;
+  --txt:#e9eef6; --txt2:#c4cedc; --mut:#a8b5c8; --mut2:#8796ac;
+  --accent:#28c893; --accent-soft:#1d9a71; --accent-dim:#0f3126;
 }
 *{box-sizing:border-box}
 html{scroll-behavior:smooth}
@@ -111,7 +125,7 @@ th{color:var(--mut);font-weight:600;font-size:11.5px;text-transform:uppercase;le
 td.r,th.r{text-align:right}td.c,th.c{text-align:center}
 tbody tr{transition:background .12s}
 tbody tr:hover{background:var(--surface2)}
-td.best{font-weight:800;color:var(--accent)}
+td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-size:9px;vertical-align:super;opacity:.9}
 
 /* ---- Utility testo ---- */
 .mut{color:var(--mut)}.mut2{color:var(--mut2)}.small{font-size:12.5px}
@@ -224,8 +238,10 @@ td.best{font-weight:800;color:var(--accent)}
 .projection-p{color:var(--accent);font-variant-numeric:tabular-nums}
 .projection-note,.model-foot{color:var(--mut);font-size:12px;line-height:1.40}
 .projection-copy strong{font-weight:800}
-.prob-labels{font-size:11.5px}
+.prob-labels{font-size:12px}
 .prob-labels span.is-fav{font-weight:800;color:var(--txt)}
+.model-foot b{color:var(--txt);font-weight:800}
+/* WCAG 1.4.1 — il preferito è anche in grassetto, non solo a colore */
 .mini-probability{min-width:0}.mini-probability .bar{height:22px;border-radius:6px}.mini-probability .bar span{padding:0}
 .prob-labels{display:flex;justify-content:space-between;gap:6px;color:var(--mut);font-size:10.5px;font-variant-numeric:tabular-nums;margin-top:5px}
 .prob-labels span{white-space:nowrap}.prob-labels span:first-child{color:var(--win)}.prob-labels span:last-child{color:#ef918b}
@@ -244,8 +260,11 @@ td.best{font-weight:800;color:var(--accent)}
   .form-dot.V{outline:2px solid #1d9a71}
   .form-dot.P{outline:2px solid #e0605a}
 }
-.form-dot.V::after{content:""; position:absolute; bottom:2px; width:7px; height:2.5px; background:currentColor; border-radius:1px; opacity:.9} /* vittoria: tacca superiore */
-.form-dot.P::after{content:""; position:absolute; top:2px; width:7px; height:2.5px; background:currentColor; border-radius:1px; opacity:.9} /* sconfitta: tacca diversa per pattern */
+/* accessibilità V/N/P oltre al colore: simbolo ▲/▼/— (WCAG 1.4.1, 4,5% deuteranopia) */
+.form-dot.V::before{content:"▲";font-size:7px;position:relative;top:-1px;margin-right:1px;opacity:.95}
+.form-dot.P::before{content:"▼";font-size:7px;position:relative;top:-1px;margin-right:1px;opacity:.95}
+.form-dot.N::before{content:"—";font-size:7px;position:relative;top:-1px;opacity:.9}
+.form-dot.V::after,.form-dot.P::after{content:none}
 .fact{color:var(--txt2); padding:4px 8px; background:var(--surface2); border:1px solid var(--line); border-radius:8px; font-size:12px}
 .fact > span:last-child{color:var(--mut)}.fact-absence{color:var(--amber); background:rgba(230,179,74,.08); border-color:rgba(230,179,74,.25)}.fact-absence > span:last-child{color:var(--txt2)}
 .fact-icon{width:14px;height:14px; flex:0 0 auto; opacity:.9; vertical-align:-2px; margin-right:2px}
@@ -292,7 +311,22 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .steps .delta{font-size:11.5px;font-weight:700;color:var(--txt2);background:var(--surface3);
   border:1px solid var(--line2);border-radius:999px;padding:1px 8px;font-variant-numeric:tabular-nums}
 .steps .bar{height:26px;font-size:12px;border-radius:8px}
-@media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}}
+@media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}.goalbars{height:118px}.scoregrid{border-spacing:2px}.scoregrid th,.scoregrid td{width:34px;height:34px;font-size:10px}}
+@media (max-width:360px){.scoregrid th,.scoregrid td{width:30px;height:30px;font-size:9.5px}.match-teams{grid-template-columns:1fr auto 1fr;gap:6px}.match-team a{font-size:14px}.hero-metrics{gap:10px 14px}.hero-metric b{font-size:14px}}
+/* light mode: stesso design, superfici chiare — toggle manuale + prefers-color-scheme */
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f4f6f8; --bg2:#ffffff; --surface:#ffffff; --surface2:#eef2f6; --surface3:#e2e8f0;
+    --line:#d0d8e6; --line2:#b8c4d8;
+    --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#6b7f9a;
+    --accent-dim:#d6f0e6;
+  }
+}
+[data-theme="light"] header{background:linear-gradient(180deg,#ffffff,#eef2f6)}
+[data-theme="light"] footer{background:#eef2f6}
+[data-theme="light"] .match-hero{background:linear-gradient(135deg,#ffffff,#eef2f6)}
+[data-theme="light"] .match-jump{background:rgba(255,255,255,.92)}
+[data-theme="light"] .scoregrid td.mode{color:#ffffff}
 
 /* ---- Hero / KPI / chart (home) ---- */
 .hero{margin:4px 0 20px;padding:30px 30px;border-radius:var(--radius);background:var(--surface);
@@ -424,6 +458,23 @@ footer .cols li{margin:6px 0}
   .cal-head,.cal-row{gap:6px}
   .cal-teams{font-size:12.5px}
 }
+/* focus visibile + header allineamento (audit 4.2) */
+.day-group{padding:12px 12px 8px}
+.day-heading{padding:6px 2px 10px}
+.match-card{padding:14px 14px 14px}
+.projection-copy strong{font-weight:800}
+header{border-bottom:1px solid #263142}
+a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
+.help{cursor:help;border-bottom:1px dotted var(--mut);font-size:10px;opacity:.9}
+/* formazione probabile — lista a card con numero e ruolo (audit 3.3) */
+.formation-list{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;list-style:none;padding:0;margin:8px 0 0}
+.formation-list li{display:flex;gap:8px;align-items:center;padding:7px 10px;background:var(--surface2);border:1px solid var(--line);border-radius:8px;min-width:0}
+.formation-list li.is-gk{border-color:var(--accent);background:rgba(40,200,147,.08);box-shadow:0 0 0 1px rgba(40,200,147,.15)}
+.formation-list .num{font:700 12.5px var(--font-head);color:var(--mut);min-width:22px;text-align:right;flex:0 0 auto}
+.formation-list a{flex:1;min-width:0;font-size:13px;font-weight:600;line-height:1.25;color:var(--txt);white-space:normal;overflow-wrap:break-word;word-break:normal;hyphens:none}
+.formation-list .role{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap;flex:0 0 auto}
+.formation-head{font-size:13px;margin:0 0 2px}
+@media (max-width:560px){.formation-list{grid-template-columns:1fr;gap:4px}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}.match-card:hover{transform:none!important}}
 </style>
 </head>
@@ -488,6 +539,7 @@ footer .cols li{margin:6px 0}
         <a href="{{ root }}info.html"{% if section == 'info' %} aria-current="page"{% endif %}>Info</a>
       </nav>
       <span class="updated"><span class="ver">v2</span> · aggiornato {{ generated_at|it_utc }} (ora italiana)</span>
+      <button id="themeToggle" type="button" aria-label="Cambia tema" title="Chiaro / scuro" style="margin-left:8px;width:36px;height:36px;border-radius:9px;border:1px solid var(--line2);background:var(--surface2);color:var(--mut);cursor:pointer;display:inline-flex;align-items:center;justify-content:center;font-size:15px;line-height:1">◐</button>
     </div>
   </div>
 </header>
@@ -522,5 +574,38 @@ footer .cols li{margin:6px 0}
     <div class="dati">Dati: FotMob, ESPN, Understat, football-data.co.uk (storico modelli). Nomi e marchi appartengono ai rispettivi proprietari.</div>
   </div>
 </footer>
+<script>
+(function(){
+  try{
+    var btn=document.getElementById('themeToggle');
+    if(btn){
+      var upd=function(){
+        var cur=document.documentElement.getAttribute('data-theme');
+        btn.textContent=cur==='light'?'◑':'◐';
+        btn.setAttribute('aria-pressed',cur==='light'?'true':'false');
+      };
+      upd();
+      btn.addEventListener('click',function(){
+        var cur=document.documentElement.getAttribute('data-theme');
+        var next=cur==='light'?'dark':'light';
+        document.documentElement.setAttribute('data-theme',next);
+        try{localStorage.setItem('cm-theme',next);}catch(e){}
+        upd();
+      });
+    }
+    var det=document.getElementById('verifica');
+    if(det){
+      var mq=window.matchMedia('(max-width: 760px)');
+      var apply=function(){
+        if(mq.matches) det.removeAttribute('open');
+        else det.setAttribute('open','');
+      };
+      apply();
+      if(mq.addEventListener) mq.addEventListener('change',apply);
+      else if(mq.addListener) mq.addListener(apply);
+    }
+  }catch(e){}
+})();
+</script>
 </body>
 </html>

@@ -32,7 +32,7 @@
       <tr><th>Statistica</th><th class="r">Totale</th><th class="r">Per 90′</th></tr>
       {% for row in p.stats_table %}
         {% if row.header %}<tr><th colspan="3" style="padding-top:10px">{{ row.group }}</th></tr>
-        {% else %}<tr><td>{{ row.label }}</td><td class="r">{{ row.total }}</td><td class="r">{{ row.per90 or '' }}</td></tr>{% endif %}
+        {% else %}<tr><td>{{ row.label }}{% if row.per90_shrunk_s %} <span class="mut small" title="Valore stabilizzato con prior bayesiano (180′ verso media di ruolo) per campioni &lt;270′">◎</span>{% endif %}</td><td class="r">{{ row.total }}</td><td class="r">{% if row.per90 %}<span title="{% if row.per90_shrunk_s %}grezzo {{ row.per90 }}/90 · shrunk {{ row.per90_shrunk_s }}/90 (prior 180′){% else %}{{ row.per90 }}/90′{% endif %}">{{ row.per90 }}{% if row.per90_shrunk_s %} <span class="mut small" style="font-size:10.5px">{{ row.per90_shrunk_s }}</span>{% endif %}</span>{% else %}—{% endif %}</td></tr>{% endif %}
       {% endfor %}
     </table>
   </div>
@@ -58,7 +58,7 @@
     {% endif %}
     {% if p.small_sample %}
     <p class="small mut" style="margin-top:8px">⚠ Campione ridotto: {{ p.matches|it_plural('gara') }} e {{ p.minutes|it_plural('minuto') }}.
-      A inizio stagione i percentili sono molto sensibili a una singola prestazione.</p>
+      A inizio stagione i percentili sono molto sensibili a una singola prestazione. Il valore per 90 mostra anche lo <b>shrunk</b> (stabilizzato con prior 180′ verso media di ruolo) per evitare picchi su pochi minuti.</p>
     {% endif %}
   </div>
 </div>

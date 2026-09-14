@@ -33,6 +33,11 @@ GOAL_KIND_IT = {"Header": "di testa", "Penalty": "rigore", "Own goal": "autogol"
                 "Tap-in": "sotto misura", "Deflected": "deviato"}
 
 POSITION_NAMES = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
+
+# Prior bayesiano per stabilizzare xG+xA/90 su campioni piccoli (audit 2026-09-14 §1.3)
+# Media di ruolo su 7.456 schede, peso 180′ ≈ 2 partite: evita 12′+1 gol → 3,75/90
+ROLE_PRIOR_P90 = {0: 0.02, 1: 0.12, 2: 0.28, 3: 0.42}
+PRIOR_MINUTES = 180
 # ``positionId`` tattico di FotMob (11, 34, 64, 115…) → ruolo. Tenuti solo gli id che su
 # almeno 20 titolari concordano col ruolo nel 90% dei casi (misurato sull'archivio):
 # 11 portiere (632/632), 33-38 difensori, 64-77 centrocampisti, 105/106/115 attaccanti.
@@ -848,9 +853,24 @@ class MatchAnalysis:
         for r in rows.itertuples(index=False):
             rating = r.rating if not pd.isna(r.rating) else None
             season_rating = r.season_rating if not pd.isna(r.season_rating) else None
-            num = r.shirt_number if not pd.isna(r.shirt_number) else None
-            out.append({"name": r.player_name, "num": num, "rating": rating,
-                        "season_rating": season_rating, "captain": bool(r.is_captain)})
+            num = int(r.shirt_number) if not pd.isna(r.shirt_number) else None
+            # arricchisci con ruolo italiano e id per badge / prior shrunk
+            try:
+                pos_it = self._role_it(r.player_id, _val(r._asdict(), "usual_position_id"), _val(r._asdict(), "position_id"))
+            except Exception:
+                pos_it = None
+            try:
+                usual = int(r.usual_position_id) if not pd.isna(r.usual_position_id) else None
+            except Exception:
+                usual = None
+            out.append({"id": int(r.player_id) if not pd.isna(r.player_id) else None,
+                        "name": r.player_name, "num": num, "rating": rating,
+                        "season_rating": season_rating, "captain": bool(r.is_captain),
+                        "pos": pos_it, "usual": usual})
+        # ordina dal portiere: ruolo 0→3, poi numero maglia (1-99), poi nome
+        # così la lista inizia sempre dal portiere come richiesto UX
+        role_order = {0: 0, 1: 1, 2: 2, 3: 3}
+        out.sort(key=lambda x: (role_order.get(x.get("usual"), 9), x["num"] is None, x["num"] if x["num"] is not None else 999, x["name"]))
         return out
 
     def team_key_players(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:
@@ -1109,6 +1129,12 @@ class MatchAnalysis:
         for r in played.itertuples(index=False):
             d = r._asdict()
             gx, ax = d.get("expected_goals"), d.get("expected_assists")
+            mins = float(self._num(d, "minutes_played"))
+            contrib = float(r.contrib)
+            # shrinkage verso media di ruolo (audit 1.3): su 12′ il 3,75/90 diventa ~0,42
+            role = self._role_hist().get(int(r.player_id))
+            mu = ROLE_PRIOR_P90.get(int(role), 0.28) if role is not None else 0.28
+            contrib_shrunk = (contrib + PRIOR_MINUTES/90.0 * mu) / ((mins + PRIOR_MINUTES)/90.0) if mins else None
             out.append({
                 "id": int(r.player_id), "name": r.player_name,
                 "pos": self._role_it(r.player_id),
@@ -1117,6 +1143,7 @@ class MatchAnalysis:
                 "xg": None if gx is None or pd.isna(gx) else round(float(gx), 2),
                 "xa": None if ax is None or pd.isna(ax) else round(float(ax), 2),
                 "contrib_p90": float(r.contrib_p90),
+                "contrib_p90_shrunk": round(float(contrib_shrunk), 2) if contrib_shrunk is not None else None,
                 "chances": int(self._num(d, "chances_created")),
                 "big_chances": int(self._num(d, "big_chance_created_team_title")),
                 "rating": None if pd.isna(r.rating_avg) else round(float(r.rating_avg), 2)})

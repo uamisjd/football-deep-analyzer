@@ -27,6 +27,20 @@ SMALL_SAMPLE_MINUTES = 270  # sotto: avviso «campione ridotto»
 
 POSITION_LABELS = {0: "Portiere", 1: "Difensore", 2: "Centrocampista", 3: "Attaccante"}
 
+# Prior per stabilizzare per90 su campioni piccoli (audit 2026-09-14 §1.3)
+# media di ruolo per xG+xA/90 su 7.456 schede, peso 180′ ≈ 2 partite
+ROLE_PRIOR_P90 = {0: 0.02, 1: 0.12, 2: 0.28, 3: 0.42}
+PRIOR_MINUTES = 180
+
+def p90_shrunk(xg, xa, minutes, role):
+    mu = ROLE_PRIOR_P90.get(int(role), 0.28) if role is not None else 0.28
+    if minutes is None or minutes <= 0 or (xg is None and xa is None):
+        return None
+    try:
+        return ((float(xg or 0) + float(xa or 0) + PRIOR_MINUTES/90*mu) / (float(minutes) + PRIOR_MINUTES) * 90)
+    except Exception:
+        return None
+
 
 def _label_or_none(v: Any) -> str | None:
     """Etichetta testuale o ``None``.
@@ -300,7 +314,24 @@ class PlayerCatalog:
         pct = self._pct[sid].get(player_id) if sid in self._pct.columns else None
         peers = self._peers.get(sid, {}).get(self._peer_key(player_id))
         tot_s, p90_s = _fmt_pair(s, v, p90)
+        # shrunk per xG / xA / gol su minuti <270′ (audit 1.3): mostrato in tooltip
+        per90_shrunk = None
+        per90_shrunk_s = None
+        if s.kind == "per90" and sid in ("xg", "xa", "goals", "assists", "shots"):
+            try:
+                mins = float(self.players.loc[player_id, "minutes"]) if player_id in self.players.index else None
+                pos = self.players.loc[player_id, "position"] if player_id in self.players.index else None
+                role = int(pos) if pos is not None and not pd.isna(pos) else None
+                raw_total = float(v) if v is not None and not pd.isna(v) else 0.0
+                if mins and mins > 0 and mins < 270:
+                    mu = ROLE_PRIOR_P90.get(role, 0.28) if role is not None else 0.28
+                    shrunk = (raw_total + PRIOR_MINUTES/90*mu) / (mins + PRIOR_MINUTES) * 90
+                    per90_shrunk = shrunk
+                    per90_shrunk_s = dec(shrunk, 2)
+            except Exception:
+                pass
         return {"id": sid, "label": s.label, "total": tot_s, "per90": p90_s,
+                "per90_shrunk": per90_shrunk, "per90_shrunk_s": per90_shrunk_s,
                 "pct": None if pct is None or pd.isna(pct) else round(float(pct)),
                 "peers": peers, "lower": s.lower}
 
