@@ -75,7 +75,7 @@ e la verifica va fatta in GitHub Actions.
 | 3.1 | CSS inline duplicato 4.128 volte | **P0** | **144,4 MB su 248,3 MB (58%)**; 65% di ogni scheda giocatore |
 | 3.2 | ✅ Tema chiaro: 3 testi **invisibili** (V della forma, selezione, punteggio più probabile) + fallback OS senza 18 token | **P0** | peggio **1,02:1**; la barra 1X2 ospite a **2,92:1** in **entrambi** i temi |
 | 3.3 | ✅ Barre 1X2 che sommano 99/101 — erano **tre** barre, non due | **P0** | **565/2.152** previsioni (26,3%); ora 0 su 565 barre pubblicate |
-| 3.4 | Barre dei gol oltre il contenitore | **P0** | **5 pagine** con `height:183%`/`163%`/`108%`/`104%` |
+| 3.4 | ✅ Barre dei gol oltre il contenitore + didascalia che dichiarava «90%» per un intervallo 10°-90° | **P0** | **9 barre** su 2.152 previsioni (max **183%**); copertura vera media **87,4%** |
 | 3.5 | ✅ Palette chiara ricalcolata su 4 superfici | **P0** | da **21** coppie sotto AA a **0**; 14 test nuovi senza browser |
 | 3.6 | 0 skip-link, 0 `<th scope>` su 99.839, salto h2→h4 ovunque | P1 | **4.128/4.128** pagine |
 | 3.7 | 62 selettori CSS duplicati (fix accodate, non integrate) | P1 | bordo header scuro in tema chiaro |
@@ -1983,6 +1983,64 @@ Più il controllo permanente in `verify_site.py` (§2.11b): `height > 100%` → 
 
 ---
 
+### ✅ RISOLTO in questa sessione (P0.4) — causa confermata, e la didascalia dichiarava un intervallo falso
+
+**Causa confermata nel codice** (l'ipotesi scritta in prima stesura era generica): in
+`advanced.py:goals_view` la scala dell'istogramma era `pmax = max(p.max(), 1e-9)`, calcolata **solo
+sui totali 0…cap**, mentre la barra della coda usava `tail / pmax`. Quando la massa oltre i 6 gol
+supera quella del totale modale — cioè nelle gare ad alto λ — la barra «7+» supera il 100% del
+contenitore. Misura sulla popolazione (2.152 previsioni): **9 barre oltre il 100% (0,42%)**, massimo
+**183%**; le 5 pagine pubblicate erano λ totale 4,68-5,50 (due con `lambda_limitata`, cioè λ già al
+tetto e dichiarato in scheda).
+
+**Correzione applicata** — la scala include la coda, `scala = max(p.max(), tail, 1e-9)`. **Nessun
+clamp**: limitare a 100 avrebbe mentito sul grafico (la coda sarebbe sembrata uguale alla moda);
+ora le altezze restano proporzionali alle probabilità e la barra più alta occupa il riquadro, sia
+essa un totale o la coda. Per λ 1,84+3,66: la coda vale 31,4% contro il 17,1% del totale modale,
+quindi è giusto che sia lei la barra a piena altezza.
+
+**Secondo difetto, trovato correggendo il primo: la didascalia dichiarava un intervallo falso.**
+Diceva «nel **90%** dei casi il totale resta fra `q10` e `q90` gol». Con F(q90) ≥ 0,90 e
+F(q10 − 1) < 0,10 la copertura garantita è **> 80%**, non 90%: misurata su 400 gare, media 87,4%.
+E quando il 90° percentile cade nella coda l'estremo superiore stampava «7» invece di «7+», cioè un
+intervallo chiuso dove è aperto.
+
+Due strade possibili: allargare a 5°-95° (copertura > 90% per costruzione, frase vera) oppure
+pubblicare la copertura reale. **Provata la prima e scartata**: l'intervallo 5°-95° su un asse
+troncato a 6 gol diventa quasi sempre «fra 0 e 6», cioè tutto l'asse — vero ma inutile. Scelta la
+seconda, che tiene l'intervallo informativo e toglie il numero dichiarato a priori:
+
+```
+- la mediana è 3 e nel 90% dei casi il totale resta fra 1 e 5 gol.
++ la mediana è 3 e fra 10° e 90° percentile il totale resta fra 1 e 5 gol — cioè nel 86,6% delle
++ 100 partite.
+```
+
+`goals_view` ora restituisce `copertura` (massa vera fra `q10` e `q90`, > 80% per costruzione),
+`q90_label` («7+» quando l'estremo è la coda) e il chip passa da «90% fra 1 e 5» a «87% fra 1 e 5».
+
+**Controlli permanenti aggiunti in `verify_site.py`** (blocco `[9]`, che già rileggeva le barre):
+
+| Invariante | Prima | Ora |
+|---|---|---|
+| altezza di ogni barra ≤ 100% **e** uguale alla proporzione ricalcolata | non controllata | sì (8 barre × 160 pagine) |
+| la barra più alta occupa il 100% della scala | non controllata | sì |
+| mediana / estremi / **copertura** in didascalia = ricalcolati | mediana ed estremi, copertura inesistente | sì, con `80 < copertura ≤ 100` |
+
+Corretta anche una fragilità del verificatore emessa da questa modifica: tre regex della didascalia
+dipendevano dagli **a capo del template** (uno spazio secco fra le parole). In HTML il whitespace è
+collassato, quindi il verificatore segnalava 160 pagine corrette dopo una riformattazione. Ora
+usano `\s+`.
+
+**Verifica eseguita.**
+
+```bash
+$ grep -oh 'height:[0-9.]*%' site/partite/*.html site/*.html | awk -F'[:%]' '$2+0>100' | wc -l   # 0
+$ .venv/bin/python -m pytest -q            # 194 passed (2 test nuovi/estesi)
+$ .venv/bin/fda build                      # 2m23s → 4.123 pagine
+$ .venv/bin/python scripts/verify_site.py  # nessun problema · 15.548 controlli (erano 14.108)
+```
+
 ## 3.5 [P0 — ✅ RISOLTO in questa sessione] Palette del tema chiaro ricalcolata: da 21 coppie sotto AA a 0
 
 **Osservato (misura corretta).** La prima versione di questo audit contava 21 coppie sotto 4,5:1
@@ -2367,7 +2425,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P0.1 | ✅ **FATTO** — 22 token di foreground nuovi (hover, selezione, chip, leggende, `on-accent`), tutti gli hard-coded sostituiti, fallback OS completo | `base.html`, `match.html` §3.2 | **basso** (solo CSS) | `tests/test_tema_contrasto.py`: 14 test; `verify_site.py` 11.565 controlli OK |
 | P0.2 | ✅ **FATTO** — palette chiara ≥4,5:1 su **4** superfici, gradienti della barra 1X2 corretti, override della cella modale eliminato, `--lose`/`--draw` scuri corretti | `base.html` §3.5 | **basso** | `test_contrasto_token_di_testo_aa[dark\|light]`, `test_barra_1x2_stop_gradiente`, `test_cella_punteggio_piu_probabile` |
 | P0.3 | ✅ **FATTO** — `pct_triple(p, nd)` generalizzato, filtro Jinja `pct3`, tre barre collegate, wrapper duplicato di `build.py` eliminato, controllo `[10]` allineato alla regola di pubblicazione | `fmt.py`, `build.py`, `match.html`, `_matchlist.html`, `verify_site.py` §3.3 | **basso** | `verify_site.py [11a]`: **565 barre, 0 problemi**; 14.108 controlli totali |
-| P0.4 | Barre dei gol oltre il 100% (5 pagine) | `advanced.py:goals_view` | **basso** | `grep height:[0-9]*%` → 0 sopra 100 |
+| P0.4 | ✅ **FATTO** — scala dell'istogramma inclusa la coda (nessun clamp), copertura reale pubblicata al posto del «90%» dichiarato, `q90_label` per l'estremo aperto, 3 invarianti nuove in `verify_site.py` e regex della didascalia rese indipendenti dagli a capo | `advanced.py`, `match.html`, `verify_site.py` §3.4 | **basso** | `grep height:[0-9]*%` → **0**; 15.548 controlli OK |
 | P0.5 | CSS esterno con cache-busting (−144 MB, −58% del sito) | `build.py`, `base.html` | **medio** (percorsi relativi + flash) | `du -sb site` ≈ 110 MB; controllo visivo in preview |
 | P0.6 | Composizione del campione in *Accuratezza* (3 su 84 con il modello corrente) | `build.py:479+`, `accuracy.html` | **basso** | la frase compare; `n` coerente con la tabella |
 | P0.7 | `benchmark_quote.py` + job mensile: il mercato come riferimento misurato | nuovo script, nuovo workflow | **nessuno** (non tocca il modello) | n≈4.372, Δ≈+0,0096 |
@@ -2471,7 +2529,7 @@ collegata) e P0.8 (invarianti di pubblicazione in `verify_site.py`).
 | Gialli arbitro per lega | FRA1 3,85 … **POR1 5,04**; `referee_matches` min **6** | §2.6 |
 | CSS duplicato | 4.128 × 34.984 B = **144,4 MB (58,2%)** su 248,3 MB HTML | §3.1 |
 | Barre 1X2 errate | ✅ **0** su 565 barre pubblicate (erano 565/2.152 previsioni = 26,3%) | §3.3 |
-| Barre gol in overflow | **5** pagine (`height:183%`, `163%`, `108%`, `104%`) | §3.4 |
+| Barre gol in overflow | ✅ **0** (erano 9 barre su 2.152 previsioni, max 183%) | §3.4 |
 | Contrasto tema chiaro | ✅ **0** coppie sotto 4,5:1 (erano 21); peggio era **1,02:1** | §3.2, §3.5 |
 | Skip-link / `<th scope>` / salti h | **0** / **0 su 99.839** / **4.128 pagine su 4.128** | §3.6 |
 | Selettori CSS duplicati | **62** su 403 regole | §3.7 |

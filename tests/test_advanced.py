@@ -202,9 +202,38 @@ def test_goals_view_counts_100_matches_and_20_dots():
         assert sum(c["n"] for c in gv["columns"]) == gv["n_dots"] == 20
         assert len(gv["columns"]) == len(gv["bars"])       # assi allineati fra le due viste
         assert 0 <= gv["q10"] <= gv["mediana"] <= gv["q90"] <= gv["cap"] + 1
+        # l'intervallo 10°-90° su totali discreti copre sempre più dell'80% (F(q90) ≥ 0,90 e
+        # F(q10 − 1) < 0,10) e mai più del 100%: è il numero pubblicato in didascalia, quindi
+        # non è un tondo dichiarato a priori ma la massa vera di quella gara
+        assert 80.0 < gv["copertura"] <= 100.0, f"{lh}+{la}: copertura {gv['copertura']}%"
+        # l'estremo superiore è «7+» quando il percentile cade nella coda: intervallo aperto
+        assert (gv["q90_label"] == gv["coda_label"]) == (gv["q90"] == gv["cap"] + 1)
+        # nessuna barra oltre il contenitore, e la scala è occupata interamente dalla barra
+        # più alta — coda compresa: con λ 3,2+2,8 la massa «7+» supera quella della moda
+        altezze = [b["h"] for b in gv["bars"]]
+        assert max(altezze) == 1.0 and min(altezze) >= 0.0, f"{lh}+{la}: altezze {altezze}"
+        assert max(altezze[:gv["cap"] + 1]) <= altezze[-1] + 1e-9 or gv["bars"][-1]["per100"] <= max(
+            b["per100"] for b in gv["bars"][:gv["cap"] + 1])
         assert gv["media"] == pytest.approx(lh + la, abs=0.06)   # la media è quella della griglia
         assert gv["bars"][gv["moda"]]["mode"]
         assert gv["bars"][-1]["tail"] and gv["bars"][-1]["label"] == gv["coda_label"]
+
+
+def test_goals_view_coda_non_supera_il_contenitore():
+    """La barra «7+» usciva dal riquadro: `height:183%` su 5 pagine pubblicate (docs/19 §3.4).
+
+    Causa: la scala era il massimo dei soli totali 0..cap, ma con λ totale 4,7-5,5 la coda ha più
+    massa di qualunque singolo totale. La scala ora include la coda, quindi nessuna barra straborda
+    e le altezze restano proporzionali alle probabilità (nessun clamp che falserebbe il grafico).
+    """
+    gv = goals_view(1.84, 3.66)                    # la gara peggiore misurata: 5781741 (NED1)
+    coda = gv["bars"][-1]
+    assert coda["tail"] and coda["p"] > max(b["p"] for b in gv["bars"][:-1]), "caso non significativo"
+    assert coda["h"] == 1.0 and round(coda["h"] * 100) == 100
+    assert all(0.0 <= b["h"] <= 1.0 for b in gv["bars"])
+    # con la coda come estremità superiore, l'intervallo è aperto e va scritto «7+», non «7»
+    assert gv["q90_label"] == gv["coda_label"] == "7+" and gv["q10"] == 3 and gv["mediana"] == 5
+    assert gv["copertura"] > 90.0
 
 
 def test_goals_view_agrees_with_the_published_markets():

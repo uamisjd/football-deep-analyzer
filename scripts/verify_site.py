@@ -670,7 +670,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         r = preds.loc[mid]
         gv = goals_view(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
         barre = re.findall(r'<div class="gb([^"]*)"><span class="v">(\d+)</span>'
-                           r'<span class="fill" style="height:[^"]*"></span>'
+                           r'<span class="fill" style="height:([\d.]+)%"></span>'
                            r'<span class="x">([^<]+)</span></div>', html)
         checks += 1
         n_goals += 1
@@ -678,22 +678,45 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: barre gol {len(barre)} (attese {len(gv['bars'])})")
             continue
         somma = 0
-        for (_cls, v_txt, x_txt), b in zip(barre, gv["bars"]):
+        for (_cls, v_txt, h_txt, x_txt), b in zip(barre, gv["bars"]):
             somma += int(v_txt)
+            checks += 1
             if int(v_txt) != b["per100"]:
                 fails.append(f"{pg.name}: barra {x_txt} gol = {v_txt} su 100, ricalcolato {b['per100']}")
             if x_txt != b["label"]:
                 fails.append(f"{pg.name}: etichetta barra {x_txt} != {b['label']}")
+            # [11b] altezza: entro il contenitore e proporzionale alla probabilità ricalcolata.
+            # La scala deve includere la barra della coda, altrimenti «7+» straborda (183%).
+            altezza = float(h_txt)
+            if altezza > 100.0:
+                fails.append(f"{pg.name}: barra {x_txt} gol alta {altezza:g}% — esce dal contenitore")
+            elif altezza != round(b["h"] * 100):
+                fails.append(f"{pg.name}: barra {x_txt} gol alta {altezza:g}%, ricalcolato {round(b['h'] * 100)}%")
         if somma != 100:
             fails.append(f"{pg.name}: le barre dei gol sommano {somma} su 100")
-        # didascalia: moda, mediana, intervallo 10-90% e coda devono essere quelli ricalcolati
-        cap = re.search(r"il totale più frequente è <b>(\d+) gol</b>\s*\((\d+) su 100\)", html)
+        if max(b["h"] for b in gv["bars"]) != 1.0:
+            fails.append(f"{pg.name}: nessuna barra dei gol occupa il 100% della scala "
+                         f"(massimo {max(b['h'] for b in gv['bars']):g})")
+        # didascalia: moda, mediana, intervallo 10°-90° con la sua copertura reale, e la coda
+        cap = re.search(r"il totale più frequente è\s+<b>(\d+)\s+gol</b>\s*\((\d+) su 100\)", html)
         if not cap or int(cap.group(1)) != gv["moda"] or int(cap.group(2)) != gv["bars"][gv["moda"]]["per100"]:
             fails.append(f"{pg.name}: moda dei gol in didascalia != ricalcolata ({gv['moda']})")
-        med = re.search(r"la mediana è (\d+) e nel 90% dei casi il totale resta fra\s*(\d+) e (\d+) gol", html)
-        if not med or (int(med.group(1)), int(med.group(2)), int(med.group(3))) != (gv["mediana"], gv["q10"], gv["q90"]):
-            fails.append(f"{pg.name}: mediana/intervallo dei gol in didascalia != ricalcolati")
-        coda = re.search(rf"Totale {re.escape(gv['coda_label'])} gol: (\d+,\d)%", html)
+        med = re.search(r"la mediana è\s+(\d+)\s+e fra 10° e 90° percentile il totale resta\s+fra\s+(\d+)\s+e\s+"
+                        r"(\d+\+?)\s+gol\s+—\s+cioè nel\s+<b>(\d+,\d)%</b>", html)
+        attesi = (gv["mediana"], gv["q10"], gv["q90_label"], gv["copertura"])
+        if not med:
+            fails.append(f"{pg.name}: didascalia dei gol senza intervallo 10°-90° percentile")
+        else:
+            checks += 1
+            letti = (int(med.group(1)), int(med.group(2)), med.group(3), float(med.group(4).replace(",", ".")))
+            if letti != attesi:
+                fails.append(f"{pg.name}: mediana/intervallo/copertura in didascalia {letti} != ricalcolati {attesi}")
+            if not 80.0 < letti[3] <= 100.0:
+                fails.append(f"{pg.name}: copertura {letti[3]}% fuori intervalo per un intervallo 10°-90° (attesa > 80)")
+        # \s+ e non uno spazio secco: in HTML il whitespace è collassato, quindi un verificatore
+        # che dipende da come va a capo il template segnala un difetto dove non c'è (e ha appena
+        # fatto esattamente questo, su 160 pagine, quando la didascalia è stata riformattata)
+        coda = re.search(rf"Totale\s+{re.escape(gv['coda_label'])}\s+gol:\s*(\d+,\d)%", html)
         if not coda or abs(float(coda.group(1).replace(",", ".")) - gv["p_coda"] * 100) > 0.06:
             fails.append(f"{pg.name}: coda dei gol in didascalia != ricalcolata ({gv['p_coda']:.4f})")
         # dotplot: i punti sono esattamente n_dots e stanno nelle colonne giuste
