@@ -299,17 +299,7 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .steps .bar{height:26px;font-size:12px;border-radius:8px}
 @media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}.goalbars{height:118px}.scoregrid{border-spacing:2px}.scoregrid th,.scoregrid td{width:34px;height:34px;font-size:10px}}
 @media (max-width:360px){.scoregrid th,.scoregrid td{width:30px;height:30px;font-size:9.5px}.match-teams{grid-template-columns:1fr auto 1fr;gap:6px}.match-team a{font-size:14px}.hero-metrics{gap:10px 14px}.hero-metric b{font-size:14px}}
-@media (prefers-color-scheme: light){
-  :root{
-    --bg:#f4f6f8; --bg2:#ffffff; --surface:#ffffff; --surface2:#eef2f6; --surface3:#e2e8f0;
-    --line:#d0d8e6; --line2:#b8c4d8;
-    --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#6b7f9a;
-  }
-  .bar .d{background:#8a94a8;color:#fff}
-  .scoregrid td{background:var(--surface2)}
-  header{background:linear-gradient(180deg,#e8eef6,#d9e2ee)}
-  footer{background:#eef2f6}
-}
+/* light mode rimosso su richiesta UX 2026-09-14: dark fisso, più riposante per studio prolungato */
 
 /* ---- Hero / KPI / chart (home) ---- */
 .hero{margin:4px 0 20px;padding:30px 30px;border-radius:var(--radius);background:var(--surface);
@@ -450,11 +440,12 @@ header{border-bottom:1px solid #263142}
 a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
 .help{cursor:help;border-bottom:1px dotted var(--mut);font-size:10px;opacity:.9}
 /* formazione probabile — lista a card con numero e ruolo (audit 3.3) */
-.formation-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;list-style:none;padding:0;margin:8px 0 0}
+.formation-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(168px,1fr));gap:6px;list-style:none;padding:0;margin:8px 0 0}
 .formation-list li{display:flex;gap:6px;align-items:center;padding:6px 8px;background:var(--surface2);border:1px solid var(--line);border-radius:8px}
 .formation-list li.is-gk{border-color:var(--accent);background:rgba(40,200,147,.08)}
 .formation-list .num{font:700 12.5px var(--font-head);color:var(--mut);min-width:20px;text-align:right}
-.formation-list .role{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em}
+.formation-list .role{font-size:10px;color:var(--mut);text-transform:uppercase;letter-spacing:.04em;white-space:nowrap}
+.formation-list a{overflow-wrap:anywhere;word-break:break-word}
 .formation-head{font-size:13px;margin:0 0 2px}
 @media (max-width:520px){.formation-list{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:4px}}
 @media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important;transition:none!important;animation:none!important}.match-card:hover{transform:none!important}}

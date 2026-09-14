@@ -867,8 +867,10 @@ class MatchAnalysis:
                         "name": r.player_name, "num": num, "rating": rating,
                         "season_rating": season_rating, "captain": bool(r.is_captain),
                         "pos": pos_it, "usual": usual})
-        # ordina per numero di maglia quando disponibile per lettura 1-11, altrimenti per nome
-        out.sort(key=lambda x: (x["num"] is None, x["num"] if x["num"] is not None else 999, x["name"]))
+        # ordina dal portiere: ruolo 0→3, poi numero maglia (1-99), poi nome
+        # così la lista inizia sempre dal portiere come richiesto UX
+        role_order = {0: 0, 1: 1, 2: 2, 3: 3}
+        out.sort(key=lambda x: (role_order.get(x.get("usual"), 9), x["num"] is None, x["num"] if x["num"] is not None else 999, x["name"]))
         return out
 
     def team_key_players(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:

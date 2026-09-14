@@ -228,10 +228,32 @@
 {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
   <div class="card">
     <h2>{{ name }}</h2>
-    {% set f = c[side ~ '_form'] %}{% if f %}<p>Forma: <span class="form-dots">{% for x in f %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span>
+    {% set f = c[side ~ '_form'] %}{% if f %}<p style="margin:0 0 10px">Forma: <span class="form-dots">{% for x in f %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span>
       <span class="small mut">{% for x in f %}{{ x.gf }}-{{ x.ga }} {{ 'vs' if x.home else '@' }} {{ x.opponent }}{{ ', ' if not loop.last }}{% endfor %}</span></p>{% endif %}
-    {% set xg = c[side ~ '_xg'] %}{% if xg %}<p>Stagione ({{ xg.source }}, {{ xg.played|it_plural('gara') }}): xG {{ xg.xg_pm|dec }} / xGA {{ xg.xga_pm|dec }} a partita{% if xg.xpts is not none %} · xPTS {{ xg.xpts|dec(1) }} vs {{ xg.pts|it_plural('punto') }} reali{% if xg.pts is not none and xg.xpts is not none %}{% set _d = xg.pts - xg.xpts %}{% if _d >= 2 %} <span class="good" title="Sopra atteso: possibile regressione">({{ _d|dec(1, true) }})</span>{% elif _d <= -2 %} <span class="warn" title="Sotto atteso: sottovalutata">({{ _d|dec(1, true) }})</span>{% endif %}{% endif %}{% endif %}{% if xg.ppda %} · PPDA {{ xg.ppda|dec(1) }}{% endif %}</p>{% endif %}
-    {% if c[side ~ '_rest'] is not none %}<p class="small mut">Riposo: {{ c[side ~ '_rest']|it_plural('giorno') }} dall'ultima gara</p>{% endif %}
+    {% set xg = c[side ~ '_xg'] %}{% if xg %}
+    <div class="squadra-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px">
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
+        <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG creati / gara</div>
+        <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xg_pm|dec }} <span class="mut small" style="font:600 11px var(--font-body)">({{ xg.source }}, {{ xg.played }} gare)</span></div>
+        {% if xg.get('open_pm') is not none or xg.get('set_pm') is not none %}<div class="mut small" style="font-size:11px">azione {{ xg.get('open_pm')|dec if xg.get('open_pm') is not none else '—' }} · inattiva {{ xg.get('set_pm')|dec if xg.get('set_pm') is not none else '—' }}</div>{% endif %}
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
+        <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG concessi / gara</div>
+        <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xga_pm|dec }}</div>
+        {% if xg.get('deep') is not none %}<div class="mut small" style="font-size:11px">profondità {{ xg.get('deep')|dec(1) if xg.get('deep') is not none else '—' }}</div>{% endif %}
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
+        <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xPTS vs punti reali</div>
+        <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">{% if xg.xpts is not none %}{{ xg.xpts|dec(1) }} <span class="mut">vs</span> {{ xg.pts }}{% set _d = xg.pts - xg.xpts %}{% if _d >= 2 %} <span class="good" title="Sopra atteso: possibile regressione">+{{ _d|dec(1) }}</span>{% elif _d <= -2 %} <span class="warn" title="Sotto atteso: sottovalutata">{{ _d|dec(1, true) }}</span>{% endif %}{% else %}—{% endif %}</div>
+        <div class="mut small" style="font-size:11px">{{ xg.played }} gare · {% if xg.xpts is not none and xg.pts is not none and (xg.pts - xg.xpts)|abs >= 2 %}sovra/sotto-performance{% else %}in linea{% endif %}</div>
+      </div>
+      <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
+        <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pressing · riposo</div>
+        <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">PPDA {% if xg.ppda %}{{ xg.ppda|dec(1) }}{% else %}n.d.{% endif %} <span class="mut small" style="font:600 10px var(--font-body);text-transform:none;letter-spacing:0">{% if xg.ppda %}{% if xg.ppda < 10 %}alto{% elif xg.ppda < 13 %}medio-alto{% elif xg.ppda < 16 %}medio{% else %}basso{% endif %}{% endif %}</span></div>
+        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
+      </div>
+    </div>
+    {% endif %}
     {% set ab = c[side ~ '_absences'] %}{% set stt = c[side ~ '_starters'] %}{% if ab and ab.players %}
     <p><b>Indisponibili ({{ ab.n }})</b>{% if ab.starters_out %} <span class="mut small">· {{ ab.starters_out }} {{ 'titolare abituale' if ab.starters_out == 1 else 'titolari abituali' }} fuori</span>{% endif %}{% if ab.contrib_lost_p90 %} <span class="mut small">· {{ ab.contrib_lost_p90|dec }} xG+xA a partita in meno</span>{% endif %}</p>
     <table>
