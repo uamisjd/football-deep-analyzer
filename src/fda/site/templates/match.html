@@ -18,9 +18,9 @@
   {% if p and p.prior_di_lega %}<div style="margin-top:10px;padding:8px 12px;background:var(--surface2);border:1px dashed var(--line2);border-radius:8px;color:var(--mut);font-size:12px">Prior di lega: una o entrambe le squadre hanno storico insufficiente (neopromossa) — λ neutre di lega, non stima affidabile.</div>{% endif %}
   {% if p and p.meta %}
   <div class="hero-model">
-    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut">Margine sul secondo esito: +{{ p.meta.margin_pp|dec(1) }} punti ({{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}%)</span></div>
-    <div class="hero-metrics"><span class="hero-metric"><b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b><span>gol attesi</span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
-    <span class="hero-signal" title="{{ p.meta.signal_label }}">{{ p.meta.signal_label }}</span>
+    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut" title="Differenza in punti percentuali tra primo e secondo esito (scala 1X2)">+{{ p.meta.margin_pp|dec(1) }} punti sul secondo — {{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}% · 1 {{ (p.p_home*100)|round|int }}% · X {{ (p.p_draw*100)|round|int }}% · 2 {{ (p.p_away*100)|round|int }}%</span></div>
+    <div class="hero-metrics"><span class="hero-metric" title="λ Dixon-Coles+Elo calibrate — non media xG ultime 3 (vedi 'Come arrivano')"><b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b><span>gol attesi</span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
+    <span class="hero-signal" title="{{ p.meta.signal_label }}{% if p.meta.has_dc and p.meta.has_elo %} — Dixon-Coles vs Elo sullo stesso preferito{% endif %}">{{ p.meta.signal_label }}</span>
   </div>
   {% elif p %}<p class="small mut" style="margin:0">Probabilità del modello disponibili nella scheda qui sotto.</p>{% endif %}
 </div>
@@ -39,6 +39,7 @@
     <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
     <div class="bar" style="height:30px;font-size:14px"><span class="h" style="width:{{ (p.p_home*100)|round }}%">1 · {{ (p.p_home*100)|round|int }}%</span><span class="d" style="width:{{ (p.p_draw*100)|round }}%">X · {{ (p.p_draw*100)|round|int }}%</span><span class="a" style="width:{{ (p.p_away*100)|round }}%">2 · {{ (p.p_away*100)|round|int }}%</span></div>
     <table style="margin-top:10px">
+      <tr><th></th><th class="r">{{ c.home_name }}</th><th class="r">{{ c.away_name }}</th></tr>
       <tr><th>Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
       <tr><th>Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ (p.p_over15*100)|round|int }}% / {{ (p.p_over25*100)|round|int }}% / {{ (p.p_over35*100)|round|int }}%</td></tr>
       <tr><th>Entrambe a segno</th><td colspan="2" class="r">{{ (p.p_btts*100)|round|int }}%</td></tr>
@@ -125,8 +126,8 @@
     {% for r in c.clash.rows %}
     <tr>
       <th>{{ r.label }}</th>
-      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}—{% else %}{{ r.h|dec(r.nd) }}{% endif %}</td>
-      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}—{% else %}{{ r.a|dec(r.nd) }}{% endif %}</td>
+      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra (FotMob senza PPDA)" style="opacity:.55">n.d.</span>{% else %}{{ r.h|dec(r.nd) }}{% if r.best == 'h' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
+      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra" style="opacity:.55">n.d.</span>{% else %}{{ r.a|dec(r.nd) }}{% if r.best == 'a' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
     </tr>
     {% endfor %}
   </table>
@@ -191,13 +192,13 @@
         <tr><th class="mut small">giocatore</th><th class="r" style="width:40px">min</th><th class="r" style="width:34px">gol</th><th class="r" style="width:38px">assist</th><th class="r" style="width:44px">xG</th><th class="r" style="width:44px">xA</th><th class="r" style="width:52px">xG+xA/90</th><th class="r" style="width:44px">voto</th></tr>
         {% for p in kp.rows %}
         <tr>
-          <td>{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if p.pos %} <span class="mut small">{{ p.pos }}</span>{% endif %}{% if p.chances %}<span class="small mut"> · {{ p.chances|it_plural('occasione') }}{% if p.big_chances %}, {{ p.big_chances }} {{ 'clamorosa' if p.big_chances == 1 else 'clamorose' }}{% endif %}</span>{% endif %}</td>
-          <td class="r small">{{ p.minutes }}</td>
+          <td>{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if p.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ p.pos }}</span>{% endif %}{% if p.chances %}<span class="small mut"> · {{ p.chances|it_plural('occasione') }}{% if p.big_chances %}, {{ p.big_chances }} {{ 'clamorosa' if p.big_chances == 1 else 'clamorose' }}{% endif %}</span>{% endif %}</td>
+          <td class="r small mut">{{ p.minutes }}</td>
           <td class="r">{{ p.goals }}</td>
           <td class="r">{{ p.assists }}</td>
           <td class="r small">{{ p.xg|dec if p.xg is not none else '—' }}</td>
           <td class="r small">{{ p.xa|dec if p.xa is not none else '—' }}</td>
-          <td class="r"><b>{{ p.contrib_p90|dec }}</b></td>
+          <td class="r" title="{{ p.xg|dec if p.xg is not none else '—' }}+{{ p.xa|dec if p.xa is not none else '—' }} su {{ p.minutes }}′ ×90 = {{ p.contrib_p90|dec }}"><b style="color:var(--accent);font-weight:800">{{ p.contrib_p90|dec }}</b></td>
           <td class="r small">{{ p.rating|dec(2) if p.rating is not none else '—' }}</td>
         </tr>
         {% endfor %}
