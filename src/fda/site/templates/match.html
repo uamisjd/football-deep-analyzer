@@ -208,7 +208,7 @@
           <td class="r">{{ p.assists }}</td>
           <td class="r small">{{ p.xg|dec if p.xg is not none else '—' }}</td>
           <td class="r small">{{ p.xa|dec if p.xa is not none else '—' }}</td>
-          <td class="r" title="{{ p.xg|dec if p.xg is not none else '—' }}+{{ p.xa|dec if p.xa is not none else '—' }} su {{ p.minutes }}′ ×90 = {{ p.contrib_p90|dec }}"><b style="color:var(--accent);font-weight:800">{{ p.contrib_p90|dec }}</b></td>
+          <td class="r" title="{{ p.xg|dec if p.xg is not none else '—' }}+{{ p.xa|dec if p.xa is not none else '—' }} su {{ p.minutes }}′ ×90 = {{ p.contrib_p90|dec }}{% if p.minutes < 270 and p.contrib_p90_shrunk is not none %} · shrunk {{ p.contrib_p90_shrunk|dec }} (prior {{ 180 }}′ verso media ruolo){% endif %}"><b style="color:var(--accent);font-weight:800">{{ p.contrib_p90|dec }}</b>{% if p.minutes < 270 and p.contrib_p90_shrunk is not none %}<br><span class="mut small" title="Valore stabilizzato con prior bayesiano (180′ verso media di ruolo)">{{ p.contrib_p90_shrunk|dec }}</span>{% endif %}</td>
           <td class="r small">{{ p.rating|dec(2) if p.rating is not none else '—' }}</td>
         </tr>
         {% endfor %}
