@@ -28,7 +28,11 @@ log = logging.getLogger(__name__)
 # 0.2: shrinkage dei parametri DC verso la media di lega.
 # 0.3: calibrazione fuori campione della griglia (λ×m, ρ+Δ) stimata da `fda calibrate` sul
 #      backtest: rimuove il bias misurato di +8,6% sui gol totali e la sottostima del pareggio.
-MODEL_VERSION = "dc-elo-ens-0.3"
+# 0.4: l'Elo entra nella griglia per **inclinazione** e non più invertendo due λ libere
+#      dall'1X2 mediato (`ENSEMBLE_MODE = "tilt"`, candidato `dc_elo_tilt` promosso dopo il
+#      verdetto del laboratorio). I gol attesi tornano quelli del modello sui gol: la
+#      calibrazione è stata ristimata su questa ricetta, non riutilizzata dalla precedente.
+MODEL_VERSION = "dc-elo-tilt-0.4"
 
 # Pseudo-partite del prior sui parametri attacco/difesa (shrinkage verso la media di lega).
 SHRINK_PRIOR = 8.0
@@ -208,6 +212,65 @@ LAMBDA_TOTAL_MAX_ABS = 5.5       # tetto assoluto: oltre non è una partita di c
 LAMBDA_TOTAL_ABS = (1.0, LAMBDA_TOTAL_MAX_ABS)   # se le λ del modello sui gol non sono note
 
 
+#: ricetta con cui l'Elo entra nella griglia pubblicata.
+#:
+#: * ``"tilt"`` (produzione dal 2026-09-13): l'Elo **inclina** il rapporto casa/trasferta e il
+#:   totale dei gol attesi resta quello stimato dal modello sui gol. Promossa dopo il verdetto
+#:   del laboratorio in Actions (`model_lab.parquet`, 1.527 gare walk-forward, 7 leghe):
+#:   ΔRPS −0,000406 con IC 95% appaiato [−0,000773; −0,000041] interamente negativo e RPS più
+#:   basso in 5 leghe su 7 — le due condizioni di `docs/13` §6.5. Dettagli in `docs/15`;
+#: * ``"inverti"``: la ricetta precedente, due λ libere cercate da ``goal_expectancy`` per
+#:   riprodurre l'1X2 mediato. Gonfia i gol attesi (bias +0,24 gol sul backtest) ed è ciò che
+#:   la calibrazione doveva correggere a valle. Resta disponibile al laboratorio come
+#:   candidato ``dc_elo_ge``, così il confronto che ha deciso la promozione è ripetibile.
+ENSEMBLE_MODE = "tilt"
+ENSEMBLE_MODES = ("tilt", "inverti")
+
+#: inclinazioni casa/trasferta provate da :func:`_tilt_lambdas` (1,00 = λ del modello sui gol)
+TILT_GRID: tuple[float, ...] = tuple(round(0.85 + 0.01 * i, 3) for i in range(31))
+
+
+def _one_x_two(grid: np.ndarray) -> tuple[float, float, float]:
+    """1X2 della griglia (stessa convenzione di penaltyblog: casa, pareggio, trasferta)."""
+    i, j = np.indices(grid.shape)
+    return float(grid[i > j].sum()), float(grid[i == j].sum()), float(grid[i < j].sum())
+
+
+def _tilt_pair(lh: float, la: float, t: float) -> tuple[float, float]:
+    """λ inclinate di ``t`` (rapporto casa/trasferta × t²) a **totale invariato**."""
+    totale = float(lh) + float(la)
+    lh_t, la_t = float(lh) * t, float(la) / max(t, 1e-9)
+    s = totale / (lh_t + la_t) if (lh_t + la_t) > 0 else 1.0
+    return lh_t * s, la_t * s
+
+
+def _tilt_lambdas(lh: float, la: float, rho: float,
+                  target: tuple[float, float, float]) -> tuple[float, float, float]:
+    """λ che avvicinano l'1X2 della griglia al vettore mediato **senza toccare il totale**.
+
+    È l'alternativa strutturale a ``goal_expectancy`` misurata dal laboratorio: l'Elo sposta
+    il rapporto casa/trasferta, il totale dei gol attesi resta quello del modello sui gol, e
+    il vettore 1X2 pubblicato è quello della griglia risultante (mercati e 1X2 coerenti fra
+    loro, senza bisogno di correggere a valle). La ricerca è su :data:`TILT_GRID`
+    (0,85…1,15 a passi di 0,01) e non su un'ottimizzazione continua: 31 griglie sono ~1 ms e
+    l'intervallo è quello entro cui il candidato è stato misurato.
+
+    Restituisce (λ casa, λ trasferta, inclinazione scelta).
+    """
+    if not (np.isfinite(lh) and np.isfinite(la)):
+        return float(lh), float(la), 1.0        # λ non calcolabili: niente da inclinare
+    best: tuple[float, float] | None = None
+    for t in TILT_GRID:
+        lh_t, la_t = _tilt_pair(lh, la, t)
+        p = _one_x_two(tau_grid(lh_t, la_t, rho, size=GRID_SIZE))
+        err = sum((float(a) - float(b)) ** 2 for a, b in zip(p, target))
+        if best is None or err < best[0]:
+            best = (err, t)
+    assert best is not None
+    lh_t, la_t = _tilt_pair(lh, la, best[1])
+    return lh_t, la_t, float(best[1])
+
+
 def _clamp_lambda(lh: float, la: float, dc_lh: float, dc_la: float) -> tuple[float, float] | None:
     """Riporta le λ invertite entro limiti di sicurezza; ``None`` se non ce n'è bisogno.
 
@@ -237,17 +300,37 @@ def _clamp_lambda(lh: float, la: float, dc_lh: float, dc_la: float) -> tuple[flo
     return lh_c, la_c
 
 
-def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7) -> dict[str, Any]:
-    """Media pesata 1X2 tra Dixon-Coles ed Elo; i mercati sui gol restano dal DC (l'Elo non ha λ).
+def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7,
+             mode: str = ENSEMBLE_MODE) -> dict[str, Any]:
+    """Media pesata 1X2 tra Dixon-Coles ed Elo, ripubblicata **da una sola griglia**.
 
-    Se la media sposta il 1X2, si ricalcola una griglia DC coerente con le nuove probabilità
-    (goal_expectancy di penaltyblog) così risultati esatti/Over/BTTS restano allineati.
+    L'Elo non ha λ, quindi l'1X2 mediato va riportato su una matrice di punteggi da cui
+    derivare tutti i mercati. Due modi di farlo (:data:`ENSEMBLE_MODE`):
+
+    * ``mode="tilt"`` (produzione): il totale dei gol attesi **resta** quello del modello sui
+      gol e l'Elo inclina solo il rapporto casa/trasferta (:func:`_tilt_lambdas`). Non c'è
+      nulla da correggere a valle, perché la media pesata non gonfia le λ — è il difetto
+      misurato (bias +0,24 gol) che la ricetta ``"inverti"`` introduceva e la calibrazione
+      doveva tamponare;
+    * ``mode="inverti"``: due λ libere cercate da ``goal_expectancy`` per riprodurre il
+      vettore mediato (ricetta precedente, rimasta come candidato del laboratorio).
+
+    Con ``mode="tilt"`` l'1X2 pubblicato è quello della griglia inclinata (non il vettore
+    mediato, che una griglia a totale fissato non è detta sappia riprodurre: la differenza è
+    misurata entro ~1 punto nei casi ordinari). In entrambi i modi, quando i limiti di
+    sicurezza legano, l'1X2 è quello della griglia limitata: mai un 1X2 estremo accanto a
+    mercati prudenti.
     """
     out = dict(dc)
     out["dc_p_home"] = float(dc["p_home"])
     out["dc_p_draw"] = float(dc["p_draw"])
     out["dc_p_away"] = float(dc["p_away"])
+    # λ del solo modello sui gol: sono il riferimento dei limiti di sicurezza e restano
+    # utili anche dopo la calibrazione, che le moltiplica insieme a quelle pubblicate
+    out["dc_lambda_home"] = float(dc.get("lambda_home", float("nan")))
+    out["dc_lambda_away"] = float(dc.get("lambda_away", float("nan")))
     out["lambda_limitata"] = False
+    out["ensemble_mode"] = mode
     if not elo:
         out["model"] = "dc"
         return out
@@ -258,33 +341,38 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     ph, pdw, pa = ph / s, pdw / s, pa / s
     try:
         rho = float(dc.get("dc_rho", 0.0) or 0.0)
-        limitato = None
-        ge = pb.models.goal_expectancy(ph, pdw, pa, dc_adj=True, rho=rho)
-        lh, la = float(ge["home_exp"]), float(ge["away_exp"])
-        limitato = _clamp_lambda(lh, la, float(dc.get("lambda_home", lh)), float(dc.get("lambda_away", la)))
+        lh_dc = float(dc.get("lambda_home", float("nan")))
+        la_dc = float(dc.get("lambda_away", float("nan")))
+        if mode == "tilt":
+            lh, la, tilt = _tilt_lambdas(lh_dc, la_dc, rho, (ph, pdw, pa))
+            out["tilt"] = tilt
+        else:
+            ge = pb.models.goal_expectancy(ph, pdw, pa, dc_adj=True, rho=rho)
+            lh, la = float(ge["home_exp"]), float(ge["away_exp"])
+        limitato = _clamp_lambda(lh, la, lh_dc, la_dc)
         if limitato is not None:
             # dettaglio a DEBUG: su un calendario intero sarebbero decine di righe di log;
             # il riepilogo con il tasso di intervento lo scrive predict_matches
-            log.debug("λ dall'1X2 mediato fuori dai limiti: %.2f+%.2f → %.2f+%.2f (1X2 ripubblicato "
-                      "dalla griglia)", lh, la, limitato[0], limitato[1])
+            log.debug("λ fuori dai limiti: %.2f+%.2f → %.2f+%.2f (1X2 ripubblicato dalla griglia)",
+                      lh, la, limitato[0], limitato[1])
             lh, la = limitato
-            # la griglia limitata non riproduce più il vettore mediato: si pubblica il **suo** 1X2,
-            # altrimenti la scheda torna incoerente (1X2 estremo accanto a mercati più prudenti)
-            g = tau_grid(lh, la, rho, size=GRID_SIZE)
-            ii, jj = np.indices(g.shape)
-            ph, pdw, pa = float(g[ii > jj].sum()), float(g[ii == jj].sum()), float(g[ii < jj].sum())
         grid = probability_grid(lh, la, rho, size=GRID_SIZE)
         markets = _grid_markets(grid)
-        # la doppia chance è per definizione una somma di esiti 1X2: va ricalcolata sul 1X2
-        # mediato, altrimenti la scheda mostra «1X 73%» accanto a «1X2 48/27/26» (100−26=74).
+        if mode != "tilt" and limitato is None:
+            # la ricetta "inverti" riproduce il vettore mediato per costruzione: l'1X2 resta
+            # quello della media pesata (comportamento storico, su cui il laboratorio misura)
+            markets.update({"p_home": ph, "p_draw": pdw, "p_away": pa})
+        # la doppia chance è per definizione una somma di esiti 1X2: va ricalcolata sull'1X2
+        # pubblicato, altrimenti la scheda mostra «1X 73%» accanto a «1X2 48/27/26» (100−26=74).
         # Sui dati pubblicati lo scarto arrivava a 1,1 punti e l'intero a schermo era
         # incoerente nel 14,3% delle partite.
-        markets.update({"p_home": ph, "p_draw": pdw, "p_away": pa,
-                        "p_1x": ph + pdw, "p_12": ph + pa, "p_x2": pdw + pa})
+        markets.update({"p_1x": markets["p_home"] + markets["p_draw"],
+                        "p_12": markets["p_home"] + markets["p_away"],
+                        "p_x2": markets["p_draw"] + markets["p_away"]})
         out.update(markets)
         out["lambda_limitata"] = bool(limitato is not None)
     except Exception as exc:  # fallback: solo 1X2 mediato
-        log.debug("goal_expectancy fallita (%s): uso 1X2 mediato e mercati DC", exc)
+        log.debug("ensemble %s fallita (%s): uso 1X2 mediato e mercati DC", mode, exc)
         out.update({"p_home": ph, "p_draw": pdw, "p_away": pa})
     out.update(elo)
     out["model"] = "ensemble"
@@ -314,6 +402,18 @@ def calibrated_prediction(out: dict[str, Any], cal: Calibration | None) -> dict[
     if cal.is_identity:
         return res
     lh, la, rho = cal.apply(res["lambda_home_raw"], res["lambda_away_raw"], res["rho_raw"])
+    # i limiti di sicurezza valgono sui gol attesi **pubblicati**, non su quelli grezzi: con un
+    # moltiplicatore sopra 1 (1,0401 dal 2026-09-13, quando il tilt ha riportato le λ al livello
+    # del modello sui gol) la correzione può spingere una λ già limitata poco sopra il tetto
+    # (misurato sulle previsioni rigenerate: 2 partite su 2.071 con λ per squadra a 4,16).
+    # Il vincolo *relativo* è invariante alla scala — se il totale grezzo sta fra il 70% e il
+    # 135% di quello del modello sui gol, lo resta dopo aver moltiplicato entrambi — quindi qui
+    # possono legare solo i tetti assoluti (λ ≤ 4,0 per squadra, totale ≤ 5,5).
+    limite = _clamp_lambda(lh, la, float(out.get("dc_lambda_home", float("nan"))) * cal.lambda_scale,
+                           float(out.get("dc_lambda_away", float("nan"))) * cal.lambda_scale)
+    if limite is not None:
+        lh, la = limite
+        res["lambda_limitata"] = True
     grid = probability_grid(lh, la, rho, size=GRID_SIZE)
     markets = _grid_markets(grid)
     res["blend_p_home"] = float(out.get("p_home", 0.0))

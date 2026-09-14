@@ -5,13 +5,16 @@ import pandas as pd
 import pytest
 
 from fda.config import league
+from fda.models.calibration import Calibration
 from fda.models.dc_grid import GRID_SIZE, tau_grid
 from fda.models.predict import (
     LAMBDA_MAX,
     LAMBDA_TOTAL_MAX_ABS,
+    LAMBDA_TOTAL_MAX_REL,
     DixonColesModel,
     EloModel,
     _clamp_lambda,
+    calibrated_prediction,
     ensemble,
     latest_per_match,
     outcome_index,
@@ -230,17 +233,111 @@ def test_lambda_estreme_rientrano_nei_limiti_di_sicurezza():
     assert _clamp_lambda(float("nan"), 1.0, 1.5, 1.2) is None
 
 
-def test_ensemble_con_elo_estremo_resta_leggibile_e_coerente():
-    """Se la media pesata chiede l'impossibile, si pubblica la griglia limitata: 1X2 e mercati
-    restano coerenti fra loro invece di mostrare un 1X2 estremo accanto a mercati prudenti."""
+def _dc_coerente(lh: float, la: float, rho: float) -> dict:
+    """Una previsione del modello sui gol **coerente** (1X2 calcolato dalla sua griglia)."""
+    g = tau_grid(lh, la, rho, size=GRID_SIZE)
+    i, j = np.indices(g.shape)
+    return {"p_home": float(g[i > j].sum()), "p_draw": float(g[i == j].sum()),
+            "p_away": float(g[i < j].sum()), "dc_rho": rho, "lambda_home": lh, "lambda_away": la}
+
+
+def test_ensemble_tilt_conserva_il_totale_dei_gol_attesi():
+    """Ricetta promossa (2026-09-13): l'Elo **inclina**, il totale dei gol resta del modello gol.
+
+    Verdetto del laboratorio in Actions (1.527 gare walk-forward, 7 leghe, ``model_lab.parquet``):
+    ΔRPS −0,000406 con IC 95% appaiato [−0,000773; −0,000041] interamente negativo e RPS più
+    basso in 5 leghe su 7. Il guadagno dichiarato però non è l'RPS: è che i gol attesi tornano
+    quelli del modello sui gol (bias λ −0,086 invece di +0,105), cioè la calibrazione non deve
+    più correggere un difetto che la ricetta precedente introduceva da sé.
+    """
+    lh, la, rho = 1.70, 1.00, -0.08
+    dc = _dc_coerente(lh, la, rho)
+    elo = {"elo_p_home": dc["p_home"] + 0.10, "elo_p_draw": dc["p_draw"] - 0.03,
+           "elo_p_away": dc["p_away"] - 0.07}
+    out = ensemble(dc, elo, w_dc=0.7)
+    assert out["ensemble_mode"] == "tilt"
+    assert out["lambda_limitata"] is False
+    # il totale è identico a quello del modello sui gol: l'Elo non gonfia le λ
+    assert out["lambda_home"] + out["lambda_away"] == pytest.approx(2.70, abs=1e-9)
+    # e l'inclinazione segue il rating (più casa, meno trasferta)
+    assert out["lambda_home"] > lh and out["lambda_away"] < la
+    assert out["lambda_home"] / out["lambda_away"] > lh / la
+    # l'1X2 pubblicato è quello della griglia inclinata: 1X2, doppie chance e mercati coerenti
+    g = tau_grid(out["lambda_home"], out["lambda_away"], out["dc_rho"], size=GRID_SIZE)
+    i, j = np.indices(g.shape)
+    assert out["p_home"] == pytest.approx(float(g[i > j].sum()), abs=1e-9)
+    assert out["p_draw"] == pytest.approx(float(g[i == j].sum()), abs=1e-9)
+    assert abs(out["p_1x"] - (out["p_home"] + out["p_draw"])) < 1e-12
+    # la probabilità della casa sale verso il rating, senza superarlo
+    assert dc["p_home"] < out["p_home"] < elo["elo_p_home"]
+    # la scomposizione mostrata in scheda conserva sia il modello sui gol sia i rating
+    assert out["dc_p_home"] == pytest.approx(dc["p_home"])
+    assert out["elo_p_home"] == pytest.approx(elo["elo_p_home"])
+    # con un rating identico al modello sui gol la griglia non si muove
+    stesso = ensemble(dc, {"elo_p_home": dc["p_home"], "elo_p_draw": dc["p_draw"],
+                           "elo_p_away": dc["p_away"]}, w_dc=0.7)
+    assert (stesso["lambda_home"], stesso["lambda_away"]) == pytest.approx((lh, la), abs=1e-9)
+
+
+def test_ensemble_tilt_con_elo_estremo_resta_leggibile():
+    """Con un rating estremo l'inclinazione si ferma al bordo dell'intervallo cercato (0,85…1,15).
+
+    È la differenza strutturale con la ricetta precedente: lì l'inversione inventava 8,4 gol
+    attesi (Barcellona-Racing Santander 6,17+2,25) e serviva il limite di sicurezza; qui il
+    totale è per costruzione quello del modello sui gol, quindi non c'è nulla da limitare.
+    """
     dc = {"p_home": 0.86, "p_draw": 0.09, "p_away": 0.05, "dc_rho": -0.10,
           "lambda_home": 3.40, "lambda_away": 0.45}
     elo = {"elo_p_home": 0.96, "elo_p_draw": 0.03, "elo_p_away": 0.01}
     out = ensemble(dc, elo, w_dc=0.7)
+    assert out["lambda_limitata"] is False
+    assert out["lambda_home"] + out["lambda_away"] == pytest.approx(3.85, abs=1e-9)
+    assert out["lambda_home"] <= LAMBDA_MAX + 1e-9
+    # il pareggio resta fra quello chiesto dal rating estremo e quello del modello sui gol
+    assert elo["elo_p_draw"] < out["p_draw"] <= dc["p_draw"] + 1e-9
+    assert abs(out["p_1x"] - (out["p_home"] + out["p_draw"])) < 1e-12
+
+
+def test_ensemble_inverti_riproduce_il_vettore_mediato_ricetta_precedente():
+    """La ricetta precedente resta disponibile al laboratorio (candidato ``dc_elo_ge``).
+
+    È il comportamento su cui il tilt è stato misurato e poi promosso: due λ libere cercate da
+    ``goal_expectancy`` per riprodurre l'1X2 mediato. Qui — a differenza del tilt — il totale
+    dei gol attesi si gonfia appena il rating riduce il pareggio, ed è il difetto misurato
+    (+8,6% sopra i gol osservati) che la calibrazione doveva correggere a valle.
+    """
+    lh, la, rho = 1.70, 1.00, -0.08
+    dc = _dc_coerente(lh, la, rho)
+    elo = {"elo_p_home": dc["p_home"] + 0.10, "elo_p_draw": dc["p_draw"] - 0.03,
+           "elo_p_away": dc["p_away"] - 0.07}
+    out = ensemble(dc, elo, w_dc=0.7, mode="inverti")
+    assert out["ensemble_mode"] == "inverti"
+    assert out["lambda_limitata"] is False
+    # riproduce l'1X2 mediato (0,7·DC + 0,3·Elo) e lo fa **gonfiando** il totale
+    assert out["p_home"] == pytest.approx(0.7 * dc["p_home"] + 0.3 * elo["elo_p_home"], abs=1e-6)
+    assert out["lambda_home"] + out["lambda_away"] > lh + la
+    assert abs(out["p_1x"] - (out["p_home"] + out["p_draw"])) < 1e-12
+    # a parità di partita, il tilt pubblica lo stesso 1X2 con gol attesi inferiori
+    tilt = ensemble(dc, elo, w_dc=0.7)
+    assert tilt["p_home"] == pytest.approx(out["p_home"], abs=5e-3)
+    assert tilt["lambda_home"] + tilt["lambda_away"] < out["lambda_home"] + out["lambda_away"]
+
+
+def test_ensemble_inverti_con_elo_estremo_resta_leggibile_e_coerente():
+    """Con la ricetta ``inverti``, se il vettore mediato chiede l'impossibile scatta il limite.
+
+    È la rete di sicurezza introdotta con la calibrazione v1.1: λ≤4,0 per squadra, totale fra il
+    70% e il 135% di quello del modello sui gol (e comunque ≤ 5,5). Misurato sulle previsioni
+    pubblicate con la ricetta precedente: interviene sull'1,2% delle gare.
+    """
+    dc = {"p_home": 0.86, "p_draw": 0.09, "p_away": 0.05, "dc_rho": -0.10,
+          "lambda_home": 3.40, "lambda_away": 0.45}
+    elo = {"elo_p_home": 0.96, "elo_p_draw": 0.03, "elo_p_away": 0.01}
+    out = ensemble(dc, elo, w_dc=0.7, mode="inverti")
     assert out["lambda_limitata"] is True
     assert out["lambda_home"] <= LAMBDA_MAX + 1e-9 and out["lambda_away"] <= LAMBDA_MAX + 1e-9
     assert out["lambda_home"] + out["lambda_away"] <= LAMBDA_TOTAL_MAX_ABS + 1e-9
-    assert out["lambda_home"] + out["lambda_away"] <= (3.40 + 0.45) * 1.35 + 1e-9
+    assert out["lambda_home"] + out["lambda_away"] <= (3.40 + 0.45) * LAMBDA_TOTAL_MAX_REL + 1e-9
     # l'1X2 pubblicato è quello della griglia limitata, non il vettore mediato irraggiungibile
     g = tau_grid(out["lambda_home"], out["lambda_away"], out["dc_rho"], size=GRID_SIZE)
     i, j = np.indices(g.shape)
@@ -265,6 +362,30 @@ def test_ensemble_non_tocca_le_lambda_quando_la_media_e_normale():
     solo = ensemble(dc, None)
     assert solo["model"] == "dc" and solo["lambda_limitata"] is False
     assert solo["lambda_home"] == pytest.approx(1.70)
+
+
+def test_i_limiti_di_sicurezza_valgono_sui_gol_attesi_pubblicati():
+    """Il limite è sui gol attesi che il lettore vede, non su quelli grezzi.
+
+    Con la ricetta promossa la calibrazione **moltiplica** (λ×1,04) invece di dividere: una λ
+    già al tetto (4,00) uscirebbe a 4,16. Misurato rigenerando le previsioni il 2026-09-13:
+    2 partite su 2.071 sopra i tetti prima della correzione, 0 dopo.
+    """
+    dc = {"p_home": 0.70, "p_draw": 0.18, "p_away": 0.12, "dc_rho": -0.09,
+          "lambda_home": 4.60, "lambda_away": 1.00}
+    elo = {"elo_p_home": 0.60, "elo_p_draw": 0.24, "elo_p_away": 0.16}
+    out = ensemble(dc, elo, w_dc=0.7)
+    assert out["lambda_limitata"] is True
+    pub = calibrated_prediction(out, Calibration(lambda_scale=1.0401, rho_shift=-0.04))
+    assert pub["lambda_home"] <= LAMBDA_MAX + 1e-9
+    assert pub["lambda_home"] + pub["lambda_away"] <= LAMBDA_TOTAL_MAX_ABS + 1e-9
+    assert pub["lambda_limitata"] is True
+    # la griglia pubblicata è quella limitata: 1X2 e mercati restano coerenti
+    g = tau_grid(pub["lambda_home"], pub["lambda_away"], pub["dc_rho"], size=GRID_SIZE)
+    i, j = np.indices(g.shape)
+    assert pub["p_home"] == pytest.approx(float(g[i > j].sum()), abs=1e-9)
+    # il vincolo relativo (70%-135% del modello sui gol) è invariante alla scala
+    assert pub["lambda_home"] + pub["lambda_away"] <= (4.60 + 1.00) * LAMBDA_TOTAL_MAX_REL * 1.0401 + 1e-9
 
 
 def test_latest_per_match_tiene_solo_l_ultima_versione():

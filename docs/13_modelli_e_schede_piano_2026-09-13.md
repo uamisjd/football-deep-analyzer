@@ -167,6 +167,12 @@ Scelte e rinunce, senza sconti:
 
 ### 3.3 Limiti di sicurezza sulle λ invertite (nuovo, misurato)
 
+> **Aggiornamento 2026-09-13:** la produzione non inverte più due λ libere dall'1X2 mediato
+> (`docs/15`): l'Elo inclina e il totale dei gol attesi resta quello del modello sui gol, quindi
+> il difetto descritto qui non si forma più (0,05% di gare toccate contro l'1,2%). I limiti
+> restano, valgono anche **dopo** la calibrazione (che ora moltiplica: λ×1,04) e continuano a
+> proteggere la ricetta `inverti`, rimasta in laboratorio come candidato `dc_elo_ge`.
+
 `ensemble()` ricava le λ della griglia pubblicata **invertendo l'1X2 mediato** con
 `pb.models.goal_expectancy`, che risolve due λ libere senza alcun vincolo. Quando l'Elo spinge il
 vettore verso esiti estremi (pareggio al 5-6%) l'unico modo di riprodurlo è gonfiare i gol attesi:
@@ -255,7 +261,7 @@ miscele, con la stessa procedura per tutti e nessuna informazione dal futuro.
 
 | chiave | tipo | famiglia | che cosa mette alla prova |
 |---|---|---|---|
-| `dc_elo_prod` | production | Dixon-Coles | **baseline**: ciò che il sito pubblica oggi (w 0,7) |
+| `dc_elo_prod` | production | Dixon-Coles | **baseline**: ciò che il sito pubblica oggi (w 0,7, ricetta `tilt` dal 2026-09-13) |
 | `dc_puro` | goals | Dixon-Coles | quanto vale l'Elo aggiunto |
 | `dc_xi10` / `dc_xi30` | goals | Dixon-Coles | memoria lunga (ξ 0,0010) vs corta (ξ 0,0030) |
 | `dc_no_shrink` / `dc_shrink16` | goals | Dixon-Coles | shrinkage verso la media di lega: 0 vs 16 |
@@ -269,7 +275,7 @@ miscele, con la stessa procedura per tutti e nessuna informazione dal futuro.
 | **`elo_hfa40` / `elo_hfa80`** | rating | Elo | **nuovo**: vantaggio del campo (60 è il default, mai misurato) |
 | `pi_ratings` | rating | Pi-ratings | rating di Constantinou-Fenton |
 | `mix_50` / `mix_85` | blend | Dixon-Coles | miscela **nella griglia** (matrici mescolate) al 50% e all'85% di DC |
-| **`dc_elo_tilt`** | blend | Dixon-Coles | **nuovo**: l'Elo **inclina** il rapporto casa/trasferta senza gonfiare i gol attesi (alternativa strutturale a `goal_expectancy`) |
+| **`dc_elo_ge`** | production | Dixon-Coles | **ex `dc_elo_tilt`, promosso il 2026-09-13**: la ricetta ora in produzione è `dc_elo_prod` (`mode="tilt"`, l'Elo **inclina** il rapporto casa/trasferta senza gonfiare i gol attesi); `dc_elo_ge` tiene in laboratorio la ricetta precedente (λ libere da `goal_expectancy`) per rendere ripetibile il confronto — vedi `docs/15` |
 | **`prod_w50` / `prod_w85`** | production | Dixon-Coles | **nuovo**: il peso 0,7 della media pesata non era mai stato confrontato con 0,50 e 0,85 |
 
 Più `convex_weights()`: stacking convesso dei vettori 1X2 (Nelder-Mead, nessuna dipendenza nuova),
@@ -385,14 +391,21 @@ nel `daily`.
    run compaiono al più poche decine di `λ dall'1X2 mediato fuori dai limiti` (atteso: ~1,2% delle
    gare, concentrate dove il divario tecnico è massimo — POR1, NED1);
 4. **[live]** `history.parquet` compare in `data/processed` dopo il primo run con `fda simulate`;
-5. **[live]** il primo `lab` in Actions pubblica `model_lab.parquet` con ≥ 1.000 partite valutate per
-   candidato e 7 leghe; si cambia modello **solo** se un candidato batte `dc_elo_prod` con IC 95%
-   appaiato interamente negativo, e solo se il vantaggio vale in almeno 5 leghe su 7. Con la
-   correzione automatica del livello (`scala_media` nel riepilogo) il confronto è equo: **verificare
-   che `scala_media` sia < 1 per i candidati della famiglia di produzione e ≈ 1 per quelli che non
-   gonfiano le λ** — è la firma del difetto strutturale, visibile senza dover leggere il codice;
-   priorità di lettura: `dc_elo_tilt` (stesso RPS senza gonfiare i gol) e `prod_w50`/`prod_w85`
-   (il peso 0,7 non era mai stato misurato);
+5. **[verificato, promosso il 2026-09-13]** il primo `lab` utile in Actions (run 34784018926,
+   commit `bb247fe`) ha pubblicato `model_lab.parquet` con **1.527 partite** per candidato e 7
+   leghe; il criterio — «si cambia modello **solo** se un candidato batte `dc_elo_prod` con IC 95%
+   appaiato interamente negativo, e solo se il vantaggio vale in almeno 5 leghe su 7» — è stato
+   soddisfatto da `dc_elo_tilt`: ΔRPS **−0,000406**, IC **[−0,000773; −0,000041]**, RPS più basso
+   in **5 leghe su 7**, `scala_media` **1,013** (contro 0,955 della baseline: la firma del difetto
+   strutturale, visibile senza leggere il codice). `dc_puro` e `prod_w85` vincono 5/7 ma con IC che
+   contiene lo 0; `prod_w50` è significativamente peggiore (+0,000497). **Esito: `dc_elo_tilt` è
+   ora la ricetta di produzione** (`predict.ENSEMBLE_MODE = "tilt"`), la baseline `dc_elo_prod`
+   la usa e la ricetta precedente resta in laboratorio come `dc_elo_ge`. Sul backtest pieno
+   (5.811 gare, confronto appaiato) il guadagno è confermato e più grande: RPS calibrato
+   0,19958 → 0,19882 (Δ −0,00077, IC interamente negativo, **7 leghe su 7**), con Brier dei
+   mercati sui gol che peggiora di 0,00047 in modo non significativo. Dettagli, misure e
+   ristima della calibrazione (λ×0,9135 → **λ×1,0401**):
+   [`docs/15_promozione_dc_elo_tilt_2026-09-13.md`](15_promozione_dc_elo_tilt_2026-09-13.md);
 6. **[offline, già verificato]** suite **163 passed** (0 warning), `ruff --select F,E9` pulito su `src`,
    `tests` e `scripts`, build di anteprima (376 schede / 2.364 fixture / 7.394 giocatori),
    `scripts/verify_site.py` **0 problemi · 2.213 controlli numerici superati** con i controlli [8b]
@@ -623,7 +636,17 @@ Audit per campo (`audit_match`, 13 campi × 95 schede): **0 «mancante»** dopo 
   (+~1,6 MB/giorno di blob, ~11% della cartella `data/processed` che oggi pesa 3,0 MB) — accettata,
   è il prezzo di 14× la copertura.
 
-### 9.7 Merge PR #28 — miglioramenti modello, fonti, card + regole affinati (2026-09-13, deroga esplicita)
+### 9.8 Merge PR #29 — `dc_elo_tilt` in produzione + sito pubblicato su push (2026-09-14, deroga esplicita)
+
+**Contenuto PR #29** (10 commit, base `main` `b743408`):
+- `predict.py`: `ENSEMBLE_MODE = "tilt"` — l'Elo inclina il rapporto casa/trasferta e il totale dei gol attesi resta quello del modello sui gol; `MODEL_VERSION` `dc-elo-ens-0.3` → **`dc-elo-tilt-0.4`**; limiti di sicurezza (λ ≤ 4,0 per squadra, totale ≤ 5,5) applicati **anche dopo la calibrazione**;
+- `lab.py`: la baseline `dc_elo_prod` passa da `predict.ensemble` (una sola implementazione per sito e laboratorio), la ricetta precedente resta candidato `dc_elo_ge`;
+- dati rigenerati: backtest **5.812 gare**, calibrazione **λ×1,0401 ρ−0,04** (4.760 gare di stima), **2.071 previsioni**;
+- 4 test nuovi (tilt, limiti sui gol attesi pubblicati, ricetta precedente, candidati lab) — suite **176 passed**;
+- le **4 verifiche dal vivo** di `docs/15` §7 eseguite prima del merge: calibrazione λ×1,0401 ρ−0,04 con bias λ −0,024; pagina Accuratezza RPS 0,1988 con pareggio 25,9% dentro il Wilson 95% [24,53%; 26,78%]; **nessuna scheda sopra i limiti** (trovate e strette 2 schede d'archivio fuori limite, λ 4,02 e totali 5,63/5,91, generate prima che i limiti esistessero); lab offline su 5.812 gare con `dc_elo_prod` = tilt e `dc_elo_ge` significativamente peggiore (Δ +0,0005, IC [+0,0001; +0,0009]);
+- `daily.yml`: aggiunto **`push: branches: [main]`** — il sito prima si aggiornava solo ai 5 orari schedulati, che GitHub avvia con **ritardo medio 3,2 ore** (da 1h39m a 5h23m sugli ultimi 20 run).
+
+**Deroga merge PR #29**: l'utente ha scritto «Please merge the pull request» (2026-09-14). In applicazione della regola D (eccezione con deroga esplicita) l'agente esegue `gh pr merge 29 --merge` **dopo aver verificato**: check `test` verdi, PR **MERGEABLE/clean**, `git status --porcelain` vuoto e `git log origin/main..HEAD` con solo il lavoro della PR. Documentata qui e in `STATO.md` undicesimo giro. Deroghe precedenti: PR #23 (2026-09-12), PR #27 e PR #28 (2026-09-13).
 
 **Contenuto PR #28** (commit `f387100` → `14c9dec` → merge `cc80795`):
 - fix `lab.yml` quoting bug: da `EXTRA="--candidates $CANDS"` senza virgolette (solo `dc_elo_prod` in `e6da512`) a `if [ -n "$CANDS" ]; then fda lab ... --candidates "$CANDS" --save else ... fi` — ora dispatch con 5 candidati funziona (verificato locale 1.518 gare, tilt Δ−0,000397 IC negativo 5/7 leghe);

@@ -12,7 +12,11 @@
     <p class="small" style="background:rgba(80,200,120,.12);border:1px solid rgba(80,200,120,.25);padding:8px 10px;border-radius:8px">
       <b>Calibrazione attiva:</b> λ×{{ cal.lambda_scale|dec(3) }} · ρ{{ cal.rho_shift|dec(2, true) }}
       {% if cal.estimator %}({{ cal.estimator }}, {% if cal.window_days %}{{ cal.window_days }} giorni{% else %}tutto lo storico{% endif %}{% if cal.n_fit %}, {{ cal.n_fit|it_num }} gare{% endif %}){% endif %}
-      — corregge la sovrastima storica dei gol. Versione <code>{{ cal.version }}</code>.
+      — corregge la distorsione dei gol attesi misurata fuori campione: bias λ
+      {% if cal.bias_prima is not none %}{{ cal.bias_prima|dec(2, true) }} →
+      {{ cal.bias_dopo|dec(2, true) }} gol{% else %}(stimato al prossimo backtest){% endif %}
+      {% if cal.lambda_scale >= 1 %}(oggi una lieve <b>sottostima</b>){% endif %}.
+      Versione <code>{{ cal.version }}</code>.
     </p>
     {% else %}
     <p class="small mut" style="border:1px dashed rgba(255,255,255,.15);padding:8px 10px;border-radius:8px">Calibrazione: identità (in attesa di backtest sufficiente).</p>
@@ -22,9 +26,10 @@
       <li><b>Dixon-Coles</b> pesato nel tempo (attacco/difesa per squadra, λ di gol, ρ per i risultati bassi, ξ=0,0018, shrinkage 8);</li>
       <li><b>Elo</b> (forza di squadra k 20, HFA 60, aggiornata gara per gara).</li>
     </ul>
-    <p style="margin-top:12px">Il peso 0,7 è il miglior compromesso misurato: il laboratorio ha provato 0,5 e 0,85 su 1.518 gare walk-forward — 0,5 è significativamente peggiore (ΔRPS +0,000488 IC positivo), 0,85 batte in 5/7 leghe ma non significativo. Da questi escono mercati 1X2, gol attesi, Over/Under, entrambe a segno, doppia chance, porta inviolata e risultati esatti tramite <b>matrice 0–5</b> (coda oltre 5 dichiarata).</p>
-    <p style="margin-top:8px" class="small"><b>Limiti di sicurezza sulle λ:</b> λ≤4,0, totale 70%-135% del modello gol — evita previsioni assurde tipo 8,4 gol (Barcellona-Racing Santander). Interviene su ~1,2% gare (69/5.791 nel backtest) e migliora Brier sulle toccate 0,1471→0,1450.</p>
-    <p style="margin-top:8px" class="small">Variante strutturale <code>dc_elo_tilt</code>: l'Elo inclina solo il rapporto casa/trasferta, il totale gol resta del modello gol (stesso RPS, bias −0,087 invece di +0,104). Testata in laboratorio con bootstrap 95% — si cambia modello solo se IC interamente negativo E ≥5 leghe vinte ({{ lab_rows }} righe in <code>model_lab.parquet</code>).</p>
+    <p style="margin-top:12px">Il peso 0,7 è il miglior compromesso misurato: il laboratorio ha provato 0,5 e 0,85 su 1.527 gare walk-forward — 0,5 è significativamente peggiore (ΔRPS +0,000497 IC positivo), 0,85 batte in 5/7 leghe ma non significativo. Da questi escono mercati 1X2, gol attesi, Over/Under, entrambe a segno, doppia chance, porta inviolata e risultati esatti tramite <b>matrice 0–5</b> (coda oltre 5 dichiarata).</p>
+    <p style="margin-top:8px"><b>Come l'Elo entra nella previsione</b> (ricetta promossa il 13/09/2026, <code>dc_elo_tilt</code>): l'Elo <b>inclina</b> il rapporto casa/trasferta e il totale dei gol attesi resta quello stimato dal modello sui gol. Prima si cercavano invece due λ libere capaci di riprodurre l'1X2 mediato: le λ si gonfiavano (+0,24 gol sul backtest) ed era la calibrazione a doverle correggere. Misurato sullo stesso insieme di 5.812 gare fuori campione (confronto appaiato, bootstrap 95%): RPS <b>0,19957 → 0,19881</b> (IC interamente negativo, meglio in 7 leghe su 7) e pareggio grezzo <b>25,7%</b> contro 25,6% osservato (prima era 23,9%). Prezzo dichiarato: il Brier dei mercati sui gol peggiora di 0,00048, non in modo significativo. Dettagli in <code>docs/15</code>.</p>
+    <p style="margin-top:8px" class="small"><b>Limiti di sicurezza sulle λ:</b> λ≤4,0 per squadra e totale ≤5,5 (e comunque fra il 70% e il 135% del modello gol) applicati <b>dopo</b> la calibrazione, cioè sui gol attesi che leggi: evitano previsioni assurde tipo 8,4 gol (Barcellona-Racing Santander, ricetta precedente). Oggi toccano lo 0,05% delle partite (1 su 2.071) perché il totale dei gol non viene più gonfiato.</p>
+    <p style="margin-top:8px" class="small">Ogni cambio di ricetta passa dal laboratorio: 22 candidati confrontati walk-forward con bootstrap 95% — si cambia modello solo se l'intervallo è interamente negativo <b>e</b> il vantaggio vale in almeno 5 leghe su 7 ({{ lab_rows }} righe in <code>model_lab.parquet</code>).</p>
     <p style="margin-top:12px">L'accuratezza è pubblicata in <a href="accuratezza.html">Accuratezza</a> con <b>RPS</b> (0=perfetto, 0,25≈casuale con frequenze medie, 0,19-0,20 bookmaker) e <b>Brier</b> (errore quadratico, più basso meglio) rispetto a una base naive 45/27/28. Δ negativo = batte la base. Intervalli Wilson 95% distinguono rumore da segnale.</p>
   </div>
   <div class="card">

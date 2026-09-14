@@ -9,7 +9,7 @@ import pytest
 from fda.models.calibration import (BRIER_WEIGHT, FIT_WINDOW_DAYS, MIN_ROWS, Calibration,
                                     evaluate, fit, from_store, moment_scale)
 from fda.models.dc_grid import GRID_SIZE, grid_markets_many, probability_grid, tau_grid, tau_grid_many
-from fda.models.predict import _grid_markets, calibrated_prediction
+from fda.models.predict import _grid_markets, calibrated_prediction, wilson_interval
 from fda.store import Store
 
 
@@ -106,19 +106,27 @@ BACKTEST_REALE = Path(__file__).resolve().parents[1] / "data" / "processed" / "b
 
 @pytest.mark.skipif(not BACKTEST_REALE.exists(), reason="backtest di produzione non presente")
 def test_fit_on_production_backtest_fixes_the_measured_bias():
-    """Sul backtest vero (5.791 gare fuori campione) la calibrazione corregge i difetti misurati.
+    """Sul backtest vero (5.811 gare fuori campione) la calibrazione corregge il bias residuo.
 
-    È la verifica che giustifica l'intervento (regola B8): bias dei gol totali, sottostima del
-    pareggio e Brier dei mercati, con il guadagno valutato walk-forward.
+    Con la ricetta a gol attesi invariati (tilt, promossa il 2026-09-13) il difetto storico ha
+    **cambiato segno**: la griglia grezza ora *sottostima* i gol (bias −0,133) invece di
+    sovrastimarli (+0,240 con la ricetta precedente, che gonfiava le λ invertendo l'1X2
+    mediato), e il pareggio grezzo è già centrato (25,7% contro 25,6% osservato). La
+    calibrazione resta giustificata: dimezza il bias residuo e migliora il Brier dei mercati,
+    con il guadagno valutato walk-forward (regola B8).
     """
     df = pd.read_parquet(BACKTEST_REALE)
     before = evaluate(df, Calibration())
     cal = fit(df)
     after = evaluate(df, cal)
-    assert before["bias_lambda"] > 0.15, "il bias misurato sul backtest è cambiato: rileggere docs/13"
-    assert abs(after["bias_lambda"]) < before["bias_lambda"] / 2
-    assert abs(after["pareggio_previsto"] - after["pareggio_osservato"]) < \
-        abs(before["pareggio_previsto"] - before["pareggio_osservato"])
+    assert abs(before["bias_lambda"]) > 0.10, "il bias misurato sul backtest è cambiato: rileggere docs/15"
+    assert abs(after["bias_lambda"]) < abs(before["bias_lambda"]) / 2
+    # il pareggio resta dentro l'intervallo di Wilson 95% dell'osservato, prima e dopo
+    n = int(before["n"])
+    k = int(round(before["pareggio_osservato"] * n))
+    lo, hi = wilson_interval(k, n)
+    assert lo <= before["pareggio_previsto"] <= hi
+    assert lo <= after["pareggio_previsto"] <= hi
     assert after["brier_mercati"] < before["brier_mercati"]
     assert cal.metrics["holdout_brier_dopo"] < cal.metrics["holdout_brier_prima"]
     # l'1X2 non deve peggiorare oltre il rumore: la calibrazione non nasce per quello

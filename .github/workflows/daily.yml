@@ -1,8 +1,20 @@
 # Run giornaliero: raccolta dati → modelli → sito → commit dati → pubblicazione su GitHub Pages.
+# Parte su push in `main` (pubblicazione subito dopo un merge) e agli orari schedulati.
 # Orari in UTC (l'ora italiana è UTC+2 d'estate, UTC+1 d'inverno).
+# Nota: gli orari schedulati sono nominali — GitHub li avvia con ritardo (misurato:
+# in media 3,2 ore, da 1h39m a 5h23m sugli ultimi 20 run), quindi non sono puntuali.
 name: daily
 
 on:
+  # Pubblica anche subito dopo un merge in `main`: senza questo trigger il sito restava
+  # fermo a quello costruito dal run precedente fino all'orario schedulato successivo
+  # (in media 3,2 ore, fino a 7). Non c'è rischio di loop: i commit dei dati portano
+  # "[skip ci]" e i push fatti con GITHUB_TOKEN non riattivano i workflow.
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "*.md"
   schedule:
     - cron: "0 4 * * *"     # 06:00 IT (estate) — run principale del mattino
     - cron: "0 10 * * *"    # 12:00 IT — infortuni/formazioni/meteo

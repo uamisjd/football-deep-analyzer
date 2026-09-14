@@ -32,10 +32,13 @@ print("calibrazione:", cal.lambda_scale, cal.rho_shift, cal.version)
 pred = store.read("predictions")
 print("previsioni:", pred.shape)
 
-# Le righe pubblicate sono state prodotte **prima** dei limiti di sicurezza sulle λ (§3.3 del
-# piano): qui li si riapplica come fa `ensemble()` in produzione, recuperando le λ del solo
-# modello sui gol dall'1X2 mediato, dai rating Elo e dal peso già salvati nella riga. Senza
-# questo passaggio l'anteprima mostrerebbe ancora partite da 8,4 gol attesi.
+# Le righe pubblicate **prima** del 2026-09-13 erano state prodotte senza i limiti di sicurezza
+# sulle λ (§3.3 del piano): qui li si riapplica come faceva `ensemble()` con la ricetta
+# `inverti`, recuperando le λ del solo modello sui gol dall'1X2 mediato, dai rating Elo e dal
+# peso già salvati nella riga. Senza questo passaggio l'anteprima mostrerebbe ancora partite da
+# 8,4 gol attesi. Con la ricetta promossa (`tilt`, `docs/15`) i limiti sono già applicati in
+# produzione **dopo** la calibrazione, quindi sulle righe nuove questo passaggio non interviene:
+# resta per le previsioni storiche ancora nello store.
 import numpy as np                                               # noqa: E402
 import penaltyblog as pb                                         # noqa: E402
 

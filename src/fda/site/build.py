@@ -581,6 +581,10 @@ class SiteBuilder:
                 "window_days": cal.window_days,
                 "n_fit": cal.n_fit if hasattr(cal, 'n_fit') else None,
                 "is_identity": cal.is_identity,
+                # bias dei gol attesi sul campione pieno, prima e dopo la correzione: la scheda
+                # dice in quali numeri si vede l'effetto, invece di descriverlo a parole
+                "bias_prima": cal.metrics.get("campione_bias_lambda"),
+                "bias_dopo": cal.metrics.get("dopo_bias_lambda"),
             }
         except Exception:
             cal_info = {"is_identity": True}
