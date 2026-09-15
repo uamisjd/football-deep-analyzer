@@ -22,6 +22,7 @@ from typing import Any, Callable
 import pandas as pd
 
 from .config import League, cups, leagues, season_start_year
+from .diagnostics import MAX_DETAIL, MAX_DIGEST, bump, detail, digest, shape_of
 from .sources.espn import EspnClient, to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
 from .sources.news import NewsClient, parse_espn_news
@@ -34,6 +35,9 @@ log = logging.getLogger(__name__)
 
 # Orizzonte del meteo previsionale Open-Meteo (giorni futuri coperti come fallback).
 WEATHER_HORIZON_DAYS = 7
+
+# Errori di fonte che degradano senza bloccare il run: la fonte primaria copre il dato.
+_WARN_NON_BLOCCANTE = ("espn standings", "espn news")
 
 # Versione dello snapshot per-partita. Va incrementata quando cambia il modo in cui le
 # tabelle per-partita vengono salvate: le partite finite salvate con una versione più
@@ -57,17 +61,37 @@ class CollectReport:
     espn_events: int = 0
     errors: list[str] = field(default_factory=list)
     requests: dict[str, int] = field(default_factory=dict)
+    # --- diagnostica per fonte (docs/21 §15): una fonte «OK» con 0 righe deve spiegarsi ---
+    # row_counts: righe salvate nella tabella della fonte (None = non applicabile)
+    # details:    frase breve in italiano coi numeri dell'imbuto, pubblicata in `stato.html`
+    # digests:    firma tecnica (soli nomi di campo visti), salvata nel Parquet e nel log
+    row_counts: dict[str, int | None] = field(default_factory=dict)
+    details: dict[str, str] = field(default_factory=dict)
+    digests: dict[str, str] = field(default_factory=dict)
+
+    def note(self, source: str, *, rows: int | None = None, detail_text: str = "",
+             digest_text: str = "") -> None:
+        """Registra la diagnostica di una fonte (troncata ai tetti di `fda.diagnostics`)."""
+        if rows is not None:
+            self.row_counts[source] = int(rows)
+        if detail_text:
+            self.details[source] = detail_text[:MAX_DETAIL]
+        if digest_text:
+            self.digests[source] = digest_text[:MAX_DIGEST]
 
     def as_status_rows(self) -> list[dict[str, Any]]:
-        rows = []
+        out = []
         for src, n in self.requests.items():
             err = next((e for e in self.errors if e.startswith(src)), None)
-            # ESPN standings risponde 403 cronico: è coperto dalla classifica FotMob (fonte
-            # primaria), quindi viene registrato come AVVISO e non come errore bloccante.
-            warn = err is not None and err.startswith("espn standings")
-            rows.append({"run_at": self.run_at, "source": f"{src}:{self.league}", "requests": n,
-                         "ok": err is None, "warn": warn, "error": err})
-        return rows
+            # Fonti il cui 403 è un degrado noto e già coperto da un'altra fonte: vengono
+            # registrate come AVVISO, non come errore bloccante (ESPN standings 403 cronico,
+            # coperto dalla classifica FotMob; ESPN news 403, coperto da Google News).
+            warn = err is not None and err.startswith(_WARN_NON_BLOCCANTE)
+            out.append({"run_at": self.run_at, "source": f"{src}:{self.league}", "requests": n,
+                        "ok": err is None, "warn": warn, "error": err,
+                        "rows": self.row_counts.get(src), "detail": self.details.get(src, ""),
+                        "digest": self.digests.get(src, "")})
+        return out
 
 
 def _safe(step: str, fn: Callable[[], Any], report: CollectReport) -> Any:
@@ -101,6 +125,13 @@ def collect_league(
     uc = understat or UnderstatClient()
     ec = espn or EspnClient()
     om = openmeteo            # None = passo meteo disattivato (es. test offline senza rete)
+    # Contatori di partenza: `source_status` deve registrare le richieste **della fase**,
+    # non il totale cumulativo del client condiviso (difetto misurato il 2026-09-15:
+    # `fotmob:POR1` 129 includeva anche le richieste di NED1, `transfers:TRANSFERS` 263
+    # tutte quelle delle fasi precedenti → il numero per fase non era ricostruibile).
+    req0 = {"fotmob": fm.http.stats.requests, "understat": uc.http.stats.requests,
+            "espn": ec.http.stats.requests,
+            "openmeteo": om.http.stats.requests if om is not None else 0}
 
     # 1) calendario -------------------------------------------------------------------------
     fixtures = _safe("fotmob", lambda: fm.parse_fixtures(lg.fotmob_id, fm.fixtures_raw(lg.fotmob_id)), report)
@@ -195,9 +226,9 @@ def collect_league(
     # 4) ESPN -------------------------------------------------------------------------------
     # Standings e scoreboard sono indipendenti: un 403 sulla classifica non deve impedire
     # di usare gli eventi giornalieri (la fonte resta comunque segnalata in source_status).
-    def _standings() -> None:
+    def _standings() -> int:
         rows = ec.parse_standings(lg.espn_code, ec.standings_raw(lg.espn_code))
-        store.upsert("espn_standings", espn_dicts(rows))
+        return store.upsert("espn_standings", espn_dicts(rows))
 
     def _scoreboards() -> int:
         total = 0
@@ -207,48 +238,84 @@ def collect_league(
             store.upsert("espn_team_stats", espn_dicts(stats))
         return total
 
-    _safe("espn standings", _standings, report)
+    espn_standings_rows = _safe("espn standings", _standings, report) or 0
     report.espn_events = _safe("espn scoreboard", _scoreboards, report) or 0
 
     # 5) meteo previsionale Open-Meteo (fallback: riempie il vuoto FotMob sui futuri) ------
+    weather_reason = "passo non attivo"
+
     def _weather() -> int:
-        if om is None or not fixtures:
+        nonlocal weather_reason
+        if om is None:
+            weather_reason = "passo non attivo"
+            return 0
+        if not fixtures:
+            weather_reason = "calendario non disponibile"
             return 0
         horizon = today + timedelta(days=WEATHER_HORIZON_DAYS)
         upcoming = [f for f in fixtures
                     if f.status == "scheduled" and f.utc_kickoff
                     and today <= f.utc_kickoff.date() <= horizon]
         if not upcoming:
+            weather_reason = f"nessuna gara nei prossimi {WEATHER_HORIZON_DAYS} giorni"
             return 0
         mi = store.read("match_info")
         if mi.empty or not {"stadium_lat", "stadium_lon", "weather_desc"}.issubset(mi.columns):
+            weather_reason = "dettagli partita non ancora raccolti"
             return 0
         coords = mi.set_index("match_id")[["stadium_lat", "stadium_lon", "weather_desc"]]
         rows = []
+        # perché una gara non finisce nella tabella: conta il motivo, non solo il totale
+        skipped_fotmob = skipped_coords = skipped_forecast = 0
         for f in upcoming:
             if f.match_id not in coords.index:
+                skipped_coords += 1
                 continue
             lat, lon, fotmob_weather = coords.loc[f.match_id]
             if lat is None or lon is None or pd.isna(lat) or pd.isna(lon):
+                skipped_coords += 1
                 continue
             # FotMob resta la fonte primaria: se ha già il meteo non serve il fallback
             if isinstance(fotmob_weather, str) and fotmob_weather.strip():
+                skipped_fotmob += 1
                 continue
             fc = om.forecast(float(lat), float(lon), f.utc_kickoff)
             if not fc:
+                skipped_forecast += 1
                 continue
             rows.append({"match_id": f.match_id, "lat": float(lat), "lon": float(lon),
                          "hour": fc.get("hour"), "temp_c": fc.get("temp_c"),
                          "precip_prob": fc.get("precip_prob"), "code": fc.get("code"),
                          "desc": fc.get("desc"), "fetched_at": now})
-        return store.upsert("weather_forecast", rows) if rows else 0
+        if not rows:
+            weather_reason = (f"nessuna previsione utile su {len(upcoming)} gare future "
+                              f"(meteo FotMob {skipped_fotmob} · coordinate {skipped_coords} · "
+                              f"previsione assente {skipped_forecast})")
+            return 0
+        weather_reason = f"{len(rows)} gare senza meteo FotMob"
+        return store.upsert("weather_forecast", rows)
 
-    _safe("openmeteo forecast", _weather, report)
+    weather_rows = _safe("openmeteo forecast", _weather, report) or 0
 
-    report.requests = {"fotmob": fm.http.stats.requests, "understat": uc.http.stats.requests,
-                       "espn": ec.http.stats.requests}
+    report.requests = {"fotmob": fm.http.stats.requests - req0["fotmob"],
+                       "understat": uc.http.stats.requests - req0["understat"],
+                       "espn": ec.http.stats.requests - req0["espn"]}
     if om is not None:
-        report.requests["openmeteo"] = om.http.stats.requests
+        report.requests["openmeteo"] = om.http.stats.requests - req0["openmeteo"]
+    report.note("fotmob", rows=report.fixtures,
+                detail_text=detail(f"calendario {report.fixtures}",
+                                   f"partite {report.matches_fetched}",
+                                   f"backfill {report.matches_backfilled}",
+                                   f"classifica di lega {report.standings}"))
+    report.note("understat", rows=report.understat_rows,
+                detail_text=("lega non coperta da Understat" if not lg.has_understat else
+                             detail(f"righe raccolte {report.understat_rows}",
+                                    "riserva: la classifica primaria è FotMob")))
+    report.note("espn", rows=espn_standings_rows + report.espn_events,
+                detail_text=detail(f"classifica {espn_standings_rows}",
+                                   f"eventi del giorno {report.espn_events}",
+                                   "riserva: la classifica primaria è FotMob" if not espn_standings_rows else ""))
+    report.note("openmeteo", rows=weather_rows, detail_text=weather_reason)
     store.upsert("source_status", report.as_status_rows())
     return report
 
@@ -265,6 +332,7 @@ def collect_cups(store: Store, fotmob: FotMobClient | None = None) -> CollectRep
     now = datetime.now(timezone.utc)
     report = CollectReport(league="CUPS", run_at=now)
     fm = fotmob or FotMobClient()
+    fm0 = fm.http.stats.requests
     rows: list[dict[str, Any]] = []
     for cp in cups():
         fx = _safe(f"fotmob cups {cp.key}",
@@ -282,7 +350,10 @@ def collect_cups(store: Store, fotmob: FotMobClient | None = None) -> CollectRep
     if rows:
         store.upsert("cup_fixtures", rows)
         report.fixtures = len(rows)
-    report.requests = {"fotmob": fm.http.stats.requests}
+    report.requests = {"fotmob": fm.http.stats.requests - fm0}
+    report.note("fotmob", rows=report.fixtures,
+                detail_text=detail(f"coppe {len(cups())}",
+                                   f"gare di calendario {report.fixtures}"))
     store.upsert("source_status", report.as_status_rows())
     return report
 
@@ -303,41 +374,77 @@ def collect_news(store: Store, keys: list[str] | None = None,
     now = datetime.now(timezone.utc)
     report = CollectReport(league="NEWS", run_at=now)
     nc = news or NewsClient()
+    ec = espn or EspnClient()
+    nc0, ec0 = nc.http.stats.requests, ec.http.stats.requests
     fx = store.read("fixtures")
     if fx.empty:
         report.errors.append("news: fixtures vuote, salto")
+        report.note("news", rows=0, detail_text="calendario non disponibile, raccolta saltata")
+        report.note("espn", rows=0, detail_text="calendario non disponibile, raccolta saltata")
         store.upsert("source_status", report.as_status_rows())
         return report
     teams = fx.drop_duplicates("home_id")[["home_id", "home_name"]]
     rows: list[dict[str, Any]] = []
+    # imbuto delle notizie (docs/21 §15): byte letti, articoli visti, corpi non-RSS,
+    # articoli senza titolo, articoli ESPN visti e attribuiti a una squadra
+    diag: dict[str, Any] = {}
+    bump(diag, "ricerche", len(teams))
     for tid, name in teams.itertuples(index=False):
-        items = _safe(f"news rss {name}", lambda t=tid, n=name: nc.team_news(int(t), str(n)), report)
+        items = _safe(f"news rss {name}",
+                      lambda t=tid, n=name: nc.team_news(int(t), str(n), diag), report)
         if items:
             rows.extend(items)
-    # ESPN news di lega: attribuisce ogni articolo alla squadra che cita (mai a tutte)
-    ec = espn or EspnClient()
+    # ESPN news di lega: passa dal client ESPN (contabilità separata) e attribuisce ogni
+    # articolo alla squadra che cita, mai a tutte
+    espn_shape = ""
     for lg in leagues(keys):
-        payload = _safe(f"espn news {lg.key}", lambda c=lg.espn_code: nc.league_news_raw(c), report)
+        payload = _safe(f"espn news {lg.key}",
+                        lambda c=lg.espn_code: nc.league_news_raw(c, http=ec.http), report)
         if not payload:
             continue
+        if not espn_shape:
+            espn_shape = shape_of(payload)   # firma: solo nomi di campo (docs/21 §15)
         ids = {}
         for r in fx[fx.league_id == lg.fotmob_id][["home_id", "home_name"]].drop_duplicates().itertuples(index=False):
             ids[canonical(str(r.home_name))] = int(r.home_id)
-        rows.extend(parse_espn_news(payload, ids))
+        rows.extend(parse_espn_news(payload, ids, diag))
     cut = now - timedelta(days=window_days)
-    fresh = []
+    fresh: list[dict[str, Any]] = []
+    senza_data = fuori_finestra = 0
     for r in rows:
         pa = r.get("published_at")
         if pa is None:
+            # la card promette una finestra di 12 giorni: senza data la promessa non è
+            # verificabile → la riga non si pubblica, ma il motivo viene contato
+            senza_data += 1
             continue
         ts = pd.Timestamp(pa)
         if ts.tzinfo is None:
             ts = ts.tz_localize(timezone.utc)
         if ts >= cut:
             fresh.append(r)
-    if fresh:
-        store.upsert("news", fresh)
-    report.requests = {"news": nc.http.stats.requests, "espn": ec.http.stats.requests}
+        else:
+            fuori_finestra += 1
+    stored = store.upsert("news", fresh) if fresh else 0
+    report.requests = {"news": nc.http.stats.requests - nc0,
+                       "espn": ec.http.stats.requests - ec0}
+    report.note("news", rows=stored,
+                detail_text=detail(f"ricerche {diag.get('ricerche', 0)}",
+                                   f"articoli {diag.get('items', 0)}",
+                                   f"corpi non RSS {diag.get('parse_error', 0)}",
+                                   f"in finestra {len(fresh)}", f"fuori finestra {fuori_finestra}",
+                                   f"senza data {senza_data}", f"salvate {stored}"),
+                digest_text=digest(f"rss: byte {diag.get('bytes', 0)}",
+                                   f"item {diag.get('items', 0)}",
+                                   f"parse_error {diag.get('parse_error', 0)}",
+                                   f"senza_titolo {diag.get('senza_titolo', 0)}"))
+    report.note("espn", rows=int(diag.get("espn_attribuiti", 0)),
+                detail_text=detail(f"articoli di lega {diag.get('espn_articoli', 0)}",
+                                   f"attribuiti a una squadra {diag.get('espn_attribuiti', 0)}"),
+                digest_text=digest(f"espn: {espn_shape}" if espn_shape else "",
+                                   f"articoli {diag.get('espn_articoli', 0)}",
+                                   f"attribuiti {diag.get('espn_attribuiti', 0)}",
+                                   f"payload non JSON {diag.get('espn_payload_non_json', 0)}"))
     store.upsert("source_status", report.as_status_rows())
     return report
 
@@ -355,26 +462,43 @@ def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> Colle
     now = datetime.now(timezone.utc)
     report = CollectReport(league="TRANSFERS", run_at=now)
     fm = fotmob or FotMobClient()
+    fm0 = fm.http.stats.requests
     st = store.read("fotmob_standings")
     if st.empty or "team_id" not in st.columns:
         report.errors.append("transfers: classifica vuota, salto")
+        report.note("transfers", rows=0, detail_text="classifica non disponibile, raccolta saltata")
         store.upsert("source_status", report.as_status_rows())
         return report
     rows: list[dict[str, Any]] = []
     n_teams = 0
+    voci = 0
+    sezioni: dict[str, int] = {}
+    firma = ""
     for r in st[["league_code", "team_id", "team_name"]].drop_duplicates("team_id").itertuples(index=False):
         raw = _safe(f"transfers {r.team_name}", lambda t=int(r.team_id): fm.team_raw(t), report)
         if raw is None:
             continue
         n_teams += 1
-        rows.extend(FotMobClient.parse_transfers(raw, int(r.team_id), str(r.team_name), str(r.league_code)))
-    if rows:
-        store.upsert("transfers", rows)
-    # i conteggi restano nel log di run (salvato come artifact da Actions): la tabella
-    # CLI ha colonne calendario/partite che qui non c'entrano, e source_status — come
-    # per le notizie — registra richieste ed esito, non volumi.
-    log.info("transfers: %d righe da %d squadre", len(rows), n_teams)
-    report.requests = {"transfers": fm.http.stats.requests}
+        diag: dict[str, Any] = {}
+        rows.extend(FotMobClient.parse_transfers(raw, int(r.team_id), str(r.team_name),
+                                                 str(r.league_code), diag))
+        voci += int(diag.get("voci", 0))
+        sez = str(diag.get("sezione", "?"))
+        sezioni[sez] = sezioni.get(sez, 0) + 1
+        if not firma:
+            # firma dello schema del primo payload: solo nomi di campo, mai valori
+            firma = digest(f"top {diag.get('top', '?')}",
+                           f"sezione {sez} campi {diag.get('campi_sezione') or '—'}")
+    stored = store.upsert("transfers", rows) if rows else 0
+    log.info("transfers: %d righe da %d squadre (voci viste %d; sezioni %s)", stored, n_teams, voci, sezioni)
+    report.requests = {"transfers": fm.http.stats.requests - fm0}
+    report.note("transfers", rows=stored,
+                detail_text=detail(f"payload letti {n_teams}", f"voci viste {voci}",
+                                   f"salvate {stored}",
+                                   "sezione " + ", ".join(f"{k} in {v}" for k, v in
+                                                          sorted(sezioni.items(), key=lambda kv: -kv[1])[:3])
+                                   if stored == 0 and sezioni else ""),
+                digest_text=firma)
     store.upsert("source_status", report.as_status_rows())
     return report
 

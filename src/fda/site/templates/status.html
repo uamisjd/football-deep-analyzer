@@ -5,8 +5,9 @@
 <p class="mut">Salute degli aggiornamenti automatici: ogni fonte viene interrogata ripetutamente al giorno e qui si vede l'esito dell'ultimo run, oltre alla completezza delle schede partita.</p>
 <div class="grid">
 <div class="card"><h2>Ultimi run per fonte</h2>
-<div class="tablewrap"><table><tr><th scope="col">Fonte</th><th scope="col">Ultimo run</th><th scope="col" class="r">Richieste</th><th scope="col">Esito</th></tr>
-{% for r in sources %}<tr><td>{{ r.source }}</td><td class="mut">{{ r.run_at }}</td><td class="r">{{ r.requests }}</td><td>{% if r.ok %}<span class="pill V">OK</span>{% elif r.warn %}<span class="pill N">AVVISO</span> <span class="small mut">{{ r.error }}</span>{% else %}<span class="pill P">ERRORE</span> <span class="small mut">{{ r.error }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="4" class="mut">Nessun run registrato.</td></tr>{% endfor %}
+<p class="small mut">«Righe» sono le righe di dati salvate dalla fonte in quell'ultimo run: una fonte che risponde ma non salva nulla scrive qui il motivo (feed vuoto, forma cambiata, niente in finestra) — così un run «andato bene» non nasconde più un contenuto mancante.</p>
+<div class="tablewrap"><table><tr><th scope="col">Fonte</th><th scope="col">Ultimo run</th><th scope="col" class="r">Richieste</th><th scope="col" class="r">Righe</th><th scope="col">Esito</th></tr>
+{% for r in sources %}<tr><td>{{ r.source }}</td><td class="mut">{{ r.run_at }}</td><td class="r">{{ r.requests|it_num }}</td><td class="r">{{ r.rows|it_num if r.rows is not none else "—" }}</td><td>{% if not r.ok %}{% if r.warn %}<span class="pill N">AVVISO</span>{% else %}<span class="pill P">ERRORE</span>{% endif %} <span class="small mut">{{ r.error }}</span>{% elif r.rows == 0 %}<span class="pill V">OK</span> <span class="small mut">0 righe · {{ r.detail }}</span>{% else %}<span class="pill V">OK</span> <span class="small mut">{{ r.detail }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="mut">Nessun run registrato.</td></tr>{% endfor %}
 </table></div></div>
 <div class="card"><h2>Tabelle</h2>
 <div class="tablewrap"><table><tr><th scope="col">Tabella</th><th scope="col" class="r">Righe</th><th scope="col" class="r">KB</th></tr>

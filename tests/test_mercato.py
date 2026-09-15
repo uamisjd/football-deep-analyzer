@@ -69,9 +69,14 @@ class _StubFotMob:
     """Solo le chiamate: Roma risponde, Inter esplode (una fonte rotta non ferma il run)."""
 
     def __init__(self):
-        self.http = type("H", (), {"stats": type("S", (), {"requests": 2})()})()
+        # come un client vero: il contatore parte da zero e sale a ogni richiesta. Da
+        # quando `source_status` registra le richieste **della fase** (non il cumulativo
+        # del client condiviso), uno stub fermo a un numero fisso farebbe leggere 0.
+        self.requests = 0
+        self.http = type("H", (), {"stats": self})()
 
     def team_raw(self, team_id: int) -> dict:
+        self.requests += 1
         if team_id == 2:
             raise RuntimeError("teams temporaneamente irraggiungibile")
         return RAW_DICT

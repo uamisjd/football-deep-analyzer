@@ -660,3 +660,38 @@ Audit per campo (`audit_match`, 13 campi × 95 schede): **0 «mancante»** dopo 
 **Deroga merge PR #28**: utente ha scritto "Please merge the pull request" + "si applicale" per regole (2026-09-13 20:46 UTC). Secondo nuova regola D (eccezione con deroga esplicita) agente ha eseguito `gh pr merge 28 --merge` il 2026-09-13 20:49 UTC dopo verifica check verdi (test SUCCESS, 172 passed) e mergeable MERGEABLE. Merge commit `cc80795` su `main`. Documentata qui e in `STATO.md` nono giro. Precedenti deroghe: PR #23 (2026-09-12) e PR #27 (2026-09-13 15:46 UTC) su ordine esplicito utente, registrate in STATO.md settimo giro.
 
 **Verifiche finali prima del merge**: suite 172 passed, build 376/2364/7434, `verify_site` 0 problemi 12.130 controlli, `site/index.html` Famalicão-Sporting 17 precedenti 2-3-12 (2,6 gol/gara, BTTS 59%), gol attesi 0,97-1,75 Over 51%, modelli d'accordo scarto 6,8pp.
+
+### 9.9 Merge PR #34 — P0/P1/P2/P3 della verifica QQV in `main` (2026-09-15, deroga esplicita)
+
+**Contenuto PR #34** (15 commit, base `main`, testa `arena/01a0a5f3`; 45 file, +3.597/−424):
+- **P0-1/P1-4/P1-5** — card «Panchina e posta in gioco», riposo vero con le coppe (`cup_fixtures`),
+  strato «interno» con `sources/news.py` (Google News RSS per squadra + ESPN news di lega) e card
+  «Ultime dalle società»;
+- **P2-6** card «Clima del club» (segnali a soglie dichiarate, blocco narrativo separato dall'analisi
+  pre-partita), **P2-7** mercato (`FotMobClient.parse_transfers` + `collect_transfers` + card «Mercato:
+  arrivi e partenze», dark launch onesto), **P2-8a** `scope` su ogni `<th>` (193 attributi),
+  **P2-8b** anteprime `docs/preview/` rigenerate con Pillow sul layout corrente;
+- principio di utilità applicato a Scontro tattico (graduatorie + duello chiave), «I giocatori che
+  decidono» (badge «giocherà?») e post-partita (card «Il prossimo impegno», conversione delle grandi
+  occasioni);
+- **P3-a** ξ per lega con gate di adozione (`fda lab-xi`, `xi_league.parquet`: **0/7 adottano**) e
+  **P3-b** monitoraggio dei mercati binari (`fda mercati-monitor`: **0/9 «strutturale»**);
+- `docs/21_verifica_qqv_piano_2026-09-15.md` completa (§0–§14) e STATO aggiornato a ogni giro.
+
+**Verifiche prima del merge (misurate, non presunte):** suite **246 passed**; build completa +
+`scripts/verify_site.py` **0 problemi · 26.821 controlli**; ruff pulito sul codice nuovo; check
+GitHub della PR: **2 su 2 SUCCESS**; `git status --porcelain` vuoto e `git log origin/main..HEAD`
+limitato al lavoro della PR.
+
+**Deroga merge PR #34**: l'utente ha chiesto esplicitamente all'agente di eseguire il merge
+(2026-09-15). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 34 --merge` **dopo aver verificato** check verdi, PR mergeable e assenza di lavoro
+residuo; merge commit **`bd8a4d5`** in `main` (2026-09-15T22:29:53Z). Documentata qui e in `STATO.md`
+dodicesimo giro. Catena delle deroghe precedenti: PR #23 (2026-09-12), #27 e #28 (2026-09-13),
+#29 (2026-09-14) — tutte su ordine esplicito dell'utente.
+
+**Verifica post-merge (primo daily di Actions, run `35031258981`, data commit `a2fbfaf`):** run e
+deploy Pages verdi; sul sito pubblicato `mercati_monitor` **9 righe** e `xi_league` **7 righe**; il
+verdetto di Actions coincide col locale (0/9 «strutturale»). Punto aperto: **`news` e `transfers` a
+zero righe utilizzabili** nonostante le fonti a registro OK (news 139 richieste, transfers 263) —
+tabelle assenti e card buie come previsto dal dark launch onesto (consuntivo in `docs/21` §14).

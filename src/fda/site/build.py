@@ -591,10 +591,19 @@ class SiteBuilder:
             rows = []
             for r in last.itertuples(index=False):
                 err = (r.error or "") if isinstance(r.error, str) else ""
+                # Righe salvate dalla fonte in questo run e motivo quando sono zero
+                # (docs/21 §15): una fonte «OK» con 0 righe senza spiegazione era
+                # indistinguibile da una fonte sana — invariante [28] di verify_site.
+                counter = getattr(r, "rows", None)
+                n_rows = None if counter is None or pd.isna(counter) else int(counter)
+                note = getattr(r, "detail", "")
                 rows.append({"source": r.source,
                              "run_at": pd.Timestamp(r.run_at).tz_convert(self.tz).strftime("%d/%m %H:%M"),
-                             "requests": int(r.requests), "ok": bool(r.ok),
-                             "warn": bool(getattr(r, "warn", False)) or "espn standings" in err,
+                             "requests": int(r.requests) if not pd.isna(r.requests) else 0,
+                             "rows": n_rows, "detail": note if isinstance(note, str) else "",
+                             "ok": bool(r.ok),
+                             "warn": bool(getattr(r, "warn", False)) or "espn standings" in err
+                                     or "espn news" in err,
                              "error": err[:120]})
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []
         by_state = {s: sum(1 for a in self.audit_rows for i in a["items"] if i["state"] == s)
