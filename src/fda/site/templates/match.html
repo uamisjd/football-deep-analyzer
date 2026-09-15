@@ -157,6 +157,11 @@
     </tr>
     {% endfor %}
   </table>
+  {% if c.clash_ranks %}
+  <p style="margin:10px 0 0"><b>{{ c.home_name }}</b>: {{ c.clash_ranks.home_line }} · <b>{{ c.away_name }}</b>: {{ c.clash_ranks.away_line }}</p>
+  <p class="small" style="color:var(--accent);margin:4px 0 0">{{ c.clash_ranks.duel_line }}</p>
+  <p class="small mut">Graduatorie e rapporti «× media» dalla classifica FotMob: una sola fonte per tutte le squadre della lega, quindi confrontabili senza mescolare fornitori xG.</p>
+  {% endif %}
   <p class="small mut" style="margin-top:8px">{{ c.clash.global_note if c.clash.global_note is defined else c.clash.notes[0] ~ ' ' ~ c.clash.notes[1] }}</p>
 </div>
 {% endif %}
@@ -219,7 +224,7 @@
         <tr><th class="mut small">giocatore</th><th class="r" style="width:40px">min</th><th class="r" style="width:34px">gol</th><th class="r" style="width:38px">assist</th><th class="r" style="width:44px">xG</th><th class="r" style="width:44px">xA</th><th class="r" style="width:52px">xG+xA/90</th><th class="r" style="width:44px">voto</th></tr>
         {% for p in kp.rows %}
         <tr>
-          <td>{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if p.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ p.pos }}</span>{% endif %}{% if p.chances %}<span class="small mut"> · {{ p.chances|it_plural('occasione') }}{% if p.big_chances %}, {{ p.big_chances }} {{ 'clamorosa' if p.big_chances == 1 else 'clamorose' }}{% endif %}</span>{% endif %}</td>
+          <td>{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if p.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ p.pos }}</span>{% endif %}{% if p.chances %}<span class="small mut"> · {{ p.chances|it_plural('occasione') }}{% if p.big_chances %}, {{ p.big_chances }} {{ 'clamorosa' if p.big_chances == 1 else 'clamorose' }}{% endif %}</span>{% endif %}{% set kst = (c[side ~ '_key_status'] or {}).get(p.id) %}{% if kst %}{% if kst.status == 'unavailable' %} <span class="small warn">· assente: {{ kst.note }}</span>{% elif kst.status == 'starter' %} <span class="small" style="color:var(--accent)">· titolare probabile</span>{% else %} <span class="small mut">· in panchina</span>{% endif %}{% endif %}</td>
           <td class="r small mut">{{ p.minutes }}</td>
           <td class="r">{{ p.goals }}</td>
           <td class="r">{{ p.assists }}</td>
@@ -230,6 +235,7 @@
         </tr>
         {% endfor %}
       </table>
+      {% if kp.rows %}{% set k0 = (c[side ~ '_key_status'] or {}).get(kp.rows[0].id) %}{% if k0 and k0.status == 'unavailable' %}<p class="small warn" style="margin:6px 0 0">Il contributo offensivo più alto della lista, {{ kp.rows[0].name }}, è indisponibile ({{ k0.note }}): il valore per 90 è stagionale e non vale per questa gara.</p>{% endif %}{% endif %}
       {% else %}<p class="mut small">Nessun giocatore sopra la soglia di minutaggio con dati xG.</p>{% endif %}
       {% if kp %}<p class="small mut">Soglia di minutaggio: {{ kp.floor }} minuti · {{ kp.eligible }} {{ 'giocatore in classifica' if kp.eligible == 1 else 'giocatori in classifica' }}. ◎ valore stabilizzato con prior bayesiano (180′ verso la media di ruolo) per campioni sotto 270′: con pochi minuti il valore per 90 è rumore.</p>{% endif %}
       {% if rated %}<p class="small" style="margin-top:8px"><b>Per media voto di stagione</b>: {% for p in rated %}{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %} {{ p.season_rating|dec(2)}}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}

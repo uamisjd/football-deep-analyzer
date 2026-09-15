@@ -1241,6 +1241,65 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: card clima senza segnali calcolati")
     print(f"[21] pagine con clima del club riconciliate: {n_mood}")
 
+    # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
+    # classifica FotMob (fonte unica) e confrontati col testo stampato.
+    n_duel = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+            continue
+        txt = html_unescape(html)
+        fr = fx19[fx19.match_id == int(pg.stem)].iloc[0]
+        cr = ma19.clash_ranks(str(fr.home_name), str(fr.away_name))
+        if not cr:
+            continue
+        n_duel += 1
+        for key in ("home_line", "away_line", "duel_line"):
+            checks += 1
+            if cr[key] not in txt:
+                fails.append(f"{pg.name}: riga scontro «{key}» assente o diversa")
+    print(f"[22] duello chiave e graduatorie verificati: {n_duel} pagine")
+
+    # 23) «giocherà?»: i badge titolare/panchina/assente stampati devono coincidere di
+    # numero e contenuto coi ruoli della distinta; l'avviso sul top contributor assente
+    # deve esserci se e solo se serve.
+    n_status = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+            continue
+        txt = html_unescape(html)
+        mid = int(pg.stem)
+        fr = fx19[fx19.match_id == mid].iloc[0]
+        exp = {"starter": 0, "sub": 0, "unavailable": 0}
+        alerts = 0
+        listed = False
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            sts = ma19.key_status(mid, tid)
+            kp = ma19.key_players_deep(tid)
+            rows = (kp or {}).get("rows") or []
+            if rows:
+                listed = True
+            for r in rows:
+                stt = (sts.get(r["id"]) or {}).get("status")
+                if stt in exp:
+                    exp[stt] += 1
+            if rows and (sts.get(rows[0]["id"]) or {}).get("status") == "unavailable":
+                alerts += 1
+        if not listed:
+            continue
+        n_status += 1
+        for badge, key in (("· titolare probabile", "starter"),
+                           ("· in panchina", "sub"),
+                           ("· assente:", "unavailable")):
+            checks += 1
+            if html.count(badge) != exp[key]:
+                fails.append(f"{pg.name}: badge «{badge}» {html.count(badge)} vs {exp[key]} ruoli")
+        has_alert = "è indisponibile" in txt
+        if (alerts > 0) != has_alert:
+            fails.append(f"{pg.name}: avviso top contributor assente coerente? {has_alert} vs {alerts}")
+    print(f"[23] badge «giocherà?» riconciliati: {n_status} pagine")
+
     st.close()
     return fails, checks
 

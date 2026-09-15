@@ -291,3 +291,37 @@ ogni scheda pre e confrontate col testo (74 pagine riconciliate; le 2 senza segn
 card, e se una squadra ha segnali la card deve esserci). Resa reale su Ajax–Willem II: Ajax
 «infermeria pesante: 4 assenti… · riposo corto: 3 giorni», Willem II «non vince da 5 gare ·
 raccoglie 2,3 punti meno di quanto crea · infermeria pesante: 6 assenti».
+
+
+---
+
+## 8. Principio di utilità applicato ad altre due sezioni (2026-09-15, quinto turno)
+
+**Richiesta utente:** «continua e spiegami bene cosa vuoi fare, riflettici in modo accurato».
+Ragionamento registrato: rilettura delle 17 sezioni della scheda pre con la domanda «che
+decisione aiuta a prendere?»; le due ancora descrittive erano «Scontro tattico» (stile senza
+conclusione) e «I giocatori che decidono» (percentili senza dire se giocheranno).
+
+**Scontro tattico → graduatorie e duello chiave.** Righe nuove per squadra: posizione in
+classifica per attacco e difesa *per gol* («5º attacco · 2ª difesa su 18») e riga «duello
+chiave» che nomina il lato più sbilanciato del match (prodotto dei rapporti attacco/difesa
+sulla media gol della lega; vince il prodotto maggiore). **Scelta di metodo:** graduatorie e
+rapporti si calcolano sulla **classifica FotMob**, una sola fonte per tutte le squadre della
+lega, perché gli xG mescolano fornitori e violerebbero la regola di purezza già dichiarata
+nella card; la nota lo spiega a schermo.
+
+**Giocatori che decidono → «giocherà?».** Badge per ogni giocatore dalla distinta della
+partita: «titolare probabile» / «in panchina» / «assente: motivo · rientro»; se la fonte elenca
+lo stesso giocatore titolare e indisponibile vince l'indisponibilità (regola già in
+``starters``). Avviso esplicito se il contributo offensivo più alto della lista è assente:
+«il valore per 90 è stagionale e non vale per questa gara» (caso reale online: Ché Adams in
+5749682, Ricardo Mangas in 5749686).
+
+**Verifica:** suite **219 passed** (+2 test: graduatorie/duello su classifica sintetica con
+skew atteso 1,20 vs 0,90; stati titolare/panchina/assente con duplicato che deve vincere
+l'indisponibilità); `verify_site` **0 problemi · 25.237 controlli** con invarianti nuove
+**[22]** (home_line/away_line/duel_line ricalcolati e confrontati col testo, 76 pagine) e
+**[23]** (conteggi dei badge per pagina = conteggi dei ruoli nella distinta; avviso top
+contributor presente se e solo se serve, 76 pagine). Resa reale su Ajax–Willem II: «duello
+chiave: attacco Ajax (1,43× la media gol della lega) contro difesa Willem II (1,43× la media
+gol subiti)».

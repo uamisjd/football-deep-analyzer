@@ -2271,6 +2271,86 @@ class MatchAnalysis:
         return style_rows(self.season_style(home_name, home_id),
                           self.season_style(away_name, away_id), pred)
 
+    def clash_ranks(self, home_name: str, away_name: str) -> dict[str, Any] | None:
+        """Graduatorie attacco/difesa e «duello chiave» da UNA sola fonte: la classifica.
+
+        Perché la classifica e non gli xG: graduatorie e rapporti «× media campionato»
+        devono confrontare quantità omogenee, e la classifica FotMob è un'unica fonte per
+        tutte le squadre della lega, mentre gli xG mescolano fornitori (regola di purezza
+        già dichiarata nella card «Scontro tattico»). Il duello chiave è il lato più
+        sbilanciato del match: attacco casa × difesa ospite contro attacco ospite ×
+        difesa casa, misurato come prodotto dei rapporti sulla media gol della lega.
+        """
+        if self.fm_standings.empty:
+            return None
+        h, a = self.standing(home_name), self.standing(away_name)
+        if not h or not a or h.get("league_code") != a.get("league_code"):
+            return None
+        tab = self.fm_standings[self.fm_standings.league_code == h["league_code"]]
+        tab = tab.drop_duplicates("team_id")
+        n = len(tab)
+        if n < 4 or not h.get("played") or not a.get("played"):
+            return None
+        att_rank = {int(r.team_id): i for i, r in enumerate(
+            tab.sort_values(["goals_for", "goal_diff"], ascending=[False, False])
+               .itertuples(index=False), 1)}
+        def_rank = {int(r.team_id): i for i, r in enumerate(
+            tab.sort_values("goals_against", kind="stable").itertuples(index=False), 1)}
+        avg_gf = tab.goals_for.sum() / tab.played.sum()
+        avg_ga = tab.goals_against.sum() / tab.played.sum()
+        if not avg_gf or not avg_ga:
+            return None
+
+        def ratios(row: dict[str, Any]) -> tuple[float, float]:
+            pg = int(row["played"]) or 1
+            return (row["goals_for"] / pg) / avg_gf, (row["goals_against"] / pg) / avg_ga
+
+        h_att, h_def = ratios(h)
+        a_att, a_def = ratios(a)
+        fmt = lambda v: f"{v:.2f}".replace(".", ",")  # noqa: E731
+        if h_att * a_def >= a_att * h_def:
+            duel = (f"duello chiave: attacco {home_name} ({fmt(h_att)}× la media gol della lega) "
+                    f"contro difesa {away_name} ({fmt(a_def)}× la media gol subiti): il lato più "
+                    f"sbilanciato del match")
+        else:
+            duel = (f"duello chiave: attacco {away_name} ({fmt(a_att)}× la media gol della lega) "
+                    f"contro difesa {home_name} ({fmt(h_def)}× la media gol subiti): il lato più "
+                    f"sbilanciato del match")
+        return {
+            "n": n,
+            "home_line": (f"{att_rank[int(h['team_id'])]}º attacco · "
+                          f"{def_rank[int(h['team_id'])]}ª difesa per gol in campionato (su {n})"),
+            "away_line": (f"{att_rank[int(a['team_id'])]}º attacco · "
+                          f"{def_rank[int(a['team_id'])]}ª difesa per gol in campionato (su {n})"),
+            "duel_line": duel,
+        }
+
+    def key_status(self, match_id: int, team_id: int) -> dict[int, dict[str, Any]]:
+        """Giocherà? Stato di ogni giocatore della distinta: titolare, panchina o assente.
+
+        Incrocio diretto dei ruoli FotMob della partita (starter/sub/unavailable); per gli
+        assenti la nota è motivo+rientro tradotti, come nell'infermeria. Se la fonte elenca
+        lo stesso giocatore sia titolare sia indisponibile vince l'indisponibilità (regola
+        già usata in ``starters``): dire «titolare probabile» di un infortunato è un falso.
+        """
+        if self.lineup.empty:
+            return {}
+        rows = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
+                           & (self.lineup.role.isin(["starter", "sub", "unavailable"]))
+                           & self.lineup.player_id.notna()]
+        out: dict[int, dict[str, Any]] = {}
+        for r in rows.itertuples(index=False):
+            if r.role == "unavailable":
+                note = unavailability_it(_val(r._asdict(), "unavailability_type"))
+                ret = _return_it(_val(r._asdict(), "expected_return"))
+                out[int(r.player_id)] = {"status": "unavailable",
+                                         "note": note + (f" · {ret}" if ret else "")}
+        for r in rows.itertuples(index=False):
+            pid = int(r.player_id)
+            if r.role != "unavailable" and pid not in out:
+                out[pid] = {"status": "starter" if r.role == "starter" else "sub"}
+        return out
+
     def match_xg_race(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
         if self.shots.empty:
             return None
@@ -2476,6 +2556,10 @@ class MatchAnalysis:
                             if status != "finished" else None),
             "home_key_deep": self.key_players_deep(home_id) if status != "finished" else None,
             "away_key_deep": self.key_players_deep(away_id) if status != "finished" else None,
+            "clash_ranks": self.clash_ranks(f["home_name"], f["away_name"])
+                           if status != "finished" else None,
+            "home_key_status": self.key_status(match_id, home_id) if status != "finished" else {},
+            "away_key_status": self.key_status(match_id, away_id) if status != "finished" else {},
             "home_absences": self.absences_weight(match_id, home_id) if status != "finished" else None,
             "away_absences": self.absences_weight(match_id, away_id) if status != "finished" else None,
             "home_bench": self.bench_deep(home_id, f["home_name"], away_id, f["away_name"],
