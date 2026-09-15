@@ -6,7 +6,7 @@ import pytest
 from fda.site.analysis import MatchAnalysis
 from fda.store import Store
 
-KO = lambda s: pd.Timestamp(s, tz="UTC")  # noqa: E731
+KO = lambda s: pd.Timestamp(s, tz="UTC")
 
 FX = pd.DataFrame([
     {"match_id": 8, "league_id": 55, "season": "2026", "round": "8",
