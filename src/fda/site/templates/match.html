@@ -18,7 +18,8 @@
   {% if p and p.prior_di_lega %}<div style="margin-top:10px;padding:8px 12px;background:var(--surface2);border:1px dashed var(--line2);border-radius:8px;color:var(--mut);font-size:12px">Prior di lega: una o entrambe le squadre hanno storico insufficiente (neopromossa) — λ neutre di lega, non stima affidabile.</div>{% endif %}
   {% if p and p.meta %}
   <div class="hero-model">
-    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut" title="Differenza in punti percentuali tra primo e secondo esito (scala 1X2)">+{{ p.meta.margin_pp|dec(1) }} punti sul secondo — {{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}% · 1 {{ (p.p_home*100)|round|int }}% · X {{ (p.p_draw*100)|round|int }}% · 2 {{ (p.p_away*100)|round|int }}%</span></div>
+    {% set hb = (p.p_home, p.p_draw, p.p_away)|pct3 %}
+    <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ (p.meta.top_probability * 100)|round|int }}%</em></strong><span class="small mut" title="Differenza in punti percentuali tra primo e secondo esito (scala 1X2)">+{{ p.meta.margin_pp|dec(1) }} punti sul secondo — {{ p.meta.second_name }} {{ (p.meta.second_probability*100)|round|int }}% · 1 {{ hb[0] }}% · X {{ hb[1] }}% · 2 {{ hb[2] }}%</span></div>
     <div class="hero-metrics"><span class="hero-metric" title="λ Dixon-Coles+Elo calibrate — non media xG ultime 3 (vedi 'Come arrivano')"><b>{{ p.lambda_home|dec }}–{{ p.lambda_away|dec }}</b><span>gol attesi</span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
     <span class="hero-signal" title="{{ p.meta.signal_label }}{% if p.meta.has_dc and p.meta.has_elo %} — Dixon-Coles vs Elo sullo stesso preferito{% endif %}">{{ p.meta.signal_label }}</span>
     {% if c.home_xg and c.away_xg %}<div class="small mut" style="margin-top:6px">{{ c.home_name }} crea {{ c.home_xg.xg_pm|dec }} xG/gara ({{ c.home_xg.source }}) · {{ c.away_name }} {{ c.away_xg.xg_pm|dec }} · PPDA {% if c.home_xg.ppda %}{{ c.home_xg.ppda|dec(1) }}{% else %}n.d.{% endif %} vs {% if c.away_xg.ppda %}{{ c.away_xg.ppda|dec(1) }}{% else %}n.d.{% endif %}</div>{% endif %}
@@ -41,7 +42,10 @@
 <div class="grid detail-card" id="previsione">
   <div class="card">
     <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
-    <div class="bar" style="height:30px;font-size:14px"><span class="h" style="width:{{ (p.p_home*100)|round }}%">1 · {{ (p.p_home*100)|round|int }}%</span><span class="d" style="width:{{ (p.p_draw*100)|round }}%">X · {{ (p.p_draw*100)|round|int }}%</span><span class="a" style="width:{{ (p.p_away*100)|round }}%">2 · {{ (p.p_away*100)|round|int }}%</span></div>
+    {# larghezze ed etichette dagli stessi tre numeri, somma esattamente 100: prima tre
+       arrotondamenti indipendenti facevano 99% o 101% e la barra non chiudeva il contenitore #}
+    {% set b1x2 = (p.p_home, p.p_draw, p.p_away)|pct3 %}
+    <div class="bar" role="img" aria-label="Probabilità: vittoria {{ c.home_name }} {{ b1x2[0] }} per cento, pareggio {{ b1x2[1] }} per cento, vittoria {{ c.away_name }} {{ b1x2[2] }} per cento" style="height:30px;font-size:14px"><span class="h" style="width:{{ b1x2[0] }}%">1 · {{ b1x2[0] }}%</span><span class="d" style="width:{{ b1x2[1] }}%">X · {{ b1x2[1] }}%</span><span class="a" style="width:{{ b1x2[2] }}%">2 · {{ b1x2[2] }}%</span></div>
     <table style="margin-top:10px">
       <tr><th></th><th class="r">{{ c.home_name }}</th><th class="r">{{ c.away_name }}</th></tr>
       <tr><th>Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
@@ -78,7 +82,8 @@
       <div class="step-head"><strong>{{ loop.index }} · {{ st.label }}</strong>
         {% if st.delta_pp is not none %}<span class="delta">Δ {{ st.delta_pp|dec(1, true) }} pp</span>{% endif %}
         <span class="small mut">{{ st.note }}</span></div>
-      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ (st.p_home*100)|dec(1) }} per cento, pareggio {{ (st.p_draw*100)|dec(1) }} per cento, vittoria {{ c.away_name }} {{ (st.p_away*100)|dec(1) }} per cento"><span class="h" style="width:{{ (st.p_home*100)|round }}%">1 · {{ (st.p_home*100)|dec(1) }}%</span><span class="d" style="width:{{ (st.p_draw*100)|round }}%">X · {{ (st.p_draw*100)|dec(1) }}%</span><span class="a" style="width:{{ (st.p_away*100)|round }}%">2 · {{ (st.p_away*100)|dec(1) }}%</span></div>
+      {% set sb = (st.p_home, st.p_draw, st.p_away)|pct3(1) %}
+      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ sb[0]|dec(1) }} per cento, pareggio {{ sb[1]|dec(1) }} per cento, vittoria {{ c.away_name }} {{ sb[2]|dec(1) }} per cento"><span class="h" style="width:{{ sb[0] }}%">1 · {{ sb[0]|dec(1) }}%</span><span class="d" style="width:{{ sb[1] }}%">X · {{ sb[1]|dec(1) }}%</span><span class="a" style="width:{{ sb[2] }}%">2 · {{ sb[2]|dec(1) }}%</span></div>
     </li>{% endfor %}
   </ol>
 </div>
@@ -420,7 +425,7 @@
     </div>
   {% endfor %}
   </div>
-  <p class="small mut" style="margin-top:10px">Legenda: <span style="color:#28c893">●</span> gol · <span style="color:#4c9dd3">●</span> in porta (parato) · <span style="color:#f0b429">◌</span> bloccato · <span style="color:#8b9bb0">◌</span> fuori.</p>
+  <p class="small mut" style="margin-top:10px">Legenda: <span style="color:var(--leg-home)">●</span> gol · <span style="color:var(--leg-save)">●</span> in porta (parato) · <span style="color:var(--leg-block)">◌</span> bloccato · <span style="color:var(--leg-off)">◌</span> fuori.</p>
 </div>
 {% endif %}
 {% if c.xg_race %}
@@ -438,7 +443,7 @@
     <circle cx="{{ g.x }}" cy="{{ g.y }}" r="4" fill="{{ '#28c893' if g.home else '#e0605a' }}" stroke="#101a24" stroke-width="1"><title>⚽ {{ g.player }} {{ g.minute|round|int }}'</title></circle>
     {% endfor %}
   </svg>
-  <p class="small mut" style="margin:8px 0 0"><span style="color:#28c893">●</span> {{ c.home_name }} {{ c.xg_race.home_xg|dec }} · <span style="color:#e0605a">●</span> {{ c.away_name }} {{ c.xg_race.away_xg|dec }} · {{ c.xg_race.n|it_plural('tiro','tiri') }}</p>
+  <p class="small mut" style="margin:8px 0 0"><span style="color:var(--leg-home)">●</span> {{ c.home_name }} {{ c.xg_race.home_xg|dec }} · <span style="color:var(--leg-away)">●</span> {{ c.away_name }} {{ c.xg_race.away_xg|dec }} · {{ c.xg_race.n|it_plural('tiro','tiri') }}</p>
 </div>
 {% endif %}
 {% if c.home_shotq or c.away_shotq %}
@@ -485,7 +490,7 @@
     <circle cx="{{ g.x }}" cy="{{ g.y_h if g.scorer_home else g.y_a }}" r="3.5" fill="{{ '#28c893' if g.scorer_home else '#e0605a' }}"><title>{{ g.player }} {{ g.hg }}-{{ g.ag }} · {{ g.minute|round|int }}'</title></circle>
     {% endif %}{% endfor %}
   </svg>
-  <p class="small mut" style="margin:8px 0 0"><span style="color:#28c893">●</span> 1 {{ c.home_name }} · <span style="color:#7f8aa0">●</span> X · <span style="color:#e0605a">●</span> 2 {{ c.away_name }}</p>
+  <p class="small mut" style="margin:8px 0 0"><span style="color:var(--leg-home)">●</span> 1 {{ c.home_name }} · <span style="color:var(--leg-draw)">●</span> X · <span style="color:var(--leg-away)">●</span> 2 {{ c.away_name }}</p>
   <table style="margin-top:8px">
     <tr><th>Minuto</th><th>Punteggio</th><th class="r">1</th><th class="r">X</th><th class="r">2</th></tr>
     {% for g in c.wp_path.points %}
@@ -545,10 +550,11 @@
   <h2>Quanti gol, in pratica</h2>
   <p class="small mut">La stessa matrice letta per <b>totale dei gol</b> (gol attesi {{ gv.lambda_home|dec(2) }} +
   {{ gv.lambda_away|dec(2) }}): su 100 partite con queste λ il totale più frequente è <b>{{ gv.moda }} gol</b>
-  ({{ gv.bars[gv.moda].per100 }} su 100), la mediana è {{ gv.mediana }} e nel 90% dei casi il totale resta fra
-  {{ gv.q10 }} e {{ gv.q90 }} gol. Totale {{ gv.coda_label }} gol: {{ (gv.p_coda*100)|dec(1) }}%. I numeri sotto le
-  barre sono «partite su 100» (la somma fa 100), l'altezza è in proporzione.</p>
-  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px"><span class="tag" style="background:var(--accent-dim)">Mediana {{ gv.mediana }}</span><span class="tag" style="background:var(--surface3)">90% fra {{ gv.q10 }} e {{ gv.q90 }}</span><span class="tag" style="background:var(--surface3)">7+ {{ (gv.p_coda*100)|dec(1) }}%</span><span class="tag" style="background:var(--surface3)">Moda {{ gv.moda }} ({{ gv.bars[gv.moda].per100 }}/100)</span></div>
+  ({{ gv.bars[gv.moda].per100 }} su 100), la mediana è {{ gv.mediana }} e fra 10° e 90° percentile il totale resta
+  fra {{ gv.q10 }} e {{ gv.q90_label }} gol — cioè nel <b>{{ gv.copertura|dec(1) }}%</b> delle 100 partite. Totale
+  {{ gv.coda_label }} gol: {{ (gv.p_coda*100)|dec(1) }}%. I numeri sotto le barre sono «partite su 100» (la somma
+  fa 100), l'altezza è proporzionale alla probabilità, coda compresa.</p>
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 8px"><span class="tag" style="background:var(--accent-dim)">Mediana {{ gv.mediana }}</span><span class="tag" style="background:var(--surface3)" title="Intervallo 10°–90° percentile: la percentuale è la massa che cade davvero fra i due estremi (su totali discreti è sempre un po' più dell'80%)">{{ gv.copertura|dec(0) }}% fra {{ gv.q10 }} e {{ gv.q90_label }}</span><span class="tag" style="background:var(--surface3)">7+ {{ (gv.p_coda*100)|dec(1) }}%</span><span class="tag" style="background:var(--surface3)">Moda {{ gv.moda }} ({{ gv.bars[gv.moda].per100 }}/100)</span></div>
   <div class="goalgrid goalbars" role="img" aria-label="Distribuzione dei gol totali: {% for b in gv.bars %}{{ b.label }} gol {{ b.per100 }} su 100{% if not loop.last %}, {% endif %}{% endfor %}">
     {% for b in gv.bars %}<div class="gb{{ ' mode' if b.mode }}{{ ' tail' if b.tail }}"><span class="v">{{ b.per100 }}</span><span class="fill" style="height:{{ (b.h*100)|round }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
   </div>

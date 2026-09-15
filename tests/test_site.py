@@ -686,6 +686,61 @@ def test_pct_triple_somma_sempre_100():
         assert max(abs(p - v * 100) for p, v in zip(pct, x)) <= 1.0   # scarto massimo: 1 punto
 
 
+def test_pct_triple_con_un_decimale_somma_100():
+    """Le barre dei passi mostrano un decimale: anche lì la somma deve chiudere a 100,0.
+
+    Con tre arrotondamenti indipendenti le etichette facevano 99,9% o 100,1% e le larghezze
+    (arrotondate a intero, quindi diverse dalle etichette) non chiudevano la barra.
+    """
+    assert pct_triple((0.61, 0.2424, 0.1476), 1) == [61.0, 24.2, 14.8]
+    assert pct_triple((1 / 3, 1 / 3, 1 / 3), 1) == [33.4, 33.3, 33.3]     # il decimale in più al primo
+    # vettore che con l'arrotondamento indipendente dà 99: il punto mancante va al resto maggiore
+    v = (0.4049, 0.4049, 0.1902)
+    assert sum(round(x * 100) for x in v) == 99          # ecco il difetto: 40 + 40 + 19
+    assert pct_triple(v) == [41, 40, 19] and sum(pct_triple(v)) == 100
+    rng = np.random.default_rng(19)
+    for _ in range(400):
+        x = rng.random(3)
+        x = x / x.sum()
+        for nd in (0, 1, 2):
+            pct = pct_triple(tuple(float(vv) for vv in x), nd)
+            assert abs(sum(pct) - 100.0) < 1e-9, (nd, pct)
+            unit = 10 ** -nd
+            assert max(abs(a - b * 100) for a, b in zip(pct, x)) <= unit + 1e-9
+            assert all(a >= 0 for a in pct)
+
+
+def test_barra_1x2_della_scheda_chiude_a_100(tmp_path):
+    """La barra della scheda stampa larghezze ed etichette dagli stessi tre numeri.
+
+    Vettore scelto perché è esattamente il caso che si rompeva: 0,4049 / 0,4049 / 0,1902 con
+    tre ``|round`` indipendenti pubblicava 40% + 40% + 19% = **99%** (docs/19 §3.3).
+    """
+    st = _seed(tmp_path)
+    pr = st.read("predictions")
+    riga = pr.index[pr.match_id == 5749669][0]
+    pr.loc[riga, ["p_home", "p_draw", "p_away"]] = [0.4049, 0.4049, 0.1902]
+    st.write("predictions", pr)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    import re
+    blocco = re.search(r'<div class="bar" role="img" aria-label="Probabilità[^>]*>(.*?)</div>', h, re.DOTALL)
+    assert blocco, "barra 1X2 della previsione non trovata nella scheda"
+    seg = re.findall(r'<span class="([hda])" style="width:(\d+(?:,\d+)?)%">([^<]*)</span>',
+                     blocco.group(1).replace(".", ","))
+    assert [c for c, _, _ in seg] == ["h", "d", "a"]
+    largh = [float(w.replace(",", ".")) for _, w, _ in seg]
+    assert sum(largh) == 100.0, f"la barra non chiude: {largh}"
+    for (_, w, testo), val in zip(seg, largh):
+        etichetta = float(re.search(r"(\d+)%", testo).group(1))
+        assert etichetta == val, f"etichetta {testo!r} ma larghezza {val}%"
+    aria = re.search(r'aria-label="Probabilità: ([^"]+)"', h).group(1)
+    assert [float(v) for v in re.findall(r"(\d+) per cento", aria)] == largh
+    st.close()
+
+
 def _fixture_lontana(match_id: int, giorni: int, home: str, away: str, now) -> dict:
     return {"match_id": match_id, "league_id": 55, "season": "2026/2027", "round": None,
             "utc_kickoff": now + timedelta(days=giorni), "home_id": 8686, "home_name": home,

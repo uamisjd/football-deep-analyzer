@@ -211,6 +211,84 @@ def check_calendar(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+#: barre 1X2 (scheda partita, passi della scomposizione, mini-barra delle liste).
+#: L'header riusa ``class="bar"`` per il wordmark: i suoi segmenti non hanno ``style="width:…"``,
+#: quindi non entrano nel controllo (nessuna esclusione esplicita da mantenere).
+BAR_BLOCK = re.compile(r'<div class="bar"([^>]*)>(.*?)</div>', re.DOTALL)
+BAR_SEG = re.compile(r'<span class="([hda])" style="width:(\d+(?:\.\d+)?)%"[^>]*>([^<]*)</span>')
+PROB_LABELS = re.compile(r'<div class="prob-labels">(.*?)</div>', re.DOTALL)
+LAB = re.compile(r'<span( class="is-fav")?>([1X2]) (\d+)%</span>')
+
+
+def _num_it(s: str) -> float:
+    """'61,0' → 61.0 (virgola decimale italiana)."""
+    return float(s.replace(",", "."))
+
+
+def check_bars(site: Path) -> tuple[list[str], int]:
+    """[11a] Barre 1X2: larghezze, etichette e aria-label devono essere gli stessi tre numeri.
+
+    Invariante di pubblicazione, non di calcolo: anche se il modello cambiasse, una barra che
+    non chiude 100 è un difetto visibile (segmento mancante o strabordante) e un'etichetta che
+    contraddice la larghezza è un numero non vero. Prima della correzione (docs/19 §3.3) il
+    22% delle schede hero pubblicava 99% o 101% perché ogni probabilità era arrotondata da sola.
+    """
+    fails: list[str] = []
+    checks = 0
+    barre = 0
+    for page in sorted(site.rglob("*.html")):
+        rel = str(page.relative_to(site))
+        h = page.read_text(encoding="utf-8", errors="replace")
+        for attrs, corpo in BAR_BLOCK.findall(h):
+            seg = BAR_SEG.findall(corpo)
+            if len(seg) != 3:
+                continue                      # wordmark dell'header o barra non 1X2
+            checks += 1
+            barre += 1
+            if [c for c, _, _ in seg] != ["h", "d", "a"]:
+                fails.append(f"{rel}: barra 1X2 con segmenti {[c for c, _, _ in seg]} (atteso h, d, a)")
+            largh = [_num_it(w) for _, w, _ in seg]
+            if abs(sum(largh) - 100.0) > 0.05:
+                fails.append(f"{rel}: barra 1X2 larga {sum(largh):g}% ({largh})")
+            for (_, w, testo), val in zip(seg, largh):
+                if not testo.strip():
+                    continue                  # mini-barra: le etichette stanno in .prob-labels
+                m = re.search(r"(\d+(?:,\d+)?)\s*%", testo)
+                if not m:
+                    fails.append(f"{rel}: segmento della barra senza percentuale leggibile ({testo!r})")
+                elif _num_it(m.group(1)) != val:
+                    fails.append(f"{rel}: etichetta {m.group(1)}% ma larghezza {val:g}%")
+                else:
+                    checks += 1
+            aria = re.search(r'aria-label="([^"]*)"', attrs)
+            if aria:
+                detti = [_num_it(v) for v in re.findall(r"(\d+(?:,\d+)?)\s?(?:per cento|%)", aria.group(1))]
+                if len(detti) == 3:
+                    checks += 1
+                    if detti != largh:
+                        fails.append(f"{rel}: aria-label {detti} != larghezze {largh}")
+                else:
+                    fails.append(f"{rel}: aria-label della barra con {len(detti)} percentuali (attese 3)")
+            else:
+                fails.append(f"{rel}: barra 1X2 senza aria-label (ruolo img)")
+        for blocco in PROB_LABELS.findall(h):
+            etichette = LAB.findall(blocco)
+            if len(etichette) != 3:
+                fails.append(f"{rel}: .prob-labels con {len(etichette)} esiti (attesi 3)")
+                continue
+            checks += 1
+            valori = [int(v) for _, _, v in etichette]
+            if sum(valori) != 100:
+                fails.append(f"{rel}: etichette 1X2 {valori} non sommano 100")
+            favoriti = [sim for sim, _, v in etichette if sim and int(v) == max(valori)]
+            if [sim for sim, _, _ in etichette].count(" class=\"is-fav\"") != 1:
+                fails.append(f"{rel}: .prob-labels con {blocco.count('is-fav')} favoriti evidenziati (atteso 1)")
+            elif not favoriti:
+                fails.append(f"{rel}: favorito evidenziato ma non è il massimo {valori}")
+    print(f"[11a] barre 1X2 verificate: {barre}")
+    return fails, checks
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -578,6 +656,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
 
     # 9) distribuzione dei gol totali + dotplot quantile: ricalcolate dalla λ/ρ salvate
     from fda.site.advanced import goals_view, probability_steps
+    from fda.site.fmt import pct_triple
 
     n_goals = 0
     for pg in pages:
@@ -591,7 +670,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         r = preds.loc[mid]
         gv = goals_view(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
         barre = re.findall(r'<div class="gb([^"]*)"><span class="v">(\d+)</span>'
-                           r'<span class="fill" style="height:[^"]*"></span>'
+                           r'<span class="fill" style="height:([\d.]+)%"></span>'
                            r'<span class="x">([^<]+)</span></div>', html)
         checks += 1
         n_goals += 1
@@ -599,22 +678,45 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: barre gol {len(barre)} (attese {len(gv['bars'])})")
             continue
         somma = 0
-        for (_cls, v_txt, x_txt), b in zip(barre, gv["bars"]):
+        for (_cls, v_txt, h_txt, x_txt), b in zip(barre, gv["bars"]):
             somma += int(v_txt)
+            checks += 1
             if int(v_txt) != b["per100"]:
                 fails.append(f"{pg.name}: barra {x_txt} gol = {v_txt} su 100, ricalcolato {b['per100']}")
             if x_txt != b["label"]:
                 fails.append(f"{pg.name}: etichetta barra {x_txt} != {b['label']}")
+            # [11b] altezza: entro il contenitore e proporzionale alla probabilità ricalcolata.
+            # La scala deve includere la barra della coda, altrimenti «7+» straborda (183%).
+            altezza = float(h_txt)
+            if altezza > 100.0:
+                fails.append(f"{pg.name}: barra {x_txt} gol alta {altezza:g}% — esce dal contenitore")
+            elif altezza != round(b["h"] * 100):
+                fails.append(f"{pg.name}: barra {x_txt} gol alta {altezza:g}%, ricalcolato {round(b['h'] * 100)}%")
         if somma != 100:
             fails.append(f"{pg.name}: le barre dei gol sommano {somma} su 100")
-        # didascalia: moda, mediana, intervallo 10-90% e coda devono essere quelli ricalcolati
-        cap = re.search(r"il totale più frequente è <b>(\d+) gol</b>\s*\((\d+) su 100\)", html)
+        if max(b["h"] for b in gv["bars"]) != 1.0:
+            fails.append(f"{pg.name}: nessuna barra dei gol occupa il 100% della scala "
+                         f"(massimo {max(b['h'] for b in gv['bars']):g})")
+        # didascalia: moda, mediana, intervallo 10°-90° con la sua copertura reale, e la coda
+        cap = re.search(r"il totale più frequente è\s+<b>(\d+)\s+gol</b>\s*\((\d+) su 100\)", html)
         if not cap or int(cap.group(1)) != gv["moda"] or int(cap.group(2)) != gv["bars"][gv["moda"]]["per100"]:
             fails.append(f"{pg.name}: moda dei gol in didascalia != ricalcolata ({gv['moda']})")
-        med = re.search(r"la mediana è (\d+) e nel 90% dei casi il totale resta fra\s*(\d+) e (\d+) gol", html)
-        if not med or (int(med.group(1)), int(med.group(2)), int(med.group(3))) != (gv["mediana"], gv["q10"], gv["q90"]):
-            fails.append(f"{pg.name}: mediana/intervallo dei gol in didascalia != ricalcolati")
-        coda = re.search(rf"Totale {re.escape(gv['coda_label'])} gol: (\d+,\d)%", html)
+        med = re.search(r"la mediana è\s+(\d+)\s+e fra 10° e 90° percentile il totale resta\s+fra\s+(\d+)\s+e\s+"
+                        r"(\d+\+?)\s+gol\s+—\s+cioè nel\s+<b>(\d+,\d)%</b>", html)
+        attesi = (gv["mediana"], gv["q10"], gv["q90_label"], gv["copertura"])
+        if not med:
+            fails.append(f"{pg.name}: didascalia dei gol senza intervallo 10°-90° percentile")
+        else:
+            checks += 1
+            letti = (int(med.group(1)), int(med.group(2)), med.group(3), float(med.group(4).replace(",", ".")))
+            if letti != attesi:
+                fails.append(f"{pg.name}: mediana/intervallo/copertura in didascalia {letti} != ricalcolati {attesi}")
+            if not 80.0 < letti[3] <= 100.0:
+                fails.append(f"{pg.name}: copertura {letti[3]}% fuori intervalo per un intervallo 10°-90° (attesa > 80)")
+        # \s+ e non uno spazio secco: in HTML il whitespace è collassato, quindi un verificatore
+        # che dipende da come va a capo il template segnala un difetto dove non c'è (e ha appena
+        # fatto esattamente questo, su 160 pagine, quando la didascalia è stata riformattata)
+        coda = re.search(rf"Totale\s+{re.escape(gv['coda_label'])}\s+gol:\s*(\d+,\d)%", html)
         if not coda or abs(float(coda.group(1).replace(",", ".")) - gv["p_coda"] * 100) > 0.06:
             fails.append(f"{pg.name}: coda dei gol in didascalia != ricalcolata ({gv['p_coda']:.4f})")
         # dotplot: i punti sono esattamente n_dots e stanno nelle colonne giuste
@@ -667,9 +769,16 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         for (h, x, a), (_n, lab), passo in zip(resi, labels, steps):
             if lab != passo["label"]:
                 fails.append(f"{pg.name}: passo «{lab}» != «{passo['label']}»")
-            for shown, key in ((h, "p_home"), (x, "p_draw"), (a, "p_away")):
-                if abs(float(shown.replace(",", ".")) - passo[key] * 100) > 0.06:
-                    fails.append(f"{pg.name}: {passo['label']} {key} = {shown}% vs {passo[key] * 100:.1f}%")
+            # il confronto è con il vettore **pubblicato** (resto massimo a un decimale), non con
+            # l'arrotondamento indipendente dei tre valori grezzi: era la stessa regola sbagliata
+            # corretta nelle barre (docs/19 §3.3) e tollerava 0,06 pp di scarto. Qui lo scarto
+            # ammesso è zero, perché la pagina e il verificatore chiamano la stessa funzione.
+            attesi = pct_triple((passo["p_home"], passo["p_draw"], passo["p_away"]), 1)
+            for shown, key, atteso in ((h, "p_home", attesi[0]), (x, "p_draw", attesi[1]),
+                                       (a, "p_away", attesi[2])):
+                if abs(float(shown.replace(",", ".")) - atteso) > 1e-9:
+                    fails.append(f"{pg.name}: {passo['label']} {key} = {shown}% vs {atteso:.1f}% "
+                                 f"(vettore pubblicato {attesi})")
         # la catena deve chiudersi sull'1X2 pubblicato in cima alla scheda
         for key in ("p_home", "p_draw", "p_away"):
             if abs(steps[-1][key] - float(r[key])) > 1e-6:
@@ -696,6 +805,9 @@ def main() -> int:
     print(f"pagine analizzate: {pages}")
     calendario, checks = check_calendar(site)
     fails += calendario
+    barre, bar_checks = check_bars(site)
+    fails += barre
+    checks += bar_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric

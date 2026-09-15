@@ -38,18 +38,49 @@
   --txt:#e9eef6; --txt2:#c4cedc; --mut:#a8b5c8; --mut2:#8796ac;
   --accent:#28c893; --accent-soft:#1d9a71; --accent-dim:#0f3126;
   --brand-a:#2ee59d; --brand-b:#e7b23c;
-  --win:#28c893; --draw:#7f8aa0; --lose:#e0605a; --amber:#e6b34a; --info:#58a6ea;
+  /* --draw e --lose sono usati anche come testo (.cal-fav-*, .bad, .status-live): alzati da
+     4,07/4,03 a 4,57/4,59:1 sulle superfici scure. La barra 1X2 usa gradienti propri, non questi. */
+  --win:#28c893; --draw:#8793aa; --lose:#f06760; --amber:#e6b34a; --info:#58a6ea;
   --radius:14px; --radius-sm:10px;
   --max:1200px;
   --font-head:Sora,Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
   --font-body:Inter,system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  /* token di foreground: servono perché il tema chiaro non può riusare i colori del tema
+     scuro (misurato in docs/19 §3.2-3.5). I valori qui sotto SONO quelli già in uso: il
+     tema scuro non cambia di una virgola, cambia solo il tema chiaro. */
+  --accent-hover:#4cd9a8;      /* a:hover — era hard-coded */
+  --accent-strong:#2ee59d;     /* testo su --accent-dim (pill versione, filtri attivi, segnale) */
+  --on-accent:#06231a;         /* testo su --accent (nav corrente, posizione attiva) */
+  --sel-bg:rgba(120,150,190,.22); --sel-fg:#eaf0f6;
+  --lose-soft:#ef918b;         /* rosso chiaro delle etichette probabilità — era hard-coded */
+  /* chip risultato V/N/P: sfondo, testo e bordo per tema (in chiaro erano chip scuri) */
+  --v-bg:#0f3f2e; --v-fg:#9df0cf; --v-line:#1d9a71;
+  --n-bg:#2a3242; --n-fg:#cbd5e2; --n-line:#3a4a62;
+  --p-bg:#4a1a18; --p-fg:#f7b9b2; --p-line:#a33a36;
+  /* legende dei grafici: il pannello SVG resta scuro in entrambi i temi (contrasto interno
+     5,0-9,4:1, verificato), ma la legenda è testo sulla pagina e deve seguire il tema */
+  --leg-home:#28c893; --leg-away:#e0605a; --leg-save:#4c9dd3; --leg-draw:#7f8aa0;
+  --leg-block:#f0b429; --leg-off:#8b9bb0;
 }
+/* Tema chiaro — ogni coppia testo/superficie è >= 4,5:1 (AA) sulle tre superfici chiare
+   #ffffff, #f4f6f8, #eef2f6; i valori sono il minimo scurimento necessario, calcolato con la
+   formula WCAG 2.1 (docs/19 §3.2 e §3.5). Prima: --accent 3,16:1, --mut2 3,64:1, --draw 3,64:1,
+   --amber 3,61:1, --info 3,88:1, --win/--accent-soft 3,84:1, --lose 4,48:1. */
 [data-theme="light"]{
   --bg:#f4f6f8; --bg2:#ffffff; --surface:#ffffff; --surface2:#eef2f6; --surface3:#e2e8f0;
   --line:#d0d8e6; --line2:#b8c4d8;
-  --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#6b7f9a;
-  --accent:#1d9a71; --accent-soft:#1a8a65; --accent-dim:#d6f0e6;
-  --win:#1a8a65; --draw:#6b7f9a; --lose:#c5403a; --amber:#9a7a1a; --info:#2a7cc7;
+  --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#596980;
+  --accent:#167657; --accent-soft:#177656; --accent-dim:#d6f0e6;
+  --accent-hover:#146b4f; --accent-strong:#146b4f; --on-accent:#ffffff;
+  --brand-a:#187651; --brand-b:#816421;
+  --win:#177656; --draw:#596980; --lose:#b93c37; --amber:#7f6516; --info:#246bad;
+  --lose-soft:#b23a34;
+  --sel-bg:rgba(23,125,92,.18); --sel-fg:#0f1a2b;
+  --v-bg:#d9f2e6; --v-fg:#14694d; --v-line:#8fd0b4;
+  --n-bg:#e6ebf1; --n-fg:#3d4c60; --n-line:#b8c4d8;
+  --p-bg:#fbe4e2; --p-fg:#9c322c; --p-line:#e5b3ae;
+  --leg-home:#167657; --leg-away:#b93c37; --leg-save:#246bad; --leg-draw:#596980;
+  --leg-block:#876b17; --leg-off:#5e6f87;
 }
 [data-theme="dark"]{
   --bg:#0c1118; --bg2:#0f161f; --surface:#131a24; --surface2:#1a2330; --surface3:#212c3a;
@@ -73,10 +104,10 @@ h3{font-size:15px;font-weight:700;margin:0 0 12px;color:var(--txt)}
 h4{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--txt2);text-transform:uppercase;letter-spacing:.06em}
 p{margin:0 0 12px}
 a{color:var(--accent);text-decoration:none;transition:color .13s}
-a:hover{color:#4cd9a8}
+a:hover{color:var(--accent-hover)}
 a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
-::selection{background:rgba(120,150,190,.22);color:#eaf0f6}
-::-moz-selection{background:rgba(120,150,190,.22);color:#eaf0f6}
+::selection{background:var(--sel-bg);color:var(--sel-fg)}
+::-moz-selection{background:var(--sel-bg);color:var(--sel-fg)}
 
 /* ---- Layout ---- */
 main{max-width:var(--max);margin:0 auto;padding:28px 26px 44px}
@@ -88,7 +119,7 @@ main{max-width:var(--max);margin:0 auto;padding:28px 26px 44px}
    La riga dell'header riusa la classe .bar (usata anche per le barre-probabilità più sotto):
    qui si dichiarano altezza/overflow espliciti (height:auto; overflow:visible) così gli stili
    generici della barra-probabilità (height fissa + overflow:hidden) non tagliano logo e brand. */
-header{background:linear-gradient(180deg,#0e141d,#0b1017);border-bottom:1px solid var(--line);border-bottom-color:#263142}
+header{background:linear-gradient(180deg,#0e141d,#0b1017);border-bottom:1px solid var(--line)}
 header{overflow:visible}
 header .bar{display:flex;align-items:center;gap:26px;flex-wrap:wrap;padding:24px 0;min-height:84px;height:auto;overflow:visible}
 .brand{display:flex;align-items:center;gap:16px;color:var(--txt);flex:0 0 auto;text-decoration:none;user-select:none;-webkit-user-select:none;-webkit-tap-highlight-color:transparent}
@@ -102,10 +133,10 @@ header .bar{display:flex;align-items:center;gap:26px;flex-wrap:wrap;padding:24px
 nav{display:flex;align-items:center;gap:3px;flex-wrap:wrap;margin-left:auto}
 nav a{color:var(--txt2);padding:8px 13px;border-radius:9px;font-size:14.5px;font-weight:600;transition:.14s;white-space:nowrap}
 nav a:hover{color:var(--txt);background:var(--surface2)}
-nav a[aria-current]{color:#06231a;background:var(--accent);font-weight:700}
+nav a[aria-current]{color:var(--on-accent);background:var(--accent);font-weight:700}
 .updated{color:var(--mut);font-size:12px;white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
 .updated::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--accent);box-shadow:0 0 0 4px var(--accent-dim)}
-.updated .ver{background:var(--accent-dim);color:var(--brand-a);border:1px solid var(--line2);padding:1px 7px;border-radius:999px;font-weight:800;font-size:11px}
+.updated .ver{background:var(--accent-dim);color:var(--accent-strong);border:1px solid var(--line2);padding:1px 7px;border-radius:999px;font-weight:800;font-size:11px}
 
 /* ---- Card ---- */
 .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);padding:20px 22px;margin:16px 0}
@@ -118,7 +149,7 @@ nav a[aria-current]{color:#06231a;background:var(--accent);font-weight:700}
 .posbtn{padding:6px 12px;border-radius:8px;border:1px solid var(--line2);background:transparent;color:var(--txt2);
   font-size:13px;font-weight:600;cursor:pointer;transition:.14s}
 .posbtn:hover{color:var(--txt);background:var(--surface2)}
-.posbtn[aria-pressed="true"]{color:#06231a;background:var(--accent);border-color:var(--accent);font-weight:700}
+.posbtn[aria-pressed="true"]{color:var(--on-accent);background:var(--accent);border-color:var(--accent);font-weight:700}
 table{width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums;font-size:14.5px}
 td,th{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
 th{color:var(--mut);font-weight:600;font-size:11.5px;text-transform:uppercase;letter-spacing:.08em}
@@ -137,9 +168,13 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 /* ---- Barra probabilità ---- */
 .bar{display:flex;height:36px;border-radius:10px;overflow:hidden;font-size:13.5px;font-weight:700;color:#06231a;min-width:0}
 .bar span{display:flex;align-items:center;justify-content:center;min-width:0;overflow:hidden;white-space:nowrap;padding:0 4px}
-.bar .h{background:linear-gradient(180deg,#2ed49c,#1b9270)}
+/* stop scuro alzato da #1b9270 (4,27:1 col testo #06231a) a #1c9874 (4,59:1): la barra 1X2
+   ha sfondi propri identici nei due temi, quindi il requisito vale su entrambi (docs/19 §3.5). */
+.bar .h{background:linear-gradient(180deg,#2ed49c,#1c9874)}
 .bar .d{background:#7f8aa0;color:#0d1420}
-.bar .a{background:linear-gradient(180deg,#e0605a,#b2403b)}
+/* lo stop scuro #b2403b dava 2,92:1: il testo del segmento «2» era illeggibile in basso.
+   Si schiarisce lo stop chiaro e si tiene #e0605a (il rosso del marchio) come punto più scuro. */
+.bar .a{background:linear-gradient(180deg,#e8685f,#e0605a)}
 .bar.big{height:46px;font-size:15px}
 
 /* ---- Brand: protezione dal riuso della classe .bar ---- */
@@ -153,12 +188,12 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 
 /* ---- Pill risultato V/N/P ---- */
 .pill{display:inline-block;padding:3px 11px;border-radius:999px;font-size:12.5px;font-weight:700;margin-right:5px}
-.V{background:#0f3f2e;color:#9df0cf}
-.N{background:#2a3242;color:#cbd5e2}
-.P{background:#4a1a18;color:#f7b9b2}
+.V{background:var(--v-bg);color:var(--v-fg)}
+.N{background:var(--n-bg);color:var(--n-fg)}
+.P{background:var(--p-bg);color:var(--p-fg)}
 
 /* ---- Tag ---- */
-.tag{display:inline-block;padding:3px 10px;border-radius:7px;background:var(--accent-dim);color:var(--accent);
+.tag{display:inline-block;padding:3px 10px;border-radius:7px;background:var(--accent-dim);color:var(--accent-strong);
   font-size:11.5px;font-weight:700;letter-spacing:.02em;white-space:nowrap}
 
 /* ---- Riga elenco partite ---- */
@@ -201,7 +236,7 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 .filter-button,.filter-select select,.search-box input{font:600 12px var(--font-body);color:var(--txt2);background:var(--surface);border:1px solid var(--line2);border-radius:8px;min-height:36px}
 .filter-button{display:inline-flex;align-items:center;gap:6px;padding:7px 11px;cursor:pointer;transition:.14s}
 .filter-button:hover,.filter-select select:hover,.search-box input:hover{border-color:var(--accent-soft);color:var(--txt)}
-.filter-button[aria-pressed="true"]{background:var(--accent-dim);border-color:var(--accent-soft);color:var(--accent)}
+.filter-button[aria-pressed="true"]{background:var(--accent-dim);border-color:var(--accent-soft);color:var(--accent-strong)}
 .filter-select select{padding:0 28px 0 10px;max-width:190px}
 .search-box{position:relative;display:inline-flex;align-items:center;margin-left:auto}
 .search-box > span:not(.sr-only){position:absolute;left:10px;color:var(--mut);font-size:19px;line-height:1;pointer-events:none}
@@ -244,21 +279,23 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 /* WCAG 1.4.1 — il preferito è anche in grassetto, non solo a colore */
 .mini-probability{min-width:0}.mini-probability .bar{height:22px;border-radius:6px}.mini-probability .bar span{padding:0}
 .prob-labels{display:flex;justify-content:space-between;gap:6px;color:var(--mut);font-size:10.5px;font-variant-numeric:tabular-nums;margin-top:5px}
-.prob-labels span{white-space:nowrap}.prob-labels span:first-child{color:var(--win)}.prob-labels span:last-child{color:#ef918b}
+.prob-labels span{white-space:nowrap}.prob-labels span:first-child{color:var(--win)}.prob-labels span:last-child{color:var(--lose-soft)}
 .signal{display:inline-flex;align-items:center;gap:5px;color:var(--txt2);font-size:11px;font-weight:600;margin:1px 0 2px}
 .signal span{display:inline-flex;align-items:center;justify-content:center;width:17px;height:17px;border-radius:50%;font-weight:800}
-.signal-agree span{background:var(--accent-dim);color:var(--accent)}.signal-split{color:var(--amber)}.signal-split span{background:rgba(230,179,74,.13);color:var(--amber)}.signal-single{color:var(--mut)}
+.signal-agree span{background:var(--accent-dim);color:var(--accent-strong)}.signal-split{color:var(--amber)}.signal-split span{background:rgba(230,179,74,.13);color:var(--amber)}.signal-single{color:var(--mut)}
 .model-foot{padding-top:4px}
 .match-facts{display:flex;align-items:center;gap:6px 8px;flex-wrap:wrap;margin-top:10px;padding-top:9px;border-top:1px solid var(--line);color:var(--mut);font-size:12.5px;line-height:1.45}
 .form-line,.fact{display:inline-flex;align-items:center;gap:6px;min-height:24px}
 .fact-label{font-weight:700;color:var(--mut)}.fact-value{font-variant-numeric:tabular-nums;color:var(--txt2);font-weight:700}
 .form-dots{display:inline-flex;gap:3px}.form-dot{display:inline-flex;align-items:center;justify-content:center;width:19px;height:19px;border-radius:5px;font-size:10px;font-weight:800;position:relative}
-.form-dot.V{background:var(--accent-dim);color:#9df0cf; border:1px solid #1d9a71}
-.form-dot.N{background:#2a3242;color:#cbd5e2; border:1px solid #3a4a62}
-.form-dot.P{background:#4a1a18;color:#f7b9b2; border:1px solid #a33a36}
+/* .form-dot.V aveva sfondo da token e testo hard-coded: in tema chiaro era verde chiaro su
+   verde chiaro (1,11:1) → la V della guida-forma spariva. Ora i tre valori sono un token. */
+.form-dot.V{background:var(--v-bg);color:var(--v-fg);border:1px solid var(--v-line)}
+.form-dot.N{background:var(--n-bg);color:var(--n-fg);border:1px solid var(--n-line)}
+.form-dot.P{background:var(--p-bg);color:var(--p-fg);border:1px solid var(--p-line)}
 @media (prefers-contrast: more){
-  .form-dot.V{outline:2px solid #1d9a71}
-  .form-dot.P{outline:2px solid #e0605a}
+  .form-dot.V{outline:2px solid var(--v-line)}
+  .form-dot.P{outline:2px solid var(--p-line)}
 }
 /* accessibilità V/N/P oltre al colore: simbolo ▲/▼/— (WCAG 1.4.1, 4,5% deuteranopia) */
 .form-dot.V::before{content:"▲";font-size:7px;position:relative;top:-1px;margin-right:1px;opacity:.95}
@@ -314,19 +351,36 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 @media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}.goalbars{height:118px}.scoregrid{border-spacing:2px}.scoregrid th,.scoregrid td{width:34px;height:34px;font-size:10px}}
 @media (max-width:360px){.scoregrid th,.scoregrid td{width:30px;height:30px;font-size:9.5px}.match-teams{grid-template-columns:1fr auto 1fr;gap:6px}.match-team a{font-size:14px}.hero-metrics{gap:10px 14px}.hero-metric b{font-size:14px}}
 /* light mode: stesso design, superfici chiare — toggle manuale + prefers-color-scheme */
+/* Fallback per chi ha il sistema in tema chiaro e NON esegue lo script inline (JS disabilitato
+   o non supportato): deve dichiarare la palette chiara COMPLETA. Prima ne dichiarava 12 token su
+   30 e mancavano proprio accent/win/draw/lose/amber/info/hover → verde #28c893 su bianco (2,15:1)
+   e hover #4cd9a8 (1,78:1). Se cambia un valore qui, va cambiato anche in [data-theme="light"]:
+   il test test_tema_chiaro_palette_allineata li confronta automaticamente. */
 @media (prefers-color-scheme: light){
   :root:not([data-theme="dark"]){
     --bg:#f4f6f8; --bg2:#ffffff; --surface:#ffffff; --surface2:#eef2f6; --surface3:#e2e8f0;
     --line:#d0d8e6; --line2:#b8c4d8;
-    --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#6b7f9a;
-    --accent-dim:#d6f0e6;
+    --txt:#0f1a2b; --txt2:#2a3a52; --mut:#4a5e7a; --mut2:#596980;
+    --accent:#167657; --accent-soft:#177656; --accent-dim:#d6f0e6;
+    --accent-hover:#146b4f; --accent-strong:#146b4f; --on-accent:#ffffff;
+    --brand-a:#187651; --brand-b:#816421;
+    --win:#177656; --draw:#596980; --lose:#b93c37; --amber:#7f6516; --info:#246bad;
+    --lose-soft:#b23a34;
+    --sel-bg:rgba(23,125,92,.18); --sel-fg:#0f1a2b;
+    --v-bg:#d9f2e6; --v-fg:#14694d; --v-line:#8fd0b4;
+    --n-bg:#e6ebf1; --n-fg:#3d4c60; --n-line:#b8c4d8;
+    --p-bg:#fbe4e2; --p-fg:#9c322c; --p-line:#e5b3ae;
+    --leg-home:#167657; --leg-away:#b93c37; --leg-save:#246bad; --leg-draw:#596980;
+  --leg-block:#876b17; --leg-off:#5e6f87;
   }
 }
 [data-theme="light"] header{background:linear-gradient(180deg,#ffffff,#eef2f6)}
 [data-theme="light"] footer{background:#eef2f6}
 [data-theme="light"] .match-hero{background:linear-gradient(135deg,#ffffff,#eef2f6)}
 [data-theme="light"] .match-jump{background:rgba(255,255,255,.92)}
-[data-theme="light"] .scoregrid td.mode{color:#ffffff}
+/* NIENTE override chiaro per .scoregrid td.mode: la cella ha già background verde dal
+   template (rgba(40,200,147,op)) e il testo scuro #06231a rende 7,95:1. Con color:#ffffff
+   rendeva 2,09:1 → il punteggio più probabile era illeggibile in tema chiaro (docs/19 §3.5). */
 
 /* ---- Hero / KPI / chart (home) ---- */
 .hero{margin:4px 0 20px;padding:30px 30px;border-radius:var(--radius);background:var(--surface);
@@ -350,7 +404,7 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .hero-model{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:15px}
 .hero-pick{display:flex;flex-direction:column;gap:3px}.hero-pick .eyebrow{color:var(--mut)}.hero-pick strong{font:700 17px/1.25 var(--font-head)}.hero-pick strong em{font-style:normal;color:var(--accent)}
 .hero-metrics{display:flex;align-items:center;gap:16px;flex-wrap:wrap;color:var(--mut);font-size:12px}.hero-metric{display:flex;flex-direction:column;gap:1px}.hero-metric b{color:var(--txt);font:700 15px var(--font-head);font-variant-numeric:tabular-nums;letter-spacing:.02em}.hero-metric span{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
-.hero-signal{padding:7px 10px;border-radius:8px;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700;max-width:220px;text-align:center;line-height:1.25}
+.hero-signal{padding:7px 10px;border-radius:8px;background:var(--accent-dim);color:var(--accent-strong);font-size:11px;font-weight:700;max-width:220px;text-align:center;line-height:1.25}
 .match-jump{position:sticky;top:8px;z-index:4;display:flex;gap:4px;overflow-x:auto;padding:5px;margin:0 0 16px;background:rgba(12,17,24,.92);border:1px solid var(--line);border-radius:10px;backdrop-filter:blur(10px)}
 .match-jump a{padding:7px 11px;color:var(--mut);font-size:11px;font-weight:700;white-space:nowrap;border-radius:7px}.match-jump a:hover{background:var(--surface2);color:var(--txt)}
 .detail-card{scroll-margin-top:64px}

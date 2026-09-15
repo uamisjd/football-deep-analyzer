@@ -67,26 +67,44 @@ def or_dash(v) -> str:
     return s if s else "—"
 
 
-def pct_triple(p: tuple[float, float, float]) -> list[int]:
-    """Vettore 1X2 continuo → 3 interi che sommano 100 con resto massimo stabile.
+def pct_triple(p: tuple[float, float, float], nd: int = 0) -> list[float]:
+    """Vettore 1X2 continuo → 3 valori con ``nd`` decimali che sommano **esattamente** 100.
 
-    Ramo + e − corretti: resto>0 assegna ai resti maggiori, resto<0 toglie ai resti
-    minori; tie-break sull'ordine (1, X, 2) deterministico (stable argsort).
+    Perché serve: arrotondare le tre probabilità in modo indipendente produce 99 o 101
+    (99,9 o 100,1 con un decimale). Nelle righe compatte del calendario il lettore non ha
+    contesto per accorgersene, ma nelle **barre 1X2** l'errore si vede: le larghezze dei
+    segmenti devono chiudere il 100% del contenitore, altrimenti la barra resta corta o
+    straborda, e l'etichetta deve coincidere con la larghezza.
+
+    Metodo del resto massimo, con ramo + e − corretti: ``resto > 0`` assegna ai resti
+    maggiori, ``resto < 0`` toglie ai resti minori; tie-break sull'ordine (1, X, 2)
+    deterministico (stable argsort). ``nd=0`` restituisce interi (comportamento storico),
+    ``nd=1`` un decimale: il lavoro è fatto in unità intere di ``10**-nd``, quindi la somma
+    è esatta e non dipende dall'aritmetica binaria dei decimali.
+
+    >>> pct_triple((0.61, 0.2424, 0.1476))
+    [61, 24, 15]
+    >>> pct_triple((0.61, 0.2424, 0.1476), 1)
+    [61.0, 24.2, 14.8]
     """
     import math
     import numpy as np  # type: ignore
-    raw = [float(v) * 100.0 for v in p]
+    nd = int(nd)
+    unit = 10 ** nd
+    raw = [float(v) * 100.0 * unit for v in p]
     base = [int(math.floor(x)) for x in raw]
-    resto = 100 - sum(base)
-    if resto == 0:
+    resto = 100 * unit - sum(base)
+    if resto:
+        residuals = [r - f for r, f in zip(raw, base)]
+        if resto > 0:
+            # maggiori prima; a parità di resto l'ordine stabile lascia la precedenza a (1, X, 2)
+            order = np.argsort([-r for r in residuals], kind="stable")
+            passo = 1
+        else:
+            order = np.argsort(residuals, kind="stable")   # minori prima, stessa precedenza
+            passo = -1
+        for i in range(abs(resto)):
+            base[int(order[i % 3])] += passo
+    if nd == 0:
         return base
-    residuals = [r - f for r, f in zip(raw, base)]
-    if resto > 0:
-        order = np.argsort(residuals, kind="stable")[::-1]  # maggiori prima
-        for i in range(resto):
-            base[int(order[i % 3])] += 1
-    else:
-        order = np.argsort(residuals, kind="stable")  # minori prima
-        for i in range(-resto):
-            base[int(order[i % 3])] -= 1
-    return base
+    return [b / unit for b in base]

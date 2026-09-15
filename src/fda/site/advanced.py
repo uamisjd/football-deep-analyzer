@@ -103,19 +103,28 @@ def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
     e non invitano a cercare un valore «vero» dove c'è solo una distribuzione.
 
     ``cap`` è l'ultimo totale mostrato come barra; la massa oltre finisce in «7+».
+
+    ``copertura`` è la massa che cade davvero fra ``q10`` e ``q90``: sempre > 80% per costruzione,
+    ma non esattamente 80% né 90%, quindi è quella che va scritta in didascalia.
     """
     g = dixon_coles_grid(lh, la, rho, max_goals=max(cap + 9, 15))
     ii, jj = np.indices(g.shape)
     tot = ii + jj
     p = np.array([float(g[tot == t].sum()) for t in range(cap + 1)])
     tail = max(0.0, 1.0 - float(p.sum()))
-    pmax = float(max(p.max(), 1e-9))
+    coda = f"{cap + 1}+"
+    # La scala dell'istogramma deve essere il massimo DELLE barre che si disegnano, coda compresa.
+    # Con pmax calcolato solo sui totali 0..cap la barra «7+» superava il 100% del contenitore —
+    # 9 previsioni su 2.152, fino a height:183% con λ totale 4,7-5,5 — e invadeva il titolo della
+    # card o veniva tagliata (docs/19 §3.4). Nessuna barra viene "schiacciata": le altezze restano
+    # proporzionali alle probabilità, cambia solo quale barra occupa il 100% del riquadro.
+    scala = float(max(p.max(), tail, 1e-9))
     moda = int(p.argmax())
     per100 = _per_cento(np.append(p, tail))
     bars = [{"g": t, "label": str(t), "p": round(float(p[t]), 4), "per100": int(per100[t]),
-             "h": round(float(p[t]) / pmax, 4), "mode": bool(t == moda)} for t in range(cap + 1)]
-    bars.append({"g": cap + 1, "label": f"{cap + 1}+", "p": round(tail, 4),
-                 "per100": int(per100[cap + 1]), "h": round(tail / pmax, 4),
+             "h": round(float(p[t]) / scala, 4), "mode": bool(t == moda)} for t in range(cap + 1)]
+    bars.append({"g": cap + 1, "label": coda, "p": round(tail, 4),
+                 "per100": int(per100[cap + 1]), "h": round(tail / scala, 4),
                  "mode": False, "tail": True})
     # quantili: il k-esimo punto sta a metà del k-esimo ventesimo di massa
     masses = np.append(p, tail)
@@ -127,14 +136,27 @@ def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
 
     quantiles = [_q((k - 0.5) / dots) for k in range(1, dots + 1)]
     counts = {t: quantiles.count(t) for t in range(cap + 2)}
+    # Intervallo centrale 10°-90° percentile, con la copertura **reale** pubblicata accanto.
+    # La didascalia dichiarava «nel 90% dei casi il totale resta fra q10 e q90»: falso, perché
+    # con F(q90) ≥ 0,90 e F(q10 − 1) < 0,10 la copertura garantita è > 80%, e la discretizzazione
+    # la porta tipicamente a 85-93%. Allargarlo a 5°-95° renderebbe vera la frase «90%» ma
+    # svuoterebbe l'informazione (l'intervallo diventa quasi sempre «fra 0 e 6», cioè tutto l'asse).
+    # Si tiene quindi l'intervallo informativo e si pubblica il numero vero di quella gara:
+    # nessun tondo dichiarato a priori, e la lettura resta verificabile.
+    q10, q90 = _q(0.10), _q(0.90)
+    copertura = float(cdf[q90] - (cdf[q10 - 1] if q10 > 0 else 0.0)) * 100.0
     # tutte le colonne, anche vuote: l'asse dei gol resta allineato con l'istogramma
     columns = [{"g": t, "n": counts[t], "label": f"{t}" if t <= cap else f"{cap + 1}+"}
                for t in range(cap + 2)]
     return {
         "bars": bars, "cap": cap, "moda": moda, "media": round(float((g * tot).sum()), 2),
-        "mediana": _q(0.5), "q10": _q(0.10), "q90": _q(0.90),
+        "mediana": _q(0.5), "q10": q10, "q90": q90,
+        # l'estremo superiore è la coda quando il 90° percentile cade oltre l'ultimo totale
+        # disegnato: va scritto «7+», non «7», altrimenti si legge come intervallo chiuso
+        "q90_label": coda if q90 == cap + 1 else str(q90),
+        "copertura": round(copertura, 1),
         "dots": quantiles, "columns": columns, "n_dots": dots,
-        "per_dot": round(100.0 / dots), "p_coda": round(tail, 4), "coda_label": f"{cap + 1}+",
+        "per_dot": round(100.0 / dots), "p_coda": round(tail, 4), "coda_label": coda,
         "lambda_home": round(float(lh), 3), "lambda_away": round(float(la), 3),
         "rho": round(float(rho or 0.0), 4),
     }

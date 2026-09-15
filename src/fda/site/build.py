@@ -19,7 +19,7 @@ from ..models.predict import latest_per_match, outcome_index, wilson_interval
 from ..store import Store
 from .analysis import MatchAnalysis, prediction_meta
 from .audit import audit_match
-from .fmt import it_plural
+from .fmt import it_plural, pct_triple
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -35,34 +35,10 @@ ITALIAN_DAYS_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
 ITALIAN_MONTHS_SHORT = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
 
 
-def pct_triple(vals: tuple[float, float, float]) -> list[int]:
-    """Percentuali intere 1X2 che sommano esattamente 100 (metodo del resto massimo).
-
-    Arrotondare le tre probabilità in modo indipendente produce 99% o 101%: su righe
-    compatte senza contesto il lettore non potrebbe accorgersene, quindi la correzione
-    si fa qui, sul resto più grande. Tie-break stabile su ordine (1, X, 2).
-    """
-    # riusa helper condiviso testato con property-based (audit 1.1)
-    try:
-        from .fmt import pct_triple as _pct
-        return _pct(vals)
-    except Exception:
-        import math
-        raw = [float(v) * 100.0 for v in vals]
-        base = [int(math.floor(x)) for x in raw]
-        resto = 100 - sum(base)
-        if resto == 0:
-            return base
-        residuals = [r - f for r, f in zip(raw, base)]
-        if resto > 0:
-            order = np.argsort(residuals, kind="stable")[::-1]
-            for i in range(resto):
-                base[int(order[i % 3])] += 1
-        else:
-            order = np.argsort(residuals, kind="stable")
-            for i in range(-resto):
-                base[int(order[i % 3])] -= 1
-        return base
+# ``pct_triple`` vive in fmt.py (unico punto di definizione, testato con property-based):
+# qui era un wrapper con una copia di riserva di 15 righe dello stesso algoritmo, cioè
+# duplicazione §3.7 — se la copia diverge, le barre del calendario e quelle della scheda
+# mostrano percentuali diverse per la stessa previsione. Import diretto al posto del wrapper.
 
 
 def day_label(d) -> str:
@@ -124,6 +100,8 @@ class SiteBuilder:
         self.tz = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
         self.env = Environment(loader=FileSystemLoader(str(TEMPLATES)),
                                autoescape=select_autoescape(["html"]), trim_blocks=True, lstrip_blocks=True)
+        # barra 1X2: larghezze ed etichette che sommano esattamente 100 (nd=0 o 1 decimali)
+        self.env.filters["pct3"] = lambda t, nd=0: pct_triple(tuple(float(v) for v in t), nd)
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
