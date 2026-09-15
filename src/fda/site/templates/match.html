@@ -90,6 +90,24 @@
 </div>
 {% endif %}
 
+{% if c.fav_record %}
+{% set fr = c.fav_record %}
+<div class="card detail-card" id="fascia-storica">
+  <h2>Quando il favorito aveva questa forza</h2>
+  <p class="small mut">Com'è poi andata, per ogni fascia di pronostico, nelle {{ fr.n_tot|it_num }} partite del backtest fuori campione (2020→2026, 7 leghe, nessun risultato visto a priori). La riga segnata è la fascia di QUESTA partita (favorito {{ (fr.fav*100)|dec(1) }}%). <b>Frequenza passata, non promessa</b>: l'intervallo di confidenza al 95% dice quanto la frequenza è precisa con quella numerosità.</p>
+  <table>
+    <tr><th>Favorito</th><th class="r">partite</th><th class="r">media prevista</th><th class="r">poi uscito</th><th class="r">IC 95%</th></tr>
+    {% for r in fr.rows %}<tr{% if r.current %} style="outline:1.5px solid var(--accent);outline-offset:-1.5px" title="Fascia di questa partita"{% endif %}>
+      <td>{{ r.label }}{% if r.current %} <span class="tag" style="font-size:10px;padding:1px 6px">questa</span>{% endif %}</td>
+      <td class="r">{{ r.n|it_num }}</td>
+      <td class="r">{{ (r.pred_mean*100)|dec(1) }}%</td>
+      <td class="r"><b>{{ (r.obs*100)|dec(1) }}%</b></td>
+      <td class="r mut small">{{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%</td></tr>{% endfor %}
+  </table>
+  <p class="small mut" style="margin-top:8px"> {% for r in fr.rows %}{% if r.current %}Su partite come questa il favorito è poi uscito nel <b>{{ (r.obs*100)|dec(1) }}%</b> delle {{ r.n|it_num }} gare di riferimento (IC 95% {{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%).{% endif %}{% endfor %}</p>
+</div>
+{% endif %}
+
 
 
 

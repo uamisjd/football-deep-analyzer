@@ -112,6 +112,9 @@ def main() -> int:
         # #12 — marcatore del valore stabilizzato
         k("shrunk_senza_marcatore", "valore stabilizzato" not in txt and "<br><span class=\"mut small\" title=\"Valore stabilizzato" in txt)
         k("shrunk_marcatore", "◎" in txt)
+        # nuovo (2026-09-15): fascia storica del pronostico da backtest fuori campione
+        k("fascia_storica", 'id="fascia-storica"' in txt)
+        k("celle_coda_meno_di_1", '>meno di 0,1%' in txt or "<1</td>" in txt)
         # #13 — profondità narrativa per lega
         if pre:
             m = re.search(r'<h2>Analisi pre-partita</h2>\s*.*?<ul class="narr">(.*?)</ul>', txt, re.DOTALL)

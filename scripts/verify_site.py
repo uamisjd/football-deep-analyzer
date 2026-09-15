@@ -869,6 +869,74 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: «{titolo}» è di secondo livello dentro Verifica approfondita")
     print(f"[12] coperture dei risultati esatti verificate: {n_cov}")
 
+    # 15) fascia storica del pronostico: frequenze ricalcolate dalla tabella backtest, stessa
+    #     fascia «questa» della scheda, numerità e intervallo di Wilson esatti a 0,1
+    bt = st.read("backtest")
+    n_fasc = 0
+    if not bt.empty and "outcome" in bt.columns:
+        from fda.site.analysis import MatchAnalysis
+        from fda.site.build import wilson_interval
+
+        pv_ = bt[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+        fav_ = pv_.max(axis=1)
+        hit_ = pv_.argmax(axis=1) == bt["outcome"].to_numpy()
+        tab_bt = []
+        for lo_b, hi_b, label_b in MatchAnalysis.FAVORITE_BANDS:
+            mm = (fav_ >= lo_b) & (fav_ < hi_b)
+            nb = int(mm.sum())
+            if nb < 30:
+                continue
+            kb = int(hit_[mm].sum())
+            wl_b, wh_b = wilson_interval(kb, nb)
+            tab_bt.append({"label": label_b, "lo": lo_b, "hi": hi_b, "n": nb,
+                           "obs": kb / nb, "wl": wl_b, "wh": wh_b, "pm": float(fav_[mm].mean())})
+        row_re = re.compile(
+            r'<tr[^>]*>\s*<td>(fino al 40%|fra 40% e 50%|fra 50% e 60%|fra 60% e 75%|oltre il 75%)'
+            r'(?: (<span class="tag"[^>]*>questa</span>))?</td>'
+            r'\s*<td class="r">(\d+(?:\.\d+)?)</td>'
+            r'\s*<td class="r">(\d+,\d+)%</td>'
+            r'\s*<td class="r"><b>(\d+,\d+)%</b></td>'
+            r'\s*<td class="r mut small">(\d+,\d+)–(\d+,\d+)%</td></tr>')
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if 'id="fascia-storica"' not in html:
+                continue
+            mid = int(pg.stem)
+            if mid not in preds.index:
+                fails.append(f"{pg.name}: fascia storica senza previsione")
+                continue
+            r = preds.loc[mid]
+            here = float(max(r.p_home, r.p_draw, r.p_away))
+            block = html.split('id="fascia-storica"', 1)[1][:5000]
+            got = row_re.findall(block)
+            if len(got) != len(tab_bt):
+                fails.append(f"{pg.name}: righe fascia storica {len(got)} (attese {len(tab_bt)})")
+                continue
+            n_fasc += 1
+            fav_lbl = re.search(r"fascia di QUESTA partita \(favorito (\d+,\d+)%\)", block)
+            checks += 1
+            if not fav_lbl or abs(float(fav_lbl.group(1).replace(",", ".")) - here * 100) > 0.06:
+                fails.append(f"{pg.name}: favorito dichiarato {fav_lbl.group(1) if fav_lbl else '?'}% != {here * 100:.1f}%")
+            for (lab, span, n_t, pm_t, obs_t, lo_t, hi_t), b in zip(got, tab_bt):
+                checks += 1
+                if lab != b["label"]:
+                    fails.append(f"{pg.name}: fascia «{lab}» != «{b['label']}»")
+                    continue
+                if int(n_t.replace(".", "")) != b["n"]:
+                    fails.append(f"{pg.name}: {lab} n={n_t} vs backtest {b['n']}")
+                for txt, val, cosa in ((pm_t, b["pm"] * 100, "media prevista"),
+                                       (obs_t, b["obs"] * 100, "frequenza osservata"),
+                                       (lo_t, b["wl"] * 100, "IC inferiore"),
+                                       (hi_t, b["wh"] * 100, "IC superiore")):
+                    if abs(float(txt.replace(",", ".")) - val) > 0.06:
+                        fails.append(f"{pg.name}: {lab} {cosa} {txt}% vs ricalcolata {val:.1f}%")
+                # la marcatura «questa» deve stare sulla fascia del favorito di QUESTA scheda
+                cur_page = bool(span)
+                cur_data = bool(b["lo"] <= here < b["hi"])
+                if cur_page != cur_data:
+                    fails.append(f"{pg.name}: marcatura «questa» su {lab} ma il favorito {here:.3f} sta in un'altra fascia")
+        print(f"[15] fasce storiche del pronostico verificate: {n_fasc}")
+
     # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso
     tpl = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates"
     n_tpl = 0

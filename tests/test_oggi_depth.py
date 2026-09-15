@@ -190,6 +190,37 @@ def test_arrival_trend_understat(tmp_path):
     assert a["trend_recent"] is None and a["trend_before"] is None
 
 
+def test_favorite_track_record_bands_and_current_flag():
+    """Fasce storiche del pronostico: conteggi, frequenze e Wilson ricostruiti dal backtest,
+    riga «questa» sulla fascia del favorito in scheda (l'infallibilità è la verifica)."""
+    from fda.models.predict import wilson_interval
+
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    favs = ([0.37] * 40 + [0.45] * 60 + [0.55] * 60 + [0.66] * 60 + [0.80] * 60 +
+            [0.36] * 20)  # 20 partite nella microcoda <30: fascia 34-40% passa comunque
+    rows = []
+    for i, v in enumerate(favs):
+        rest = 1.0 - v
+        rows.append({"p_home": v, "p_draw": rest * 0.6, "p_away": rest * 0.4,
+                     "outcome": 0 if i % 3 else 2})  # il favorito (casa) esce ~1 su 3
+    ma.backtest = pd.DataFrame(rows)
+    pred = {"p_home": 0.52, "p_draw": 0.28, "p_away": 0.20}
+    fr = ma.favorite_track_record(pred)
+    assert fr is not None and fr["fav"] == 0.52
+    cur = [r for r in fr["rows"] if r["current"]]
+    assert len(cur) == 1 and cur[0]["label"] == "fra 50% e 60%"
+    r = cur[0]
+    assert r["n"] == 60 and r["k"] == 40          # outcome=0 (casa=favorito) per i%3 != 0: 40 su 60
+    assert r["obs"] == pytest.approx(40 / 60)
+    wl, wh = wilson_interval(40, 60)
+    assert r["wil_lo"] == wl and r["wil_hi"] == wh
+    assert [x["label"] for x in fr["rows"]] == [
+        "fino al 40%", "fra 40% e 50%", "fra 50% e 60%", "fra 60% e 75%", "oltre il 75%"]
+    # favorito al confine superiore di fascia → fascia successiva
+    fr2 = ma.favorite_track_record({"p_home": 0.80, "p_draw": 0.12, "p_away": 0.08})
+    assert [r["label"] for r in fr2["rows"] if r["current"]] == ["oltre il 75%"]
+
+
 def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     """Forma sempre presente (non solo se estrema) e «giocatore di peso» = titolare abituale
     (criterio interno alla squadra, uguale in tutte e 7 le leghe — docs/20 §13)."""

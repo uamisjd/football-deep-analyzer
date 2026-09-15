@@ -18,6 +18,7 @@ from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
+from ..models.predict import wilson_interval
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, it_plural, pct_triple
 
@@ -522,6 +523,50 @@ class MatchAnalysis:
         self.h2h_df = store.read("h2h")
         self.insights_df = store.read("insights")
         self.weather_forecast = store.read("weather_forecast")
+        self.backtest = store.read("backtest")
+
+    # ---- fascia storica del pronostico (backtest fuori campione) ---------------------------
+    #: fasce di probabilità del favorito usate per dire «quando il favorito aveva questa
+    #: forza, poi ha vinto così spesso». Bordi scelti una volta: 1/3 è il minimo possibile
+    #: (tre esiti equiprobabili) e oltre 0,4 il favorito definisce il tipo di partita.
+    FAVORITE_BANDS: tuple[tuple[float, float, str], ...] = (
+        (0.33, 0.40, "fino al 40%"),
+        (0.40, 0.50, "fra 40% e 50%"),
+        (0.50, 0.60, "fra 50% e 60%"),
+        (0.60, 0.75, "fra 60% e 75%"),
+        (0.75, 1.001, "oltre il 75%"),
+    )
+
+    def favorite_track_record(self, prediction: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+        """Come è andata ogni fascia di pronostico nel backtest: tabella per la scheda.
+
+        Per le 5 fasce di probabilità del favorito pubblica media prevista, frequenza
+        osservata del favorito vincente, intervallo di Wilson 95% e numerosità — sempre
+        dalla tabella ``backtest`` (previsioni fuori campione, nessun risultato visto).
+        Riga ``current=True`` sulla fascia in cui cade QUESTA partita. La frequenza passata
+        non è una promessa: il lettore vede numeri e numerosità e può rifare i conti.
+        """
+        if prediction is None or self.backtest.empty or "outcome" not in self.backtest.columns:
+            return None
+        p = self.backtest[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+        fav = p.max(axis=1)
+        hit = p.argmax(axis=1) == self.backtest["outcome"].to_numpy()
+        here = float(max(prediction["p_home"], prediction["p_draw"], prediction["p_away"]))
+        out = []
+        for lo, hi, label in self.FAVORITE_BANDS:
+            m = (fav >= lo) & (fav < hi)
+            n = int(m.sum())
+            if n < 30:
+                continue
+            k = int(hit[m].sum())
+            wl, wh = wilson_interval(k, n)
+            out.append({"lo": lo, "hi": hi, "label": label, "n": n, "k": k,
+                        "obs": k / n, "wil_lo": wl, "wil_hi": wh,
+                        "pred_mean": float(fav[m].mean()),
+                        "current": bool(lo <= here < hi)})
+        if not any(r["current"] for r in out):
+            return None
+        return {"rows": out, "n_tot": int(len(fav)), "fav": here}
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
@@ -1946,6 +1991,7 @@ class MatchAnalysis:
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
+        ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
         ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None
