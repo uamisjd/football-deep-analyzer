@@ -458,44 +458,103 @@ def shot_quality(shots: pd.DataFrame, team_id: int) -> dict[str, Any] | None:
     }
 
 
+def _quota_split(side: dict[str, Any]) -> tuple[float | None, float | None]:
+    """Quote xG azione / palle inattive (somma 100) da un'unica fonte — mai sommabili a un
+    totale calcolato da un'altra fonte (docs/20 §4): è l'unica scomposizione coerente
+    per costruzione e confrontabile in parità fra tutte e 7 le leghe."""
+    op, sp = side.get("open_pm"), side.get("set_pm")
+    if op is None or sp is None:
+        return None, None
+    tot = float(op) + float(sp)
+    if tot <= 0:
+        return None, None
+    return (round(100.0 * float(op) / tot, 1), round(100.0 * float(sp) / tot, 1))
+
+
 def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
                pred: dict[str, Any] | None) -> dict[str, Any] | None:
     """Card «Scontro tattico»: λ, DC attacco/difesa, xG split, PPDA, deep.
 
     Una riga compare solo se almeno un lato ha il dato. None se non c'è nulla
-    di confrontabile (niente previsione e niente stile di stagione).
+    di confrontabile (niente previsione e niente stile di stagione). Ogni riga
+    dichiara la **sua** fonte nel tooltip (``help``): nella stessa tabella possono
+    convivere modello (λ/DC), Understat (xG/PPDA nelle 5 leghe coperte) e FotMob
+    (xG in NED1/POR1 e sempre per le quote azione/palle inattive) — i due fornitori
+    di xG divergono di ~0,15 a gara su 92 squadre (docs/20 §3), quindi la
+    scomposizione è pubblicata come quota interna a una sola fonte.
     """
     h, a = home or {}, away or {}
     pred = pred or {}
     rows: list[dict[str, Any]] = []
 
-    def add(label: str, hv, av, higher: bool | None = True, nd: int = 2) -> None:
+    def add(label: str, hv, av, higher: bool | None = True, nd: int = 2,
+            help: str | None = None, suffix: str | None = None) -> None:
         if hv is None and av is None:
             return
         best = None
         if hv is not None and av is not None and higher is not None and hv != av:
             best = "h" if (hv > av) == higher else "a"
-        rows.append({"label": label, "h": hv, "a": av, "best": best, "nd": nd})
+        rows.append({"label": label, "h": hv, "a": av, "best": best, "nd": nd,
+                     "help": help, "suffix": suffix})
 
-    add("Gol attesi (λ)", pred.get("lambda_home"), pred.get("lambda_away"), True)
-    add("Attacco DC", pred.get("dc_attack_home"), pred.get("dc_attack_away"), True)
-    add("Difesa DC (↓ meglio)", pred.get("dc_defence_home"), pred.get("dc_defence_away"), False)
-    add("xG / gara", h.get("xg_pm"), a.get("xg_pm"), True)
-    add("xGA / gara", h.get("xga_pm"), a.get("xga_pm"), False)
-    add("xG azione manovrata / gara", h.get("open_pm"), a.get("open_pm"), True)
-    add("xG palle inattive / gara", h.get("set_pm"), a.get("set_pm"), True)
-    add("PPDA (↓ = più pressing)", h.get("ppda"), a.get("ppda"), False, 1)
-    add("PPDA concesso", h.get("ppda_allowed"), a.get("ppda_allowed"), True, 1)
-    add("Passaggi profondi / gara", h.get("deep"), a.get("deep"), True, 1)
-    add("Passaggi profondi subiti / gara", h.get("deep_allowed"), a.get("deep_allowed"), False, 1)
+    def _xg_help(base: str, hs: dict[str, Any], as_: dict[str, Any]) -> str:
+        """Fonte esplicita per lato della stessa riga: qui (e solo qui) le due colonne
+        possono venire da fornitori diversi."""
+        hsrc, asrc = hs.get("source") or "n.d.", as_.get("source") or "n.d."
+        hn, an = hs.get("played") or "—", as_.get("played") or "—"
+        if hsrc == asrc:
+            return f"{base}, media stagionale {hsrc} su {hn} gare"
+        return (f"{base}, media stagionale: colonna a sinistra {hsrc} su {hn} gare, "
+                f"colonna a destra {asrc} su {an} gare — i due fornitori non sono identici")
+
+    add("Gol attesi (λ)", pred.get("lambda_home"), pred.get("lambda_away"), True,
+        help="Media Poisson Dixon-Coles+Elo calibrata, non media delle ultime gare")
+    add("Attacco DC", pred.get("dc_attack_home"), pred.get("dc_attack_away"), True,
+        help="Parametro d'attacco del modello (gol attesi contro una difesa media)")
+    add("Difesa DC (↓ meglio)", pred.get("dc_defence_home"), pred.get("dc_defence_away"), False,
+        help="Parametro di difesa del modello: più basso = subisce meno")
+    add("xG / gara", h.get("xg_pm"), a.get("xg_pm"), True, help=_xg_help("Gol attesi", h, a))
+    add("xGA / gara", h.get("xga_pm"), a.get("xga_pm"), False,
+        help=_xg_help("Gol attesi concessi", h, a))
+    qo_h, qs_h = _quota_split(h)
+    qo_a, qs_a = _quota_split(a)
+
+    def _quota_help(hv, av) -> str:
+        def _one(side, qo, qs) -> str:
+            if side.get("open_pm") is None or side.get("set_pm") is None:
+                return "n.d."
+            n = side.get("split_played") or "—"
+            return (f"{_dec(side['open_pm'], 2)} + {_dec(side['set_pm'], 2)} xG a gara "
+                    f"(FotMob, {n} gare finite)")
+        return (f"Quota del totale xG della squadra, unica fonte FotMob: le due quote sommano "
+                f"sempre 100 e NON si sommano alla riga «xG / gara» se quella viene da "
+                f"Understat. Valori a gara — sinistra {_one(h, qo_h, qs_h)}, "
+                f"destra {_one(a, qo_a, qs_a)}")
+
+    add("xG da azione manovrata (quota)", qo_h, qo_a, None, 0, _quota_help(qo_h, qo_a), "%")
+    add("xG da palle inattive (quota)", qs_h, qs_a, None, 0, _quota_help(qs_h, qs_a), "%")
+    add("PPDA (↓ = più pressing)", h.get("ppda"), a.get("ppda"), False, 1,
+        help="Passaggi concessi prima di un intervento difensivo (Understat): 8 = pressing alto, 18 = blocco basso")
+    add("PPDA concesso", h.get("ppda_allowed"), a.get("ppda_allowed"), True, 1,
+        help="Pressing subito: passaggi che gli avversari completano prima di un intervento (Understat)")
+    add("Passaggi profondi / gara", h.get("deep"), a.get("deep"), True, 1,
+        help="Completamenti negli ultimi ~20 m di campo (Understat): quanto una squadra arriva vicino all'area")
+    add("Passaggi profondi subiti / gara", h.get("deep_allowed"), a.get("deep_allowed"), False, 1,
+        help="Completamenti negli ultimi ~20 m concessi (Understat): più basso = difesa più protetta")
     if not rows:
         return None
     notes = [
-        "Attacco/difesa DC: parametri Dixon-Coles. Difesa più bassa = subisce meno.",
-        "PPDA: passaggi concessi per azione difensiva (basso = più pressing).",
-        "Passaggi profondi: completamenti negli ultimi ~20 m (Understat).",
-        "xG azione / palle inattive: media sulle finite FotMob.",
+        "Attacco/difesa DC: parametri del modello. Difesa più bassa = subisce meno.",
+        "PPDA e passaggi profondi: Understat (nelle leghe coperte).",
+        "Quote azione/palle inattive: FotMob; sommano 100 e non si sommano al totale.",
     ]
+    # le due colonne hanno fornitori xG diversi? Il lettore deve saperlo senza
+    # dover aprire il tooltip (docs/20 §3)
+    hsrc, asrc = h.get("source"), a.get("source")
+    mixed = bool(hsrc and asrc and hsrc != asrc)
+    if mixed:
+        notes.append(f"xG / gara da due fornitori diversi in questa gara: "
+                     f"sinistra {hsrc}, destra {asrc} — confronto indicativo.")
     # dedup con pattern lasco (case/punteggiatura/spazi) — evita nota globale duplicata per variazioni minime
     def _norm(s: str) -> str:
         return re.sub(r"\W+", " ", s.lower().strip()).strip()
@@ -508,4 +567,4 @@ def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
             uniq.append(n)
     # nota globale singola (pattern lasco già applicato) + lista per retro-compatibilità
     global_note = " ".join(uniq[:2])
-    return {"rows": rows, "notes": uniq, "global_note": global_note}
+    return {"rows": rows, "notes": uniq, "global_note": global_note, "mixed_sources": mixed}

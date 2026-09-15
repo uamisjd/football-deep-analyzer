@@ -1759,16 +1759,13 @@ class MatchAnalysis:
                     s.append(f"{h} preme molto più di {a} (PPDA {_f(ppda['h'], 1)} vs {_f(ppda['a'], 1)}).")
                 elif ppda["a"] <= 0.75 * ppda["h"]:
                     s.append(f"{a} preme molto più di {h} (PPDA {_f(ppda['a'], 1)} vs {_f(ppda['h'], 1)}).")
-            op = by.get("xG azione manovrata / gara")
-            st = by.get("xG palle inattive / gara")
-            if op and st and op["h"] is not None and st["h"] is not None and (op["h"] + st["h"]) > 0:
-                share = st["h"] / (op["h"] + st["h"])
-                if share >= 0.40:
-                    s.append(f"{h} crea una quota alta di xG su palla inattiva ({_pct(share)} del totale).")
-            if op and st and op["a"] is not None and st["a"] is not None and (op["a"] + st["a"]) > 0:
-                share = st["a"] / (op["a"] + st["a"])
-                if share >= 0.40:
-                    s.append(f"{a} crea una quota alta di xG su palla inattiva ({_pct(share)} del totale).")
+            # quote interne alla stessa fonte (FotMob): sono la scomposizione coerente,
+            # leggibile come «42% del totale» senza sommare fonti diverse (docs/20 §4)
+            st = by.get("xG da palle inattive (quota)")
+            if st and st["h"] is not None and st["h"] >= 40:
+                s.append(f"{h} crea una quota alta di xG su palla inattiva ({dec(st['h'], 0)}% del totale).")
+            if st and st["a"] is not None and st["a"] >= 40:
+                s.append(f"{a} crea una quota alta di xG su palla inattiva ({dec(st['a'], 0)}% del totale).")
         for side, name in (("home", h), ("away", a)):
             f = ctx.get(f"{side}_form") or []
             if len(f) >= 3:

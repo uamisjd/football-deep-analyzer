@@ -96,15 +96,16 @@
 {% if c.clash %}
 <div class="card" id="scontro">
   <h2>Scontro tattico</h2>
-  <p class="small mut">Come si incontrano gli stili: λ del modello, parametri attacco/difesa Dixon-Coles, xG di stagione (azione vs palle inattive) e pressing (PPDA). Il migliore è <span style="color:var(--accent);font-weight:700">verde + ▲</span>.</p>
+  <p class="small mut">Come si incontrano gli stili: λ e parametri del modello, xG di stagione, quota creata su azione manovrata o palle inattive (somma 100, stessa fonte FotMob), pressing (PPDA) e profondità. Ogni ⓘ dichiara la fonte esatta della sua riga: due fornitori xG non danno lo stesso numero, quindi nessuna riga somma quantità di fonti diverse. Il migliore è <span style="color:var(--accent);font-weight:700">verde + ▲</span> (le quote non ne hanno: descrivono uno stile, non un gradimento).</p>
+  {% if c.clash.mixed_sources %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">«xG / gara» da due fornitori diversi in questa gara (ⓘ della riga): il confronto è indicativo, le due colonne non sono omogenee.</p>{% endif %}
   {% if c.home_xg and c.away_xg and (not c.home_xg.ppda or not c.away_xg.ppda) %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">Dati pressing (PPDA) incompleti per questa gara — Understat non copre questa lega per una squadra (FotMob senza PPDA). Confronto limitato a xG e profondità.</p>{% endif %}
   <table>
     <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
     {% for r in c.clash.rows %}
     <tr>
-      <th>{{ r.label }}{% if r.label == 'PPDA' %} <span class="help" title="Passaggi concessi prima di un intervento difensivo: 8 = pressing alto, 18 = blocco basso">ⓘ</span>{% elif 'xG' in r.label %} <span class="help" title="Gol attesi: qualità occasioni, media stagionale FotMob">ⓘ</span>{% elif 'Gol attesi' in r.label %} <span class="help" title="Media Poisson Dixon-Coles+Elo, non media ultime 3">ⓘ</span>{% endif %}</th>
-      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra (FotMob senza PPDA)" style="opacity:.55">n.d.</span>{% else %}{{ r.h|dec(r.nd) }}{% if r.best == 'h' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
-      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra" style="opacity:.55">n.d.</span>{% else %}{{ r.a|dec(r.nd) }}{% if r.best == 'a' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
+      <th>{{ r.label }}{% if r.help %} <span class="help" title="{{ r.help }}">ⓘ</span>{% endif %}</th>
+      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra (FotMob senza PPDA)" style="opacity:.55">n.d.</span>{% else %}{{ r.h|dec(r.nd) }}{% if r.suffix %}{{ r.suffix }}{% endif %}{% if r.best == 'h' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
+      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra" style="opacity:.55">n.d.</span>{% else %}{{ r.a|dec(r.nd) }}{% if r.suffix %}{{ r.suffix }}{% endif %}{% if r.best == 'a' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
     </tr>
     {% endfor %}
   </table>

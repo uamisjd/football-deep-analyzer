@@ -137,6 +137,36 @@ def test_style_rows_degrades_without_style():
     assert by["xG / gara"]["best"] == "h"
 
 
+def test_style_rows_split_as_quotas_with_declared_sources():
+    """La scomposizione xG è pubblicata come quota interna a una sola fonte (docs/20 §4)."""
+    pred = {"lambda_home": 1.8, "lambda_away": 1.1}
+    home = {"source": "Understat", "played": 4, "xg_pm": 3.45, "xga_pm": 1.2,
+            "open_pm": 2.55, "set_pm": 0.25, "split_played": 4}
+    away = {"source": "FotMob", "played": 5, "xg_pm": 1.6, "xga_pm": 1.1,
+            "open_pm": 1.30, "set_pm": 0.35, "split_played": 5}
+    clash = style_rows(home, away, pred)
+    by = {r["label"]: r for r in clash["rows"]}
+    # nessuna riga invita a sommare due fonti: le quote sommano a 100 per costruzione
+    for lado in ("h", "a"):
+        assert by["xG da azione manovrata (quota)"][lado] + \
+            by["xG da palle inattive (quota)"][lado] == pytest.approx(100.0, abs=0.15)
+    assert by["xG da azione manovrata (quota)"]["h"] == pytest.approx(91.1, abs=0.1)
+    # le quote non hanno un «migliore»: sono stile, non gradimento — e non portano ▲
+    assert by["xG da azione manovrata (quota)"]["best"] is None
+    assert by["xG da azione manovrata (quota)"]["suffix"] == "%"
+    # ogni riga dichiara la SUA fonte; fonti diverse fra le due colonne sono dette a voce alta
+    assert "colonna a sinistra Understat su 4 gare" in (by["xG / gara"]["help"] or "")
+    assert "colonna a destra FotMob su 5 gare" in (by["xG / gara"]["help"] or "")
+    assert clash["mixed_sources"] is True
+    same = style_rows({**home}, {**home, "xg_pm": 2.0}, pred)
+    assert same["mixed_sources"] is False
+    same_by = {r["label"]: r for r in same["rows"]}
+    assert "media stagionale Understat su 4 gare" in (same_by["xG / gara"]["help"] or "")
+    assert "due fornitori" not in (same_by["xG / gara"]["help"] or "")
+    # i valori assoluti restano nel tooltip, non nella tabella (niente somme spurie)
+    assert "2,55" in (by["xG da azione manovrata (quota)"]["help"] or "")
+
+
 def test_match_analysis_score_matrix_and_wp(tmp_path):
     st = Store(tmp_path / "processed")
     st.upsert("predictions", [
