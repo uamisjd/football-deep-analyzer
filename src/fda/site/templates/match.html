@@ -277,7 +277,7 @@
       <tr {% if not u.minutes %}style="opacity:.62"{% endif %}>
         <td><b>{{ u.name }}</b>{% if u.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ u.pos }}</span>{% endif %}{% if u.starter %} <span class="small" title="almeno metà dei minuti medi per giocatore">· titolare</span>{% endif %}</td>
         <td class="mut small">{{ u.type }}{% if u.ret %} · {{ u.ret }}{% endif %}</td>
-        <td class="r small">{% if u.minutes %}{{ u.minutes }}′ · {{ u.goals }}+{{ u.assists }} · <b style="color:var(--accent)">{{ u.contrib_p90|dec }}/90</b>{% else %}<span class="mut">fuori rosa · n.d.</span>{% endif %}</td>
+        <td class="r small">{% if u.minutes %}{{ u.minutes }}′ · {{ u.goals }}+{{ u.assists }} · <b style="color:var(--accent)">{{ u.contrib_p90|dec }}/90</b>{% else %}<span class="mut" title="il giocatore non ha ancora minuti nelle statistiche di stagione raccolte (es. nuovo acquisto): l'impatto si saprà quando gioca">senza minuti in stagione · n.d.</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </table>
