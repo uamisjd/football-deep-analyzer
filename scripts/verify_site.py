@@ -1216,6 +1216,31 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: {n} notizie per la squadra {tid} (max 4)")
     print(f"[20] pagine con notizie riconciliate: {n_news}")
 
+    # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
+    # con le stesse soglie; se una squadra ha segnali la card deve esserci.
+    n_mood = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+            continue
+        txt = html_unescape(html)
+        fr = fx19[fx19.match_id == int(pg.stem)].iloc[0]
+        kickoff = pd.Timestamp(fr.utc_kickoff)
+        rows_h = ma19.club_mood(int(pg.stem), int(fr.home_id), str(fr.home_name), kickoff)
+        rows_a = ma19.club_mood(int(pg.stem), int(fr.away_id), str(fr.away_name), kickoff)
+        if rows_h or rows_a:
+            n_mood += 1
+            if 'id="clima"' not in html:
+                fails.append(f"{pg.name}: segnali clima presenti ma card assente")
+                continue
+            for r in rows_h + rows_a:
+                checks += 1
+                if r["text"] not in txt:
+                    fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
+        elif 'id="clima"' in html:
+            fails.append(f"{pg.name}: card clima senza segnali calcolati")
+    print(f"[21] pagine con clima del club riconciliate: {n_mood}")
+
     st.close()
     return fails, checks
 

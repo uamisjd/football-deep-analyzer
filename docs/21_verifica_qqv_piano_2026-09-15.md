@@ -261,3 +261,33 @@ controlli** con [19] estesa: le sei righe (`tenure`, rendimento, due precedenti,
 virtuale) sono ricalcolate per ogni scheda pre e confrontate col testo stampato; ruff pulito sul
 codice nuovo. Resa reale misurata su Rayo–Espanyol: «16º con 4 punti · 2 punti sopra la zona
 retrocessione · 6 punti dal 4º posto · con una vittoria 13º · con una sconfitta 16º».
+
+
+---
+
+## 7. Card «Clima del club» (2026-09-15, terzo turno — blocco P2-6 attuato)
+
+**Richiesta utente:** «clima del club. procedi» (blocco narrativo separato, decisione già presa
+nel primo turno).
+
+**Cosa pubblica** (per squadra, solo se una soglia è superata; toni colore bad/warn/good):
+- crisi di risultati da **3 sconfitte consecutive**; «non vince da N gare» da 4; «imbattuta da N» da 5;
+- attacco a secco da **3 gare senza segnare**;
+- scarto **punti−xPTS** da ±2 («raccoglie X punti meno di quanto crea» / «rendimento sopra la
+  qualità del gioco, regressione possibile»);
+- **shock di panchina**: Nª gara dal subentro (riusa il rilevamento cambio allenatore);
+- **infermeria pesante** da 4 assenti o 2 titolari abituali o 0,5 xG+xA/gara in meno, con il
+  valore di mercato ai box da 30 M€ in su;
+- **riposo corto** ≤3 giorni (coppe incluse) e **congestione** da 3 gare in 10 giorni.
+
+**Regola di onestà:** nessun punteggio sintetico; ogni riga è un fatto misurato col suo criterio;
+soglie dichiarate nella nota della card; se nessuna soglia è superata la squadra legge «nessun
+segnale anomalo nei dati raccolti: clima normale» (mai aggettivi inventati).
+
+**Verifica:** suite **217 passed** (+2 test clima: Lazio in crisi con infermeria da 35 M€ e
+congestione da 5 gare; Milan senza segnali → zero righe); `verify_site` **0 problemi · 24.781
+controlli** con invariante nuova **[21]**: le righe stampate sono ricalcolate da `club_mood` per
+ogni scheda pre e confrontate col testo (74 pagine riconciliate; le 2 senza segnali non hanno la
+card, e se una squadra ha segnali la card deve esserci). Resa reale su Ajax–Willem II: Ajax
+«infermeria pesante: 4 assenti… · riposo corto: 3 giorni», Willem II «non vince da 5 gare ·
+raccoglie 2,3 punti meno di quanto crea · infermeria pesante: 6 assenti».

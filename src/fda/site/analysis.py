@@ -952,6 +952,114 @@ class MatchAnalysis:
             return None
         return out
 
+    # ---- clima del club (docs/21 P2-6, direttiva «sezioni utilissime») ------------------------
+    # Soglie dichiarate e pubblicate nella nota della card: niente punteggio sintetico,
+    # ogni riga è un fatto misurato col proprio criterio (regola B8: prima si dimostra).
+    MOOD_LOSS_STREAK = 3        # perse consecutive → «crisi di risultati»
+    MOOD_NOWIN = 4              # gare senza vittoria → «non vince da»
+    MOOD_UNBEATEN = 5           # gare senza sconfitte → clima sereno
+    MOOD_DRY = 3                # gare consecutive senza segnare
+    MOOD_XPTS_GAP = 2.0         # punti di scarto fra fatti e attesi (xPTS)
+    MOOD_ABSENT_N = 4           # assenti → infermeria pesante
+    MOOD_ABSENT_STARTERS = 2    # titolari abituali fuori → infermeria pesante
+    MOOD_ABSENT_CONTRIB = 0.5   # xG+xA/gara portati via dagli assenti
+    MOOD_REST_SHORT = 3         # giorni di riposo → corto
+    MOOD_CONGEST_DAYS = 10      # finestra di congestione
+    MOOD_CONGEST_N = 3          # gare giocate nella finestra → congestione
+
+    def club_mood(self, match_id: int, team_id: int, team_name: str,
+                  kickoff: datetime) -> list[dict[str, Any]]:
+        """Il «clima del club» come fatti misurati, non come aggettivi.
+
+        Segnali derivati solo da dati già raccolti (forma, xPTS, panchina, infermeria,
+        riposo e congestione anche coppe), ognuno con la propria soglia dichiarata nella
+        nota della card; toni: ``bad`` (allarme), ``warn`` (attenzione), ``good`` (sereno).
+        Se nessun segnale supera le soglie la squadra resta senza righe: la card lo dice
+        («nessun segnale anomalo») invece di inventare un clima neutro a parole.
+        """
+        out: list[dict[str, Any]] = []
+        f = self.form(team_id, kickoff)
+        seq = [r["res"] for r in f]
+        lose = nowin = unbeaten = dry = 0
+        for r in reversed(seq):
+            if r == "P":
+                lose += 1
+            else:
+                break
+        for r in reversed(seq):
+            if r == "V":
+                break
+            nowin += 1
+        for r in reversed(seq):
+            if r == "P":
+                break
+            unbeaten += 1
+        for r in reversed(f):
+            if r["gf"] == 0:
+                dry += 1
+            else:
+                break
+        if lose >= self.MOOD_LOSS_STREAK:
+            out.append({"tone": "bad", "text": f"crisi di risultati: {lose} sconfitte consecutive"})
+        elif nowin >= self.MOOD_NOWIN:
+            nd = sum(1 for r in seq[-nowin:] if r == "N")
+            out.append({"tone": "warn",
+                        "text": f"non vince da {nowin} gare ({nd} N, {nowin - nd} P)"})
+        elif unbeaten >= self.MOOD_UNBEATEN:
+            out.append({"tone": "good",
+                        "text": f"imbattuta da {unbeaten} gare: clima di fiducia"})
+        if dry >= self.MOOD_DRY:
+            out.append({"tone": "bad", "text": f"attacco a secco: {dry} gare senza segnare"})
+        xg = self.season_xg(team_name, team_id)
+        if xg and xg.get("xpts") is not None and xg.get("pts") is not None:
+            d = float(xg["pts"]) - float(xg["xpts"])
+            if d <= -self.MOOD_XPTS_GAP:
+                out.append({"tone": "warn",
+                            "text": f"raccoglie {str(round(abs(d), 1)).replace('.', ',')} punti "
+                                    f"meno di quanto crea (xPTS): calo di concretezza o sfortuna"})
+            elif d >= self.MOOD_XPTS_GAP:
+                out.append({"tone": "warn",
+                            "text": f"{str(round(d, 1)).replace('.', ',')} punti più di quanto "
+                                    f"crea: rendimento sopra la qualità del gioco, regressione "
+                                    f"possibile"})
+        coach = self.coach(team_id, kickoff)
+        if coach and coach.get("prev_name"):
+            out.append({"tone": "warn",
+                        "text": f"{coach['matches']}ª gara dal subentro a {coach['prev_name']}: "
+                                f"il cambio panchina è una variabile di shock"})
+        ab = self.absences_weight(match_id, team_id)
+        if ab and (ab["n"] >= self.MOOD_ABSENT_N
+                   or ab["starters_out"] >= self.MOOD_ABSENT_STARTERS
+                   or (ab.get("contrib_lost_p90") or 0) >= self.MOOD_ABSENT_CONTRIB):
+            bits = [f"infermeria pesante: {ab['n']} assenti"]
+            if ab["starters_out"]:
+                bits.append(f"di cui {ab['starters_out']} titolari abituali")
+            if ab.get("contrib_lost_p90"):
+                bits.append(f"≈ {str(round(ab['contrib_lost_p90'], 1)).replace('.', ',')} "
+                            f"xG+xA a partita in meno")
+            value = sum(u.get("value") or 0 for u in self.unavailable(match_id, team_id))
+            if value >= 30_000_000:
+                bits.append(f"≈ {round(value / 1_000_000)} M€ di mercato ai box")
+            out.append({"tone": "warn", "text": ", ".join(bits)})
+        rest = self.rest_days(team_id, kickoff)
+        if rest is not None and rest <= self.MOOD_REST_SHORT:
+            cup = self.rest_cup(team_id, kickoff)
+            out.append({"tone": "warn",
+                        "text": f"riposo corto: {rest} {'giorno' if rest == 1 else 'giorni'}"
+                                + (f", con un turno di {cup} in mezzo" if cup else "")})
+        src = self._rest_source()
+        if not src.empty:
+            lo = pd.Timestamp(kickoff) - pd.Timedelta(days=self.MOOD_CONGEST_DAYS)
+            rec = src[(src.status == "finished")
+                      & (pd.to_datetime(src.utc_kickoff, utc=True) >= lo)
+                      & (pd.to_datetime(src.utc_kickoff, utc=True) < pd.Timestamp(kickoff))
+                      & ((src.home_id == team_id) | (src.away_id == team_id))]
+            if len(rec) >= self.MOOD_CONGEST_N:
+                out.append({"tone": "warn",
+                            "text": f"congestione: {len(rec)} gare giocate negli ultimi "
+                                    f"{self.MOOD_CONGEST_DAYS} giorni"})
+        return out
+
     # ---- notizie per partita (docs/21, P1-5) -------------------------------------------------
     def team_news(self, team_id: int, team_name: str, kickoff: datetime,
                   days: int = 12, limit: int = 4) -> list[dict[str, Any]]:
@@ -2376,6 +2484,10 @@ class MatchAnalysis:
             "away_bench": self.bench_deep(away_id, f["away_name"], home_id, f["home_name"],
                                           kickoff, _val(info, "away_avg_starter_age"))
                           if status != "finished" else None,
+            "home_mood": self.club_mood(match_id, home_id, f["home_name"], kickoff)
+                          if status != "finished" else [],
+            "away_mood": self.club_mood(match_id, away_id, f["away_name"], kickoff)
+                          if status != "finished" else [],
             "home_news": self.team_news(home_id, f["home_name"], kickoff) if status != "finished" else [],
             "away_news": self.team_news(away_id, f["away_name"], kickoff) if status != "finished" else [],
             "referee_profile": self.referee_profile(match_id),

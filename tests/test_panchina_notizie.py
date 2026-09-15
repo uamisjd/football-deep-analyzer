@@ -196,3 +196,57 @@ def test_bench_deep_senza_classifica_degrada(tmp_path):
     b = a.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
     assert b["table_line"] is None and b["virtual_line"] is None
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+
+
+FX_MOOD = _fixtures([
+    # Lazio: P il 06, V il 09 (in FX), poi tre perse consecutive (10, 12, 14) → crisi
+    (5, 55, "2026", "5", KO("2026-09-06 18:00"), 4, "Lazio", 2, "Inter", 0, 2, "finished", "fotmob"),
+    (6, 55, "2026", "6", KO("2026-09-10 18:00"), 3, "Milan", 4, "Lazio", 3, 0, "finished", "fotmob"),
+    (7, 55, "2026", "7", KO("2026-09-12 20:00"), 4, "Lazio", 1, "Roma", 1, 2, "finished", "fotmob"),
+    (9, 55, "2026", "9", KO("2026-09-14 18:00"), 4, "Lazio", 5, "Napoli", 1, 3, "finished", "fotmob"),
+    (8, 55, "2026", "8", KO("2026-09-16 18:00"), 4, "Lazio", 3, "Milan", None, None, "scheduled", "fotmob"),
+])
+
+LINEUP_MOOD = pd.DataFrame([
+    {"match_id": 8, "team_id": 4, "player_id": 901, "player_name": "Assente Uno", "role": "unavailable",
+     "unavailability_type": "injury", "expected_return": "unknown", "market_value_eur": 12_000_000},
+    {"match_id": 8, "team_id": 4, "player_id": 902, "player_name": "Assente Due", "role": "unavailable",
+     "unavailability_type": "injury", "expected_return": "unknown", "market_value_eur": 9_000_000},
+    {"match_id": 8, "team_id": 4, "player_id": 903, "player_name": "Assente Tre", "role": "unavailable",
+     "unavailability_type": "suspension", "expected_return": "unknown", "market_value_eur": 8_000_000},
+    {"match_id": 8, "team_id": 4, "player_id": 904, "player_name": "Assente Quattro", "role": "unavailable",
+     "unavailability_type": "injury", "expected_return": "unknown", "market_value_eur": 6_000_000},
+])
+
+
+@pytest.fixture()
+def mood_analysis(tmp_path):
+    st = Store(tmp_path / "mood")
+    st.write("fixtures", pd.concat([FX, FX_MOOD], ignore_index=True))
+    lu = pd.concat([LINEUP, LINEUP_MOOD], ignore_index=True)
+    for col in ("position_id", "usual_position_id"):
+        if col not in lu.columns:
+            lu[col] = pd.NA
+    st.write("lineup", lu)
+    return MatchAnalysis(st)
+
+
+def test_clima_crisi_infermeria_congestione(mood_analysis):
+    rows = mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))
+    texts = [r["text"] for r in rows]
+    assert any(t.startswith("crisi di risultati: 3 sconfitte consecutive") for t in texts)
+    assert any(t.startswith("infermeria pesante: 4 assenti") for t in texts)
+    assert any("35 M€ di mercato ai box" in t for t in texts)   # 12+9+8+6 = 35
+    assert any(t.startswith("riposo corto: 2 giorni") for t in texts)
+    assert any(t.startswith("congestione: 5 gare giocate negli ultimi 10 giorni") for t in texts)
+    assert all(r["tone"] in ("bad", "warn", "good") for r in rows)
+
+
+def test_clima_squadra_serenissima_senza_segnali(mood_analysis):
+    # Milan: [N, V], ultima gara il 09/09 (7 giorni di riposo), niente coach né assenti
+    # → nessuna soglia superata: la card direbbe «clima normale», zero righe inventate
+    rows = mood_analysis.club_mood(8, 3, "Milan", KO("2026-09-16 18:00"))
+    assert rows == []
+    # Roma invece ha giocato il 13/09: il riposo corto È un segnale, e va pubblicato
+    roma = mood_analysis.club_mood(8, 1, "Roma", KO("2026-09-16 18:00"))
+    assert [r["text"] for r in roma] == ["riposo corto: 3 giorni"]
