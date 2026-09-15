@@ -8,6 +8,7 @@ casa attuale) sono inchiodate da asserzioni e non da un controllo a occhio sul s
 from __future__ import annotations
 
 import pandas as pd
+import pytest
 
 from fda.site.analysis import POSITION_NAMES, MatchAnalysis, prediction_meta
 from fda.store import Store
@@ -186,6 +187,43 @@ def test_arrival_trend_understat(tmp_path):
     assert [r["res"] for r in a["rows"]] == ["V", "N", "P", "N"]
     assert a["home_pm"] == (1.8 + 0.9) / 2 and a["away_pm"] == (1.4 + 1.2) / 2
     assert a["trend"] is None                                 # meno di 6 gare: nessuna etichetta
+    assert a["trend_recent"] is None and a["trend_before"] is None
+
+
+def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
+    """Forma sempre presente (non solo se estrema) e «giocatore di peso» = titolare abituale
+    (criterio interno alla squadra, uguale in tutte e 7 le leghe — docs/20 §13)."""
+    ma = MatchAnalysis(_store(tmp_path))
+    narr = ma.build(100)["narrative"]
+    assert "Alpha: 5 punti nelle ultime 4 (VNPN) — andamento nella norma." in narr
+    assert "Beta: 5 punti nelle ultime 4 (PNVN) — andamento nella norma." in narr
+    # Ala A (135' su 855 di squadra → titolare, min >= metà media) pesa anche se vale
+    # 12M (sotto la vecchia soglia assoluta di 15M); Esordiente A non pesa.
+    assert any(s.startswith("Assenze Alpha: 2 (tra cui 1 giocatore di peso)") for s in narr)
+
+
+def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
+    """La tendenza nominata porta accanto i due valori che la generano (docs/20 §10)."""
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as td:
+        ma = MatchAnalysis(_store(Path(td)))
+        # 6 gare fittizie: ultime 3 con xG bassi → «in calo» con i numeri a verbale
+        base_dates = ["2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29", "2026-09-05"]
+        xgs = [2.4, 2.4, 2.4, 0.8, 0.8, 0.8]
+        ma.fixtures = pd.DataFrame([
+            {"match_id": 900 + i, "league_id": 55, "season": "2026", "utc_kickoff": d,
+             "home_id": 10, "home_name": "Alpha", "away_id": 20 + i, "away_name": f"Avv{i}",
+             "home_goals": 1, "away_goals": 0, "status": "finished", "source": "t", "round": i}
+            for i, d in enumerate(base_dates)])
+        ma.us_team = pd.DataFrame([
+            {"team_name": "Alpha", "date": d, "is_home": True, "xg": x, "xga": 1.0,
+             "goals": 1, "goals_against": 0, "ppda": 10.0, "xpts": 2.0, "pts": 3}
+            for d, x in zip(base_dates, xgs)])
+        a = ma.arrival_trend("Alpha", 10, n=6)
+        assert a["trend"] == "in calo"
+        assert a["trend_recent"] == pytest.approx(0.8) and a["trend_before"] == pytest.approx(2.4)
+        assert a["trend_threshold"] == 0.15
 
 
 def test_arrival_trend_falls_back_to_fotmob(tmp_path):

@@ -1030,10 +1030,11 @@ class MatchAnalysis:
         home_rows = [r for r in rows if r["home"]]
         away_rows = [r for r in rows if not r["home"]]
         trend = None
+        trend_recent = trend_before = None
         if len(rows) >= 6:                 # ultime 3 contro le precedenti: solo se ci sono 6 gare
-            recent, before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
-            if before > 0:
-                delta = recent - before
+            trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
+            if trend_before > 0:
+                delta = trend_recent - trend_before
                 trend = "in crescita" if delta > 0.15 else "in calo" if delta < -0.15 else "stabile"
         return {"source": source, "played": len(rows), "rows": rows,
                 "xg_pm": sum(xg) / len(xg), "xga_pm": sum(xga) / len(xga),
@@ -1041,7 +1042,9 @@ class MatchAnalysis:
                 "ppda": sum(ppda) / len(ppda) if ppda else None,
                 "home_pm": sum(r["xg"] for r in home_rows) / len(home_rows) if home_rows else None,
                 "away_pm": sum(r["xg"] for r in away_rows) / len(away_rows) if away_rows else None,
-                "trend": trend}
+                "trend": trend, "trend_recent": trend_recent, "trend_before": trend_before,
+                # soglia dichiarata accanto alla frase: il lettore può rifare il giudizio (docs/20 §10)
+                "trend_threshold": 0.15}
 
     def h2h_pattern(self, match_id: int, home_id: int, away_id: int,
                     kickoff: pd.Timestamp, n: int = 60) -> dict[str, Any] | None:
@@ -1771,10 +1774,15 @@ class MatchAnalysis:
             if len(f) >= 3:
                 pts = sum(3 if x["res"] == "V" else 1 if x["res"] == "N" else 0 for x in f)
                 seq = "".join(x["res"] for x in f)
+                # la forma è un contenuto obbligatorio, non un'eccezione da segnalare: se non
+                # è estrema si dice comunque, con i numeri (parità fra le 7 leghe, docs/20 §13)
                 if pts >= 2.4 * len(f):
-                    s.append(f"{name} arriva in grande forma: {seq} nelle ultime {len(f)} ({pts} punti).")
+                    giudizio = "grande forma"
                 elif pts <= 0.6 * len(f):
-                    s.append(f"{name} in difficoltà: {seq} nelle ultime {len(f)} ({pts} punti).")
+                    giudizio = "in difficoltà"
+                else:
+                    giudizio = "andamento nella norma"
+                s.append(f"{name}: {pts} punti nelle ultime {len(f)} ({seq}) — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
@@ -1786,10 +1794,22 @@ class MatchAnalysis:
                              f"quanto crea, segnale di sottovalutazione.")
             un = ctx.get(f"{side}_unavailable") or []
             if un:
-                heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
+                # «Giocatore di peso» = titolare abituale (minuti >= metà della media squadra):
+                # criterio interno alla squadra, lo stesso per tutte e 7 le leghe — la soglia
+                # fissa a 15M€ di valore marcava per definizione quasi solo la Premier League
+                # (POR1: 5 rose su 77; verificato 2026-09-15, docs/20 §13). Se mancano i minuti
+                # di stagione si ripiega sul valore di mercato; se manca anche quello, lo si dice.
+                ab = ctx.get(f"{side}_absences")
+                if ab and ab.get("has_stats"):
+                    heavy = [p for p in ab["players"] if p.get("starter")]
+                else:
+                    heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
                 names = ", ".join(u["name"] for u in un[:4])
                 extra = (" (tra cui 1 giocatore di peso)" if len(heavy) == 1
                          else f" (tra cui {len(heavy)} giocatori di peso)") if heavy else ""
+                if not heavy and not (ab and ab.get("has_stats")) \
+                        and all(not u.get("value") for u in un):
+                    extra = " (peso non valutabile: fonte senza minuti né valori di mercato)"
                 s.append(f"Assenze {name}: {len(un)}{extra} — {names}{'…' if len(un) > 4 else ''}.")
             rest = ctx.get(f"{side}_rest")
             if rest is not None and rest <= 3:

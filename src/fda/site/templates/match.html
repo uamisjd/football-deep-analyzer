@@ -146,7 +146,8 @@
         </tr>
         {% endfor %}
       </table>
-      <p class="small" style="margin-top:8px">{{ a.played|it_plural('gara') }}: <b>{{ a.xg_pm|dec }} xG</b> e <b>{{ a.xga_pm|dec }} xGA</b> a partita · {{ a.pts|it_plural('punto') }} fatti contro {{ a.xpts|dec(1) }} attesi{% if a.trend %} · tendenza <b>{{ a.trend }}</b>{% endif %}</p>
+      <p class="small" style="margin-top:8px">{{ a.played|it_plural('gara') }}: <b>{{ a.xg_pm|dec }} xG</b> e <b>{{ a.xga_pm|dec }} xGA</b> a partita · {{ a.pts|it_plural('punto') }} fatti contro {{ a.xpts|dec(1) }} attesi su {{ a.played }} gare ({{ (a.pts - a.xpts)|dec(1, true) }})</p>
+      {% if a.trend %}<p class="small mut">Direzione degli <b>xG creati</b>: <b>{{ a.trend }}</b> — {{ a.trend_recent|dec }} a gara nelle ultime 3 contro {{ a.trend_before|dec }} nelle precedenti (soglia ±{{ a.trend_threshold|dec }} xG). Valuta il gioco recente, non i punti: la riga sopra misura l'intero campione.</p>{% endif %}
       <p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% endif %}{% if a.ppda %} · PPDA {{ a.ppda|dec(1) }} (passaggi concessi per azione difensiva: più basso = pressing più alto){% endif %}</p>
       <p class="small mut">Fonte: {{ a.source }}. Con poche giornate giocate i valori per gara oscillano molto.</p>
       {% else %}<p class="mut small">Nessuna gara precedente con xG disponibile per questa squadra.</p>{% endif %}
