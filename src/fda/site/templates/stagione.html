@@ -11,8 +11,8 @@
 <div class="card">
   <h2>{{ lg.name }} <span class="tag">{{ lg.key }}</span></h2>
   <div class="tablewrap"><table>
-    <tr><th>Squadra</th><th class="r">PG</th><th class="r">Pt</th><th class="r">Pt attesi</th><th class="r">Media pos.</th>
-        <th class="r">1°</th><th class="r">Top-4</th><th class="r">Retro</th></tr>
+    <tr><th scope="col">Squadra</th><th scope="col" class="r">PG</th><th scope="col" class="r">Pt</th><th scope="col" class="r">Pt attesi</th><th scope="col" class="r">Media pos.</th>
+        <th scope="col" class="r">1°</th><th scope="col" class="r">Top-4</th><th scope="col" class="r">Retro</th></tr>
     {% for r in lg.rows %}
     <tr><td>{{ r.team }}</td><td class="r">{{ r.played }}</td><td class="r"><b>{{ r.points|int }}</b></td>
         <td class="r">{{ r.exp_points|dec(1) }}</td><td class="r">{{ r.pos_mean|dec(1) }}</td>

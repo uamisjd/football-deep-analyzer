@@ -38,6 +38,16 @@ class League:
         return bool(self.understat_slug)
 
 
+@dataclass(frozen=True)
+class Cup:
+    """Coppa europea seguita solo come calendario (congestione/riposo, docs/21 P1-4)."""
+
+    key: str
+    name: str
+    fotmob_id: int
+    espn_code: str | None = None
+
+
 def _load_yaml(path: Path) -> dict[str, Any]:
     with path.open("r", encoding="utf-8") as fh:
         return yaml.safe_load(fh) or {}
@@ -51,6 +61,11 @@ def load_leagues_config() -> dict[str, Any]:
 @lru_cache(maxsize=1)
 def load_sources_config() -> dict[str, Any]:
     return _load_yaml(CONFIG_DIR / "sources.yaml")
+
+
+def cups() -> list[Cup]:
+    """Coppe configurate in ``cups_calendar_only``: calendario, non modelli né schede."""
+    return [Cup(**item) for item in load_leagues_config().get("cups_calendar_only", [])]
 
 
 def season() -> str:

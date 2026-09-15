@@ -6,7 +6,7 @@
 0,25 ≈ tirare a caso con le frequenze medie; i bookmaker si attestano intorno a 0,19–0,20. Brier multiclasse: più basso è, meglio è.</p>
 {% if summary %}
 <div class="card"><h2>Riepilogo</h2>
-<div class="tablewrap"><table><tr><th>Campionato</th><th class="r">Partite valutate</th><th class="r">RPS</th><th class="r">Brier</th><th class="r">Esito più probabile azzeccato</th><th class="r">RPS naive</th><th class="r">Δ vs naive</th></tr>
+<div class="tablewrap"><table><tr><th scope="col">Campionato</th><th scope="col" class="r">Partite valutate</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Brier</th><th scope="col" class="r">Esito più probabile azzeccato</th><th scope="col" class="r">RPS naive</th><th scope="col" class="r">Δ vs naive</th></tr>
 {% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Δ = RPS modello − RPS della base naive (probabilità fisse 45/27/28): negativo = il modello batte la base.
@@ -14,10 +14,10 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 </div>
 {% if markets %}
 <div class="card"><h2>Accuratezza per mercato</h2>
-  <table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th><th class="r">osservato</th>
-    <th class="r">intervallo 95%</th>
-    <th class="r">Brier</th><th class="r">Brier base</th><th class="r">Δ</th><th class="r">scelte indovinate</th>
-    <th class="r">segnale</th></tr>
+  <table><tr><th scope="col">mercato</th><th scope="col" class="r">gare</th><th scope="col" class="r">previsto</th><th scope="col" class="r">osservato</th>
+    <th scope="col" class="r">intervallo 95%</th>
+    <th scope="col" class="r">Brier</th><th scope="col" class="r">Brier base</th><th scope="col" class="r">Δ</th><th scope="col" class="r">scelte indovinate</th>
+    <th scope="col" class="r">segnale</th></tr>
   {% for m in markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
     <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k }}/{{ m.n }})</span></td>
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
@@ -62,16 +62,16 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   campione usato per stimarla): è misurato walk-forward da <code>fda calibrate</code>.{% endif %}</p>{% endif %}
   {% if bt.model_versions %}<p class="small mut">Versioni del modello nel campione: {{ bt.model_versions }}.
   Confronta fra loro righe prodotte dalla stessa versione.</p>{% endif %}
-  <div class="tablewrap"><table><tr><th>esito</th><th class="r">previsto</th><th class="r">osservato</th>
-    <th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
+  <div class="tablewrap"><table><tr><th scope="col">esito</th><th scope="col" class="r">previsto</th><th scope="col" class="r">osservato</th>
+    <th scope="col" class="r">intervallo 95%</th><th scope="col" class="r">segnale</th></tr>
   {% for c in bt.calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td>
     <td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
     <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
     <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
   </table></div>
-  <div class="tablewrap"><table><tr><th>mercato</th><th class="r">gare</th><th class="r">previsto</th>
-    <th class="r">osservato</th><th class="r">intervallo 95%</th><th class="r">Brier</th>
-    <th class="r">Brier base</th><th class="r">Δ</th><th class="r">segnale</th></tr>
+  <div class="tablewrap"><table><tr><th scope="col">mercato</th><th scope="col" class="r">gare</th><th scope="col" class="r">previsto</th>
+    <th scope="col" class="r">osservato</th><th scope="col" class="r">intervallo 95%</th><th scope="col" class="r">Brier</th>
+    <th scope="col" class="r">Brier base</th><th scope="col" class="r">Δ</th><th scope="col" class="r">segnale</th></tr>
   {% for m in bt.markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
     <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k }}/{{ m.n }})</span></td>
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
@@ -86,15 +86,15 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 {% if lead_buckets %}
 <div class="card"><h2>RPS per anticipo</h2>
 <p class="small mut">Quanto prima è stata fatta la previsione? Ora misurabile perché Tappa 1 prevede <b>tutto il calendario</b> (chiave <code>(match_id,model)</code> unica, <code>made_at</code> vs <code>utc_kickoff</code>). Se la qualità peggiora con l'anticipo, lo vedremo qui.</p>
-<div class="tablewrap"><table><tr><th>Anticipo</th><th class="r">Gare</th><th class="r">RPS medio</th><th class="r">Esito azzeccato</th><th class="r">Anticipo medio</th></tr>
+<div class="tablewrap"><table><tr><th scope="col">Anticipo</th><th scope="col" class="r">Gare</th><th scope="col" class="r">RPS medio</th><th scope="col" class="r">Esito azzeccato</th><th scope="col" class="r">Anticipo medio</th></tr>
 {% for b in lead_buckets %}<tr><td>{{ b.label }}</td><td class="r">{{ b.n }}</td><td class="r">{{ b.rps|dec(4) }}</td><td class="r">{{ (b.hit*100)|round|int }}%</td><td class="r">{{ b.lead_mean|dec(1) }} giorni</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Bucket: 0–7 giorni (scheda completa con forma/classifica/assenze), 8–14, 15–30, 31–60, 61+ (solo modello, dettagli non ancora pubblicati dalla fonte). Con poche gare per bucket i valori sono indicativi: servono ~30 gare per lettura stabile.</p>
 </div>
 {% endif %}
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
-<div class="tablewrap"><table><tr><th>Esito</th><th class="r">Probabilità media prevista</th><th class="r">Frequenza osservata</th>
-<th class="r">intervallo 95%</th><th class="r">segnale</th></tr>
+<div class="tablewrap"><table><tr><th scope="col">Esito</th><th scope="col" class="r">Probabilità media prevista</th><th scope="col" class="r">Frequenza osservata</th>
+<th scope="col" class="r">intervallo 95%</th><th scope="col" class="r">segnale</th></tr>
 {% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
 <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
 <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
@@ -104,7 +104,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 {% else %}<div class="card">Nessuna previsione ancora valutata: servono partite giocate dopo la prima previsione.</div>{% endif %}
 {% if recent %}
 <div class="card"><h2>Ultime partite valutate</h2>
-<div class="tablewrap"><table><tr><th>Data</th><th>Partita</th><th class="c">Risultato</th><th class="r">1 / X / 2 previsti</th><th class="c">Top</th><th class="r">RPS</th><th class="r">Prob. esito reale</th></tr>
+<div class="tablewrap"><table><tr><th scope="col">Data</th><th scope="col">Partita</th><th scope="col" class="c">Risultato</th><th scope="col" class="r">1 / X / 2 previsti</th><th scope="col" class="c">Top</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Prob. esito reale</th></tr>
 {% for r in recent %}<tr><td class="mut">{{ r.date }}</td><td><a href="{{ root }}partite/{{ r.match_id }}.html">{{ r.home }} - {{ r.away }}</a></td><td class="c">{{ r.hg }}-{{ r.ag }}</td>
 <td class="r">{{ (r.p_home*100)|round|int }} / {{ (r.p_draw*100)|round|int }} / {{ (r.p_away*100)|round|int }}</td><td class="c">{{ r.top }} {% if r.hit %}<span class="good">✓</span>{% else %}<span class="bad">✗</span>{% endif %}</td>
 <td class="r">{{ r.rps|dec(3) }}</td><td class="r">{{ (r.p_real*100)|round|int }}%</td></tr>{% endfor %}

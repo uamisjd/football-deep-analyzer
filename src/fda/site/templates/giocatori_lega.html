@@ -19,8 +19,8 @@
 
 <div class="card">
   <div class="tablewrap"><table id="tbl">
-    <tr><th>Giocatore</th><th>Squadra</th><th>Ruolo</th><th class="r">Età</th><th class="r">Voto</th>
-        <th class="r">Min</th><th class="r">G</th><th class="r">xG</th><th class="r">A</th><th class="r">xA</th></tr>
+    <tr><th scope="col">Giocatore</th><th scope="col">Squadra</th><th scope="col">Ruolo</th><th scope="col" class="r">Età</th><th scope="col" class="r">Voto</th>
+        <th scope="col" class="r">Min</th><th scope="col" class="r">G</th><th scope="col" class="r">xG</th><th scope="col" class="r">A</th><th scope="col" class="r">xA</th></tr>
     {% for r in rows %}
     <tr data-pos="{{ r.pos or '' }}" data-q="{{ (r.name ~ ' ' ~ (r.team or ''))|lower }}">
       <td><a href="{{ root }}giocatori/{{ r.id }}.html">{{ r.name }}</a></td>

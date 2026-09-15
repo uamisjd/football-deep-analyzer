@@ -272,6 +272,71 @@ class FotMobClient:
     def team_raw(self, team_id: int) -> dict:
         return self._get("teams", {"id": team_id}, ttl_h=self.ttl.get("teams", 24))
 
+    @staticmethod
+    def parse_transfers(raw: dict | None, team_id: int, team_name: str,
+                        league_code: str) -> list[dict[str, Any]]:
+        """Trasferimenti dal payload `teams` di FotMob → righe normalizzate arrivi/partenze.
+
+        Schema non documentato (docs/02: `teams?id=...` verificato ✅, ma la forma della
+        sezione `transfers` può cambiare): accettiamo le due disposizioni note —
+        ``{incoming: [...], outgoing: [...]}`` e lista piatta con direzione per voce —
+        e gli alias comuni dei campi (fee come oggetto o stringa, from/to come oggetto
+        o stringa, date come stringa o oggetto). Forme non riconosciute → zero righe:
+        il conteggio finisce in ``source_status`` (run TRANSFERS) e si vede subito in
+        Actions; nessuna riga è inventata.
+        """
+        section = (raw or {}).get("transfers")
+        if isinstance(section, dict):
+            groups: list[tuple[str | None, Any]] = [("in", section.get("incoming")),
+                                                    ("out", section.get("outgoing"))]
+        elif isinstance(section, list):
+            groups = [(None, section)]
+        else:
+            return []
+        rows: list[dict[str, Any]] = []
+        for direction, entries in groups:
+            if not isinstance(entries, list):
+                continue
+            for e in entries:
+                if not isinstance(e, dict):
+                    continue
+                d = direction
+                if d is None:
+                    raw_dir = str(e.get("transferDirection", e.get("direction", ""))).lower()
+                    d = "out" if raw_dir in ("out", "outgoing") else "in"
+                name = e.get("name") or e.get("playerName")
+                if not name and isinstance(e.get("player"), dict):
+                    name = e["player"].get("name")
+                if not isinstance(name, str) or not name.strip():
+                    continue
+                counterpart = ""
+                for key in ("from", "to", "club", "team", "fromClub", "toClub"):
+                    v = e.get(key)
+                    if isinstance(v, dict) and v.get("name"):
+                        counterpart = str(v["name"])
+                        break
+                    if isinstance(v, str) and v.strip():
+                        counterpart = v.strip()
+                        break
+                fee = ""
+                fv = e.get("fee")
+                if isinstance(fv, dict):
+                    fee = str(fv.get("localizedFeeText") or fv.get("feeText") or "")
+                elif isinstance(fv, (str, int, float)) and str(fv).strip():
+                    fee = str(fv)
+                date = e.get("date") or e.get("transferDate") or ""
+                if isinstance(date, dict):
+                    date = str(date.get("utc") or date.get("localized") or "")
+                pos = e.get("position")
+                rows.append({
+                    "team_id": team_id, "team_name": team_name, "league_code": league_code,
+                    "player_name": name.strip(), "position": pos if isinstance(pos, str) else "",
+                    "direction": d, "counterpart": counterpart, "fee_text": fee,
+                    "transfer_type": str(e.get("transferType") or e.get("type") or ""),
+                    "date": str(date),
+                })
+        return rows
+
     def player_raw(self, player_id: int) -> dict:
         return self._get("playerData", {"id": player_id}, ttl_h=self.ttl.get("playerData", 168))
 

@@ -19,7 +19,7 @@ from ..models.predict import latest_per_match, outcome_index, wilson_interval
 from ..store import Store
 from .analysis import MatchAnalysis, prediction_meta
 from .audit import audit_match
-from .fmt import it_plural, pct_triple
+from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, it_plural, pct_triple
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -27,9 +27,6 @@ log = logging.getLogger(__name__)
 SITE_DIR = REPO_ROOT / "site"
 TEMPLATES = Path(__file__).parent / "templates"
 OUTCOME_LABELS = ("1", "X", "2")
-ITALIAN_DAYS = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
-ITALIAN_MONTHS = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
-                  "settembre", "ottobre", "novembre", "dicembre"]
 # forme brevi per il calendario completo: una riga per partita deve stare in poco spazio
 ITALIAN_DAYS_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
 ITALIAN_MONTHS_SHORT = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]

@@ -24,6 +24,13 @@ log = logging.getLogger(__name__)
 # Chiavi primarie per l'upsert. Una tabella senza chiave viene semplicemente accodata.
 TABLE_KEYS: dict[str, list[str]] = {
     "fixtures": ["match_id"],
+    # calendario coppe europee (solo calendario: riposo/congestione, docs/21 P1-4)
+    "cup_fixtures": ["match_id"],
+    # notizie per squadra (Google News RSS / ESPN): chiave con url = idempotenza dei run
+    "news": ["team_id", "published_at", "url"],
+    # trasferimenti per squadra (FotMob `teams`): stessa mossa due volte nella stessa
+    # finestra deve restare una riga sola (docs/21 P2-7)
+    "transfers": ["team_id", "player_name", "direction", "counterpart", "date"],
     "match_info": ["match_id"],
     "shots": ["match_id", "shot_id"],
     "team_stats": ["match_id", "team_id", "period", "key"],
@@ -41,6 +48,10 @@ TABLE_KEYS: dict[str, list[str]] = {
     "espn_events": ["espn_id"],
     "espn_team_stats": ["espn_event_id", "team_id", "key"],
     "season_sim": ["league_key", "team"],
+    # ξ per lega adottato dal laboratorio (docs/21 P3-a): una riga per lega
+    "xi_league": ["league_key"],
+    # monitoraggio mercati binari (docs/21 P3-b): una riga per mercato, run per run
+    "mercati_monitor": ["market"],
     "espn_standings": ["league_code", "team_id"],
     "fotmob_standings": ["league_code", "team_id"],
     "weather_forecast": ["match_id"],

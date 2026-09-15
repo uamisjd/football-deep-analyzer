@@ -21,12 +21,14 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .config import League, leagues, season_start_year
+from .config import League, cups, leagues, season_start_year
 from .sources.espn import EspnClient, to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
+from .sources.news import NewsClient, parse_espn_news
 from .sources.openmeteo import OpenMeteoClient
 from .sources.understat import UnderstatClient, to_dicts as us_dicts
 from .store import Store
+from .teams import canonical
 
 log = logging.getLogger(__name__)
 
@@ -251,11 +253,149 @@ def collect_league(
     return report
 
 
-def collect_all(keys: list[str] | None = None, store: Store | None = None, **kw: Any) -> list[CollectReport]:
+def collect_cups(store: Store, fotmob: FotMobClient | None = None) -> CollectReport:
+    """Calendario delle coppe europee (docs/21, P1-4): una richiesta per coppa per run.
+
+    Perché esiste: ``rest_days`` contava solo le gare di campionato, quindi una squadra
+    in campo il martedì di Champions mostrava «6 giorni di riposo» nella scheda del
+    sabato. Con il calendario coppe in ``cup_fixtures`` il riposo e la congestione sono
+    quelli veri. Le coppe restano fuori da modelli e schede proprie (perimetro deciso):
+    qui si raccoglie solo il calendario.
+    """
+    now = datetime.now(timezone.utc)
+    report = CollectReport(league="CUPS", run_at=now)
+    fm = fotmob or FotMobClient()
+    rows: list[dict[str, Any]] = []
+    for cp in cups():
+        fx = _safe(f"fotmob cups {cp.key}",
+                   lambda c=cp: fm.parse_fixtures(c.fotmob_id, fm.fixtures_raw(c.fotmob_id)),
+                   report)
+        if not fx:
+            continue
+        for f in fx:
+            if f.status == "cancelled":
+                continue
+            d = asdict(f)
+            d["league_key"] = cp.key
+            d["cup_name"] = cp.name
+            rows.append(d)
+    if rows:
+        store.upsert("cup_fixtures", rows)
+        report.fixtures = len(rows)
+    report.requests = {"fotmob": fm.http.stats.requests}
+    store.upsert("source_status", report.as_status_rows())
+    return report
+
+
+def collect_news(store: Store, keys: list[str] | None = None,
+                 news: NewsClient | None = None,
+                 fotmob: FotMobClient | None = None,
+                 espn: EspnClient | None = None,
+                 window_days: int = 30) -> CollectReport:
+    """Notizie per squadra (docs/21, P1-5): Google News RSS + ESPN news di lega.
+
+    Una richiesta RSS per squadra della stagione (cache 12 h: i run successivi allo
+    stesso giorno non ridownloadano) + una JSON ESPN per campionato. Le righe vecchie
+    oltre ``window_days`` vengono potate: la card legge 12 giorni, il resto è peso morto
+    nel Parquet. Fonte isolata come le altre: se Google non è raggiungibile il run
+    continua e ``source_status`` mostra l'avviso; la card degrada a segnaposto onesto.
+    """
+    now = datetime.now(timezone.utc)
+    report = CollectReport(league="NEWS", run_at=now)
+    nc = news or NewsClient()
+    fx = store.read("fixtures")
+    if fx.empty:
+        report.errors.append("news: fixtures vuote, salto")
+        store.upsert("source_status", report.as_status_rows())
+        return report
+    teams = fx.drop_duplicates("home_id")[["home_id", "home_name"]]
+    rows: list[dict[str, Any]] = []
+    for tid, name in teams.itertuples(index=False):
+        items = _safe(f"news rss {name}", lambda t=tid, n=name: nc.team_news(int(t), str(n)), report)
+        if items:
+            rows.extend(items)
+    # ESPN news di lega: attribuisce ogni articolo alla squadra che cita (mai a tutte)
+    ec = espn or EspnClient()
+    for lg in leagues(keys):
+        payload = _safe(f"espn news {lg.key}", lambda c=lg.espn_code: nc.league_news_raw(c), report)
+        if not payload:
+            continue
+        ids = {}
+        for r in fx[fx.league_id == lg.fotmob_id][["home_id", "home_name"]].drop_duplicates().itertuples(index=False):
+            ids[canonical(str(r.home_name))] = int(r.home_id)
+        rows.extend(parse_espn_news(payload, ids))
+    cut = now - timedelta(days=window_days)
+    fresh = []
+    for r in rows:
+        pa = r.get("published_at")
+        if pa is None:
+            continue
+        ts = pd.Timestamp(pa)
+        if ts.tzinfo is None:
+            ts = ts.tz_localize(timezone.utc)
+        if ts >= cut:
+            fresh.append(r)
+    if fresh:
+        store.upsert("news", fresh)
+    report.requests = {"news": nc.http.stats.requests, "espn": ec.http.stats.requests}
+    store.upsert("source_status", report.as_status_rows())
+    return report
+
+
+def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> CollectReport:
+    """Trasferimenti per squadra dall'endpoint FotMob `teams` (docs/21, P2-7).
+
+    Una richiesta per squadra della classifica (cache 24 h: la finestra si muove piano,
+    e la stessa squadra ricompare in più run senza riscaricare). Fonte isolata come le
+    altre: se `teams` non è raggiungibile il run continua e ``source_status`` mostra
+    l'avviso; la card «Mercato» degrada ad assenza (segnaposto onesto). Lo schema della
+    sezione `transfers` non è documentato: se le righe raccolte sono zero il conteggio
+    nel log di Actions lo rende visibile al primo run (mai dati inventati).
+    """
+    now = datetime.now(timezone.utc)
+    report = CollectReport(league="TRANSFERS", run_at=now)
+    fm = fotmob or FotMobClient()
+    st = store.read("fotmob_standings")
+    if st.empty or "team_id" not in st.columns:
+        report.errors.append("transfers: classifica vuota, salto")
+        store.upsert("source_status", report.as_status_rows())
+        return report
+    rows: list[dict[str, Any]] = []
+    n_teams = 0
+    for r in st[["league_code", "team_id", "team_name"]].drop_duplicates("team_id").itertuples(index=False):
+        raw = _safe(f"transfers {r.team_name}", lambda t=int(r.team_id): fm.team_raw(t), report)
+        if raw is None:
+            continue
+        n_teams += 1
+        rows.extend(FotMobClient.parse_transfers(raw, int(r.team_id), str(r.team_name), str(r.league_code)))
+    if rows:
+        store.upsert("transfers", rows)
+    # i conteggi restano nel log di run (salvato come artifact da Actions): la tabella
+    # CLI ha colonne calendario/partite che qui non c'entrano, e source_status — come
+    # per le notizie — registra richieste ed esito, non volumi.
+    log.info("transfers: %d righe da %d squadre", len(rows), n_teams)
+    report.requests = {"transfers": fm.http.stats.requests}
+    store.upsert("source_status", report.as_status_rows())
+    return report
+
+
+def collect_all(keys: list[str] | None = None, store: Store | None = None,
+                with_cups: bool = True, with_news: bool = True,
+                with_transfers: bool = True,
+                **kw: Any) -> list[CollectReport]:
     store = store or Store()
     fm, uc, ec, om = FotMobClient(), UnderstatClient(), EspnClient(), OpenMeteoClient()
     reports = []
     for lg in leagues(keys):
         log.info("== %s ==", lg.name)
         reports.append(collect_league(lg, store, fotmob=fm, understat=uc, espn=ec, openmeteo=om, **kw))
+    if with_cups:
+        log.info("== coppe (calendario) ==")
+        reports.append(collect_cups(store, fotmob=fm))
+    if with_news:
+        log.info("== notizie squadre ==")
+        reports.append(collect_news(store, keys=keys, news=NewsClient(), fotmob=fm, espn=ec))
+    if with_transfers:
+        log.info("== mercato (trasferimenti) ==")
+        reports.append(collect_transfers(store, fotmob=fm))
     return reports

@@ -23,6 +23,7 @@ from typing import Any
 
 # ---- residui che non devono mai arrivare a schermo -----------------------------------------
 BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp\()(?![\w.])")
+TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
 # decimale col punto: esclusi i separatori di migliaia (1-3 cifre . esattamente 3 cifre)
 DECIMAL_POINT = re.compile(r"(?<![\w/,\-:])\d{1,3}\.\d{1,2}(?![\w.])|\d{1,3}\.\d{4,}")
 ENGLISH = re.compile(
@@ -72,11 +73,21 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     """Controlli di contenuto e collegamenti su tutte le pagine HTML. Ritorna (problemi, pagine)."""
     fails: list[str] = []
     pages = sorted(site.rglob("*.html"))
+    n_th = 0
     for page in pages:
         rel = str(page.relative_to(site))
+        raw = page.read_text(encoding="utf-8")
         parser = Text()
-        parser.feed(page.read_text(encoding="utf-8"))
+        parser.feed(raw)
         text = re.sub(r"\s+", " ", "".join(parser.parts))
+
+        # 27) intestazioni di tabella: ogni <th> deve dichiarare scope (docs/21 P2-8;
+        # prima dell'intervento 4.125 celle non lo avevano, i lettori di schermo non
+        # sapevano dire se l'intestazione vale per la colonna o per la riga)
+        for m in TH_SCOPE.finditer(raw):
+            n_th += 1
+            if "scope=" not in m.group(0):
+                fails.append(f"{rel}: <th> senza scope: {m.group(0)[:56]}")
 
         for m in BAD_TOKENS.finditer(text):
             fails.append(f"{rel}: residuo {m.group(0)!r}")
@@ -104,6 +115,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
                     target_ids = target_parser.ids
                 if fragment not in target_ids:
                     fails.append(f"{rel}: ancora interna mancante {href}")
+    print(f"[27] celle <th> con scope verificate: {n_th}")
     return fails, len(pages)
 
 
@@ -546,7 +558,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     role_re = re.compile(r'giocatori/(\d+)\.html">([^<]+)</a>\s*<span class="mut small">'
                          r'(portiere|difensore|centrocampista|attaccante)</span>')
     abs_re = re.compile(r"Indisponibili \((\d+)\)")
-    prev_re = re.compile(r"<th>Precedenti \((\d+)\)</th>")
+    # `<th[^>]*>`: le celle d'intestazione portano scope="row" da P2-8; il letterale
+    # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi)
+    prev_re = re.compile(r"<th[^>]*>Precedenti \((\d+)\)</th>")
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
                         r' · ([^<]*?) (\d+) assenti', re.S)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
@@ -1069,6 +1083,338 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         else:
             n_ntrain += 1
     print(f"[13-14] template e formattazione anti-falso: {n_tpl} template, {n_ntrain} pagine")
+
+    # 18) etichetta della colonna «impatto» dell'infermeria onesta e senza doppio significato
+    # (docs/21 Q1): «fuori rosa» è SOLO il motivo FotMob «not in squad», mai l'assenza di
+    # statistiche di stagione, che si scrive «senza minuti in stagione · n.d.» con tooltip.
+    n_imp = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "senza minuti in stagione · n.d." in html or "fuori rosa · n.d." in html:
+            n_imp += 1
+            if "fuori rosa · n.d." in html:
+                fails.append(f"{pg.name}: etichetta impatto fuorviante «fuori rosa · n.d.»")
+            if "non ha ancora minuti nelle statistiche di stagione" not in html:
+                fails.append(f"{pg.name}: etichetta «senza minuti in stagione» senza tooltip esplicativo")
+    print(f"[18] etichette impatto infermeria verificate: {n_imp} pagine")
+
+    # 19) panchina e posta in gioco (docs/21 P0-1): coach, subentro e percentuali Monte Carlo
+    # ricalcolati dai Parquet; la sezione deve esserci se e solo se i dati ci sono.
+    from fda.teams import canonical as _canon
+    fx19 = st.read("fixtures")
+    lu19 = st.read("lineup")
+    sim19 = st.read("season_sim")
+    from fda.site.analysis import MatchAnalysis as _MA
+    ma19 = _MA(st)
+    n_bench = 0
+    if not fx19.empty and not lu19.empty and "role" in lu19.columns:
+        ko19 = fx19.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
+        co19 = lu19[(lu19.role == "coach") & (lu19.match_id.isin(ko19.index))].copy()
+        if not co19.empty:
+            co19["ko"] = pd.to_datetime(co19.match_id.map(ko19), utc=True)
+            co19 = co19.sort_values("ko", kind="stable")
+        sim19map = {}
+        if not sim19.empty:
+            for r in sim19.itertuples(index=False):
+                sim19map.setdefault(_canon(r.team), r)
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Analisi pre-partita" not in html:
+                continue
+            mid = int(pg.stem)
+            if mid not in ko19.index:
+                continue
+            fr = fx19[fx19.match_id == mid].iloc[0]
+            kickoff = pd.Timestamp(fr.utc_kickoff)
+            txt = html_unescape(html)   # le etichette con apostrofo arrivano escaped (&#39;)
+            atteso = False
+            for tid, tname in ((int(fr.home_id), fr.home_name), (int(fr.away_id), fr.away_name)):
+                ct = co19[(co19.team_id == tid) & (co19.ko <= kickoff)] if not co19.empty else co19
+                coach = None
+                if not ct.empty:
+                    last = ct.iloc[-1]
+                    cur = last.player_id
+                    streak, prev = 0, None
+                    for pid, nm in zip(ct.player_id.iloc[::-1], ct.player_name.iloc[::-1]):
+                        if pid == cur:
+                            streak += 1
+                        else:
+                            prev = nm
+                            break
+                    coach = (str(last.player_name), prev, streak)
+                sr = sim19map.get(_canon(str(tname)))
+                if coach or sr is not None:
+                    atteso = True
+                if coach and 'id="panchina"' in html:
+                    checks += 1
+                    if coach[0] not in txt:
+                        fails.append(f"{pg.name}: panchina senza il coach {coach[0]} dei Parquet")
+                    if coach[1] is not None:
+                        if "panchina nuova" not in txt or str(coach[1]) not in txt:
+                            fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
+                if sr is not None and 'id="panchina"' in html:
+                    checks += 1
+                    pt, pe, pr = (int(round(float(sr.p_title) * 100)), int(round(float(sr.p_top4) * 100)),
+                                  int(round(float(sr.p_rel) * 100)))
+                    if f"titolo {pt}% · Europa {pe}% · salvezza {pr}%" not in txt:
+                        fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
+                    lab = ("corsa al titolo" if float(sr.p_title) >= 0.15 else
+                           "corsa all'Europa" if float(sr.p_top4) >= 0.35 else
+                           "lotta salvezza" if float(sr.p_rel) >= 0.35 else
+                           "zona salvezza non lontana" if float(sr.p_rel) >= 0.15 else
+                           "stagione di metà classifica")
+                    if lab not in txt:
+                        fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
+            if atteso and 'id="panchina"' not in html:
+                fails.append(f"{pg.name}: scheda pre senza sezione panchina pur avendo i dati")
+            # righe «utili» della card (rendimento, precedenti mirati, distacchi, virtuale):
+            # ricalcolate con le funzioni del progetto e confrontate col testo stampato
+            if 'id="panchina"' in html:
+                for tid, tname, oid, oname in (
+                        (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
+                        (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name))):
+                    bd = ma19.bench_deep(tid, tname, oid, oname, kickoff)
+                    if not bd:
+                        continue
+                    for key in ("tenure_line", "coach_ppg_line", "coach_vs_opp_line",
+                                "coach_vs_coach_line", "table_line", "virtual_line"):
+                        val = bd.get(key)
+                        if val:
+                            checks += 1
+                            if val not in txt:
+                                fails.append(f"{pg.name}: riga panchina «{key}» ({tname}) assente o diversa")
+            n_bench += 1
+    print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
+
+    # 20) notizie (docs/21 P1-5): ogni titolo/link stampato esiste in news.parquet per una
+    # delle due squadre della pagina, dentro la finestra 12 giorni, max 4 per squadra.
+    news20 = st.read("news")
+    n_news = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="notizie"' not in html:
+            if not news20.empty and "Analisi pre-partita" in html:
+                ids20 = {int(r) for r in news20.team_id.unique()} if not news20.empty else set()
+                fr20 = fx19[fx19.match_id == int(pg.stem)] if not fx19.empty else fx19
+                if not fr20.empty:
+                    fr20 = fr20.iloc[0]
+                    if {int(fr20.home_id), int(fr20.away_id)} & ids20:
+                        fails.append(f"{pg.name}: notizie disponibili ma sezione assente")
+            continue
+        n_news += 1
+        if news20.empty:
+            fails.append(f"{pg.name}: sezione notizie senza tabella news")
+            continue
+        mid = int(pg.stem)
+        fr = fx19[fx19.match_id == mid].iloc[0] if not fx19.empty else None
+        kickoff = pd.Timestamp(fr.utc_kickoff) if fr is not None else pd.Timestamp.now(tz="UTC")
+        conti: dict[int, int] = {}
+        for url, title in re.findall(r'<a href="(https?://[^"]+)" rel="noopener[^"]*">([^<]+)</a>', html):
+            riga = news20[news20.url == url]
+            if riga.empty:
+                fails.append(f"{pg.name}: notizia senza riscontro in news.parquet ({title[:40]})")
+                continue
+            r = riga.iloc[0]
+            checks += 1
+            if html_unescape(r.title) != html_unescape(title):
+                fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
+            tid = int(r.team_id)
+            if fr is not None and tid not in {int(fr.home_id), int(fr.away_id)}:
+                fails.append(f"{pg.name}: notizia di squadra estranea alla partita")
+            pa = pd.to_datetime(r.published_at, utc=True)
+            if not pd.isna(pa) and not (kickoff - pd.Timedelta(days=12) <= pa <= kickoff + pd.Timedelta(days=1)):
+                fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
+            conti[tid] = conti.get(tid, 0) + 1
+        for tid, n in conti.items():
+            if n > 4:
+                fails.append(f"{pg.name}: {n} notizie per la squadra {tid} (max 4)")
+    print(f"[20] pagine con notizie riconciliate: {n_news}")
+
+    # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
+    # con le stesse soglie; se una squadra ha segnali la card deve esserci.
+    n_mood = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+            continue
+        txt = html_unescape(html)
+        fr = fx19[fx19.match_id == int(pg.stem)].iloc[0]
+        kickoff = pd.Timestamp(fr.utc_kickoff)
+        rows_h = ma19.club_mood(int(pg.stem), int(fr.home_id), str(fr.home_name), kickoff)
+        rows_a = ma19.club_mood(int(pg.stem), int(fr.away_id), str(fr.away_name), kickoff)
+        if rows_h or rows_a:
+            n_mood += 1
+            if 'id="clima"' not in html:
+                fails.append(f"{pg.name}: segnali clima presenti ma card assente")
+                continue
+            for r in rows_h + rows_a:
+                checks += 1
+                if r["text"] not in txt:
+                    fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
+        elif 'id="clima"' in html:
+            fails.append(f"{pg.name}: card clima senza segnali calcolati")
+    print(f"[21] pagine con clima del club riconciliate: {n_mood}")
+
+    # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
+    # classifica FotMob (fonte unica) e confrontati col testo stampato.
+    n_duel = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+            continue
+        txt = html_unescape(html)
+        fr = fx19[fx19.match_id == int(pg.stem)].iloc[0]
+        cr = ma19.clash_ranks(str(fr.home_name), str(fr.away_name))
+        if not cr:
+            continue
+        n_duel += 1
+        for key in ("home_line", "away_line", "duel_line"):
+            checks += 1
+            if cr[key] not in txt:
+                fails.append(f"{pg.name}: riga scontro «{key}» assente o diversa")
+    print(f"[22] duello chiave e graduatorie verificati: {n_duel} pagine")
+
+    # 23) «giocherà?»: i badge titolare/panchina/assente stampati devono coincidere di
+    # numero e contenuto coi ruoli della distinta; l'avviso sul top contributor assente
+    # deve esserci se e solo se serve.
+    n_status = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+            continue
+        txt = html_unescape(html)
+        mid = int(pg.stem)
+        fr = fx19[fx19.match_id == mid].iloc[0]
+        exp = {"starter": 0, "sub": 0, "unavailable": 0}
+        alerts = 0
+        listed = False
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            sts = ma19.key_status(mid, tid)
+            kp = ma19.key_players_deep(tid)
+            rows = (kp or {}).get("rows") or []
+            if rows:
+                listed = True
+            for r in rows:
+                stt = (sts.get(r["id"]) or {}).get("status")
+                if stt in exp:
+                    exp[stt] += 1
+            if rows and (sts.get(rows[0]["id"]) or {}).get("status") == "unavailable":
+                alerts += 1
+        if not listed:
+            continue
+        n_status += 1
+        for badge, key in (("· titolare probabile", "starter"),
+                           ("· in panchina", "sub"),
+                           ("· assente:", "unavailable")):
+            checks += 1
+            if html.count(badge) != exp[key]:
+                fails.append(f"{pg.name}: badge «{badge}» {html.count(badge)} vs {exp[key]} ruoli")
+        has_alert = "è indisponibile" in txt
+        if (alerts > 0) != has_alert:
+            fails.append(f"{pg.name}: avviso top contributor assente coerente? {has_alert} vs {alerts}")
+    print(f"[23] badge «giocherà?» riconciliati: {n_status} pagine")
+
+    # 24) post-partita «Il prossimo impegno»: prima gara ufficiale (campionato + coppe)
+    # ricalcolata dal calendario e confrontata con la riga stampata; se nessuna delle due
+    # squadre ha gare future la card non deve esserci.
+    n_next = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Lettura della partita" not in html or fx19.empty:
+            continue
+        rows = fx19[fx19.match_id == int(pg.stem)]
+        if rows.empty or str(rows.iloc[0].status) != "finished":
+            continue
+        fr = rows.iloc[0]
+        txt = html_unescape(html)
+        ko = pd.Timestamp(fr.utc_kickoff)
+        has_card, nx_lines = False, []
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            nx = ma19.next_commitment(tid, ko)
+            if nx:
+                has_card = True
+                nx_lines.append(nx["line"])
+        checks += 1
+        if has_card != ("Il prossimo impegno" in txt):
+            fails.append(f"{pg.name}: card «Il prossimo impegno» incoerente col calendario")
+            continue
+        if not has_card:
+            continue
+        n_next += 1
+        for line in nx_lines:
+            checks += 1
+            if line not in txt:
+                fails.append(f"{pg.name}: riga prossimo impegno assente o diversa: «{line[:60]}…»")
+    print(f"[24] «Il prossimo impegno» verificato: {n_next} pagine")
+
+    # 25) conversione delle grandi occasioni: le celle «X su Y» devono coincidere coi tiri
+    # mappati a xG ≥ 0,30 (autogol esclusi); la riga c'è se e solo se qualcuno ne ha avute.
+    n_conv = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Tiri e occasioni" not in html or fx19.empty:
+            continue
+        rows = fx19[fx19.match_id == int(pg.stem)]
+        if rows.empty or str(rows.iloc[0].status) != "finished":
+            continue
+        fr = rows.iloc[0]
+        txt = html_unescape(html)
+        cells, tot_big = [], 0
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            summ = ma19.shot_summary(int(pg.stem), tid)
+            big, bg = summ.get("big_chances", 0), summ.get("big_goals", 0)
+            tot_big += big
+            cells.append(f"{bg} su {big}")
+        checks += 1
+        if tot_big > 0:
+            n_conv += 1
+            if "…di cui convertite in gol" not in txt:
+                fails.append(f"{pg.name}: riga conversione grandi occasioni assente")
+            else:
+                for cell in cells:
+                    checks += 1
+                    if cell not in txt:
+                        fails.append(f"{pg.name}: cella conversione «{cell}» assente o diversa")
+        elif "…di cui convertite in gol" in txt:
+            fails.append(f"{pg.name}: riga conversione presente ma nessuna grande occasione")
+    print(f"[25] conversione grandi occasioni verificata: {n_conv} pagine")
+
+    # 26) mercato (docs/21 P2-7): i nomi e i conteggi stampati nella card devono venire
+    # dalla tabella transfers (4 più recenti per direzione, data desc); la card c'è se e
+    # solo se la fonte ha righe per almeno una delle due squadre. Finché collect_transfers
+    # non ha girato in Actions la tabella è vuota e il controllo è vacuo per costruzione.
+    n_mkt = 0
+    tr26 = st.read("transfers")
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or tr26.empty:
+            continue
+        rows = fx19[fx19.match_id == int(pg.stem)]
+        if rows.empty:
+            continue
+        fr = rows.iloc[0]
+        txt = html_unescape(html)
+        exp_names, has_data = [], False
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            d = tr26[tr26.team_id == tid]
+            if not d.empty:
+                has_data = True
+            for direction in ("in", "out"):
+                dd = d[d.direction == direction].sort_values("date", ascending=False, na_position="last")
+                exp_names.extend(str(x) for x in dd.player_name.head(4))
+        card = "Mercato: arrivi e partenze" in txt
+        checks += 1
+        if card != has_data:
+            fails.append(f"{pg.name}: card mercato incoerente colla tabella transfers")
+            continue
+        if not card:
+            continue
+        n_mkt += 1
+        for nm in exp_names:
+            checks += 1
+            if nm not in txt:
+                fails.append(f"{pg.name}: nome mercato «{nm}» assente o diverso dalla tabella")
+    print(f"[26] card mercato riconciliate: {n_mkt} pagine")
 
     st.close()
     return fails, checks

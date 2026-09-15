@@ -7,10 +7,10 @@
 
 <div class="card">
   <table>
-    <tr><th>Squadra</th><td>{{ p.team_name or '—' }}</td><th>Età</th><td class="r">{{ p.age if p.age is not none else '—' }}</td></tr>
-    <tr><th>Nazionalità</th><td>{{ p.country or '—' }}</td>{% if p.market_value_eur %}<th>Valore di mercato</th><td class="r">€{{ (p.market_value_eur / 1000000)|it_num }}M</td>{% else %}<th>Valore di mercato</th><td class="r">—</td>{% endif %}</tr>
-    <tr><th>Presenze {{ p.season }}</th><td>{{ p.matches }}</td><th>Minuti</th><td class="r">{{ p.minutes|it_num }}</td></tr>
-    <tr><th>Media voto</th><td>{% if p.rating is not none %}{{ p.rating|dec }}{% else %}—{% endif %}</td><th>Campionato</th><td class="r">{{ league_name or '—' }}</td></tr>
+    <tr><th scope="row">Squadra</th><td>{{ p.team_name or '—' }}</td><th scope="row">Età</th><td class="r">{{ p.age if p.age is not none else '—' }}</td></tr>
+    <tr><th scope="row">Nazionalità</th><td>{{ p.country or '—' }}</td>{% if p.market_value_eur %}<th scope="row">Valore di mercato</th><td class="r">€{{ (p.market_value_eur / 1000000)|it_num }}M</td>{% else %}<th scope="row">Valore di mercato</th><td class="r">—</td>{% endif %}</tr>
+    <tr><th scope="row">Presenze {{ p.season }}</th><td>{{ p.matches }}</td><th scope="row">Minuti</th><td class="r">{{ p.minutes|it_num }}</td></tr>
+    <tr><th scope="row">Media voto</th><td>{% if p.rating is not none %}{{ p.rating|dec }}{% else %}—{% endif %}</td><th scope="row">Campionato</th><td class="r">{{ league_name or '—' }}</td></tr>
   </table>
   {% if p.unavail %}
   <p style="margin:10px 0 0"><span class="pill p">⚠ {{ p.unavail.type }}</span>{% if p.unavail.return %} <span class="small mut">rientro previsto: {{ p.unavail.return }}</span>{% endif %}</p>
@@ -29,9 +29,9 @@
   <div class="card">
     <h2>Stagione <span class="tag">FotMob · {{ p.matches|it_plural('gara') }}</span></h2>
     <table>
-      <tr><th>Statistica</th><th class="r">Totale</th><th class="r">Per 90′</th></tr>
+      <tr><th scope="col">Statistica</th><th scope="col" class="r">Totale</th><th scope="col" class="r">Per 90′</th></tr>
       {% for row in p.stats_table %}
-        {% if row.header %}<tr><th colspan="3" style="padding-top:10px">{{ row.group }}</th></tr>
+        {% if row.header %}<tr><th scope="colgroup" colspan="3" style="padding-top:10px">{{ row.group }}</th></tr>
         {% else %}<tr><td>{{ row.label }}{% if row.per90_shrunk_s %} <span class="mut small" title="Valore stabilizzato con prior bayesiano (180′ verso media di ruolo) per campioni &lt;270′">◎</span>{% endif %}</td><td class="r">{{ row.total }}</td><td class="r">{% if row.per90 %}<span title="{% if row.per90_shrunk_s %}grezzo {{ row.per90 }}/90 · shrunk {{ row.per90_shrunk_s }}/90 (prior 180′){% else %}{{ row.per90 }}/90′{% endif %}">{{ row.per90 }}{% if row.per90_shrunk_s %} <span class="mut small" style="font-size:10.5px">{{ row.per90_shrunk_s }}</span>{% endif %}</span>{% else %}—{% endif %}</td></tr>{% endif %}
       {% endfor %}
     </table>
@@ -91,8 +91,8 @@
   <h2>Partite giocate <span class="tag">{{ p.log|length }}</span></h2>
   {% if p.log %}
   <div class="tablewrap"><table>
-    <tr><th>Data</th><th>Avversario</th><th class="c">Risultato</th><th class="r">Min</th>
-        <th class="r">Voto</th><th class="r">G</th><th class="r">A</th><th class="r">xG</th><th class="r">xA</th><th></th></tr>
+    <tr><th scope="col">Data</th><th scope="col">Avversario</th><th scope="col" class="c">Risultato</th><th scope="col" class="r">Min</th>
+        <th scope="col" class="r">Voto</th><th scope="col" class="r">G</th><th scope="col" class="r">A</th><th scope="col" class="r">xG</th><th scope="col" class="r">xA</th><th scope="col"></th></tr>
     {% for m in p.log %}
     <tr>
       <td class="mut small">{{ m.date|it_dt_short }}</td>

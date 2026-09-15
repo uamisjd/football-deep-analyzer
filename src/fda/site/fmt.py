@@ -9,6 +9,21 @@ from __future__ import annotations
 
 import pandas as pd
 
+# nomi estesi per le date pronte all'uso (erano in build.py: spostati qui perché anche
+# analysis.py compone righe di testo con giorno e ora — fonte unica, niente duplicati)
+ITALIAN_DAYS = ["lunedì", "martedì", "mercoledì", "giovedì", "venerdì", "sabato", "domenica"]
+ITALIAN_MONTHS = ["", "gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
+                  "settembre", "ottobre", "novembre", "dicembre"]
+
+
+def it_day_time(ts, tz) -> str:
+    """Timestamp UTC → 'martedì 15/09, ore 20:00' nel fuso display ``tz``."""
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        t = t.tz_localize("UTC")
+    t = t.tz_convert(tz)
+    return f"{ITALIAN_DAYS[t.weekday()]} {t.day:02d}/{t.month:02d}, ore {t.hour:02d}:{t.minute:02d}"
+
 
 def dec(v, nd: int = 2, plus: bool = False) -> str:
     """Numero → stringa con virgola decimale italiana: 3.86 → '3,86' (plus=True → '+0,04')."""
