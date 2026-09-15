@@ -526,6 +526,47 @@ class MatchAnalysis:
         self.weather_forecast = store.read("weather_forecast")
         self.backtest = store.read("backtest")
 
+    # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
+    def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Minuti attesi del primo gol, da un ritmo a due tempi MISURATO, non da Poisson puro.
+
+        Il Poisson a tasso costante sbaglia sistematicamente: i gol osservati arrivano più
+        tardi (sullo storico di stagione solo il 42,8% cade nel 1° tempo). Qui il tasso è
+        r1 = s·λ/45 nel 1° tempo e r2 = (1-s)·λ/45 nel 2°, con s = quota dei gol di 1°
+        tempo misurata su events.parquet a ogni build (regola: minuto ≤ 45 vale 1° tempo,
+        i 45+x' recupero del 1°). I quartili arrivano in forma chiusa da
+        S(t) = e^{-r1 t} (t≤45) e S(t) = e^{-r1·45}e^{-r2 (t-45)} dopo; il verificatore
+        ricalcola numeri pubblici dalla stessa formula e dagli stessi eventi, e la card
+        dichiara i conteggi (gol, partite) con cui s è stata misurata. Minuti oltre il 90°
+        non esistono: un quartile oltre il fischio finale diventa «dopo il 90'», mai un
+        numero inventato.
+        """
+        lam = self._lambdas(prediction)
+        if lam is None or self.events.empty or "type" not in self.events.columns:
+            return None
+        g = self.events[self.events.type == "Goal"]
+        if len(g) < 60 or not g.minute.notna().all():
+            return None
+        s = float((g.minute <= 45).mean())                    # misura, non ipotesi
+        lam_tot = float(lam[0] + lam[1])
+        r1, r2 = s * lam_tot / 45.0, (1.0 - s) * lam_tot / 45.0
+        if r1 <= 0 or r2 <= 0:
+            return None
+        s_ht = float(np.exp(-r1 * 45.0))                      # P(0-0 all'intervallo)
+
+        def _q(p: float) -> float | None:
+            tail = 1.0 - p
+            if tail >= s_ht:                                  # il quartile cade nel 1° tempo
+                t = -np.log(tail) / r1
+            else:
+                t = 45.0 + (-np.log(tail) - r1 * 45.0) / r2
+            return None if t > 90.0 else float(t)
+
+        return {"q": [(p, _q(p)) for p in (0.25, 0.50, 0.75)],
+                "s_half": s, "s_ht": s_ht, "lam": lam_tot,
+                "n_goals": int(len(g)), "n_matches": int(g.match_id.nunique()),
+                "zero": float(np.exp(-lam_tot))}
+
     # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
     def league_goals_percentile(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
         """Su che scala leggere i gol attesi totali della scheda: il percentile di lega.
@@ -2029,6 +2070,7 @@ class MatchAnalysis:
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
         ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])
         ctx["league_pos"] = self.league_goals_percentile(ctx["prediction"])
+        ctx["first_goal"] = self.first_goal_clock(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
         ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None

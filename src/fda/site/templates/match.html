@@ -121,6 +121,22 @@
 </div>
 {% endif %}
 
+{% if c.first_goal %}
+{% set fg = c.first_goal %}
+<div class="card detail-card" id="primo-gol">
+  <h2>Quando arriva il primo gol</h2>
+  <p class="small mut">Un ritmo a due tempi calibrato sullo storico, non il puro caso: su {{ fg.n_goals }} gol nelle
+  {{ fg.n_matches }} partite di questa stagione (7 leghe), il {{ (fg.s_half*100)|dec(1) }}% cade nel 1° tempo —
+  il 2° tempo spinge di più, e quindi il Poisson «piatto» anticiperebbe i gol di qualche minuto. Con i
+  {{ fg.lam|dec(2) }} gol attesi di questa gara la metà centrale dei primi gol cade fra
+  {% if fg.q[0][1] is not none %}{{ fg.q[0][1]|round|int }}'{% else %}dopo il 90'{% endif %} e
+  {% if fg.q[2][1] is not none %}{{ fg.q[2][1]|round|int }}'{% else %}dopo il 90'{% endif %} e la mediana è
+  {% if fg.q[1][1] is not none %}{{ fg.q[1][1]|round|int }}'{% else %}dopo il 90'{% endif %}. Pari senza gol al riposo: <b>{{ (fg.s_ht*100)|dec(1) }}%</b>;
+  zero gol su novanta minuti: {{ (fg.zero*100)|dec(1) }}%. I minuti oltre il 90° non esistono in queste misure:
+  un quartile oltre il fischio finale viene scritto «dopo il 90'».</p>
+</div>
+{% endif %}
+
 
 
 

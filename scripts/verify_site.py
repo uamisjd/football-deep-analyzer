@@ -983,6 +983,71 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: mediana di lega {med_t} vs {dist.median():.1f}")
         print(f"[16] percentile dei gol attesi nel campionato verificato: {n_pos}")
 
+    # 17) primo gol: ritmo a due tempi calibrato su events.parquet — s, quartili in forma chiusa,
+    #     P(0-0 all'intervallo) e P(0-0 piena) ricalcolate; «dopo il 90'» mai oltre il fischio
+    ev_df = st.read("events")
+    if not ev_df.empty and "type" in ev_df.columns and not preds.empty:
+        import numpy as np
+
+        pr_fg = preds.reset_index() if "match_id" not in preds.columns else preds
+        pr_fg = pr_fg.sort_values("made_at").groupby("match_id").tail(1)
+        gl = ev_df[ev_df.type == "Goal"]
+        if len(gl) >= 60:
+            s_fg = float((gl.minute <= 45).mean())
+            n_fg = int(ev_df[ev_df.type == "Goal"].match_id.nunique())
+            fg_re = re.compile(
+                r"su (\d+(?:\.\d+)*) gol nelle\s*(\d+(?:\.\d+)*) partite di questa stagione \(7 leghe\), il "
+                r"(\d+,\d)% cade nel 1° tempo", re.S)
+            qq_re = re.compile(
+                r"la metà centrale dei primi gol cade fra\s*(dopo il 90'|\d+')\s*e\s*"
+                r"(dopo il 90'|\d+')\s*e la mediana è\s*(dopo il 90'|\d+')\. "
+                r"Pari senza gol al riposo: <b>(\d+,\d)%</b>;\s*zero gol su novanta minuti: "
+                r"(\d+,\d)%\.", re.S)
+            n_q = 0
+            for pg in pages:
+                html = pg.read_text(encoding="utf-8")
+                if 'id="primo-gol"' not in html:
+                    continue
+                mid = int(pg.stem)
+                row_f = pr_fg[pr_fg.match_id == mid]
+                checks += 1
+                if row_f.empty:
+                    fails.append(f"{pg.name}: card primo-gol senza previsione")
+                    continue
+                lam_fg = float(row_f.lambda_home.iloc[0]) + float(row_f.lambda_away.iloc[0])
+                r1_f, r2_f = s_fg * lam_fg / 45.0, (1.0 - s_fg) * lam_fg / 45.0
+                s_ht_f = float(np.exp(-r1_f * 45.0))
+
+                def _qexp(p: float) -> float | None:
+                    tail = 1.0 - p
+                    t = (-np.log(tail) / r1_f) if tail >= s_ht_f else \
+                        (45.0 + (-np.log(tail) - r1_f * 45.0) / r2_f)
+                    return None if t > 90.0 else float(t)
+
+                qs = {p: _qexp(p) for p in (0.25, 0.50, 0.75)}
+                bl = html.split('id="primo-gol"', 1)[1][:2800]
+                m_fg = fg_re.search(bl)
+                if not m_fg or int(m_fg.group(1).replace(".", "")) != len(gl) or \
+                        int(m_fg.group(2).replace(".", "")) != n_fg or \
+                        abs(float(m_fg.group(3).replace(",", ".")) - s_fg * 100) > 0.06:
+                    fails.append(f"{pg.name}: conteggi/quota gol di 1° tempo non tornano con events.parquet")
+                m_q = qq_re.search(bl)
+                if not m_q:
+                    fails.append(f"{pg.name}: frase dei quartili del primo gol assente o diversa")
+                    continue
+                # la frase stampa «fra q1 e q3 e la mediana è q2»: riordino i gruppi
+                labels = {0.25: m_q.group(1), 0.75: m_q.group(2), 0.50: m_q.group(3)}
+                for p, t in qs.items():
+                    atteso = "dopo il 90'" if t is None else f"{int(round(t))}'"
+                    n_q += 1
+                    if labels[p] != atteso:
+                        fails.append(f"{pg.name}: quartile p={p} primo gol «{labels[p]}» vs modello «{atteso}»")
+                if abs(float(m_q.group(4).replace(",", ".")) - s_ht_f * 100) > 0.06:
+                    fails.append(f"{pg.name}: P(0-0 riposo) {m_q.group(4)}% vs {s_ht_f * 100:.1f}%")
+                if abs(float(m_q.group(5).replace(",", ".")) - np.exp(-lam_fg) * 100) > 0.06:
+                    fails.append(f"{pg.name}: P(0-0 piena) {m_q.group(5)}% vs {np.exp(-lam_fg) * 100:.1f}%")
+            print(f"[17] quartili del primo gol verificati: {n_q}")
+
     # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso
     tpl = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates"
     n_tpl = 0

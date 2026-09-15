@@ -7,6 +7,7 @@ casa attuale) sono inchiodate da asserzioni e non da un controllo a occhio sul s
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -249,6 +250,39 @@ def test_league_goals_percentile_uses_same_league_distribution_only():
     ma.preds = pd.DataFrame(rows_low + [dict(r, match_id=42) for r in rows[:1]])
     lp2 = ma.league_goals_percentile(pred)
     assert lp2["label"] == "fra le partite più chiuse del campionato"
+
+
+def test_first_goal_clock_two_half_rate_closed_form_and_90_cap():
+    """Tasso a due tempi: s MISURATA dagli eventi (regola minuto≤45 = 1° tempo), quartili in
+    forma chiusa; λ microscopici spingerebbero il 3° quartile a 208' — la coda va «oltre fischio»,
+    non oltre 90, e la card deve mostrare «dopo il 90'» (o il verificatore sgama l'inventato)."""
+    rows = ([{"type": "Goal", "minute": 30, "minute_added": None, "match_id": 1}] * 45 +
+            [{"type": "Goal", "minute": 60, "minute_added": None, "match_id": 2}] * 45)
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.events = pd.DataFrame(rows)
+    pred = {"lambda_home": 1.8, "lambda_away": 1.8, "dc_rho": 0.0}
+    fg = ma.first_goal_clock(pred)
+    assert fg is not None and fg["s_half"] == 0.5 and fg["n_goals"] == 90
+    lam = 3.6
+    rate = 0.5 * lam / 45                                     # = 0,04 gol/min in entrambi i tempi
+    assert fg["q"][0][1] == pytest.approx(-np.log(0.75) / rate)
+    assert fg["q"][1][1] == pytest.approx(np.log(2.0) / rate)
+    assert fg["q"][2][1] == pytest.approx(-np.log(0.25) / rate)
+    assert fg["s_ht"] == pytest.approx(np.exp(-0.5 * lam))
+    assert fg["zero"] == pytest.approx(np.exp(-lam))
+    # quartile che cade nel SECONDO tempo controllato nel ramo dopo 45:
+    fg2 = ma.first_goal_clock({"lambda_home": 0.9, "lambda_away": 0.9, "dc_rho": 0.0})
+    r2 = 0.5 * 1.8 / 45
+    assert fg2["q"][2][1] == pytest.approx(45 + (-np.log(0.25) - 0.5 * 1.8) / r2)  # 69,3'
+    # λ piccoli: il 3° quartile supera il fischio finale → None (mai «104'» in faccia al lettore)
+    fg3 = ma.first_goal_clock({"lambda_home": 0.3, "lambda_away": 0.3, "dc_rho": 0.0})
+    assert fg3["q"][2][1] is None and fg3["q"][0][1] is not None
+    # regola del minuto esatto: 45' e 45+x valgono 1° tempo
+    ma.events = pd.DataFrame(
+        [{"type": "Goal", "minute": 45, "minute_added": None, "match_id": 1}] * 30 +
+        [{"type": "Goal", "minute": 45, "minute_added": 2, "match_id": 1}] * 30)
+    fg4 = ma.first_goal_clock(pred)
+    assert fg4 is None or fg4["s_half"] == 1.0
 
 
 def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
