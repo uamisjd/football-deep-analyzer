@@ -114,6 +114,7 @@ def main() -> int:
         k("shrunk_marcatore", "◎" in txt)
         # nuovo (2026-09-15): fascia storica del pronostico da backtest fuori campione
         k("fascia_storica", 'id="fascia-storica"' in txt)
+        k("posizione_lega", 'id="posizione-lega"' in txt)
         k("celle_coda_meno_di_1", '>meno di 0,1%' in txt or "<1</td>" in txt)
         # #13 — profondità narrativa per lega
         if pre:

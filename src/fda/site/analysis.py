@@ -18,6 +18,7 @@ from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
+from ..config import leagues
 from ..models.predict import wilson_interval
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, it_plural, pct_triple
@@ -524,6 +525,41 @@ class MatchAnalysis:
         self.insights_df = store.read("insights")
         self.weather_forecast = store.read("weather_forecast")
         self.backtest = store.read("backtest")
+
+    # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
+    def league_goals_percentile(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Su che scala leggere i gol attesi totali della scheda: il percentile di lega.
+
+        Un λ totale di 3,0 non significa lo stesso ovunque (media stagionale misurata:
+        2,6 in ENG1 ma 3,4 in NED1). Qui il λ della scheda viene ordinato dentro la
+        distribuzione della stessa quantità su tutte le partite della STESSA lega
+        previste dal modello in stagione — così il lettore ottiene «tanto o poco per la
+        sua serie» da un conteggio rifaicibile, non da un giudizio. Numeri e frazione
+        sono ricalcolati a ogni build da predictions.parquet e verificati pagina per pagina.
+        """
+        lam = self._lambdas(prediction)
+        if lam is None or self.preds.empty or "league_key" not in self.preds.columns:
+            return None
+        lg = prediction.get("league_key")
+        if not lg:
+            return None
+        p = self.preds[self.preds.league_key == lg].sort_values("made_at").groupby("match_id").tail(1)
+        tot = (p.lambda_home.astype(float) + p.lambda_away.astype(float))
+        tot = tot[np.isfinite(tot)]
+        n = int(len(tot))
+        if n < 30:
+            return None
+        here = float(lam[0] + lam[1])
+        below = float((tot < here).mean())
+        if below >= 0.75:
+            label = "fra le partite che promettono più gol"
+        elif below <= 0.25:
+            label = "fra le partite più chiuse del campionato"
+        else:
+            label = "nella media del campionato"
+        name = {x.key: x.name for x in leagues()}.get(str(lg), str(lg))
+        return {"here": here, "n": n, "below": below, "mean": float(tot.mean()),
+                "median": float(tot.median()), "label": label, "league": name, "league_key": str(lg)}
 
     # ---- fascia storica del pronostico (backtest fuori campione) ---------------------------
     #: fasce di probabilità del favorito usate per dire «quando il favorito aveva questa
@@ -1992,6 +2028,7 @@ class MatchAnalysis:
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
         ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])
+        ctx["league_pos"] = self.league_goals_percentile(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
         ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None

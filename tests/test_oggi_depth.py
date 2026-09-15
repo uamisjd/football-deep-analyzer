@@ -221,6 +221,36 @@ def test_favorite_track_record_bands_and_current_flag():
     assert [r["label"] for r in fr2["rows"] if r["current"]] == ["oltre il 75%"]
 
 
+def test_league_goals_percentile_uses_same_league_distribution_only():
+    """Il percentile dei gol attesi conta SOLO le partite dello stesso campionato:
+    3,4 gol attesi può essere «tanto» in una lega e «poco» in NED1 — il lettore deve
+    ricevere la posizione sulla scala giusta, rifaciibile da predictions.parquet."""
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    rows = []
+    for i in range(120):  # NED1: tutte a 3,4 gol attesi totali
+        rows.append({"match_id": 1000 + i, "league_key": "NED1", "lambda_home": 1.7,
+                     "lambda_away": 1.7, "made_at": "2026-01-01"})
+    rows.append({"match_id": 42, "league_key": "NED1", "lambda_home": 2.0,
+                 "lambda_away": 2.4, "made_at": "2026-01-01"})
+    for i in range(80):  # ESP1: più basse — se entrassero nel conteggio il percentile mentirebbe
+        rows.append({"match_id": 2000 + i, "league_key": "ESP1", "lambda_home": 1.0,
+                     "lambda_away": 1.0, "made_at": "2026-01-01"})
+    ma.preds = pd.DataFrame(rows)
+    pred = {"league_key": "NED1", "lambda_home": 2.0, "lambda_away": 2.4, "dc_rho": 0.0}
+    lp = ma.league_goals_percentile(pred)
+    assert lp is not None
+    assert lp["n"] == 121, "le altre leghe devono restare fuori"
+    assert lp["below"] == pytest.approx(120 / 121)      # 4,4 supera tutte le partite NED1
+    assert lp["label"] == "fra le partite che promettono più gol"
+    assert lp["league"] == "Eredivisie"
+    # scheda «chiusa»: stessa logica, quartile basso → etichetta opposta
+    rows_low = rows[:1] + [{"match_id": 3000 + i, "league_key": "NED1", "lambda_home": 3.0,
+                            "lambda_away": 3.0, "made_at": "2026-01-01"} for i in range(119)]
+    ma.preds = pd.DataFrame(rows_low + [dict(r, match_id=42) for r in rows[:1]])
+    lp2 = ma.league_goals_percentile(pred)
+    assert lp2["label"] == "fra le partite più chiuse del campionato"
+
+
 def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     """Forma sempre presente (non solo se estrema) e «giocatore di peso» = titolare abituale
     (criterio interno alla squadra, uguale in tutte e 7 le leghe — docs/20 §13)."""

@@ -108,6 +108,19 @@
 </div>
 {% endif %}
 
+{% if c.league_pos %}
+{% set lp = c.league_pos %}
+{% set lp_pct = ((lp.below*100)|round|int) %}
+<div class="card detail-card" id="posizione-lega">
+  <h2>Dove si colloca questa partita</h2>
+  <p class="small mut">I {{ lp.here|dec(2) }} gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:
+  sono <b>più alti del {{ lp_pct }}% delle {{ lp.n }} partite di {{ lp.league }} fin qui previste dal nostro modello</b>
+  (media di lega {{ lp.mean|dec(1) }}, mediana {{ lp.median|dec(1) }}): questa gara è <b>{{ lp.label }}</b>.
+  Il confronto conta solo partite del proprio campionato — la stessa cifra in campionati diversi vale diversamente —
+  e si aggiorna con l'avanzare della stagione, perché ordina quantità previste, non giudizi.</p>
+</div>
+{% endif %}
+
 
 
 

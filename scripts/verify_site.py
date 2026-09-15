@@ -937,6 +937,52 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     fails.append(f"{pg.name}: marcatura «questa» su {lab} ma il favorito {here:.3f} sta in un'altra fascia")
         print(f"[15] fasce storiche del pronostico verificate: {n_fasc}")
 
+    # 16) percentile dei gol attesi nel campionato: ricalcolato da predictions.parquet pagina
+    #     per pagina — il lettore legge una posizione che il conteggio sulle stesse λ conferma
+    if not preds.empty and "league_key" in preds.columns:
+        from fda.config import leagues as _leagues
+
+        _lg_names = {x.key: x.name for x in _leagues()}
+        pr_ = preds.reset_index() if "match_id" not in preds.columns else preds
+        p_latest = pr_.sort_values("made_at").groupby("match_id").tail(1).copy()
+        p_latest["lam"] = p_latest.lambda_home.astype(float) + p_latest.lambda_away.astype(float)
+        n_pos = 0
+        pos_re = re.compile(
+            r'I (\d+,\d+) gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:\s*'
+            r'sono <b>più alti del (\d+)% delle (\d+) partite di ([^<]+) fin qui previste dal nostro modello</b>\s*'
+            r'\(media di lega (\d+,\d+), mediana (\d+,\d+)\)')
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if 'id="posizione-lega"' not in html:
+                continue
+            mid = int(pg.stem)
+            row = p_latest[p_latest.match_id == mid]
+            m = pos_re.search(html.split('id="posizione-lega"', 1)[1][:2800])
+            if row.empty or m is None:
+                fails.append(f"{pg.name}: posizione-lega senza previsione o con testo atteso assente")
+                continue
+            lam_here = float(row.lam.iloc[0])
+            dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
+            dist = dist[np.isfinite(dist)]
+            n_exp = int(len(dist))
+            checks += 1
+            n_pos += 1
+            here_t, pct_t, n_t, lg_t, mean_t, med_t = m.groups()
+            if abs(float(here_t.replace(",", ".")) - lam_here) > 0.006:
+                fails.append(f"{pg.name}: gol attesi {here_t} vs λ modello {lam_here:.3f}")
+            below = float((dist < lam_here).mean())
+            if int(pct_t) != int(round(below * 100)):
+                fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
+            if int(n_t) != n_exp:
+                fails.append(f"{pg.name}: partite di lega {n_t} vs {n_exp} in predictions")
+            if lg_t != _lg_names.get(str(row.league_key.iloc[0]), ""):
+                fails.append(f"{pg.name}: nome lega «{lg_t}» diverso da config «{_lg_names.get(str(row.league_key.iloc[0]))}»")
+            if abs(float(mean_t.replace(",", ".")) - float(dist.mean())) > 0.06:
+                fails.append(f"{pg.name}: media di lega {mean_t} vs {dist.mean():.1f}")
+            if abs(float(med_t.replace(",", ".")) - float(dist.median())) > 0.06:
+                fails.append(f"{pg.name}: mediana di lega {med_t} vs {dist.median():.1f}")
+        print(f"[16] percentile dei gol attesi nel campionato verificato: {n_pos}")
+
     # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso
     tpl = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates"
     n_tpl = 0
