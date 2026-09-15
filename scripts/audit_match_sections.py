@@ -84,27 +84,31 @@ def main() -> int:
 
         # #10/§2 — numero di controlli scritto a mano
         k("conta_controlli_manuale", bool(re.search(r"controlla [\d.]+ numeri", txt)))
-        # #1/§4 — passo Elo etichettato come media
-        k("passo_media_elo", "Media con i rating Elo" in txt or "Media pesata con i rating Elo" in txt)
-        k("passo_tilt", "inclina" in txt)
-        # #3/§5 — tooltip xG che dichiara solo FotMob
-        k("tooltip_xg_solo_fotmob", "media stagionale FotMob" in txt)
-        # #4/§5 — righe xG split in valori assoluti (da sostituire con quote)
+        # #1/§4 — passo Elo: la «media pesata» dichiarata, il tilt nominato; la «media» semplice
+        # resta solo nelle previsioni legacy a ricetta «inverti» (là la media è davvero una media)
+        k("passo_media_vera", "Media pesata con i rating Elo" in txt)
+        k("passo_media_legacy_inverti", bool(re.search(r"Media con i rating Elo(?! pesata)", txt)))
+        k("passo_tilt", "inclinate dall" in txt)
+        # #3/§5 — fonte dichiarata per riga (FotMob o Understat, quella vera); avviso fonti miste
+        k("tooltip_fonte_dichiarata", "media stagionale FotMob su" in txt or "media stagionale Understat su" in txt)
+        k("avviso_fonti_miste", "due fornitori diversi in questa gara" in txt)
+        # #4/§5 — scomposizione xG come quote (somma 100), non valori da sommare
         k("xg_split_assoluti", "xG azione manovrata / gara" in txt)
         k("xg_split_quote", "xG da azione manovrata (quota" in txt)
         # #6 — notazione λ con trattino vs totale esplicito
-        k("lambda_trattino", bool(re.search(r"\d,\d+–\d,\d+</b><span>gol attesi", txt)))
-        k("lambda_totale", "gol attesi totali" in txt)
-        # #7 — segnale DC/Elo senza soggetti
-        k("segnale_senza_soggetti", "scarto " in txt and "DC ed Elo sullo stesso preferito" not in txt)
-        k("segnale_esplicito", "DC ed Elo sullo stesso preferito" in txt or "Preferiti diversi:" in txt)
+        k("lambda_trattino", bool(re.search(r"gol attesi \d+[,.]\d+–\d+[,.]\d+", txt)))
+        k("lambda_totale", bool(re.search(r"gol attesi · <b>\d+,\d+ totali</b>", txt)))
+        # #7 — segnale DC/Elo con soggetti e distanza
+        k("segnale_senza_soggetti", "scarto " in txt and "distanza " not in txt)
+        k("segnale_esplicito", "sullo stesso preferito (" in txt or "Preferiti diversi:" in txt)
         # #8 — n_train senza separatore migliaia
         k("ntrain_senza_separatore", bool(re.search(r"\b\d{4,}\s+(?:partite|gare)\b", txt)))
         # #9 — copertura dei 6 risultati esatti
-        k("copertura_risultati", "coprono il" in txt and "delle 100 partite" in txt)
-        # #11 — etichetta coda matrice
+        k("copertura_risultati", bool(re.search(r"coprono \d+,\d+ partite su 100", txt)))
+        # #11 — etichetta coda matrice + precedenti per campo
         k("coda_matrice_vaga", "Coda 6+ gol" in txt)
-        k("coda_matrice_esplicita", "Almeno una delle due squadre" in txt)
+        k("coda_matrice_esplicita", "Almeno una delle due squadre segna 6+ gol" in txt)
+        k("precedenti_per_campo", "di cui con" in txt and "gol a gara" in txt)
         # #12 — marcatore del valore stabilizzato
         k("shrunk_senza_marcatore", "valore stabilizzato" not in txt and "<br><span class=\"mut small\" title=\"Valore stabilizzato" in txt)
         k("shrunk_marcatore", "◎" in txt)

@@ -251,7 +251,26 @@ def test_h2h_pattern_from_current_home_side(tmp_path):
     assert hp["top_scores"][0]["score"] == "1-1" and hp["top_scores"][0]["n"] == 2
     assert hp["first"] == pd.Timestamp("2023-11-10 18:00", tz="UTC")
     assert hp["last"] == pd.Timestamp("2025-05-10 18:00", tz="UTC")
-    assert ma.h2h_pattern(100, 10, 20, pd.Timestamp("2020-01-01", tz="UTC")) is None  # < 3 casi
+    # sotto 8 casi con la casa attuale in casa: nessuna sotto-serie pubblicata
+    assert hp["venue"] is None
+
+
+def test_h2h_venue_subset_published_from_eight_cases(tmp_path):
+    """I precedenti si distinguono per campo solo quando il campione regge una frase (docs/20 §11)."""
+    ma = MatchAnalysis(_store(tmp_path))
+    rows = [{"match_id": 100, "home_id": 10 if i % 2 == 0 else 20, "away_id": 20 if i % 2 == 0 else 10,
+             "home_goals": 1 + int(i % 3 == 0), "away_goals": 1,
+             "utc": pd.Timestamp(f"20{20 - i:02d}-05-01 18:00", tz="UTC"), "league": "Serie A"}
+            for i in range(16)]          # 16 precedenti; 8 con Alpha in casa: V N N V N N V N
+    ma.h2h_df = pd.DataFrame(rows)
+    hp = ma.h2h_pattern(100, 10, 20, KICK)
+    assert hp is not None and hp["venue"] is not None
+    assert hp["venue"]["n"] == 8
+    assert (hp["venue"]["wins"], hp["venue"]["draws"], hp["venue"]["losses"]) == (3, 5, 0)
+    assert hp["venue"]["wins"] + hp["venue"]["draws"] + hp["venue"]["losses"] == hp["venue"]["n"]
+    assert hp["venue"]["gpg"] == pytest.approx((3 + 2 + 2 + 3 + 2 + 2 + 3 + 2) / 8)
+    # calcio d'inizio troppo presto: prima del 2006 resta un solo precedente (< 3) → niente blocco
+    assert ma.h2h_pattern(100, 10, 20, pd.Timestamp("2006-01-01", tz="UTC")) is None
 
 
 def test_key_players_deep_ranks_by_expected_contribution(tmp_path):

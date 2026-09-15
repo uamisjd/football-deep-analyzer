@@ -1058,6 +1058,8 @@ class MatchAnalysis:
         if len(rows) < 3:
             return None
         w = d = l = 0
+        vw = vd = vl = 0                     # sotto-serie: la casa attuale era di casa
+        vgoals = 0
         margins: list[int] = []
         scorelines: dict[str, int] = {}
         btts = over25 = 0
@@ -1073,6 +1075,11 @@ class MatchAnalysis:
                     last_draw = i          # 0 = l'ultimo scontro è stato un pareggio
             else:
                 l += 1
+            if was_home:                   # lo stesso scenario di campo di QUESTA gara
+                vw += int(signed > 0)
+                vd += int(signed == 0)
+                vl += int(signed < 0)
+                vgoals += r["hg"] + r["ag"]
             margins.append(signed)
             key = f"{r['hg']}-{r['ag']}" if was_home else f"{r['ag']}-{r['hg']}"
             scorelines[key] = scorelines.get(key, 0) + 1
@@ -1080,11 +1087,18 @@ class MatchAnalysis:
             over25 += int(r["hg"] + r["ag"] > 2.5)
         total = len(rows)
         top = sorted(scorelines.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        # sotto-serie «con la casa attuale in casa»: pubblicata solo da 8 casi —
+        # sotto una doppia cifra di precedenti la frequenza non regge una frase (docs/20 §11)
+        venue = None
+        nv = vw + vd + vl
+        if nv >= 8:
+            venue = {"n": nv, "wins": vw, "draws": vd, "losses": vl, "gpg": vgoals / nv}
         return {"n": total, "wins": w, "draws": d, "losses": l,
                 "gpg": sum(r["hg"] + r["ag"] for r in rows) / total,
                 "margin": sum(margins) / total,
                 "btts": btts / total, "over25": over25 / total, "draw_drought": last_draw,
                 "top_scores": [{"score": s, "n": c, "share": c / total} for s, c in top],
+                "venue": venue,
                 "last": rows[0]["utc"], "first": rows[-1]["utc"]}
 
     def key_players_deep(self, team_id: int, n: int = 3) -> dict[str, Any] | None:

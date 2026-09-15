@@ -13,6 +13,7 @@ Esce con codice 1 se trova almeno un problema (usabile come passo di CI).
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 from collections import Counter
 from html import unescape as html_unescape
@@ -331,7 +332,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             rendered = float(cell_p.replace(",", "."))
             worst = max(worst, abs(rendered - round(float(m["cells"][int(i)][int(j)]["p"]) * 100, 1)))
             tot += rendered
-        tail_m = re.search(r"Coda 6\+ gol: (\d+,\d)%", html)
+        tail_m = re.search(r"Almeno una delle due squadre segna 6\+ gol.*?: (\d+,\d) partite su 100", html)
+        if not tail_m:
+            fails.append(f"{pg.name}: etichetta della coda della matrice assente o ambigua")
         tail = float(tail_m.group(1).replace(",", ".")) if tail_m else 0.0
         if worst > 0.11:
             fails.append(f"{pg.name}: cella matrice diversa di {worst:.2f} pp")
@@ -758,7 +761,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         resi = re.findall(r'<span class="h" style="width:[^"]*">1 · (\d+,\d)%</span>'
                           r'<span class="d" style="width:[^"]*">X · (\d+,\d)%</span>'
                           r'<span class="a" style="width:[^"]*">2 · (\d+,\d)%</span>', blocco)
-        labels = re.findall(r"<strong>(\d+) · ([^<]+)</strong>", blocco)
+        labels = [(n, html_unescape(lab)) for n, lab in
+                  re.findall(r"<strong>(\d+) · ([^<]+)</strong>", blocco)]
         checks += 1
         n_steps += 1
         if len(resi) != len(steps) or len(labels) != len(steps):
@@ -783,7 +787,101 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         for key in ("p_home", "p_draw", "p_away"):
             if abs(steps[-1][key] - float(r[key])) > 1e-6:
                 fails.append(f"{pg.name}: ultimo passo {key} {steps[-1][key]:.4f} != pubblicato {r[key]:.4f}")
+        # Δ esatto fra passi adiacenti: deve essere la differenza dei numeri stampati nel
+        # riassunto (stesso esito preferito), non dei valori grezzi — il lettore rifà i conti
+        delte = re.findall(r'<span class="delta">Δ (-?[+0-9,-]+) pp</span>', blocco)
+        if len(delte) != len(steps) - 1:
+            fails.append(f"{pg.name}: Δ di catena {len(delte)} per {len(steps)} passi")
+        else:
+            for i, dtxt in enumerate(delte):
+                letto = float(dtxt.replace(",", "."))
+                tops = [max(float(v.replace(",", ".")) for v in resi[k]) for k in (i, i + 1)]
+                if abs(letto - round(tops[1] - tops[0], 1)) > 1e-9:
+                    fails.append(f"{pg.name}: Δ del passo {i + 2} = {dtxt} pp, sono {tops[0]}→{tops[1]}")
     print(f"[10] scomposizioni della probabilità verificate: {n_steps}")
+
+    # 11) titolo della scheda (P2 del modello): il margine pubblicato è la differenza dei due
+    #     interi stampati vicini («+25 punti» tra 51% e 26%), e primo/secondo sono davvero
+    #     i due esiti più probabili della triade; i λ sono «+», non un trattino
+    n_margini = 0
+    hero_re = re.compile(r'<strong>([^<]*)<em>(\d+)%</em>.*?'
+                         r'\+(\d+(?:,\d+)?) punti sul secondo — (.*?) (\d+)%'
+                         r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.S)
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        m = hero_re.search(html)
+        if not m:
+            continue
+        top_v, margine, second_v = int(m.group(2)), float(m.group(3).replace(",", ".")), int(m.group(5))
+        pcts = sorted((int(m.group(6)), int(m.group(7)), int(m.group(8))), reverse=True)
+        checks += 1
+        n_margini += 1
+        if (top_v - second_v) != int(margine):
+            fails.append(f"{pg.name}: margine +{margine:g} punti con {top_v}% e {second_v}% stampati")
+        if (top_v, second_v) != (pcts[0], pcts[1]):
+            fails.append(f"{pg.name}: primo/secondo {top_v}/{second_v} non sono i due esiti più alti {pcts}")
+        if re.search(r"\d,\d+–\d,\d+</b><span>gol attesi", html) or \
+                re.search(r"gol attesi \d+[,.]\d+–\d+[,.]\d+", html):
+            fails.append(f"{pg.name}: gol attesi separati da trattino (lettura di un intervallo)")
+        if not re.search(r"<b>\d+,\d+ \+ \d+,\d+</b><span>gol attesi · <b>\d+,\d+ totali</b>", html):
+            fails.append(f"{pg.name}: gol attesi senza il totale esplicito")
+        if " totali) · Over" not in html:
+            fails.append(f"{pg.name}: descrizione SEO senza il totale dei gol attesi")
+    print(f"[11] riassunti del modello verificati: {n_margini}")
+
+    # 12) risultati esatti: la copertura dei sei punteggi è pubblicata e combacia con la
+    #     previsione salvata; la gerarchia dei titoli dentro «Verifica approfondita» è h3
+    n_cov = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        cm = re.search(r"Questi (\d+) punteggi coprono (\d+,\d+) partite su 100", html)
+        if not cm:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index:
+            fails.append(f"{pg.name}: copertura senza previsione")
+            continue
+        block = html.split("Risultati esatti più probabili", 1)[1][:2000]
+        celle = re.findall(r"<tr><td>\d+-\d+</td><td class=\"r\">(\d+,\d+)%</td></tr>", block)
+        somma = sum(float(x.replace(",", ".")) for x in celle)
+        letta = float(cm.group(2).replace(",", "."))
+        checks += 1
+        n_cov += 1
+        if abs(somma - letta) > 0.35:
+            fails.append(f"{pg.name}: copertura {letta}/100 ma le sei percentuali sommano {somma:.1f}")
+        r = preds.loc[mid]
+        try:
+            raw = ast.literal_eval(r.top_scores) if isinstance(r.top_scores, str) else {}
+        except (ValueError, SyntaxError):
+            raw = {}
+        if raw and abs(sum(raw.values()) * 100 - letta) > 0.06:
+            fails.append(f"{pg.name}: copertura {letta}/100 vs {sum(raw.values()) * 100:.1f} dai dati")
+        for titolo in ("Matrice dei punteggi", "Quanti gol, in pratica"):
+            if f"<h2>{titolo}</h2>" in html:
+                fails.append(f"{pg.name}: «{titolo}» è di secondo livello dentro Verifica approfondita")
+    print(f"[12] coperture dei risultati esatti verificate: {n_cov}")
+
+    # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso
+    tpl = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates"
+    n_tpl = 0
+    if tpl.is_dir():
+        for f in tpl.rglob("*.html"):
+            testo = f.read_text(encoding="utf-8")
+            n_tpl += 1
+            if re.search(r"controlla \d[\d.]+ numeri", testo):
+                fails.append(f"template {f.name}: conteggio dei controlli scritto a mano")
+
+    # 14) n_train e compagni grandi con il separatore delle migliaia (esclusi gli anni 19xx/20xx)
+    n_ntrain = 0
+    no_year = r"\b(?!19\d\d|20\d\d)(\d{4,})\s*(?:partite|gare)\b"
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        male = re.search(no_year, re.sub(r"<[^>]+>", " ", html))
+        if male:
+            fails.append(f"{pg.name}: «{male.group(1)} partite/gare» senza separatore delle migliaia")
+        else:
+            n_ntrain += 1
+    print(f"[13-14] template e formattazione anti-falso: {n_tpl} template, {n_ntrain} pagine")
 
     st.close()
     return fails, checks
