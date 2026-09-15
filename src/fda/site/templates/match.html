@@ -531,7 +531,7 @@
 {% set m = c.score_matrix %}
 <div class="card detail-card" id="probabilita">
   <h3 class="as-h2">Matrice dei punteggi</h3>
-  <p class="small mut">Probabilità Dixon-Coles di ogni risultato 0–{{ m.cap }} (righe = gol {{ c.home_name }}, colonne = gol {{ c.away_name }}). La cella evidenziata è la più probabile ({{ m.mode }}). Almeno una delle due squadre segna 6+ gol (una squadra sola, non il totale della partita): {{ (m.p_tail*100)|dec(1) }} partite su 100.</p>
+  <p class="small mut">Probabilità Dixon-Coles di ogni risultato 0–{{ m.cap }} (righe = gol {{ c.home_name }}, colonne = gol {{ c.away_name }}). La cella evidenziata è la più probabile ({{ m.mode }}). Almeno una delle due squadre segna 6+ gol (una squadra sola, non il totale della partita): {{ (m.p_tail*100)|dec(1) }} partite su 100. I numeri delle celle sono «partite su 100», come le barre qui sotto: con la coda fanno 100.</p>
   <div class="tablewrap">
     <table class="scoregrid">
       <tr><th></th>{% for j in range(m.cap+1) %}<th aria-label="Gol {{ c.away_name }} {{ j }}">{{ j }}</th>{% endfor %}</tr>
