@@ -55,6 +55,33 @@ def _site_module():
     return mod
 
 
+def test_verify_site_stato_fonti_senza_motivo(tmp_path):
+    """[28] Una fonte «OK» con 0 righe deve dichiarare il motivo (docs/21 §15).
+
+    Il caso reale: `news:NEWS` e `transfers:TRANSFERS` rispondevano OK con zero righe
+    salvate e dalla pagina non si capiva perché. Il controllo pretende l'imbuto; un errore
+    o un avviso non lo richiedono (il motivo è già il testo dell'errore).
+    """
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+
+    def row(fonte: str, righe: str, esito: str) -> str:
+        return (f'<tr><td>{fonte}</td><td class="mut">15/09 22:35</td><td class="r">139</td>'
+                f'<td class="r">{righe}</td><td>{esito}</td></tr>')
+
+    (site / "stato.html").write_text("<table>"
+        + row("news:NEWS", "0", '<span class="pill V">OK</span>')
+        + row("transfers:TRANSFERS", "0", '<span class="pill V">OK</span> <span class="small mut">'
+                                           '0 righe · payload letti 132 · sezione assente in 132</span>')
+        + row("fotmob:ITA1", "132", '<span class="pill V">OK</span> <span class="small mut">calendario 132</span>')
+        + row("espn:NEWS", "0", '<span class="pill N">AVVISO</span> <span class="small mut">HTTP 403</span>')
+        + "</table>", encoding="utf-8")
+    fails, checks = vs.check_status(site)
+    assert checks == 4
+    assert len(fails) == 1 and "news:NEWS" in fails[0]
+
+
 def test_verify_site_content_checks(tmp_path):
     """Il verificatore del sito trova i difetti che l'audit 2026-09-12 ha corretto."""
     vs = _site_module()

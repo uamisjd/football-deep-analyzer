@@ -692,3 +692,51 @@ pubblicare righe sbagliate in una card nuova; *costo*: un secondo ciclo di run i
   delle notizie «per far salire i numeri» (sarebbe un aggiustamento a caso), toccare ESPN 403 (degrado
   lato fonte, già coperto da FotMob/Google). Zero richieste in più verso le fonti: tutti i conteggi
   nascono da payload già scaricati.
+
+### 15.6 Attuazione dei blocchi 1+2+3 (2026-09-15, tredicesimo turno — richiesta utente «123»)
+
+**Cosa è entrato nel codice.**
+- **Nuovo modulo `src/fda/diagnostics.py`**: `bump` (contatori d'imbuto), `key_names`/`shape_of`
+  (firma dello schema: tipo, dimensioni e **soli nomi di campo**, whitelist
+  `^[A-Za-z0-9_]{1,40}$`, max 12 per livello), `detail` (frase italiana per la pagina, ≤200
+  caratteri) e `digest` (firma tecnica per il Parquet e il log, ≤240). Nessun valore, nessun
+  dato grezzo, nessuna richiesta in più verso le fonti.
+- **`collect.py`**: `CollectReport` ha ora `row_counts` / `details` / `digests` e il metodo
+  `note(...)`; `as_status_rows()` pubblica tre colonne nuove di `source_status` — `rows`,
+  `detail`, `digest`. Imbuto in tutte e quattro le fasi: lega (`fotmob` con calendario/partite/
+  backfill/classifica, `understat`, `espn` con classifica+eventi, `openmeteo` **con il motivo**
+  quando non salva nulla), coppe, notizie, mercato. Le notizie contano byte letti, articoli,
+  corpi non-RSS, righe in finestra, fuori finestra, **senza data** e salvate; il mercato conta
+  payload letti, voci viste, righe salvate e in quale forma è stata trovata la sezione.
+- **`news.py`**: la query non è più pre-codificata (`google_news_params`), `Accept` RSS dedicato,
+  `parse_rss` e `parse_espn_news` riempiono l'imbuto, `league_news_raw(..., http=)` fa contare
+  le richieste ESPN al client ESPN; le righe senza data **non** vengono più scartate in silenzio:
+  vengono contate (`senza data N`) e restano fuori perché la card promette una finestra di 12
+  giorni — senza data la promessa non è verificabile (nota: anche `team_news` le escluderebbe,
+  `NaT >= cut` è falso).
+- **`fotmob.parse_transfers(..., diag=)``**: registra `sezione` (dict/lista/assente), i nomi dei
+  campi della sezione e del livello superiore, le voci viste e le righe estratte.
+- **Contatori per fase** (chiude anche il riscontro di `docs/19` §1.6 sulla colonna «Richieste»
+  cumulativa): `source_status` registra il **delta** del contatore del client attorno alla fase,
+  non il totale cumulativo del client condiviso. Prima `fotmob:POR1` 129 includeva le richieste
+  di NED1 e `transfers:TRANSFERS` 263 quelle di tutte le fasi precedenti (la fase ne faceva 132).
+- **`espn news` è un AVVISO, non un ERRORE** (`_WARN_NON_BLOCCANTE`): il 403 è un degrado lato
+  fonte già coperto da Google News, come lo standings 403 è coperto da FotMob.
+- **Sito**: `stato.html` ha la colonna **«Righe»** (— quando non applicabile) e, per le fonti
+  `OK` con 0 righe, l'imbuto accanto alla pill; le righe vecchie senza le colonne nuove restano
+  leggibili. Nuova invariante **[28]** in `verify_site.py`: *una fonte «OK» con 0 righe deve
+  dichiarare il motivo* (un errore/avviso no: il motivo è già il suo testo).
+
+**Verifiche misurate (offline).** Suite **261 passed** (246 + 15 nuove: 14 in
+`tests/test_diagnostica_fonti.py`, 1 in `tests/test_verify_scripts.py`), `ruff --select F,E9`
+pulito su tutto il toccato; `fda build` 376 partite / 2.364 fixtures / 7.478 giocatori in 2m43s;
+`scripts/verify_site.py` **0 problemi · 26.951 controlli** con `[28] fonti con righe dichiarate:
+32 righe`; scrittura reale provata su store sintetico (righe vecchie → `NaN` → «—» in pagina,
+righe nuove → 0 righe con motivo). Il difetto Google News è coperto da un test di regressione su
+`requests.PreparedRequest` (una sola codifica, `%2522` vietato).
+
+**Cosa resta (blocco 4).** Il parser tollerante per `parse_transfers` (contenitore `{"data":
+[...]}` e guardie anti-falso-positivo) **non** è entrato: la firma committata dal primo run reale
+dirà quale forma ha davvero la sezione, poi si corregge con la prova in mano. **Da confermare in
+Actions** (il sandbox non raggiunge le fonti): (a) `news:NEWS` con righe > 0 dopo il fix della
+query; (b) la firma di `transfers:TRANSFERS`; (c) `mercati_monitor` invariato.

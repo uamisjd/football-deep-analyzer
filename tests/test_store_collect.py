@@ -85,9 +85,11 @@ class FakeOpenMeteo:
     """Previsione fissa, senza rete (per i test del passo meteo)."""
 
     def __init__(self):
-        self.http = type("S", (), {"stats": type("T", (), {"requests": 1, "cache_hits": 0})()})()
+        self.requests = 0
+        self.http = type("S", (), {"stats": self})()
 
     def forecast(self, lat, lon, when):
+        self.requests += 1
         return {"temp_c": 21.0, "precip_prob": 60.0, "desc": "pioggia debole", "code": 61,
                 "hour": f"{when:%Y-%m-%dT%H:00}"}
 

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ..config import RAW_DIR, season, source
+from ..diagnostics import bump, key_names, shape_of
 from ..http import HttpClient
 
 log = logging.getLogger(__name__)
@@ -274,7 +275,7 @@ class FotMobClient:
 
     @staticmethod
     def parse_transfers(raw: dict | None, team_id: int, team_name: str,
-                        league_code: str) -> list[dict[str, Any]]:
+                        league_code: str, diag: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Trasferimenti dal payload `teams` di FotMob → righe normalizzate arrivi/partenze.
 
         Schema non documentato (docs/02: `teams?id=...` verificato ✅, ma la forma della
@@ -282,16 +283,34 @@ class FotMobClient:
         ``{incoming: [...], outgoing: [...]}`` e lista piatta con direzione per voce —
         e gli alias comuni dei campi (fee come oggetto o stringa, from/to come oggetto
         o stringa, date come stringa o oggetto). Forme non riconosciute → zero righe:
-        il conteggio finisce in ``source_status`` (run TRANSFERS) e si vede subito in
-        Actions; nessuna riga è inventata.
+        nessuna riga è inventata.
+
+        Con zero righe **serve sapere perché** (docs/21 §15: il 2026-09-15 arrivarono 132
+        payload su 132 con HTTP 200 e il parser estrasse zero righe, senza che nessuno
+        potesse dire se la sezione fosse assente o solo scritta in un altro modo). Quando
+        ``diag`` è passato, il parser registra: tipo della sezione, nomi dei campi del
+        livello superiore e della sezione (solo nomi, mai valori) e il conteggio delle voci
+        viste. La firma finisce in ``source_status`` — quindi nel Parquet committato, che
+        l'agente può leggere anche quando i log di Actions non sono raggiungibili.
         """
+        if diag is not None:
+            diag["top"] = shape_of(raw)
         section = (raw or {}).get("transfers")
         if isinstance(section, dict):
+            if diag is not None:
+                diag["sezione"] = "dict"
+                diag["campi_sezione"] = ",".join(key_names(section))
             groups: list[tuple[str | None, Any]] = [("in", section.get("incoming")),
                                                     ("out", section.get("outgoing"))]
         elif isinstance(section, list):
+            if diag is not None:
+                diag["sezione"] = "lista"
+                diag["campi_sezione"] = ",".join(key_names(section))
             groups = [(None, section)]
         else:
+            if diag is not None:
+                diag["sezione"] = "assente" if section is None else type(section).__name__
+                diag["campi_sezione"] = ""
             return []
         rows: list[dict[str, Any]] = []
         for direction, entries in groups:
@@ -300,6 +319,7 @@ class FotMobClient:
             for e in entries:
                 if not isinstance(e, dict):
                     continue
+                bump(diag, "voci")
                 d = direction
                 if d is None:
                     raw_dir = str(e.get("transferDirection", e.get("direction", ""))).lower()
@@ -335,6 +355,7 @@ class FotMobClient:
                     "transfer_type": str(e.get("transferType") or e.get("type") or ""),
                     "date": str(date),
                 })
+                bump(diag, "righe")
         return rows
 
     def player_raw(self, player_id: int) -> dict:

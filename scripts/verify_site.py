@@ -119,6 +119,36 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     return fails, len(pages)
 
 
+# ---- stato fonti: righe dichiarate e motivi (docs/21 §15) -------------------------------------
+# Il 2026-09-15 due fonti rispondevano «OK» con zero righe salvate (news e transfers) e dalla
+# pagina non si capiva perché: la colonna «Righe» più l'imbuto rendono quel caso leggibile, e
+# questa invariante impedisce che torni muto.
+STATUS_ROW = re.compile(
+    r'<tr><td>([^<]+)</td><td class="mut">([^<]*)</td><td class="r">([^<]*)</td>'
+    r'<td class="r">([^<]*)</td><td>(.*?)</td></tr>', re.S)
+
+
+def check_status(site: Path) -> tuple[list[str], int]:
+    """[28] Stato fonti: una fonte «OK» con 0 righe deve dichiarare il motivo."""
+    page = site / "stato.html"
+    if not page.exists():
+        return [], 0
+    fails: list[str] = []
+    checks = 0
+    for match in STATUS_ROW.finditer(page.read_text(encoding="utf-8")):
+        fonte, _run, _req, righe, esito = match.groups()
+        checks += 1
+        if righe.strip() != "0":
+            continue
+        cell = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", esito)).strip()
+        if "OK" not in cell:
+            continue                      # errore/avviso: il motivo è già il testo dell'errore
+        if "0 righe ·" not in cell or len(cell.split("0 righe ·", 1)[1].strip()) < 3:
+            fails.append(f"stato.html: {fonte} con 0 righe e nessuna spiegazione")
+    print(f"[28] fonti con righe dichiarate: {checks} righe")
+    return fails, checks
+
+
 # ---- calendario completo (vista «Prossime») ---------------------------------------------------
 # Una riga per partita, compatta: le regole da rispettare sono le stesse delle schede, ma il
 # lettore qui non ha contesto, quindi un arrotondamento sbagliato non sarebbe riconoscibile.
@@ -1439,6 +1469,9 @@ def main() -> int:
     barre, bar_checks = check_bars(site)
     fails += barre
     checks += bar_checks
+    stato, stato_checks = check_status(site)
+    fails += stato
+    checks += stato_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
