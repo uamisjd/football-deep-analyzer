@@ -29,10 +29,9 @@ FX = _fixtures([
 ])
 
 LINEUP = pd.DataFrame([
-    # Inter: coach A nelle prime due gare, coach B dalla terza → cambio rilevabile
+    # Inter: coach A alla 1ª, coach B dalla 2ª (gara davvero giocata dall'Inter) → cambio
     {"match_id": 1, "team_id": 2, "player_id": 100, "player_name": "Coach Vecchio", "role": "coach"},
-    {"match_id": 2, "team_id": 2, "player_id": 100, "player_name": "Coach Vecchio", "role": "coach"},
-    {"match_id": 3, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    {"match_id": 2, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
     {"match_id": 4, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
     # Roma: panchina invariata
     {"match_id": 1, "team_id": 1, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
@@ -52,6 +51,17 @@ CUPS = pd.DataFrame([
      "season": "2026", "round": "MD1", "utc_kickoff": KO("2026-09-08 19:00"),
      "home_id": 2, "home_name": "Inter", "away_id": 9, "away_name": "Ajax",
      "home_goals": 1, "away_goals": 1, "status": "finished", "source": "fotmob"},
+])
+
+STANDINGS = pd.DataFrame([
+    {"league_code": "ITA1", "team_id": 1, "team_name": "Roma", "rank": 1, "played": 3,
+     "wins": 3, "draws": 0, "losses": 0, "goals_for": 8, "goals_against": 3, "goal_diff": 5, "points": 9},
+    {"league_code": "ITA1", "team_id": 2, "team_name": "Inter", "rank": 2, "played": 3,
+     "wins": 2, "draws": 1, "losses": 0, "goals_for": 6, "goals_against": 3, "goal_diff": 3, "points": 7},
+    {"league_code": "ITA1", "team_id": 3, "team_name": "Milan", "rank": 3, "played": 3,
+     "wins": 1, "draws": 1, "losses": 1, "goals_for": 4, "goals_against": 4, "goal_diff": 0, "points": 4},
+    {"league_code": "ITA1", "team_id": 4, "team_name": "Lazio", "rank": 4, "played": 3,
+     "wins": 0, "draws": 1, "losses": 2, "goals_for": 2, "goals_against": 6, "goal_diff": -4, "points": 1},
 ])
 
 NEWS = pd.DataFrame([
@@ -74,6 +84,7 @@ def analysis(tmp_path):
     st.write("season_sim", SIM)
     st.write("cup_fixtures", CUPS)
     st.write("news", NEWS)
+    st.write("fotmob_standings", STANDINGS)
     return MatchAnalysis(st)
 
 
@@ -153,3 +164,35 @@ def test_keyword_score_e_clean_text():
     assert keyword_score("ESONERO in vista? Crisi di risultati") >= 2
     assert keyword_score("cronaca della partita") == 0
     assert clean_text("<b>a</b>  &amp; b") == "a & b"
+
+
+def test_bench_deep_profilo_rendimento_e_virtual(analysis):
+    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["tenure_line"] == "panchina nuova: 2ª gara dal subentro a Coach Vecchio"
+    # una sola gara finita col coach corrente (Inter-Milan 2-2): 1,0 punti/gara
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+    assert b["coach_vs_opp_line"] is None      # 1 gara < soglia 3
+    assert b["coach_vs_coach_line"] is None    # 1 gara < soglia 2
+    assert b["table_line"] == ("2º con 7 punti · 3 punti sopra la zona retrocessione · "
+                               "in zona Europa (4º posto o meglio)")
+    assert b["virtual_line"] == ("con una vittoria 1º · con una sconfitta 2º "
+                                 "(classifica virtuale, altre gare in sospeso)")
+
+
+def test_bench_deep_zona_retrocessione_e_nationalita(analysis):
+    b = analysis.bench_deep(4, "Lazio", 1, "Roma", KO("2026-09-14 00:00"))
+    assert "dalla salvezza diretta" in b["table_line"]   # ultima piazza: distanza dalla salvezza
+    assert "con una vittoria" in b["virtual_line"]
+    r = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert r["tenure_line"] == "panchina invariata da 3 gare nel nostro archivio"
+    assert r["coach_ppg_line"] == "1,5 punti/gara su 2 gare finite"  # 1-0 e 0-1: 3 punti su 2
+
+
+def test_bench_deep_senza_classifica_degrada(tmp_path):
+    st = Store(tmp_path / "nostand")
+    st.write("fixtures", FX)
+    st.write("lineup", LINEUP)
+    a = MatchAnalysis(st)
+    b = a.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["table_line"] is None and b["virtual_line"] is None
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"

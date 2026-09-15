@@ -229,3 +229,35 @@ fonti a pagamento, scraper che richiedono il PC dell'utente.
 
 **Prossimo passo:** alla scelta dell'utente, implementare il blocco scelto con test + invariante
 `verify_site` + aggiornamento di `STATO.md` e di questo doc; il merge resta all'utente (policy D).
+
+
+---
+
+## 6. Secondo giro sulla card «Panchina e posta in gioco» (2026-09-15, secondo turno)
+
+**Direttiva utente:** «in questa sezione puoi fare di meglio e darmi informazioni più utili?
+ogni sezione dovrebbe essere fatta per fornirmi informazioni utilissime» → diventata regola
+permanente in `docs/00` (principio di utilità delle sezioni).
+
+**Misura del difetto.** La prima versione pubblicava solo: nome allenatore + «panchina invariata
+da N gare», percentuali Monte Carlo, età media. Letta sulla gara reale Rayo Vallecano–Espanyol
+non rispondeva alle domande utili: *quanto rende* l'allenatore, *cosa succede* vincendo o
+perdendo, *quanto dista* la squadra dagli obiettivi di classifica.
+
+**Soluzione attuata** (solo dati già raccolti, nessuna fonte nuova; commit successivo a `8c81684`):
+- profilo: età e nazionalità dell'allenatore dalla distinta (codici ISO tradotti, mai a schermo grezzi);
+- **rendimento**: punti/gara sulle sole partite *finite* con l'allenatore corrente, con il numero
+  di gare (es. Rayo 0,8 su 5 → segnale di crisi leggibile);
+- **precedenti mirati**: bilancio dell'allenatore contro la squadra avversaria (da 3 gare in su) e
+  scontro diretto col collega avversario (da 2 in su); sotto soglia non si stampa nulla;
+- **posta in gioco di classifica viva**: posizione e punti, distacco dalla zona retrocessione
+  (retrocessioni dirette: 18ª su 20 squadre, 17ª su 18) e dal 4º posto (linea Europa minima in
+  tutte e 7 le leghe), regole dichiarate nella nota della card;
+- **cosa succede**: posizione virtuale con vittoria/sconfitta (punti e differenza reti, altre gare
+  in sospeso), etichettata «virtuale» e spiegata: «dice cosa vale il risultato, non lo prevede».
+
+**Verifica.** Suite 215 passed (3 test nuovi sul blocco); `verify_site` 0 problemi · **24.546
+controlli** con [19] estesa: le sei righe (`tenure`, rendimento, due precedenti, classifica,
+virtuale) sono ricalcolate per ogni scheda pre e confrontate col testo stampato; ruff pulito sul
+codice nuovo. Resa reale misurata su Rayo–Espanyol: «16º con 4 punti · 2 punti sopra la zona
+retrocessione · 6 punti dal 4º posto · con una vittoria 13º · con una sconfitta 16º».

@@ -97,6 +97,17 @@ nella PR). Se il push non riesce, il lavoro va consegnato nello stesso turno com
 
 **Principio.** Tutte le 7 leghe (big-5 + NED1/POR1) sono **alla pari**: nessun contenuto della scheda partita è facoltativo o «di serie B» per lega. Una scheda è completa solo se contiene tutti i contenuti obbligatori qui sotto; quando la fonte primaria non copre una lega si usa il fallback indicato e, solo se nessuna fonte ha il dato, si mostra un segnaposto onesto («Arbitro da definire», «previsione pubblicata a ridosso della gara»), mai un dato vuoto o inventato.
 
+### Principio di utilità delle sezioni (direttiva utente 2026-09-15)
+
+Ogni sezione della scheda deve rispondere alla domanda «a cosa mi serve?» con informazioni
+**utilissime**: cosa cambia se la squadra vince/perde, cosa è in gioco, dove è il rischio o il
+vantaggio. Una sezione solo anagrafica o descrittiva va migliorata con dati derivati da ciò che è
+già raccolto (o dalle fonti verificate nel catalogo) oppure tolta. Esempio applicato lo stesso
+giorno: «Panchina e posta in gioco» è passata da nome allenatore + percentuali a rendimento
+dell'allenatore sulle gare finite, precedenti mirati (contro l'avversaria e contro l'altro
+allenatore), distacchi reali di classifica (zona retrocessione e 4º posto) e posizione virtuale
+in caso di vittoria/sconfitta, tutto con invariante `verify_site` [19] estesa.
+
 ### Contenuti obbligatori pre-partita (12)
 
 | # | Contenuto | Fonte primaria | Fallback / note |

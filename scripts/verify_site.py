@@ -1090,6 +1090,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
     sim19 = st.read("season_sim")
+    from fda.site.analysis import MatchAnalysis as _MA
+    ma19 = _MA(st)
     n_bench = 0
     if not fx19.empty and not lu19.empty and "role" in lu19.columns:
         ko19 = fx19.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
@@ -1151,6 +1153,22 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
             if atteso and 'id="panchina"' not in html:
                 fails.append(f"{pg.name}: scheda pre senza sezione panchina pur avendo i dati")
+            # righe «utili» della card (rendimento, precedenti mirati, distacchi, virtuale):
+            # ricalcolate con le funzioni del progetto e confrontate col testo stampato
+            if 'id="panchina"' in html:
+                for tid, tname, oid, oname in (
+                        (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
+                        (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name))):
+                    bd = ma19.bench_deep(tid, tname, oid, oname, kickoff)
+                    if not bd:
+                        continue
+                    for key in ("tenure_line", "coach_ppg_line", "coach_vs_opp_line",
+                                "coach_vs_coach_line", "table_line", "virtual_line"):
+                        val = bd.get(key)
+                        if val:
+                            checks += 1
+                            if val not in txt:
+                                fails.append(f"{pg.name}: riga panchina «{key}» ({tname}) assente o diversa")
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 import ast
 import re
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, ClassVar
 
 import numpy as np
 import pandas as pd
@@ -775,8 +775,8 @@ class MatchAnalysis:
         else:
             label = "stagione di metà classifica"
         return {"p_title": p_t, "p_top4": p_e, "p_rel": p_r,
-                "p_title_pct": int(round(p_t * 100)), "p_top4_pct": int(round(p_e * 100)),
-                "p_rel_pct": int(round(p_r * 100)),
+                "p_title_pct": round(p_t * 100), "p_top4_pct": round(p_e * 100),
+                "p_rel_pct": round(p_r * 100),
                 "pos_mean": float(r.pos_mean), "exp_points": float(r.exp_points),
                 "label": label, "played": int(r.played)}
 
@@ -789,6 +789,168 @@ class MatchAnalysis:
         if coach is None and stakes is None and age is None:
             return None
         return {"coach": coach, "stakes": stakes, "avg_age": age}
+
+    # Nazionalità degli allenatori → italiano (i codici ISO grezzi non vanno a schermo).
+    _COUNTRY_IT: ClassVar[dict[str, str]] = {"ITA": "Italia", "ESP": "Spagna", "GER": "Germania", "FRA": "Francia",
+                   "ENG": "Inghilterra", "NED": "Paesi Bassi", "POR": "Portogallo",
+                   "BEL": "Belgio", "SCO": "Scozia", "ARG": "Argentina", "BRA": "Brasile",
+                   "CRO": "Croazia", "SRB": "Serbia", "DNK": "Danimarca",
+                   "AUT": "Austria", "SUI": "Svizzera", "URU": "Uruguay", "MEX": "Messico",
+                   "JPN": "Giappone", "KOR": "Corea del Sud", "POL": "Polonia", "SWE": "Svezia",
+                   "NOR": "Norvegia", "TUR": "Turchia", "GRE": "Grecia", "IRL": "Irlanda",
+                   "WAL": "Galles", "NIR": "Irlanda del Nord", "MAR": "Marocco", "ALG": "Algeria",
+                   "SEN": "Senegal", "GHA": "Ghana", "NGA": "Nigeria", "AUS": "Australia"}
+
+    def bench_deep(self, team_id: int, team_name: str, opp_id: int, opp_name: str,
+                   kickoff: datetime, avg_age: Any = None) -> dict[str, Any] | None:
+        """La panchina e la posta in gioco come informazioni *utili*, non anagrafica.
+
+        Tutto derivato dai Parquet già raccolti (nessuna fonte nuova, nessun numero
+        inventato); ogni riga dichiara il proprio campione:
+
+        - **profilo allenatore**: età e nazionalità dalla distinta, frase di permanenza
+          (subentro rilevato dal cambio di id, mai da voci);
+        - **rendimento**: punti/gara sulle partite *finite* con l'allenatore corrente
+          (le future non contano);
+        - **precedenti mirati**: bilancio dell'allenatore corrente contro la squadra
+          avversaria (da 3 gare in su) e contro l'allenatore avversario (da 2 in su);
+        - **posta in gioco di classifica**: distacco reale dalla zona retrocessione
+          (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18) e dal 4º posto
+          (linea Europa minima in tutte e 7 le leghe), dalla classifica FotMob viva;
+        - **cosa succede**: posizione virtuale in caso di vittoria/sconfitta, per punti e
+          differenza reti con le altre partite in sospeso (etichettato «virtuale»);
+        - **probabilità di stagione** da ``season_sim`` (Monte Carlo) come prima.
+        """
+        coach = self.coach(team_id, kickoff)
+        stakes = self.stakes(team_name)
+        age = None if avg_age is None or pd.isna(avg_age) else float(avg_age)
+        out: dict[str, Any] = {"coach": coach, "stakes": stakes, "avg_age": age,
+                               "coach_age": None, "coach_country_it": None,
+                               "coach_ppg_line": None, "coach_vs_opp_line": None,
+                               "coach_vs_coach_line": None, "tenure_line": None,
+                               "table_line": None, "virtual_line": None}
+        # ---- profilo e rendimento dell'allenatore -------------------------------------------
+        if coach is not None and not self.lineup.empty:
+            ko = self.fixtures.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"] \
+                if not self.fixtures.empty else pd.Series(dtype="datetime64[ns, UTC]")
+            ct = self.lineup[(self.lineup.team_id == team_id) & (self.lineup.role == "coach")]
+            if not ct.empty and not ko.empty:
+                ct = ct[ct.match_id.isin(ko.index)].copy()
+                ct["ko"] = pd.to_datetime(ct.match_id.map(ko), utc=True)
+                ct = ct[(ct.ko <= pd.Timestamp(kickoff))].sort_values("ko", kind="stable")
+                if not ct.empty:
+                    last = ct.iloc[-1]
+                    age_v, country_v = last.get("age"), last.get("country")
+                    if age_v is not None and not pd.isna(age_v):
+                        out["coach_age"] = int(age_v)
+                    if isinstance(country_v, str) and country_v.strip():
+                        out["coach_country_it"] = self._COUNTRY_IT.get(country_v.strip().upper(),
+                                                                       country_v.strip().upper())
+                    cur = last.player_id
+                    fin = self.fixtures[(self.fixtures.status == "finished")
+                                        & ((self.fixtures.home_id == team_id)
+                                           | (self.fixtures.away_id == team_id))].copy()
+                    fin["ko"] = pd.to_datetime(fin.utc_kickoff, utc=True)
+                    fin = fin[fin.ko <= pd.Timestamp(kickoff)]
+                    ids = set(ct.loc[ct.player_id == cur, "match_id"])
+                    mine = fin[fin.match_id.isin(ids)]
+                    if not mine.empty:
+                        pts = sum(
+                            3 if ((r.home_id == team_id and r.home_goals > r.away_goals)
+                                  or (r.away_id == team_id and r.away_goals > r.home_goals))
+                            else 1 if r.home_goals == r.away_goals else 0
+                            for r in mine.itertuples(index=False))
+                        ppg = pts / len(mine)
+                        out["coach_ppg_line"] = (
+                            f"{ppg:.1f}".replace(".", ",") +
+                            (" punti/gara su 1 gara finita" if len(mine) == 1
+                             else f" punti/gara su {len(mine)} gare finite"))
+                    # precedenti contro l'avversaria e contro l'allenatore avversario
+                    if pd.notna(cur):
+                        vs = mine[((mine.home_id == opp_id) | (mine.away_id == opp_id))]
+                        if len(vs) >= 3:
+                            w = sum(1 for r in vs.itertuples(index=False)
+                                    if (r.home_id == team_id and r.home_goals > r.away_goals)
+                                    or (r.away_id == team_id and r.away_goals > r.home_goals))
+                            d = sum(1 for r in vs.itertuples(index=False) if r.home_goals == r.away_goals)
+                            l = len(vs) - w - d
+                            out["coach_vs_opp_line"] = (
+                                f"bilancio contro {opp_name}: {w}V {d}N {l}P su {len(vs)} gare")
+                        opp_coach = self.coach(opp_id, kickoff)
+                        if opp_coach and opp_coach.get("id") is not None:
+                            occ = self.lineup[(self.lineup.role == "coach")
+                                              & (self.lineup.player_id == opp_coach["id"])]
+                            hv = mine[mine.match_id.isin(set(occ.match_id))]
+                            if len(hv) >= 2:
+                                w = sum(1 for r in hv.itertuples(index=False)
+                                        if (r.home_id == team_id and r.home_goals > r.away_goals)
+                                        or (r.away_id == team_id and r.away_goals > r.home_goals))
+                                d = sum(1 for r in hv.itertuples(index=False)
+                                        if r.home_goals == r.away_goals)
+                                l = len(hv) - w - d
+                                out["coach_vs_coach_line"] = (
+                                    f"scontro diretto con {opp_coach['name']}: "
+                                    f"{w}V {d}N {l}P su {len(hv)} gare")
+            if coach.get("prev_name"):
+                out["tenure_line"] = (f"panchina nuova: {coach['matches']}ª gara dal subentro "
+                                      f"a {coach['prev_name']}")
+            else:
+                out["tenure_line"] = (f"panchina invariata da {coach['matches']} "
+                                      f"{'gara' if coach['matches'] == 1 else 'gare'} "
+                                      f"nel nostro archivio")
+        # ---- posta in gioco di classifica + posizione virtuale -------------------------------
+        st = self.standing(team_name)
+        if st and not self.fm_standings.empty:
+            code = st.get("league_code")
+            tab = self.fm_standings[self.fm_standings.league_code == code] if code else self.fm_standings
+            tab = tab.drop_duplicates("team_id")
+            n_teams = len(tab)
+            if n_teams >= 4 and st.get("points") is not None and not pd.isna(st["points"]):
+                pts, gd, rank = int(st["points"]), int(st.get("goal_diff") or 0), int(st["rank"])
+                releg_start = n_teams - 2 if n_teams == 20 else n_teams - 1
+                by_rank = tab.set_index("rank")
+                if releg_start in by_rank.index and rank < releg_start:
+                    marg = pts - int(by_rank.loc[releg_start, "points"])
+                    gap_rel = (f"{marg} {'punto' if marg == 1 else 'punti'} sopra la zona "
+                               f"retrocessione" if marg > 0 else "a pari punti con la zona retrocessione")
+                elif releg_start - 1 in by_rank.index:
+                    need = int(by_rank.loc[releg_start - 1, "points"]) - pts
+                    gap_rel = (f"{need} {'punto' if need == 1 else 'punti'} dalla salvezza diretta"
+                               if need > 0 else "in zona salvezza diretta")
+                else:
+                    gap_rel = None
+                if 4 in by_rank.index:
+                    if rank <= 4:
+                        gap_eur = "in zona Europa (4º posto o meglio)"
+                    else:
+                        ge = int(by_rank.loc[4, "points"]) - pts
+                        gap_eur = (f"{ge} {'punto' if ge == 1 else 'punti'} dal 4º posto"
+                                   if ge > 0 else "a pari punti col 4º posto")
+                else:
+                    gap_eur = None
+                parts = [f"{rank}º con {pts} punti"]
+                if gap_rel:
+                    parts.append(gap_rel)
+                if gap_eur:
+                    parts.append(gap_eur)
+                out["table_line"] = " · ".join(parts)
+
+                def _virtual(my_pts: int) -> int:
+                    better = 0
+                    for r in tab.itertuples(index=False):
+                        if int(r.team_id) == int(st.get("team_id", -1)):
+                            continue
+                        op, og = int(r.points), int(r.goal_diff or 0)
+                        if op > my_pts or (op == my_pts and og > gd):
+                            better += 1
+                    return better + 1
+
+                pw, pl = _virtual(pts + 3), _virtual(pts)
+                out["virtual_line"] = (f"con una vittoria {pw}º · con una sconfitta {pl}º "
+                                       f"(classifica virtuale, altre gare in sospeso)")
+        if all(out[k] is None for k in ("coach", "stakes", "avg_age", "table_line", "virtual_line")):
+            return None
+        return out
 
     # ---- notizie per partita (docs/21, P1-5) -------------------------------------------------
     def team_news(self, team_id: int, team_name: str, kickoff: datetime,
@@ -2208,10 +2370,12 @@ class MatchAnalysis:
             "away_key_deep": self.key_players_deep(away_id) if status != "finished" else None,
             "home_absences": self.absences_weight(match_id, home_id) if status != "finished" else None,
             "away_absences": self.absences_weight(match_id, away_id) if status != "finished" else None,
-            "home_bench": self.bench_side(home_id, f["home_name"],
-                                          _val(info, "home_avg_starter_age")) if status != "finished" else None,
-            "away_bench": self.bench_side(away_id, f["away_name"],
-                                          _val(info, "away_avg_starter_age")) if status != "finished" else None,
+            "home_bench": self.bench_deep(home_id, f["home_name"], away_id, f["away_name"],
+                                          kickoff, _val(info, "home_avg_starter_age"))
+                          if status != "finished" else None,
+            "away_bench": self.bench_deep(away_id, f["away_name"], home_id, f["home_name"],
+                                          kickoff, _val(info, "away_avg_starter_age"))
+                          if status != "finished" else None,
             "home_news": self.team_news(home_id, f["home_name"], kickoff) if status != "finished" else [],
             "away_news": self.team_news(away_id, f["away_name"], kickoff) if status != "finished" else [],
             "referee_profile": self.referee_profile(match_id),
