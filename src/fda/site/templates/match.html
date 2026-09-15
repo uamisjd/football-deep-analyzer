@@ -539,7 +539,7 @@
       <tr>
         <th aria-label="Gol {{ c.home_name }} {{ row[0].i }}">{{ row[0].i }}</th>
         {% for cell in row %}
-        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }});font-variant-numeric:tabular-nums" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) }}%">{{ (cell.p*100)|dec(1) }}</td>
+        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }});font-variant-numeric:tabular-nums" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) if cell.p*100 >= 0.05 else 'meno di 0,1' }}%{% if cell.p*100 < 0.05 %} (così raro che su 100 partite non ne riempie una){% endif %}">{% if cell.p*100 < 0.05 %}<1{% else %}{{ (cell.p*100)|dec(1) }}{% endif %}</td>
         {% endfor %}
       </tr>
       {% endfor %}

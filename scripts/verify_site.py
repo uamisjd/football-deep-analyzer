@@ -321,15 +321,23 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             continue
         r = preds.loc[mid]
         m = score_matrix(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
-        cells = re.findall(r'<td[^>]*title="(\d)-(\d) · (\d+,\d+)%">(\d+,\d)</td>', html)
+        cells = re.findall(r'<td[^>]*title="(\d)-(\d) · (meno di 0,1|\d+,\d+)%[^"]*">(<1|\d+,\d)</td>', html)
         if len(cells) != 36:
             fails.append(f"{pg.name}: celle matrice {len(cells)} (attese 36)")
             continue
         n_matrix += 1
-        checks += 1
+        for i, j, _title_p, cell_p in cells:
+            checks += 1
+            true_p = float(m["cells"][int(i)][int(j)]["p"]) * 100
+            if cell_p == "<1":
+                if true_p >= 0.05:
+                    fails.append(f"{pg.name}: cella {i}-{j} mostra <1 ma vale {true_p:.2f}/100")
+            else:
+                if true_p < 0.05:
+                    fails.append(f"{pg.name}: cella {i}-{j} mostra {cell_p} ma vale {true_p:.2f}/100 (<0,05)")
         worst, tot = 0.0, 0.0
         for i, j, _title_p, cell_p in cells:
-            rendered = float(cell_p.replace(",", "."))
+            rendered = 0.0 if cell_p == "<1" else float(cell_p.replace(",", "."))
             worst = max(worst, abs(rendered - round(float(m["cells"][int(i)][int(j)]["p"]) * 100, 1)))
             tot += rendered
         tail_m = re.search(r"Almeno una delle due squadre segna 6\+ gol.*?: (\d+,\d) partite su 100", html)
