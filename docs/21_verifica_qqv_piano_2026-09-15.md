@@ -570,3 +570,15 @@ reale → ``mercati_monitor.parquet``; build + ``verify_site`` **0 problemi · 2
 controlli**; ruff pulito sul nuovo (3 RUF046 corretti). **P3 completo (P3-a + P3-b).**
 Resta: verifica post-merge del primo daily di Actions (righe transfers, tabella news,
 ``mercati_monitor`` aggiornato).
+
+**Consuntivo post-merge (run daily 35031258981, 2026-09-15 22:42 UTC).** PR #34 fusa
+in ``main`` (``bd8a4d5``); il trigger push ha girato il primo daily col nuovo codice:
+success + deploy Pages. Sul sito pubblicato: ``mercati_monitor`` **9 righe** e
+``xi_league`` **7 righe** presenti tra le tabelle; il verdetto ricalcolato da Actions è
+identico al locale (0/9 «strutturale»; cs_h fuori solo nella prima metà, over25 solo
+nella seconda, 1 lega su 7 ciascuno). Notizie e trasferimenti: fonti a registro OK
+(news 139 richieste, transfers 263) ma **zero righe utilizzabili** → tabelle assenti e
+card buie come da dark launch onesto; ESPN dai runner risponde 403 su standings e news
+(lato fonte). I log testuali di Actions non sono scaricabili dal sandbox (blob storage
+irraggiungibile): i conteggi esatti («transfers: N righe») restano nell'artifact
+``run-log`` del run.
