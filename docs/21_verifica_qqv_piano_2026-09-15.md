@@ -6,8 +6,14 @@
 > sulle squadre? anche quelle informazioni interne importanti (dichiarazioni, crisi, problemi in
 > società)? o consigliami tu altre cose».
 >
-> **Stato:** verifica conclusa; due fix applicati nello stesso turno (Q1, Q6-parte); il resto è un
-> piano priorizzato (§4) con decisioni aperte per l'utente (§5). Ogni numero qui è misurato in
+> **Stato:** verifica conclusa; fix Q1 e Q6 applicati; **nella stessa sessione l'utente ha scelto
+> «tutti in fila P0→P1» e i blocchi P0-1, P1-4 e P1-5 sono stati implementati, testati e pushati**
+> (commit `8c81684`: card «Panchina e posta in gioco», riposo con le coppe, collettore notizie +
+> card «Ultime dalle società», invarianti verify_site [19] e [20], suite 212 passed, verify_site
+> 0 problemi · 23.940 controlli). Resta **DA VERIFICARE IN ACTIONS** al primo run daily la
+> raggiungibilità di Google News RSS / calendario coppe (dal sandbox non è misurabile, regola B6);
+> la card notizie degrada a segnaposto onesto se la fonte non risponde. Il piano §4 resta valido
+> per i blocchi P2/P3 non ancora attuati. Ogni numero qui è misurato in
 > questa sessione sul checkout locale (dati del run `main` 2026-09-15 16:33 UTC) o sul sito
 > rigenerato; ciò che non è misurabile dal sandbox è marcato **DA VERIFICARE IN ACTIONS**.
 
@@ -178,7 +184,7 @@ rende il segnale stabile (paletto B8: prima si dimostra, poi si integra).
 ## 4. Piano di miglioramento priorizzato
 
 **P0 — zero fonti nuove, dati già nei Parquet (≈1 turno).**
-1. **Card «Panchina e posta in gioco»** nelle schede pre: allenatore per squadra (da `lineup`
+1. ✅ **ATTUATO 2026-09-15** — **Card «Panchina e posta in gioco»** nelle schede pre: allenatore per squadra (da `lineup`
    coach); **rilevazione cambio allenatore** dalla storia degli snapshot (prima partita con coach
    nuovo → «Nª gara con X in panchina», segnale di crisi o di svolta); posta in gioco da
    `season_sim` (p_title/p_top4/p_rel + posizione media attesa, frase in italiano); età media
@@ -187,9 +193,9 @@ rende il segnale stabile (paletto B8: prima si dimostra, poi si integra).
 3. *(fatto questo turno)* gerarchia heading footer.
 
 **P1 — 1-2 turni, con verifica in Actions.**
-4. **Calendario coppe** (`cups_calendar_only`) collezionato calendar-only → `rest_days` e
+4. ✅ **ATTUATO 2026-09-15** — **Calendario coppe** (`cups_calendar_only`) collezionato calendar-only → `rest_days` e
    congestione veri («3 giorni di riposo, Champions inclusa»); zero impatto sul modello.
-5. **Collettore news** (Google News RSS per squadra `hl=it&gl=IT` + ESPN news per lega): tabella
+5. ✅ **ATTUATO 2026-09-15 (collaudo rete al primo run daily)** — **Collettore news** (Google News RSS per squadra `hl=it&gl=IT` + ESPN news per lega): tabella
    `news(...)` già disegnata in `02`; dedup per titolo normalizzato; finestra 14 giorni; card
    «Ultime dalle società» con ≤5 titoli per squadra, data e testata, link alla fonte; **solo
    titoli** (niente riassunti clickbait), niente hype «most X»; etichetta [news] e riga in
