@@ -1070,6 +1070,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_ntrain += 1
     print(f"[13-14] template e formattazione anti-falso: {n_tpl} template, {n_ntrain} pagine")
 
+    # 18) etichetta della colonna «impatto» dell'infermeria onesta e senza doppio significato
+    # (docs/21 Q1): «fuori rosa» è SOLO il motivo FotMob «not in squad», mai l'assenza di
+    # statistiche di stagione, che si scrive «senza minuti in stagione · n.d.» con tooltip.
+    n_imp = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "senza minuti in stagione · n.d." in html or "fuori rosa · n.d." in html:
+            n_imp += 1
+            if "fuori rosa · n.d." in html:
+                fails.append(f"{pg.name}: etichetta impatto fuorviante «fuori rosa · n.d.»")
+            if "non ha ancora minuti nelle statistiche di stagione" not in html:
+                fails.append(f"{pg.name}: etichetta «senza minuti in stagione» senza tooltip esplicativo")
+    print(f"[18] etichette impatto infermeria verificate: {n_imp} pagine")
+
     st.close()
     return fails, checks
 
