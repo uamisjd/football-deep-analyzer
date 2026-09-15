@@ -20,6 +20,7 @@ from ..store import Store
 from ..teams import canonical
 from ..config import leagues
 from ..models.predict import wilson_interval
+from ..sources.news import keyword_score
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, it_plural, pct_triple
 
@@ -525,6 +526,9 @@ class MatchAnalysis:
         self.insights_df = store.read("insights")
         self.weather_forecast = store.read("weather_forecast")
         self.backtest = store.read("backtest")
+        self.season_sim = store.read("season_sim")
+        self.cup_fixtures = store.read("cup_fixtures")
+        self.news_df = store.read("news")
 
     # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
     def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -662,7 +666,7 @@ class MatchAnalysis:
         return out
 
     def rest_days(self, team_id: int, kickoff: datetime) -> int | None:
-        fx = self.fixtures
+        fx = self._rest_source()
         if fx.empty:
             return None
         prev = fx[(fx.utc_kickoff < kickoff) & (fx.status == "finished")
@@ -670,6 +674,174 @@ class MatchAnalysis:
         if prev.empty:
             return None
         return int((kickoff - prev.utc_kickoff.max()).total_seconds() // 86400)
+
+    def _rest_source(self) -> pd.DataFrame:
+        """Gare di campionato + coppe europee: il riposo vero conta anche i turni europei.
+
+        Prima (docs/21 Q4) contava solo il campionato: una squadra in campo il martedì
+        di Champions mostrava «6 giorni di riposo» nella scheda del sabato. Le coppe
+        vivono in ``cup_fixtures`` (calendario raccolto da ``collect_cups``); se la
+        tabella non esiste ancora (run precedenti) si degrada al solo campionato.
+        """
+        fx = self.fixtures
+        if fx.empty or self.cup_fixtures.empty:
+            return fx if not fx.empty else (self.cup_fixtures if not self.cup_fixtures.empty else fx)
+        cup = self.cup_fixtures.copy()
+        for col in fx.columns:
+            if col not in cup.columns:
+                cup[col] = pd.NA
+        keep = [c for c in fx.columns] + (["cup_name"] if "cup_name" in cup.columns else [])
+        cup = cup[keep]
+        return pd.concat([fx, cup], ignore_index=True, sort=False)
+
+    def rest_cup(self, team_id: int, kickoff: datetime) -> str | None:
+        """Nome della coppa se l'ultima gara giocata dalla squadra era europea, altrimenti None."""
+        src = self._rest_source()
+        if src.empty or "cup_name" not in src.columns:
+            return None
+        prev = src[(src.utc_kickoff < kickoff) & (src.status == "finished")
+                   & ((src.home_id == team_id) | (src.away_id == team_id))]
+        if prev.empty:
+            return None
+        last = prev.loc[prev.utc_kickoff.idxmax()]
+        name = last["cup_name"]
+        return None if pd.isna(name) or not str(name) else str(name)
+
+    # ---- panchina e posta in gioco (docs/21, P0-1) ------------------------------------------
+    def coach(self, team_id: int, kickoff: datetime | None = None) -> dict[str, Any] | None:
+        """Allenatore in panchina e da quanto, dagli snapshot FotMob già raccolti.
+
+        Il coach arriva dalla distinta (``role="coach"``): non serve nessuna fonte nuova.
+        Il **cambio di panchina** si rileva dalla storia: se negli snapshot raccolti la
+        squadra ha avuto due id allenatore diversi, quello corrente è subentrato e
+        ``matches`` conta le gare da calendario giocate/disputande da allora fino a
+        ``kickoff``. ``prev_name`` è il nome di chi è stato sostituito. Nessun dato
+        inventato: se la squadra non ha righe coach, si ritorna ``None`` e la scheda
+        mostra un segnaposto onesto.
+        """
+        if self.lineup.empty or self.fixtures.empty:
+            return None
+        co = self.lineup[(self.lineup.team_id == team_id) & (self.lineup.role == "coach")]
+        if co.empty:
+            return None
+        ko = self.fixtures.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
+        co = co[co.match_id.isin(ko.index)].copy()
+        if co.empty:
+            return None
+        co["ko"] = pd.to_datetime(co.match_id.map(ko), utc=True)
+        co = co.sort_values("ko", kind="stable")
+        if kickoff is not None:
+            co = co[co.ko <= pd.Timestamp(kickoff)]
+            if co.empty:
+                return None
+        last = co.iloc[-1]
+        cur_id = last.player_id
+        if pd.isna(cur_id):
+            return {"id": None, "name": str(last.player_name), "matches": 1,
+                    "prev_name": None, "first_seen": last.ko}
+        streak, prev_name = 0, None
+        for pid, name in zip(co.player_id.iloc[::-1], co.player_name.iloc[::-1]):
+            if pid == cur_id:
+                streak += 1
+            else:
+                prev_name = str(name)
+                break
+        return {"id": int(cur_id), "name": str(last.player_name), "matches": int(streak),
+                "prev_name": prev_name, "first_seen": co[co.player_id == cur_id].ko.min()}
+
+    def stakes(self, team_name: str) -> dict[str, Any] | None:
+        """Cosa vale la stagione della squadra: Monte Carlo di ``season_sim``.
+
+        Percentuali già arrotondate all'intero (``*_pct``) così scheda e verificatore
+        stampano lo stesso numero con lo stesso ``round`` Python; ``label`` è la lettura
+        narrativa con soglie dichiarate (titolo ≥15%, Europa ≥35%, salvezza ≤35%/≤15%).
+        """
+        if self.season_sim.empty or "team" not in self.season_sim.columns:
+            return None
+        canon = canonical(team_name)
+        rows = self.season_sim[self.season_sim.team.map(canonical) == canon]
+        if rows.empty:
+            return None
+        r = rows.iloc[0]
+        p_t, p_e, p_r = float(r.p_title), float(r.p_top4), float(r.p_rel)
+        if p_t >= 0.15:
+            label = "corsa al titolo"
+        elif p_e >= 0.35:
+            label = "corsa all'Europa"
+        elif p_r >= 0.35:
+            label = "lotta salvezza"
+        elif p_r >= 0.15:
+            label = "zona salvezza non lontana"
+        else:
+            label = "stagione di metà classifica"
+        return {"p_title": p_t, "p_top4": p_e, "p_rel": p_r,
+                "p_title_pct": int(round(p_t * 100)), "p_top4_pct": int(round(p_e * 100)),
+                "p_rel_pct": int(round(p_r * 100)),
+                "pos_mean": float(r.pos_mean), "exp_points": float(r.exp_points),
+                "label": label, "played": int(r.played)}
+
+    def bench_side(self, team_id: int, team_name: str,
+                   avg_age: Any = None) -> dict[str, Any] | None:
+        """Blocco «Panchina e posta in gioco» di una squadra (coach + stakes + età media)."""
+        coach = self.coach(team_id)
+        stakes = self.stakes(team_name)
+        age = None if avg_age is None or pd.isna(avg_age) else float(avg_age)
+        if coach is None and stakes is None and age is None:
+            return None
+        return {"coach": coach, "stakes": stakes, "avg_age": age}
+
+    # ---- notizie per partita (docs/21, P1-5) -------------------------------------------------
+    def team_news(self, team_id: int, team_name: str, kickoff: datetime,
+                  days: int = 12, limit: int = 4) -> list[dict[str, Any]]:
+        """Notizie recenti e specifiche della squadra, dalla tabella ``news``.
+
+        Specifiche, non generiche: prima le notizie che citano entità proprie della
+        squadra (allenatore, indisponibili della partita, parole chiave di crisi o
+        vigilia), poi le altre in ordine di data; mai notizie di altre squadre. Titolo,
+        testata, data e link vengono pubblicati come raccolti, senza riscritture.
+        """
+        if self.news_df.empty:
+            return []
+        cut = pd.Timestamp(kickoff) - pd.Timedelta(days=days)
+        df = self.news_df[(self.news_df.team_id == team_id)
+                          & (pd.to_datetime(self.news_df.published_at, utc=True) >= cut)]
+        if df.empty:
+            return []
+        coach = self.coach(team_id)
+        own = {str(coach["name"]).lower()} if coach else set()
+        unav = {u["name"].lower() for u in self.unavailable_for_news(team_name)}
+        own |= {team_name.lower()}
+
+        def score(row: dict[str, Any]) -> tuple[int, str]:
+            text = f"{row.get('title', '')} {row.get('description', '')}".lower()
+            s = keyword_score(text) * 2
+            if any(n in text for n in own if n):
+                s += 2
+            if any(n.split()[-1] in text for n in unav if n):
+                s += 1
+            return (-s, str(row.get("published_at")))
+
+        rows = [r._asdict() for r in df.itertuples(index=False)]
+        rows.sort(key=score, reverse=False)
+        out = []
+        for r in rows[:limit]:
+            out.append({"title": r.get("title"), "source": r.get("source"),
+                        "url": r.get("url"), "description": r.get("description"),
+                        "published_at": pd.to_datetime(r.get("published_at"), utc=True)})
+        return out
+
+    def unavailable_for_news(self, team_name: str) -> list[str]:
+        """Nomi degli indisponibili più recenti della squadra (per selezionare le notizie)."""
+        if self.lineup.empty:
+            return []
+        canon = canonical(team_name)
+        ids = self.fixtures[self.fixtures.home_name.map(canonical) == canon].home_id
+        ids = set(ids) | set(self.fixtures[self.fixtures.away_name.map(canonical) == canon].away_id)
+        if not ids:
+            return []
+        un = self.lineup[(self.lineup.team_id.isin(ids)) & (self.lineup.role == "unavailable")]
+        return sorted(un.player_name.dropna().unique().tolist())[:12]
+
 
     @staticmethod
     def form_summary(rows: list[dict[str, Any]]) -> dict[str, Any]:
@@ -1949,7 +2121,9 @@ class MatchAnalysis:
                 s.append(f"Assenze {name}: {len(un)}{extra} — {names}{'…' if len(un) > 4 else ''}.")
             rest = ctx.get(f"{side}_rest")
             if rest is not None and rest <= 3:
-                s.append(f"{name} gioca dopo soli {rest} giorni di riposo.")
+                cup = ctx.get(f"{side}_rest_cup")
+                tail = f", con un turno di {cup} in mezzo" if cup else ""
+                s.append(f"{name} gioca dopo soli {rest} giorni di riposo{tail}.")
         ref = ctx.get("referee")
         if ref and ref.get("name"):
             y = ref.get("yellows")
@@ -2015,6 +2189,7 @@ class MatchAnalysis:
             "home_goals": _goals(info, "home_goals", f), "away_goals": _goals(info, "away_goals", f),
             "home_form": self.form(home_id, kickoff), "away_form": self.form(away_id, kickoff),
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
+            "home_rest_cup": self.rest_cup(home_id, kickoff), "away_rest_cup": self.rest_cup(away_id, kickoff),
             "home_xg": self.season_xg(f["home_name"], home_id), "away_xg": self.season_xg(f["away_name"], away_id),
             "home_standing": self.standing(f["home_name"]), "away_standing": self.standing(f["away_name"]),
             "season_compare": self.season_compare(self.standing(f["home_name"]), self.standing(f["away_name"])),
@@ -2033,6 +2208,12 @@ class MatchAnalysis:
             "away_key_deep": self.key_players_deep(away_id) if status != "finished" else None,
             "home_absences": self.absences_weight(match_id, home_id) if status != "finished" else None,
             "away_absences": self.absences_weight(match_id, away_id) if status != "finished" else None,
+            "home_bench": self.bench_side(home_id, f["home_name"],
+                                          _val(info, "home_avg_starter_age")) if status != "finished" else None,
+            "away_bench": self.bench_side(away_id, f["away_name"],
+                                          _val(info, "away_avg_starter_age")) if status != "finished" else None,
+            "home_news": self.team_news(home_id, f["home_name"], kickoff) if status != "finished" else [],
+            "away_news": self.team_news(away_id, f["away_name"], kickoff) if status != "finished" else [],
             "referee_profile": self.referee_profile(match_id),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),

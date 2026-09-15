@@ -1084,6 +1084,120 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: etichetta «senza minuti in stagione» senza tooltip esplicativo")
     print(f"[18] etichette impatto infermeria verificate: {n_imp} pagine")
 
+    # 19) panchina e posta in gioco (docs/21 P0-1): coach, subentro e percentuali Monte Carlo
+    # ricalcolati dai Parquet; la sezione deve esserci se e solo se i dati ci sono.
+    from fda.teams import canonical as _canon
+    fx19 = st.read("fixtures")
+    lu19 = st.read("lineup")
+    sim19 = st.read("season_sim")
+    n_bench = 0
+    if not fx19.empty and not lu19.empty and "role" in lu19.columns:
+        ko19 = fx19.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
+        co19 = lu19[(lu19.role == "coach") & (lu19.match_id.isin(ko19.index))].copy()
+        if not co19.empty:
+            co19["ko"] = pd.to_datetime(co19.match_id.map(ko19), utc=True)
+            co19 = co19.sort_values("ko", kind="stable")
+        sim19map = {}
+        if not sim19.empty:
+            for r in sim19.itertuples(index=False):
+                sim19map.setdefault(_canon(r.team), r)
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Analisi pre-partita" not in html:
+                continue
+            mid = int(pg.stem)
+            if mid not in ko19.index:
+                continue
+            fr = fx19[fx19.match_id == mid].iloc[0]
+            kickoff = pd.Timestamp(fr.utc_kickoff)
+            txt = html_unescape(html)   # le etichette con apostrofo arrivano escaped (&#39;)
+            atteso = False
+            for tid, tname in ((int(fr.home_id), fr.home_name), (int(fr.away_id), fr.away_name)):
+                ct = co19[(co19.team_id == tid) & (co19.ko <= kickoff)] if not co19.empty else co19
+                coach = None
+                if not ct.empty:
+                    last = ct.iloc[-1]
+                    cur = last.player_id
+                    streak, prev = 0, None
+                    for pid, nm in zip(ct.player_id.iloc[::-1], ct.player_name.iloc[::-1]):
+                        if pid == cur:
+                            streak += 1
+                        else:
+                            prev = nm
+                            break
+                    coach = (str(last.player_name), prev, streak)
+                sr = sim19map.get(_canon(str(tname)))
+                if coach or sr is not None:
+                    atteso = True
+                if coach and 'id="panchina"' in html:
+                    checks += 1
+                    if coach[0] not in txt:
+                        fails.append(f"{pg.name}: panchina senza il coach {coach[0]} dei Parquet")
+                    if coach[1] is not None:
+                        if "panchina nuova" not in txt or str(coach[1]) not in txt:
+                            fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
+                if sr is not None and 'id="panchina"' in html:
+                    checks += 1
+                    pt, pe, pr = (int(round(float(sr.p_title) * 100)), int(round(float(sr.p_top4) * 100)),
+                                  int(round(float(sr.p_rel) * 100)))
+                    if f"titolo {pt}% · Europa {pe}% · salvezza {pr}%" not in txt:
+                        fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
+                    lab = ("corsa al titolo" if float(sr.p_title) >= 0.15 else
+                           "corsa all'Europa" if float(sr.p_top4) >= 0.35 else
+                           "lotta salvezza" if float(sr.p_rel) >= 0.35 else
+                           "zona salvezza non lontana" if float(sr.p_rel) >= 0.15 else
+                           "stagione di metà classifica")
+                    if lab not in txt:
+                        fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
+            if atteso and 'id="panchina"' not in html:
+                fails.append(f"{pg.name}: scheda pre senza sezione panchina pur avendo i dati")
+            n_bench += 1
+    print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
+
+    # 20) notizie (docs/21 P1-5): ogni titolo/link stampato esiste in news.parquet per una
+    # delle due squadre della pagina, dentro la finestra 12 giorni, max 4 per squadra.
+    news20 = st.read("news")
+    n_news = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="notizie"' not in html:
+            if not news20.empty and "Analisi pre-partita" in html:
+                ids20 = {int(r) for r in news20.team_id.unique()} if not news20.empty else set()
+                fr20 = fx19[fx19.match_id == int(pg.stem)] if not fx19.empty else fx19
+                if not fr20.empty:
+                    fr20 = fr20.iloc[0]
+                    if {int(fr20.home_id), int(fr20.away_id)} & ids20:
+                        fails.append(f"{pg.name}: notizie disponibili ma sezione assente")
+            continue
+        n_news += 1
+        if news20.empty:
+            fails.append(f"{pg.name}: sezione notizie senza tabella news")
+            continue
+        mid = int(pg.stem)
+        fr = fx19[fx19.match_id == mid].iloc[0] if not fx19.empty else None
+        kickoff = pd.Timestamp(fr.utc_kickoff) if fr is not None else pd.Timestamp.now(tz="UTC")
+        conti: dict[int, int] = {}
+        for url, title in re.findall(r'<a href="(https?://[^"]+)" rel="noopener[^"]*">([^<]+)</a>', html):
+            riga = news20[news20.url == url]
+            if riga.empty:
+                fails.append(f"{pg.name}: notizia senza riscontro in news.parquet ({title[:40]})")
+                continue
+            r = riga.iloc[0]
+            checks += 1
+            if html_unescape(r.title) != html_unescape(title):
+                fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
+            tid = int(r.team_id)
+            if fr is not None and tid not in {int(fr.home_id), int(fr.away_id)}:
+                fails.append(f"{pg.name}: notizia di squadra estranea alla partita")
+            pa = pd.to_datetime(r.published_at, utc=True)
+            if not pd.isna(pa) and not (kickoff - pd.Timedelta(days=12) <= pa <= kickoff + pd.Timedelta(days=1)):
+                fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
+            conti[tid] = conti.get(tid, 0) + 1
+        for tid, n in conti.items():
+            if n > 4:
+                fails.append(f"{pg.name}: {n} notizie per la squadra {tid} (max 4)")
+    print(f"[20] pagine con notizie riconciliate: {n_news}")
+
     st.close()
     return fails, checks
 

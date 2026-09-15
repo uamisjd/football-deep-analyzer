@@ -54,3 +54,10 @@ oddsapi:
   api_key_env: "ODDS_API_KEY"        # secret di GitHub Actions, mai nel codice
   monthly_credits: 500
   snapshots_per_day: 2
+
+news:
+  # Google News RSS per squadra + ESPN news di lega (docs/21, P1-5).
+  # Cache 12 h: con 5 run/giorno solo ~2 fetch reali per squadra al giorno.
+  rate_limit_s: 1.0
+  max_requests_per_run: 200
+  cache_ttl_h: 12

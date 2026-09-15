@@ -24,6 +24,10 @@ log = logging.getLogger(__name__)
 # Chiavi primarie per l'upsert. Una tabella senza chiave viene semplicemente accodata.
 TABLE_KEYS: dict[str, list[str]] = {
     "fixtures": ["match_id"],
+    # calendario coppe europee (solo calendario: riposo/congestione, docs/21 P1-4)
+    "cup_fixtures": ["match_id"],
+    # notizie per squadra (Google News RSS / ESPN): chiave con url = idempotenza dei run
+    "news": ["team_id", "published_at", "url"],
     "match_info": ["match_id"],
     "shots": ["match_id", "shot_id"],
     "team_stats": ["match_id", "team_id", "period", "key"],

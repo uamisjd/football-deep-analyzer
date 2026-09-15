@@ -265,7 +265,7 @@
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pressing · riposo</div>
         <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">PPDA {% if xg.ppda %}{{ xg.ppda|dec(1) }}{% else %}n.d.{% endif %} <span class="mut small" style="font:600 10px var(--font-body);text-transform:none;letter-spacing:0">{% if xg.ppda %}{% if xg.ppda < 10 %}alto{% elif xg.ppda < 13 %}medio-alto{% elif xg.ppda < 16 %}medio{% else %}basso{% endif %}{% endif %}</span></div>
-        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
+        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_cup'] %} · coppe incluse{% elif c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
       </div>
     </div>
     {% endif %}
@@ -318,6 +318,29 @@
       {% endfor %}
     </table>
     <p class="small mut">{{ c.season_compare.note }}</p>
+  </div>
+  {% endif %}
+  {% if c.home_bench or c.away_bench %}
+  <div class="card" id="panchina">
+    <h2>Panchina e posta in gioco</h2>
+    <table>
+      <tr><th></th><th>{{ c.home_name }}</th><th>{{ c.away_name }}</th></tr>
+      <tr><th>Allenatore</th>{% for side in ('home','away') %}{% set b = c[side ~ '_bench'] %}<td>{% if b and b.coach %}<b>{{ b.coach.name }}</b>{% if b.coach.prev_name %}<br><span class="small warn" title="cambio di panchina rilevato dalla storia delle distinte raccolte">panchina nuova: {{ b.coach.matches }}ª gara dal subentro a {{ b.coach.prev_name }}</span>{% else %}<br><span class="small mut">panchina invariata da {{ b.coach.matches }} {{ 'gara' if b.coach.matches == 1 else 'gare' }} nel nostro archivio</span>{% endif %}{% else %}<span class="mut small">non in distinta pubblicata</span>{% endif %}</td>{% endfor %}</tr>
+      <tr><th>Posta in gioco</th>{% for side in ('home','away') %}{% set b = c[side ~ '_bench'] %}<td>{% if b and b.stakes %}<b>{{ b.stakes.label }}</b><br><span class="small">titolo {{ b.stakes.p_title_pct }}% · Europa {{ b.stakes.p_top4_pct }}% · salvezza {{ b.stakes.p_rel_pct }}%</span><br><span class="small mut">posizione attesa {{ b.stakes.pos_mean|dec(1) }} · punti attesi {{ b.stakes.exp_points|dec(1) }}</span>{% else %}<span class="mut small">simulazione non disponibile</span>{% endif %}</td>{% endfor %}</tr>
+      <tr><th>Età media titolari</th>{% for side in ('home','away') %}{% set b = c[side ~ '_bench'] %}<td>{% if b and b.avg_age is not none %}{{ b.avg_age|dec(1) }} anni{% else %}<span class="mut small">n.d.</span>{% endif %}</td>{% endfor %}</tr>
+    </table>
+    <p class="small mut">Allenatore dalla distinta pubblicata (FotMob); il subentro si rileva dal cambio di id allenatore nella storia raccolta, mai da voci. Posta in gioco: 10.000 simulazioni Monte Carlo del resto del campionato (pagina Proiezioni), probabilità della stagione, non della partita.</p>
+  </div>
+  {% endif %}
+  {% if (c.home_news or c.away_news) and c.status != 'finished' %}
+  <div class="card" id="notizie">
+    <h2>Ultime dalle società</h2>
+    {% for side in ('home','away') %}{% set items = c[side ~ '_news'] %}
+    <p style="margin:0 0 6px"><b>{{ c[side ~ '_name'] }}</b>{% if items %} <span class="small mut">· {{ items|length }} {{ 'notizia verificata' if items|length == 1 else 'notizie verificate' }} negli ultimi 12 giorni, la più recente {{ items[0].published_at|it_dt }}</span>{% endif %}</p>
+    {% if items %}<ul class="news-list">{% for n in items %}<li><span class="mut small">{{ n.published_at|it_dt }} · {{ n.source }}</span><br><a href="{{ n.url }}" rel="noopener noreferrer nofollow">{{ n.title }}</a>{% if n.description %}<br><span class="small mut">{{ n.description }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% else %}<p class="small mut">Nessuna notizia verificata sulla società negli ultimi 12 giorni.</p>{% endif %}
+    {% endfor %}
+    <p class="small mut">Titoli e brani come pubblicati dalle testate (Google News RSS e ESPN), selezionati per squadra: prima le notizie che citano allenatore, indisponibili o parole chiave di società (crisi, esonero, vigilia, mercato). Niente è riscritto: il link porta alla fonte.</p>
   </div>
   {% endif %}
   <div class="card">
