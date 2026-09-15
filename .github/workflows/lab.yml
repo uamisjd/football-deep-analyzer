@@ -82,6 +82,21 @@ jobs:
               2>&1 | tee lab.log | tail -140
           fi
 
+      - name: ξ per lega (walk-forward sulla griglia, ΔRPS appaiato)
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: |
+          set -euo pipefail
+          HIST=data/processed/history.parquet
+          if [ ! -f "$HIST" ]; then
+            echo "history.parquet assente: esperimento ξ saltato (nessun numero inventato)."
+            exit 0
+          fi
+          STEP="${{ github.event.inputs.step_days || '90' }}"
+          MIN="${{ github.event.inputs.min_train || '800' }}"
+          fda lab-xi --history "$HIST" --step-days "$STEP" --min-train "$MIN" --save \
+            2>&1 | tee lab-xi.log | tail -60
+
       - name: Salva log e riepilogo come artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -89,24 +104,26 @@ jobs:
           name: lab-${{ github.run_number }}
           path: |
             lab.log
+            lab-xi.log
             data/processed/model_lab.parquet
+            data/processed/xi_league.parquet
           retention-days: 30
           if-no-files-found: ignore
 
       - name: Commit del riepilogo del laboratorio
         run: |
-          if [ ! -f data/processed/model_lab.parquet ]; then
+          if [ ! -f data/processed/model_lab.parquet ] && [ ! -f data/processed/xi_league.parquet ]; then
             echo "nessun riepilogo da pubblicare"
             exit 0
           fi
           git config user.name "fda-bot"
           git config user.email "fda-bot@users.noreply.github.com"
-          git add data/processed/model_lab.parquet
+          git add --ignore-missing data/processed/model_lab.parquet data/processed/xi_league.parquet
           if git diff --cached --quiet; then
             echo "riepilogo invariato"
             exit 0
           fi
-          git commit -m "lab: confronto modelli $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
+          git commit -m "lab: confronto modelli e ξ per lega $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
           pushed=false
           for attempt in 1 2 3; do
             git fetch origin "${{ github.ref_name }}"

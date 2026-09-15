@@ -32,7 +32,7 @@ import pandas as pd
 
 from .calibration import SCALE_BOUNDS, Calibration
 from .dc_grid import GRID_SIZE, grid_markets_many, tau_grid, tau_grid_many
-from .predict import ENSEMBLE_MODE, DixonColesModel, EloModel, _clamp_lambda, ensemble
+from .predict import ENSEMBLE_MODE, SHRINK_PRIOR, DixonColesModel, EloModel, _clamp_lambda, ensemble
 
 log = logging.getLogger("fda.lab")
 
@@ -630,3 +630,68 @@ def convex_weights(rows: pd.DataFrame, members: list[str], draws: int = 0) -> di
     w = np.abs(res.x)
     w = w / w.sum()
     return {m: float(round(v, 4)) for m, v in zip(members, w)}
+
+
+# ---- ξ per lega (docs/21 P3-a) ---------------------------------------------------------------
+#: griglia del decadimento temporale: il valore di produzione più estremi pubblicati in
+#: letteratura (Dixon & Coles 1997 ≈ 0,0009/giorno; il progetto usa 0,0018 dal 2026-08)
+XI_GRID: tuple[float, ...] = (0.0010, 0.0014, 0.0018, 0.0024, 0.0030)
+XI_GLOBAL: float = 0.0018
+#: gare fuori campione minime perché una lega possa adottare il proprio ξ
+MIN_XI_LEAGUE_N: int = 300
+
+
+def xi_league_experiment(hist: pd.DataFrame, grid: tuple[float, ...] = XI_GRID,
+                         xi_global: float = XI_GLOBAL, step_days: int = 90,
+                         min_train: int = 800, w_dc: float = 0.7,
+                         shrink_prior: float = SHRINK_PRIOR,
+                         draws: int = 2000) -> pd.DataFrame:
+    """Stima ξ per lega con lo stesso protocollo walk-forward del laboratorio.
+
+    Per ogni lega e ogni ξ della griglia cammina sullo storico (finestre di
+    ``step_days``, fit solo sul passato) e calcola l'RPS per gara; il ξ migliore è
+    confrontato con quello globale **sulle stesse identiche gare** (indice
+    data/squadre), con bootstrap appaiato sul ΔRPS. Regola di adozione del piano:
+    si cambia ξ a una lega solo se l'IC 95% del Δ è interamente sotto zero e le gare
+    valutate sono almeno ``MIN_XI_LEAGUE_N``; altrimenti la lega tiene il ξ globale.
+    """
+    from .backtest import chronological_backtest
+
+    def _rps_series(bt: pd.DataFrame) -> pd.Series:
+        probs = bt[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+        rows = _rps_rows(probs, bt["outcome"].to_numpy(dtype=int))
+        idx = pd.MultiIndex.from_arrays([bt["date"], bt["home"], bt["away"]])
+        return pd.Series(rows, index=idx)
+
+    out: list[dict[str, Any]] = []
+    for lg in sorted(set(map(str, hist.league_key))):
+        per: dict[float, pd.Series] = {}
+        for xi in grid:
+            bt = chronological_backtest(hist, step_days=step_days, min_train=min_train,
+                                        xi=xi, w_dc=w_dc, shrink_prior=shrink_prior,
+                                        leagues=[lg])
+            if not bt.empty:
+                per[xi] = _rps_series(bt)
+        base = per.get(xi_global)
+        if base is None or base.empty:
+            continue
+        best = {"xi": xi_global, "delta": 0.0, "lo": 0.0, "hi": 0.0}
+        for xi, s in per.items():
+            if xi == xi_global:
+                continue
+            common = s.index.intersection(base.index)
+            if len(common) < 20:
+                continue
+            d = (s.loc[common] - base.loc[common]).to_numpy(dtype=float)
+            mean = float(np.mean(d))
+            if mean < best["delta"]:
+                lo, hi = paired_bootstrap(d, draws=draws)
+                best = {"xi": xi, "delta": mean, "lo": lo, "hi": hi}
+        n = len(base)
+        adopt = bool(best["xi"] != xi_global and best["hi"] < 0.0 and n >= MIN_XI_LEAGUE_N)
+        out.append({"league_key": lg, "n": n, "xi_global": xi_global, "xi_best": best["xi"],
+                    "rps_global": float(base.mean()),
+                    "rps_best": float(base.mean() + best["delta"]),
+                    "delta": best["delta"], "ci_lo": best["lo"], "ci_hi": best["hi"],
+                    "adopt": adopt})
+    return pd.DataFrame(out)

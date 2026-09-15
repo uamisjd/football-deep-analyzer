@@ -14,12 +14,14 @@ import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import penaltyblog as pb
 
+from ..config import PROCESSED_DIR
 from .calibration import Calibration
 from .dc_grid import GRID_SIZE, probability_grid, tau_grid
 
@@ -596,3 +598,26 @@ def outcome_index(hg: int, ag: int) -> int:
 
 def log_loss(p: float) -> float:
     return -math.log(max(p, 1e-12))
+
+
+def xi_for_league(league_key: str, path: Path | None = None,
+                  xi_default: float = 0.0018) -> float:
+    """ξ per lega adottato dal laboratorio (docs/21 P3-a); altrimenti quello globale.
+
+    Legge ``xi_league.parquet`` se esiste (lo scrive ``fda lab-xi``, nel workflow lab):
+    cambia ξ solo per le leghe con ``adopt=True``, cioè IC 95% del ΔRPS interamente
+    negativo e almeno ``lab.MIN_XI_LEAGUE_N`` gare fuori campione. File assente, lega
+    non adottata o valore non positivo → ξ globale: il default resta la scelta prudente.
+    """
+    p = path or (PROCESSED_DIR / "xi_league.parquet")
+    try:
+        df = pd.read_parquet(p)
+    except (FileNotFoundError, OSError):
+        return xi_default
+    if "adopt" not in df.columns or "xi_best" not in df.columns:
+        return xi_default
+    row = df[(df.league_key == league_key) & df.adopt.fillna(False).astype(bool)]
+    if row.empty:
+        return xi_default
+    v = float(row.iloc[0]["xi_best"])
+    return v if v > 0 else xi_default

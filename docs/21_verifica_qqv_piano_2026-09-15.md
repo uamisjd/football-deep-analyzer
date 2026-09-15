@@ -480,3 +480,47 @@ sottolineatura del giorno fuori dal testo).
 `db7aaa3`), `git fetch --unshallow`, merge di `origin/main` (data run 20:48 UTC: dati
 freschi, sito e verify rigirati: **26.933 controlli · 0 problemi**), venv ricreato.
 Suite finale **241 passed** (+1 smoke preview).
+
+
+---
+
+## 13. ξ per lega: esperimento e gate di adozione (P3-a, 2026-09-15 — decimo turno)
+
+**Richiesta utente:** «procedi» → primo blocco del P3 laboratorio. ξ è il decadimento
+temporale di Dixon-Coles (quanto in fretta le gare vecchie smettono di contare: oggi
+0,0018/giorno, unico per tutte le leghe). L'idea del piano: stimarlo lega per lega col
+protocollo walk-forward già esistente, cambiando solo a evidenza solida.
+
+**Cosa è stato costruito.**
+- ``lab.xi_league_experiment``: per lega e per ξ nella griglia (0,0010 / 0,0014 / 0,0018 /
+  0,0024 / 0,0030) cammina sullo storico con le stesse finestre del laboratorio (fit solo
+  sul passato); il ξ migliore è confrontato con quello globale **sulle stesse identiche
+  gare** (appaiate per data+squadre) e il ΔRPS passa dal bootstrap appaiato 95% già usato
+  dal laboratorio (``paired_bootstrap``).
+- Regola di adozione (quella del piano, resa eseguibile): una lega prende il proprio ξ
+  solo se l'IC 95% del Δ è **interamente sotto zero** e le gare fuori campione sono
+  almeno 300 (``MIN_XI_LEAGUE_N``); altrimenti tiene il globale. Il modello globale non
+  viene mai toccato da questo meccanismo.
+- Comando ``fda lab-xi`` (stesse opzioni del laboratorio: ``--step-days``,
+  ``--min-train``, ``--history``, ``--save``) che scrive ``xi_league.parquet``; il
+  workflow ``lab`` (settimanale) ora lo esegue dopo il confronto modelli e committa
+  l'artifact con log negli artefatti di run.
+- Produzione: ``predict.xi_for_league`` legge l'artifact e restituisce il ξ della lega
+  **solo se ``adopt=True``** (file assente, lega non adottata o valore non positivo →
+  globale); il ciclo di ``fda predict`` lo usa e stampa nel log quale ξ ha applicato.
+
+**Risultato (due configurazioni, stessi dati).**
+- protocollo lab (finestre 90 g, min 800): ENG1 Δ −0,0001 IC [−0,0004; +0,0002], ESP1
+  −0,0001 [−0,0008; +0,0006], NED1 −0,0012 [−0,0025; +0,0002], ITA1 nessun candidato
+  migliore del globale; FRA/GER/POR sotto le 300 gare → **0 leghe su 7 adottano**.
+- robustezza (finestre 60 g, min 600 → 335-490 gare per lega): ancora **0 su 7**, tutti
+  gli IC a cavallo di zero (il più vicino, NED1: −0,0006 [−0,0015; +0,0003]).
+L'esito «nessun cambiamento» *è* il risultato: con lo storico attuale (3 stagioni) il
+decadimento per lega non si distingue da quello globale; il laboratorio settimanale
+ririfà la misura man mano che lo storico cresce, e l'artifact commitato terrà memoria
+dell'evidenza (oggi: tutte ``adopt=False``).
+
+**Verifica:** suite **244 passed** (+3: struttura e regola dell'esperimento su storico
+sintetico, soglia delle 300 gare, gate ``xi_for_league`` con adozioni/rotte/assenti);
+ruff pulito sul nuovo (RUF046 su ``int(len())`` corretto). P3-b (monitoraggio mercati
+fuori intervallo) resta in coda.

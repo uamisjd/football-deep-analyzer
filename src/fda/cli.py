@@ -268,11 +268,15 @@ def predict_cmd(
                 continue
             up = pd.DataFrame({"match_id": upcoming.match_id, "league_key": lg.key, "utc_kickoff": upcoming.utc_kickoff,
                                "home": upcoming.home_name.map(canonical), "away": upcoming.away_name.map(canonical)})
-            pred, dc, _ = predict_matches(hist, up, calibration=cal)
+            from .models.predict import xi_for_league
+            xi_lg = xi_for_league(lg.key)
+            pred, dc, _ = predict_matches(hist, up, calibration=cal, xi=xi_lg)
             n = store.upsert("predictions", pred)
             total += n
             console.print(f"{lg.name}: storico {len(hist)} partite → {n} previsioni "
-                          f"(home adv {dc.model.get_params().get('home_advantage', 0):.3f})")
+                          f"(home adv {dc.model.get_params().get('home_advantage', 0):.3f}"
+                          f" · ξ {xi_lg}"
+                          f"{'' if xi_lg == 0.0018 else ' (per lega, laboratorio P3-a)'})")
             for r in pred.head(4).itertuples(index=False):
                 console.print(f"  {r.utc_kickoff:%d/%m %H:%M} {r.home}-{r.away}: {r.p_home:.0%}/{r.p_draw:.0%}/{r.p_away:.0%} "
                               f"λ {r.lambda_home:.2f}-{r.lambda_away:.2f} O2.5 {r.p_over25:.0%}")
@@ -485,6 +489,49 @@ def lab_cmd(
         store.upsert("model_lab", pd.concat([all_rows, by_league], ignore_index=True).to_dict("records"),
                      replace_by="candidate")
         console.print("riepilogo salvato in data/processed/model_lab.parquet")
+    store.close()
+
+
+@app.command("lab-xi")
+def lab_xi_cmd(
+    step_days: int = typer.Option(90, help="Ampiezza della finestra di valutazione, in giorni"),
+    min_train: int = typer.Option(800, help="Partite minime di storico prima di valutare"),
+    history: str = typer.Option("", help="Parquet con lo storico (offline) invece dello store"),
+    save: bool = typer.Option(True, help="Salva in data/processed/xi_league.parquet"),
+) -> None:
+    """ξ per lega: walk-forward sulla griglia, ΔRPS appaiato contro lo ξ globale (docs/21 P3-a)."""
+    import pandas as pd
+
+    from .models import lab
+    from .store import Store
+
+    store = Store()
+    if history:
+        hist = pd.read_parquet(history)
+    else:
+        hist = store.read("history")
+    if hist.empty:
+        console.print("[yellow]storico assente: nessun numero inventato, esperimento saltato[/yellow]")
+        store.close()
+        return
+    df = lab.xi_league_experiment(hist, step_days=step_days, min_train=min_train)
+    if df.empty:
+        console.print("[yellow]nessuna lega valutabile (storico troppo breve?)[/yellow]")
+        store.close()
+        return
+    df["delta"] = df["delta"].round(4)
+    df["ci_lo"] = df["ci_lo"].round(4)
+    df["ci_hi"] = df["ci_hi"].round(4)
+    df["rps_global"] = df["rps_global"].round(4)
+    df["rps_best"] = df["rps_best"].round(4)
+    with pd.option_context("display.width", 200, "display.max_columns", 20):
+        console.print(df.to_string(index=False))
+    n_adottate = int(df.adopt.sum())
+    console.print(f"\nleghe che adottano il proprio ξ: {n_adottate} su {len(df)} "
+                  "(regola: IC 95% del ΔRPS interamente negativo e ≥300 gare fuori campione)")
+    if save:
+        store.write("xi_league", df)
+        console.print("salvato data/processed/xi_league.parquet")
     store.close()
 
 

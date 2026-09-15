@@ -48,6 +48,8 @@ TABLE_KEYS: dict[str, list[str]] = {
     "espn_events": ["espn_id"],
     "espn_team_stats": ["espn_event_id", "team_id", "key"],
     "season_sim": ["league_key", "team"],
+    # ξ per lega adottato dal laboratorio (docs/21 P3-a): una riga per lega
+    "xi_league": ["league_key"],
     "espn_standings": ["league_code", "team_id"],
     "fotmob_standings": ["league_code", "team_id"],
     "weather_forecast": ["match_id"],
