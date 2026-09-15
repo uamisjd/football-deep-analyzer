@@ -1365,6 +1365,43 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: riga conversione presente ma nessuna grande occasione")
     print(f"[25] conversione grandi occasioni verificata: {n_conv} pagine")
 
+    # 26) mercato (docs/21 P2-7): i nomi e i conteggi stampati nella card devono venire
+    # dalla tabella transfers (4 più recenti per direzione, data desc); la card c'è se e
+    # solo se la fonte ha righe per almeno una delle due squadre. Finché collect_transfers
+    # non ha girato in Actions la tabella è vuota e il controllo è vacuo per costruzione.
+    n_mkt = 0
+    tr26 = st.read("transfers")
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html or fx19.empty or tr26.empty:
+            continue
+        rows = fx19[fx19.match_id == int(pg.stem)]
+        if rows.empty:
+            continue
+        fr = rows.iloc[0]
+        txt = html_unescape(html)
+        exp_names, has_data = [], False
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            d = tr26[tr26.team_id == tid]
+            if not d.empty:
+                has_data = True
+            for direction in ("in", "out"):
+                dd = d[d.direction == direction].sort_values("date", ascending=False, na_position="last")
+                exp_names.extend(str(x) for x in dd.player_name.head(4))
+        card = "Mercato: arrivi e partenze" in txt
+        checks += 1
+        if card != has_data:
+            fails.append(f"{pg.name}: card mercato incoerente colla tabella transfers")
+            continue
+        if not card:
+            continue
+        n_mkt += 1
+        for nm in exp_names:
+            checks += 1
+            if nm not in txt:
+                fails.append(f"{pg.name}: nome mercato «{nm}» assente o diverso dalla tabella")
+    print(f"[26] card mercato riconciliate: {n_mkt} pagine")
+
     st.close()
     return fails, checks
 

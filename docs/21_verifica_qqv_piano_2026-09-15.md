@@ -364,3 +364,42 @@ invarianti nuove **[24]** (righe «prossimo impegno» ricalcolate dal calendario
 le **300** pagine finite; card presente se e solo se esiste una gara futura) e **[25]**
 (celle «X su Y» = conteggi dai tiri mappati, **268** pagine; riga assente se nessuna
 grande occasione). Ruff: nessun avviso sul codice nuovo.
+
+
+---
+
+## 10. Mercato d'estate (P2-7 attuato, 2026-09-15 — sesto turno, parte 2)
+
+**Richiesta utente:** «procedi» → primo blocco del P2 residuo: il mercato. La fonte è
+l'endpoint FotMob `teams?id=...` (marcato ✅ in docs/02, sezione `transfers`), lo stesso
+client già usato per tutto il resto: **schema non documentato**, quindi il parser
+(`FotMobClient.parse_transfers`) accetta le due disposizioni note — `{incoming, outgoing}`
+e lista piatta con direzione per voce — più gli alias comuni dei campi (fee oggetto o
+stringa, from/to oggetto o stringa, date oggetto o stringa). Forma non riconosciuta →
+**zero righe, mai righe inventate**: il conteggio appare nel log di run («transfers: N
+righe da M squadre», artifact di Actions) e in `source_status`.
+
+**Collettore isolato** `collect_transfers` (stesso pattern delle notizie): una richiesta
+per squadra della classifica FotMob (~140), cache 24 h (la finestra si muove piano), una
+squadra irraggiungibile non ferma il run. È dentro `collect_all(with_transfers=True)`:
+dal merge in poi il run giornaliero di Actions lo esegue e committa `transfers.parquet`
+insieme agli altri dati. **Dark launch onesto:** finché la tabella non esiste la card non
+compare da nessuna parte (placeholder onesto, `summer_market → None`); si accende da sola
+al primo run riuscito. DA VERIFICARE IN ACTIONS al primo daily: righe > 0 e forma dei
+campi (importi, date).
+
+**Card «Mercato: arrivi e partenze»** (pre-partita, tra «Clima del club» e «Ultime dalle
+società»): per squadra i conteggi e i 4 movimenti più recenti per direzione (data desc),
+con formula in italiano (prestito / titolo definitivo / gratuito / rientro), controparte
+e data; importi **come pubblicati dalla fonte**, senza conversioni. Nota di utilità in
+chiusura: un arrivo recente può non essere ancora riflesso nelle statistiche stagionali
+della scheda. Resa collaudata con store sintetico in /tmp (Monza–Sassuolo 5749686, non
+committato): conteggi, ordine per data, traduzioni e importi corretti.
+
+**Verifica:** suite **229 passed** (+6: parser dizionario/lista/forma-ignota, collettore
+tollerante con stub che esplode su una squadra, `summer_market` ordine+conteggi+None);
+`verify_site` **0 problemi · 26.973 controlli** con invariante nuova **[26]** (nomi e
+conteggi della card = tabella transfers; card presente se e solo se la fonte ha righe —
+oggi vacua per costruzione: 0 pagine, diventa attiva al primo dato reale). Ruff: RUF012
+risolto con `ClassVar` (come `_COUNTRY_IT`); UP017 su `datetime.now(timezone.utc)`
+lasciato: è l'idioma del file (6 occorrenze identiche a baseline).

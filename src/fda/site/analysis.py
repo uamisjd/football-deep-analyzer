@@ -530,6 +530,7 @@ class MatchAnalysis:
         self.season_sim = store.read("season_sim")
         self.cup_fixtures = store.read("cup_fixtures")
         self.news_df = store.read("news")
+        self.transfers = store.read("transfers")
 
     # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
     def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1126,6 +1127,48 @@ class MatchAnalysis:
                         "url": r.get("url"), "description": r.get("description"),
                         "published_at": pd.to_datetime(r.get("published_at"), utc=True)})
         return out
+
+    # ---- mercato: arrivi e partenze (docs/21, P2-7) -------------------------------------------
+    _TRANSFER_TYPE_IT: ClassVar[dict[str, str]] = {
+        "loan": "prestito", "free": "gratuito", "free transfer": "gratuito",
+        "transfer": "titolo definitivo", "return": "rientro dal prestito",
+        "returned": "rientro dal prestito", "retired": "ritirato",
+        "release": "svincolato", "released": "svincolato"}
+
+    def summer_market(self, team_id: int, n: int = 4) -> dict[str, Any] | None:
+        """Mercato della squadra come pubblicato da FotMob (ultima finestra).
+
+        Ritorna None se la tabella `transfers` manca o è vuota per la squadra: la card
+        allora non compare — segnaposto onesto, mai un «mercato chiuso» inventato.
+        Importi e formule restano come pubblicati dalla fonte: nessuna conversione.
+        """
+        if self.transfers.empty or "player_name" not in self.transfers.columns:
+            return None
+        df = self.transfers[self.transfers.team_id == team_id]
+        if df.empty:
+            return None
+
+        def entries(direction: str) -> list[dict[str, Any]]:
+            d = df[df.direction == direction]
+            if d.empty:
+                return []
+            d = d.sort_values("date", ascending=False, na_position="last")
+            out = []
+            for r in d.head(n).to_dict("records"):
+                t = str(r.get("transfer_type") or "").strip().lower()
+                date_s = str(r.get("date") or "")[:10]
+                date_it = f"{date_s[8:10]}/{date_s[5:7]}/{date_s[:4]}" \
+                    if len(date_s) == 10 and date_s[4] == "-" else ""
+                out.append({"name": str(r["player_name"]),
+                            "counterpart": str(r.get("counterpart") or ""),
+                            "fee": str(r.get("fee_text") or ""),
+                            "type_it": self._TRANSFER_TYPE_IT.get(t, str(r.get("transfer_type") or "")),
+                            "date_it": date_it})
+            return out
+
+        return {"arrivals": entries("in"), "departures": entries("out"),
+                "n_in": int((df.direction == "in").sum()),
+                "n_out": int((df.direction == "out").sum())}
 
     def unavailable_for_news(self, team_name: str) -> list[str]:
         """Nomi degli indisponibili più recenti della squadra (per selezionare le notizie)."""
@@ -2607,6 +2650,9 @@ class MatchAnalysis:
                           if status != "finished" else [],
             "home_news": self.team_news(home_id, f["home_name"], kickoff) if status != "finished" else [],
             "away_news": self.team_news(away_id, f["away_name"], kickoff) if status != "finished" else [],
+            # mercato (docs/21 P2-7): None finché collect_transfers non ha girato in Actions
+            "home_market": self.summer_market(home_id) if status != "finished" else None,
+            "away_market": self.summer_market(away_id) if status != "finished" else None,
             "referee_profile": self.referee_profile(match_id),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),

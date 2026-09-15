@@ -342,8 +342,46 @@ def collect_news(store: Store, keys: list[str] | None = None,
     return report
 
 
+def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> CollectReport:
+    """Trasferimenti per squadra dall'endpoint FotMob `teams` (docs/21, P2-7).
+
+    Una richiesta per squadra della classifica (cache 24 h: la finestra si muove piano,
+    e la stessa squadra ricompare in più run senza riscaricare). Fonte isolata come le
+    altre: se `teams` non è raggiungibile il run continua e ``source_status`` mostra
+    l'avviso; la card «Mercato» degrada ad assenza (segnaposto onesto). Lo schema della
+    sezione `transfers` non è documentato: se le righe raccolte sono zero il conteggio
+    nel log di Actions lo rende visibile al primo run (mai dati inventati).
+    """
+    now = datetime.now(timezone.utc)
+    report = CollectReport(league="TRANSFERS", run_at=now)
+    fm = fotmob or FotMobClient()
+    st = store.read("fotmob_standings")
+    if st.empty or "team_id" not in st.columns:
+        report.errors.append("transfers: classifica vuota, salto")
+        store.upsert("source_status", report.as_status_rows())
+        return report
+    rows: list[dict[str, Any]] = []
+    n_teams = 0
+    for r in st[["league_code", "team_id", "team_name"]].drop_duplicates("team_id").itertuples(index=False):
+        raw = _safe(f"transfers {r.team_name}", lambda t=int(r.team_id): fm.team_raw(t), report)
+        if raw is None:
+            continue
+        n_teams += 1
+        rows.extend(FotMobClient.parse_transfers(raw, int(r.team_id), str(r.team_name), str(r.league_code)))
+    if rows:
+        store.upsert("transfers", rows)
+    # i conteggi restano nel log di run (salvato come artifact da Actions): la tabella
+    # CLI ha colonne calendario/partite che qui non c'entrano, e source_status — come
+    # per le notizie — registra richieste ed esito, non volumi.
+    log.info("transfers: %d righe da %d squadre", len(rows), n_teams)
+    report.requests = {"transfers": fm.http.stats.requests}
+    store.upsert("source_status", report.as_status_rows())
+    return report
+
+
 def collect_all(keys: list[str] | None = None, store: Store | None = None,
                 with_cups: bool = True, with_news: bool = True,
+                with_transfers: bool = True,
                 **kw: Any) -> list[CollectReport]:
     store = store or Store()
     fm, uc, ec, om = FotMobClient(), UnderstatClient(), EspnClient(), OpenMeteoClient()
@@ -357,4 +395,7 @@ def collect_all(keys: list[str] | None = None, store: Store | None = None,
     if with_news:
         log.info("== notizie squadre ==")
         reports.append(collect_news(store, keys=keys, news=NewsClient(), fotmob=fm, espn=ec))
+    if with_transfers:
+        log.info("== mercato (trasferimenti) ==")
+        reports.append(collect_transfers(store, fotmob=fm))
     return reports

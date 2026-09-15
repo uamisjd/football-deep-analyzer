@@ -28,6 +28,9 @@ TABLE_KEYS: dict[str, list[str]] = {
     "cup_fixtures": ["match_id"],
     # notizie per squadra (Google News RSS / ESPN): chiave con url = idempotenza dei run
     "news": ["team_id", "published_at", "url"],
+    # trasferimenti per squadra (FotMob `teams`): stessa mossa due volte nella stessa
+    # finestra deve restare una riga sola (docs/21 P2-7)
+    "transfers": ["team_id", "player_name", "direction", "counterpart", "date"],
     "match_info": ["match_id"],
     "shots": ["match_id", "shot_id"],
     "team_stats": ["match_id", "team_id", "period", "key"],

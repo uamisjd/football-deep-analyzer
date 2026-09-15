@@ -354,6 +354,30 @@
     <p class="small mut">Segnali misurati, non aggettivi: crisi da 3 sconfitte consecutive, «non vince da» da 4 gare senza vittoria, clima sereno da 5 imbattute, attacco a secco da 3 gare senza gol, scarto punti‑xPTS da ±2, infermeria pesante da 4 assenti o 2 titolari abituali o 0,5 xG+xA/gara in meno, riposo corto ≤3 giorni, congestione da 3 gare in 10 giorni (coppe incluse). Nessun punteggio sintetico: ogni riga è un fatto col suo criterio; se nessuna soglia è superata, la squadra resta «clima normale».</p>
   </div>
   {% endif %}
+  {% if (c.home_market or c.away_market) and c.status != 'finished' %}
+  <div class="card" id="mercato">
+    <h2>Mercato: arrivi e partenze</h2>
+    <div class="grid">
+    {% for side in ('home','away') %}{% set mk = c[side ~ '_market'] %}
+      <div class="card" style="margin:0">
+        <h3 style="margin:0 0 8px">{{ c[side ~ '_name'] }}</h3>
+        {% if mk %}
+        <p class="small mut" style="margin:0 0 8px">{{ mk.n_in }} {{ 'arrivo' if mk.n_in == 1 else 'arrivi' }} · {{ mk.n_out }} {{ 'partenza' if mk.n_out == 1 else 'partenze' }} nell'ultima finestra pubblicata dalla fonte</p>
+        {% for label, rows, prep in (('Arrivi', mk.arrivals, 'da'), ('Partenze', mk.departures, 'a')) %}
+        {% if rows %}<p class="small" style="margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)">{{ label }}</p>
+        <table style="margin:0">{% for t in rows %}<tr>
+          <td>{{ t.name }}{% if t.type_it %} <span class="mut small">· {{ t.type_it }}</span>{% endif %}</td>
+          <td class="mut small">{% if t.counterpart %}{{ prep }} {{ t.counterpart }}{% if t.date_it %} · {{ t.date_it }}{% endif %}{% elif t.date_it %}{{ t.date_it }}{% endif %}</td>
+          <td class="r small" style="white-space:nowrap">{{ t.fee or '—' }}</td>
+        </tr>{% endfor %}</table>{% endif %}
+        {% endfor %}
+        {% else %}<p class="mut small">Nessun movimento pubblicato dalla fonte per questa squadra.</p>{% endif %}
+      </div>
+    {% endfor %}
+    </div>
+    <p class="small mut" style="margin-top:10px">Movimenti pubblicati da FotMob per l'ultima finestra; importi e formule come riportati dalla fonte, senza conversioni o stime; in elenco i 4 più recenti per direzione. Un arrivo delle ultime settimane può non essere ancora riflesso nelle statistiche di stagione di questa scheda.</p>
+  </div>
+  {% endif %}
   {% if (c.home_news or c.away_news) and c.status != 'finished' %}
   <div class="card" id="notizie">
     <h2>Ultime dalle società</h2>
