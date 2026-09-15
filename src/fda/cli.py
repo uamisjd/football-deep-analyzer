@@ -535,6 +535,40 @@ def lab_xi_cmd(
     store.close()
 
 
+@app.command("mercati-monitor")
+def mercati_monitor_cmd(
+    save: bool = typer.Option(True, help="Salva in data/processed/mercati_monitor.parquet"),
+) -> None:
+    """Mercati binari sul backtest fuori campione: scarto, stabilità temporale e leghe (P3-b)."""
+    import pandas as pd
+
+    from .models.backtest import calibrate_rows, market_monitor
+    from .models.calibration import from_store
+    from .store import Store
+
+    store = Store()
+    bt = store.read("backtest")
+    if bt.empty:
+        console.print("[yellow]backtest assente: esegui `fda backtest` (lo salva il daily)[/yellow]")
+        store.close()
+        return
+    # probabilità come pubblicate oggi (griglia calibrata), coerente con la pagina Accuratezza
+    df = market_monitor(calibrate_rows(bt, from_store(store)))
+    if df.empty:
+        console.print("[yellow]nessun mercato valutabile[/yellow]")
+        store.close()
+        return
+    with pd.option_context("display.width", 200, "display.max_columns", 20):
+        console.print(df.to_string(index=False))
+    n_str = int((df.verdict == "strutturale").sum())
+    console.print(f"\nmercati «strutturali»: {n_str} su {len(df)} — gli altri si monitorano "
+                  "run per run; il modello non si tocca (regola P3)")
+    if save:
+        store.write("mercati_monitor", df)
+        console.print("salvato data/processed/mercati_monitor.parquet")
+    store.close()
+
+
 @app.command("build")
 def build_cmd() -> None:
     """Genera il sito statico in site/ (Oggi, Prossime, Risultati, partite, Giocatori, Accuratezza, Stato)."""
@@ -572,6 +606,10 @@ def daily_cmd(
             backtest_cmd(league_keys=league_keys, seasons_back=3, step_days=14, min_train=200)
         except Exception as exc:  # noqa: BLE001 — il backtest non deve bloccare il sito
             console.print(f"[red]backtest fallito: {exc}[/red]")
+        try:  # monitoraggio mercati binari sul backtest appena rigenerato (docs/21 P3-b)
+            mercati_monitor_cmd()
+        except Exception as exc:  # noqa: BLE001 — il monitoraggio non deve bloccare il sito
+            console.print(f"[red]mercati-monitor fallito: {exc}[/red]")
         try:  # Monte Carlo stagione: fallisce in isolato, il sito esce comunque
             from .models.season_sim import simulate_all
             from .store import Store

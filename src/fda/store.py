@@ -50,6 +50,8 @@ TABLE_KEYS: dict[str, list[str]] = {
     "season_sim": ["league_key", "team"],
     # ξ per lega adottato dal laboratorio (docs/21 P3-a): una riga per lega
     "xi_league": ["league_key"],
+    # monitoraggio mercati binari (docs/21 P3-b): una riga per mercato, run per run
+    "mercati_monitor": ["market"],
     "espn_standings": ["league_code", "team_id"],
     "fotmob_standings": ["league_code", "team_id"],
     "weather_forecast": ["match_id"],

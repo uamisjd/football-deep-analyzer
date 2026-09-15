@@ -237,3 +237,106 @@ def backtest_summary(df: pd.DataFrame,
         mix = df["model_version"].astype(str).value_counts()
         out["model_versions"] = " · ".join(f"{k}: {v} gare" for k, v in mix.items())
     return out
+
+
+# ---- monitoraggio mercati binari (docs/21 P3-b) ----------------------------------------------
+#: stesse terne (colonna previsione, etichetta, chiave osservata) della pagina Accuratezza
+#: (``SiteBuilder.MARKETS``): se cambiano lì, cambiano qui — il monitoraggio deve leggere
+#: gli stessi mercati che la pagina dichiara «compatibili» o «fuori intervallo»
+BINARY_MARKETS: tuple[tuple[str, str, str], ...] = (
+    ("p_over15", "Over 1,5 gol", "over15"),
+    ("p_over25", "Over 2,5 gol", "over25"),
+    ("p_over35", "Over 3,5 gol", "over35"),
+    ("p_btts", "Gol · entrambe a segno", "btts"),
+    ("p_1x", "Doppia chance 1X", "d1x"),
+    ("p_12", "Doppia chance 12", "d12"),
+    ("p_x2", "Doppia chance X2", "dx2"),
+    ("p_home_clean_sheet", "Porta inviolata casa", "cs_h"),
+    ("p_away_clean_sheet", "Porta inviolata trasferta", "cs_a"),
+)
+
+#: gare minime per lega perché il suo segnale conti nel verdetto
+MIN_LEAGUE_N_MARKETS: int = 150
+#: leghe con segnale coerente necessarie per dichiarare un mercato «strutturale»
+MIN_STRUCTURAL_LEAGUES: int = 5
+
+
+def observed_markets(df: pd.DataFrame) -> dict[str, np.ndarray]:
+    """Colonne osservate dei mercati binari, derivate dai gol (stessa logica della pagina)."""
+    hg = df["home_goals"].to_numpy(dtype=float)
+    ag = df["away_goals"].to_numpy(dtype=float)
+    tot = hg + ag
+    return {"over15": tot > 1.5, "over25": tot > 2.5, "over35": tot > 3.5,
+            "btts": (hg > 0) & (ag > 0),
+            "d1x": hg >= ag, "d12": hg != ag, "dx2": hg <= ag,
+            "cs_h": ag == 0, "cs_a": hg == 0}
+
+
+def market_monitor(df: pd.DataFrame, min_league_n: int = MIN_LEAGUE_N_MARKETS,
+                   min_structural_leagues: int = MIN_STRUCTURAL_LEAGUES) -> pd.DataFrame:
+    """Calibrazione dei mercati binari sul backtest fuori campione, con stabilità e leghe.
+
+    Per ogni mercato: media prevista contro frequenza osservata con IC di Wilson
+    sull'osservato (stessa formula della pagina Accuratezza), più tre letture che
+    distinguono il bias vero dal rumore:
+    - **metà cronologiche**: il segno dello scarto osservato−previsto deve ripetersi
+      nelle due metà dello storico, altrimenti è un episodio;
+    - **leghe**: quante leghe (con almeno ``min_league_n`` gare) mostrano lo stesso
+      segno con la previsione fuori dal proprio IC;
+    - **verdetto**: «strutturale» solo se lo scarto complessivo è fuori intervallo,
+      almeno ``min_structural_leagues`` leghe concordano nel segno ed entrambe le metà
+      pure; altrimenti «monitora» — e il modello non si tocca (regola del piano P3).
+    """
+    if df.empty or "home_goals" not in df.columns:
+        return pd.DataFrame()
+    d = pd.to_datetime(df["date"])
+    if d.dt.tz is not None:
+        d = d.dt.tz_localize(None)      # il backtest salvato è tz-aware: confronto in datetime64
+    dv = d.to_numpy(dtype="datetime64[ns]")
+    mid = pd.Timestamp(d.median()).to_datetime64()
+    lgs_all = df["league_key"].to_numpy() if "league_key" in df.columns else None
+    obs = observed_markets(df)
+    rows: list[dict[str, Any]] = []
+    for col, label, key in BINARY_MARKETS:
+        if col not in df.columns:
+            continue
+        pr = pd.to_numeric(df[col], errors="coerce").to_numpy(dtype=float)
+        y = obs[key].astype(float)
+        ok = ~np.isnan(pr)
+        if ok.sum() < 20:
+            continue
+        pr, y, dv_k = pr[ok], y[ok], dv[ok]
+        lgs = lgs_all[ok] if lgs_all is not None else np.full(int(ok.sum()), "?")
+        prev, observed = float(pr.mean()), float(y.mean())
+        lo, hi = wilson_interval(round(float(y.sum())), len(y))
+        outside = bool(not (lo <= prev <= hi))
+        sign = 1.0 if observed > prev else -1.0
+        halves: list[float | None] = []
+        for mask in (dv_k < mid, dv_k >= mid):
+            n_h = int(mask.sum())
+            if n_h < 20:
+                halves.append(None)
+                continue
+            ph, yh = float(pr[mask].mean()), float(y[mask].mean())
+            lh, hh = wilson_interval(round(float(y[mask].sum())), n_h)
+            halves.append(None if lh <= ph <= hh else (1.0 if yh > ph else -1.0))
+        lg_out = 0
+        for lg in sorted(set(map(str, lgs))):
+            m = lgs == lg
+            n_l = int(m.sum())
+            if n_l < min_league_n:
+                continue
+            pl, yl = float(pr[m].mean()), float(y[m].mean())
+            ll, hl = wilson_interval(round(float(y[m].sum())), n_l)
+            if not (ll <= pl <= hl) and (1.0 if yl > pl else -1.0) == sign:
+                lg_out += 1
+        structural = bool(outside and lg_out >= min_structural_leagues
+                          and all(h == sign for h in halves if h is not None)
+                          and all(h is not None for h in halves))
+        rows.append({"market": key, "label": label, "n": len(y),
+                     "prev": round(prev, 4), "obs": round(observed, 4),
+                     "lo": round(lo, 4), "hi": round(hi, 4), "outside": outside,
+                     "sign": sign, "half1": halves[0], "half2": halves[1],
+                     "leagues_out": lg_out,
+                     "verdict": "strutturale" if structural else "monitora"})
+    return pd.DataFrame(rows)

@@ -524,3 +524,49 @@ dell'evidenza (oggi: tutte ``adopt=False``).
 sintetico, soglia delle 300 gare, gate ``xi_for_league`` con adozioni/rotte/assenti);
 ruff pulito sul nuovo (RUF046 su ``int(len())`` corretto). P3-b (monitoraggio mercati
 fuori intervallo) resta in coda.
+
+## 14. Monitoraggio dei mercati fuori intervallo (P3-b, 2026-09-15 — undicesimo turno)
+
+**Richiesta utente:** «procedi» → secondo e ultimo blocco del P3 laboratorio. L'audit
+(§3) aveva trovato due mercati binari con probabilità prevista fuori dall'intervallo di
+Wilson dell'osservata: **Over 2,5** (53,2% prevista vs 54,9% osservata) e **porta
+inviolata casa** (30,1% vs 28,4%). La regola del piano: si tocca un mercato solo se lo
+scarto è *strutturale*, altrimenti si monitora e il modello resta com'è.
+
+**Cosa è stato costruito.**
+- ``backtest.BINARY_MARKETS``: i 9 mercati binari della card Accuratezza (stesse chiavi
+  di ``SiteBuilder.MARKETS``) + ``observed_markets``, che per ogni gara del backtest
+  ricava il vettore osservato 0/1 di ciascun mercato dai gol reali.
+- ``market_monitor(df, min_league_n=150, min_structural_leagues=5)``: per mercato —
+  scarto media prevista vs osservata con Wilson 95%; **stabilità temporale** (il campione
+  diviso in due metà cronologiche: ciascuna metà conta solo se anche lei è fuori
+  intervallo); **stabilità tra leghe** (quante leghe con n≥150 sono fuori intervallo con
+  lo stesso segno). Verdetto ``strutturale`` solo se: fuori intervallo overall **e** ≥5
+  leghe stesso segno **e** entrambe le metà temporali stesso segno; altrimenti
+  ``monitora``.
+- Comando ``fda mercati-monitor``: legge la tabella ``backtest`` e le applica la
+  calibrazione salvata (``calibrate_rows(bt, from_store(store))``) così monitora le
+  probabilità *pubblicate*, non quelle grezze; stampa la tabella e salva
+  ``mercati_monitor.parquet``. È agganciato al ``fda daily`` subito dopo ``backtest``:
+  dal merge, ogni run di Actions ricalcola il verdetto.
+
+**Risultato (probabilità calibrate, n=5.823 gare, 7 leghe, 3 stagioni).**
+- **0 mercati su 9 «strutturale»** — nessun mercato viene toccato.
+- I due segnali dell'audit restano fuori intervallo overall, ma ciascuno vive in **una
+  sola metà temporale**: porta inviolata casa 0,3015 vs 0,2840, IC [0,2726; 0,2958],
+  prima metà fuori(−) / seconda dentro, 1 lega su 7 fuori; Over 2,5 0,5317 vs 0,5490,
+  IC [0,5362; 0,5618], prima metà dentro / seconda fuori(+), 1 lega su 7 fuori.
+- Gli altri 7 mercati (btts, 1X2 doppie chance, over 1,5/3,5, cs trasferta) sono dentro
+  l'intervallo overall.
+Lettura: scarti veri ma **non coerenti nel tempo né tra leghe** → più deriva/rumore di
+periodo che bias strutturale; la regola P3 dice di non calibrare e di continuare a
+misurare. Il monitor giornaliero è il meccanismo che trasformerà la misura in decisione
+se e quando lo scarto diventerà persistente.
+
+**Verifica:** suite **246 passed** (+2: su storico sintetico a 7 leghe — over25 con bias
+indotto ovunque → ``strutturale`` con 7 leghe; btts centrato → ``monitora``; cs_h con
+bias in una sola lega → fuori intervallo ma ``leagues_out`` < 5 → ``monitora``); run
+reale → ``mercati_monitor.parquet``; build + ``verify_site`` **0 problemi · 26.821
+controlli**; ruff pulito sul nuovo (3 RUF046 corretti). **P3 completo (P3-a + P3-b).**
+Resta: verifica post-merge del primo daily di Actions (righe transfers, tabella news,
+``mercati_monitor`` aggiornato).
