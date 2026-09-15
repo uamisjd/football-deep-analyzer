@@ -13,6 +13,7 @@ Esce con codice 1 se trova almeno un problema (usabile come passo di CI).
 from __future__ import annotations
 
 import argparse
+import ast
 import re
 from collections import Counter
 from html import unescape as html_unescape
@@ -320,18 +321,28 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             continue
         r = preds.loc[mid]
         m = score_matrix(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
-        cells = re.findall(r'<td[^>]*title="(\d)-(\d) · (\d+,\d+)%">(\d+,\d)</td>', html)
+        cells = re.findall(r'<td[^>]*title="(\d)-(\d) · (meno di 0,1|\d+,\d+)%[^"]*">(<1|\d+,\d)</td>', html)
         if len(cells) != 36:
             fails.append(f"{pg.name}: celle matrice {len(cells)} (attese 36)")
             continue
         n_matrix += 1
-        checks += 1
+        for i, j, _title_p, cell_p in cells:
+            checks += 1
+            true_p = float(m["cells"][int(i)][int(j)]["p"]) * 100
+            if cell_p == "<1":
+                if true_p >= 0.05:
+                    fails.append(f"{pg.name}: cella {i}-{j} mostra <1 ma vale {true_p:.2f}/100")
+            else:
+                if true_p < 0.05:
+                    fails.append(f"{pg.name}: cella {i}-{j} mostra {cell_p} ma vale {true_p:.2f}/100 (<0,05)")
         worst, tot = 0.0, 0.0
         for i, j, _title_p, cell_p in cells:
-            rendered = float(cell_p.replace(",", "."))
+            rendered = 0.0 if cell_p == "<1" else float(cell_p.replace(",", "."))
             worst = max(worst, abs(rendered - round(float(m["cells"][int(i)][int(j)]["p"]) * 100, 1)))
             tot += rendered
-        tail_m = re.search(r"Coda 6\+ gol: (\d+,\d)%", html)
+        tail_m = re.search(r"Almeno una delle due squadre segna 6\+ gol.*?: (\d+,\d) partite su 100", html)
+        if not tail_m:
+            fails.append(f"{pg.name}: etichetta della coda della matrice assente o ambigua")
         tail = float(tail_m.group(1).replace(",", ".")) if tail_m else 0.0
         if worst > 0.11:
             fails.append(f"{pg.name}: cella matrice diversa di {worst:.2f} pp")
@@ -758,7 +769,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         resi = re.findall(r'<span class="h" style="width:[^"]*">1 · (\d+,\d)%</span>'
                           r'<span class="d" style="width:[^"]*">X · (\d+,\d)%</span>'
                           r'<span class="a" style="width:[^"]*">2 · (\d+,\d)%</span>', blocco)
-        labels = re.findall(r"<strong>(\d+) · ([^<]+)</strong>", blocco)
+        labels = [(n, html_unescape(lab)) for n, lab in
+                  re.findall(r"<strong>(\d+) · ([^<]+)</strong>", blocco)]
         checks += 1
         n_steps += 1
         if len(resi) != len(steps) or len(labels) != len(steps):
@@ -783,7 +795,280 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         for key in ("p_home", "p_draw", "p_away"):
             if abs(steps[-1][key] - float(r[key])) > 1e-6:
                 fails.append(f"{pg.name}: ultimo passo {key} {steps[-1][key]:.4f} != pubblicato {r[key]:.4f}")
+        # Δ esatto fra passi adiacenti: deve essere la differenza dei numeri stampati nel
+        # riassunto (stesso esito preferito), non dei valori grezzi — il lettore rifà i conti
+        delte = re.findall(r'<span class="delta">Δ (-?[+0-9,-]+) pp</span>', blocco)
+        if len(delte) != len(steps) - 1:
+            fails.append(f"{pg.name}: Δ di catena {len(delte)} per {len(steps)} passi")
+        else:
+            for i, dtxt in enumerate(delte):
+                letto = float(dtxt.replace(",", "."))
+                tops = [max(float(v.replace(",", ".")) for v in resi[k]) for k in (i, i + 1)]
+                if abs(letto - round(tops[1] - tops[0], 1)) > 1e-9:
+                    fails.append(f"{pg.name}: Δ del passo {i + 2} = {dtxt} pp, sono {tops[0]}→{tops[1]}")
     print(f"[10] scomposizioni della probabilità verificate: {n_steps}")
+
+    # 11) titolo della scheda (P2 del modello): il margine pubblicato è la differenza dei due
+    #     interi stampati vicini («+25 punti» tra 51% e 26%), e primo/secondo sono davvero
+    #     i due esiti più probabili della triade; i λ sono «+», non un trattino
+    n_margini = 0
+    hero_re = re.compile(r'<strong>([^<]*)<em>(\d+)%</em>.*?'
+                         r'\+(\d+(?:,\d+)?) punti sul secondo — (.*?) (\d+)%'
+                         r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.S)
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        m = hero_re.search(html)
+        if not m:
+            continue
+        top_v, margine, second_v = int(m.group(2)), float(m.group(3).replace(",", ".")), int(m.group(5))
+        pcts = sorted((int(m.group(6)), int(m.group(7)), int(m.group(8))), reverse=True)
+        checks += 1
+        n_margini += 1
+        if (top_v - second_v) != int(margine):
+            fails.append(f"{pg.name}: margine +{margine:g} punti con {top_v}% e {second_v}% stampati")
+        if (top_v, second_v) != (pcts[0], pcts[1]):
+            fails.append(f"{pg.name}: primo/secondo {top_v}/{second_v} non sono i due esiti più alti {pcts}")
+        if re.search(r"\d,\d+–\d,\d+</b><span>gol attesi", html) or \
+                re.search(r"gol attesi \d+[,.]\d+–\d+[,.]\d+", html):
+            fails.append(f"{pg.name}: gol attesi separati da trattino (lettura di un intervallo)")
+        if not re.search(r"<b>\d+,\d+ \+ \d+,\d+</b><span>gol attesi · <b>\d+,\d+ totali</b>", html):
+            fails.append(f"{pg.name}: gol attesi senza il totale esplicito")
+        if " totali) · Over" not in html:
+            fails.append(f"{pg.name}: descrizione SEO senza il totale dei gol attesi")
+    print(f"[11] riassunti del modello verificati: {n_margini}")
+
+    # 12) risultati esatti: la copertura dei sei punteggi è pubblicata e combacia con la
+    #     previsione salvata; la gerarchia dei titoli dentro «Verifica approfondita» è h3
+    n_cov = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        cm = re.search(r"Questi (\d+) punteggi coprono (\d+,\d+) partite su 100", html)
+        if not cm:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index:
+            fails.append(f"{pg.name}: copertura senza previsione")
+            continue
+        block = html.split("Risultati esatti più probabili", 1)[1][:2000]
+        celle = re.findall(r"<tr><td>\d+-\d+</td><td class=\"r\">(\d+,\d+)%</td></tr>", block)
+        somma = sum(float(x.replace(",", ".")) for x in celle)
+        letta = float(cm.group(2).replace(",", "."))
+        checks += 1
+        n_cov += 1
+        if abs(somma - letta) > 0.35:
+            fails.append(f"{pg.name}: copertura {letta}/100 ma le sei percentuali sommano {somma:.1f}")
+        r = preds.loc[mid]
+        try:
+            raw = ast.literal_eval(r.top_scores) if isinstance(r.top_scores, str) else {}
+        except (ValueError, SyntaxError):
+            raw = {}
+        if raw and abs(sum(raw.values()) * 100 - letta) > 0.06:
+            fails.append(f"{pg.name}: copertura {letta}/100 vs {sum(raw.values()) * 100:.1f} dai dati")
+        for titolo in ("Matrice dei punteggi", "Quanti gol, in pratica"):
+            if f"<h2>{titolo}</h2>" in html:
+                fails.append(f"{pg.name}: «{titolo}» è di secondo livello dentro Verifica approfondita")
+    print(f"[12] coperture dei risultati esatti verificate: {n_cov}")
+
+    # 15) fascia storica del pronostico: frequenze ricalcolate dalla tabella backtest, stessa
+    #     fascia «questa» della scheda, numerità e intervallo di Wilson esatti a 0,1
+    bt = st.read("backtest")
+    n_fasc = 0
+    if not bt.empty and "outcome" in bt.columns:
+        from fda.site.analysis import MatchAnalysis
+        from fda.site.build import wilson_interval
+
+        pv_ = bt[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+        fav_ = pv_.max(axis=1)
+        hit_ = pv_.argmax(axis=1) == bt["outcome"].to_numpy()
+        tab_bt = []
+        for lo_b, hi_b, label_b in MatchAnalysis.FAVORITE_BANDS:
+            mm = (fav_ >= lo_b) & (fav_ < hi_b)
+            nb = int(mm.sum())
+            if nb < 30:
+                continue
+            kb = int(hit_[mm].sum())
+            wl_b, wh_b = wilson_interval(kb, nb)
+            tab_bt.append({"label": label_b, "lo": lo_b, "hi": hi_b, "n": nb,
+                           "obs": kb / nb, "wl": wl_b, "wh": wh_b, "pm": float(fav_[mm].mean())})
+        row_re = re.compile(
+            r'<tr[^>]*>\s*<td>(fino al 40%|fra 40% e 50%|fra 50% e 60%|fra 60% e 75%|oltre il 75%)'
+            r'(?: (<span class="tag"[^>]*>questa</span>))?</td>'
+            r'\s*<td class="r">(\d+(?:\.\d+)?)</td>'
+            r'\s*<td class="r">(\d+,\d+)%</td>'
+            r'\s*<td class="r"><b>(\d+,\d+)%</b></td>'
+            r'\s*<td class="r mut small">(\d+,\d+)–(\d+,\d+)%</td></tr>')
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if 'id="fascia-storica"' not in html:
+                continue
+            mid = int(pg.stem)
+            if mid not in preds.index:
+                fails.append(f"{pg.name}: fascia storica senza previsione")
+                continue
+            r = preds.loc[mid]
+            here = float(max(r.p_home, r.p_draw, r.p_away))
+            block = html.split('id="fascia-storica"', 1)[1][:5000]
+            got = row_re.findall(block)
+            if len(got) != len(tab_bt):
+                fails.append(f"{pg.name}: righe fascia storica {len(got)} (attese {len(tab_bt)})")
+                continue
+            n_fasc += 1
+            fav_lbl = re.search(r"fascia di QUESTA partita \(favorito (\d+,\d+)%\)", block)
+            checks += 1
+            if not fav_lbl or abs(float(fav_lbl.group(1).replace(",", ".")) - here * 100) > 0.06:
+                fails.append(f"{pg.name}: favorito dichiarato {fav_lbl.group(1) if fav_lbl else '?'}% != {here * 100:.1f}%")
+            for (lab, span, n_t, pm_t, obs_t, lo_t, hi_t), b in zip(got, tab_bt):
+                checks += 1
+                if lab != b["label"]:
+                    fails.append(f"{pg.name}: fascia «{lab}» != «{b['label']}»")
+                    continue
+                if int(n_t.replace(".", "")) != b["n"]:
+                    fails.append(f"{pg.name}: {lab} n={n_t} vs backtest {b['n']}")
+                for txt, val, cosa in ((pm_t, b["pm"] * 100, "media prevista"),
+                                       (obs_t, b["obs"] * 100, "frequenza osservata"),
+                                       (lo_t, b["wl"] * 100, "IC inferiore"),
+                                       (hi_t, b["wh"] * 100, "IC superiore")):
+                    if abs(float(txt.replace(",", ".")) - val) > 0.06:
+                        fails.append(f"{pg.name}: {lab} {cosa} {txt}% vs ricalcolata {val:.1f}%")
+                # la marcatura «questa» deve stare sulla fascia del favorito di QUESTA scheda
+                cur_page = bool(span)
+                cur_data = bool(b["lo"] <= here < b["hi"])
+                if cur_page != cur_data:
+                    fails.append(f"{pg.name}: marcatura «questa» su {lab} ma il favorito {here:.3f} sta in un'altra fascia")
+        print(f"[15] fasce storiche del pronostico verificate: {n_fasc}")
+
+    # 16) percentile dei gol attesi nel campionato: ricalcolato da predictions.parquet pagina
+    #     per pagina — il lettore legge una posizione che il conteggio sulle stesse λ conferma
+    if not preds.empty and "league_key" in preds.columns:
+        from fda.config import leagues as _leagues
+
+        _lg_names = {x.key: x.name for x in _leagues()}
+        pr_ = preds.reset_index() if "match_id" not in preds.columns else preds
+        p_latest = pr_.sort_values("made_at").groupby("match_id").tail(1).copy()
+        p_latest["lam"] = p_latest.lambda_home.astype(float) + p_latest.lambda_away.astype(float)
+        n_pos = 0
+        pos_re = re.compile(
+            r'I (\d+,\d+) gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:\s*'
+            r'sono <b>più alti del (\d+)% delle (\d+) partite di ([^<]+) fin qui previste dal nostro modello</b>\s*'
+            r'\(media di lega (\d+,\d+), mediana (\d+,\d+)\)')
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if 'id="posizione-lega"' not in html:
+                continue
+            mid = int(pg.stem)
+            row = p_latest[p_latest.match_id == mid]
+            m = pos_re.search(html.split('id="posizione-lega"', 1)[1][:2800])
+            if row.empty or m is None:
+                fails.append(f"{pg.name}: posizione-lega senza previsione o con testo atteso assente")
+                continue
+            lam_here = float(row.lam.iloc[0])
+            dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
+            dist = dist[np.isfinite(dist)]
+            n_exp = int(len(dist))
+            checks += 1
+            n_pos += 1
+            here_t, pct_t, n_t, lg_t, mean_t, med_t = m.groups()
+            if abs(float(here_t.replace(",", ".")) - lam_here) > 0.006:
+                fails.append(f"{pg.name}: gol attesi {here_t} vs λ modello {lam_here:.3f}")
+            below = float((dist < lam_here).mean())
+            if int(pct_t) != int(round(below * 100)):
+                fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
+            if int(n_t) != n_exp:
+                fails.append(f"{pg.name}: partite di lega {n_t} vs {n_exp} in predictions")
+            if lg_t != _lg_names.get(str(row.league_key.iloc[0]), ""):
+                fails.append(f"{pg.name}: nome lega «{lg_t}» diverso da config «{_lg_names.get(str(row.league_key.iloc[0]))}»")
+            if abs(float(mean_t.replace(",", ".")) - float(dist.mean())) > 0.06:
+                fails.append(f"{pg.name}: media di lega {mean_t} vs {dist.mean():.1f}")
+            if abs(float(med_t.replace(",", ".")) - float(dist.median())) > 0.06:
+                fails.append(f"{pg.name}: mediana di lega {med_t} vs {dist.median():.1f}")
+        print(f"[16] percentile dei gol attesi nel campionato verificato: {n_pos}")
+
+    # 17) primo gol: ritmo a due tempi calibrato su events.parquet — s, quartili in forma chiusa,
+    #     P(0-0 all'intervallo) e P(0-0 piena) ricalcolate; «dopo il 90'» mai oltre il fischio
+    ev_df = st.read("events")
+    if not ev_df.empty and "type" in ev_df.columns and not preds.empty:
+        import numpy as np
+
+        pr_fg = preds.reset_index() if "match_id" not in preds.columns else preds
+        pr_fg = pr_fg.sort_values("made_at").groupby("match_id").tail(1)
+        gl = ev_df[ev_df.type == "Goal"]
+        if len(gl) >= 60:
+            s_fg = float((gl.minute <= 45).mean())
+            n_fg = int(ev_df[ev_df.type == "Goal"].match_id.nunique())
+            fg_re = re.compile(
+                r"su (\d+(?:\.\d+)*) gol nelle\s*(\d+(?:\.\d+)*) partite di questa stagione \(7 leghe\), il "
+                r"(\d+,\d)% cade nel 1° tempo", re.S)
+            qq_re = re.compile(
+                r"la metà centrale dei primi gol cade fra\s*(dopo il 90'|\d+')\s*e\s*"
+                r"(dopo il 90'|\d+')\s*e la mediana è\s*(dopo il 90'|\d+')\. "
+                r"Pari senza gol al riposo: <b>(\d+,\d)%</b>;\s*zero gol su novanta minuti: "
+                r"(\d+,\d)%\.", re.S)
+            n_q = 0
+            for pg in pages:
+                html = pg.read_text(encoding="utf-8")
+                if 'id="primo-gol"' not in html:
+                    continue
+                mid = int(pg.stem)
+                row_f = pr_fg[pr_fg.match_id == mid]
+                checks += 1
+                if row_f.empty:
+                    fails.append(f"{pg.name}: card primo-gol senza previsione")
+                    continue
+                lam_fg = float(row_f.lambda_home.iloc[0]) + float(row_f.lambda_away.iloc[0])
+                r1_f, r2_f = s_fg * lam_fg / 45.0, (1.0 - s_fg) * lam_fg / 45.0
+                s_ht_f = float(np.exp(-r1_f * 45.0))
+
+                def _qexp(p: float) -> float | None:
+                    tail = 1.0 - p
+                    t = (-np.log(tail) / r1_f) if tail >= s_ht_f else \
+                        (45.0 + (-np.log(tail) - r1_f * 45.0) / r2_f)
+                    return None if t > 90.0 else float(t)
+
+                qs = {p: _qexp(p) for p in (0.25, 0.50, 0.75)}
+                bl = html.split('id="primo-gol"', 1)[1][:2800]
+                m_fg = fg_re.search(bl)
+                if not m_fg or int(m_fg.group(1).replace(".", "")) != len(gl) or \
+                        int(m_fg.group(2).replace(".", "")) != n_fg or \
+                        abs(float(m_fg.group(3).replace(",", ".")) - s_fg * 100) > 0.06:
+                    fails.append(f"{pg.name}: conteggi/quota gol di 1° tempo non tornano con events.parquet")
+                m_q = qq_re.search(bl)
+                if not m_q:
+                    fails.append(f"{pg.name}: frase dei quartili del primo gol assente o diversa")
+                    continue
+                # la frase stampa «fra q1 e q3 e la mediana è q2»: riordino i gruppi
+                labels = {0.25: m_q.group(1), 0.75: m_q.group(2), 0.50: m_q.group(3)}
+                for p, t in qs.items():
+                    atteso = "dopo il 90'" if t is None else f"{int(round(t))}'"
+                    n_q += 1
+                    if labels[p] != atteso:
+                        fails.append(f"{pg.name}: quartile p={p} primo gol «{labels[p]}» vs modello «{atteso}»")
+                if abs(float(m_q.group(4).replace(",", ".")) - s_ht_f * 100) > 0.06:
+                    fails.append(f"{pg.name}: P(0-0 riposo) {m_q.group(4)}% vs {s_ht_f * 100:.1f}%")
+                if abs(float(m_q.group(5).replace(",", ".")) - np.exp(-lam_fg) * 100) > 0.06:
+                    fails.append(f"{pg.name}: P(0-0 piena) {m_q.group(5)}% vs {np.exp(-lam_fg) * 100:.1f}%")
+            print(f"[17] quartili del primo gol verificati: {n_q}")
+
+    # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso
+    tpl = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates"
+    n_tpl = 0
+    if tpl.is_dir():
+        for f in tpl.rglob("*.html"):
+            testo = f.read_text(encoding="utf-8")
+            n_tpl += 1
+            if re.search(r"controlla \d[\d.]+ numeri", testo):
+                fails.append(f"template {f.name}: conteggio dei controlli scritto a mano")
+
+    # 14) n_train e compagni grandi con il separatore delle migliaia (esclusi gli anni 19xx/20xx)
+    n_ntrain = 0
+    no_year = r"\b(?!19\d\d|20\d\d)(\d{4,})\s*(?:partite|gare)\b"
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        male = re.search(no_year, re.sub(r"<[^>]+>", " ", html))
+        if male:
+            fails.append(f"{pg.name}: «{male.group(1)} partite/gare» senza separatore delle migliaia")
+        else:
+            n_ntrain += 1
+    print(f"[13-14] template e formattazione anti-falso: {n_tpl} template, {n_ntrain} pagine")
 
     st.close()
     return fails, checks

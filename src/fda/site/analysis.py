@@ -18,8 +18,10 @@ from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
+from ..config import leagues
+from ..models.predict import wilson_interval
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
-from .fmt import dec, it_plural
+from .fmt import dec, it_plural, pct_triple
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
 # 616 formazioni: il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in
@@ -437,50 +439,35 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
     elo_top_prob = None
     if has_elo and elo_top:
         elo_top_prob = float(elo_values[elo_top])
-    # scarto sul preferito (audit 1.4) — più leggibile dello scarto max assoluto
+    # distanza DC–Elo **sul preferito pubblicato**, fra i due modelli (non fra blend ed Elo):
+    # è il numero che rende leggibile «quanto sono d'accordo i due motori» (docs/20 §7)
     elo_gap_top_pp = None
-    if has_dc and has_elo and dc_top_prob is not None and elo_top_prob is not None and top_key in values and top_key in elo_values and top_key in dc_values:
-        # scarto sul preferito effettivo (top del blend), non sul top DC/Elo isolato
-        try:
-            elo_gap_top_pp = round(abs(float(values[top_key]) - float(elo_values[top_key])) * 100, 1)
-        except Exception:
-            elo_gap_top_pp = None
-        # fallback: scarto fra DC ed Elo sul loro top rispettivo se top_key diverso
-        if elo_gap_top_pp is None:
-            try:
-                elo_gap_top_pp = round(abs(float(dc_top_prob) - float(elo_top_prob)) * 100, 1)
-            except Exception:
-                elo_gap_top_pp = elo_gap_pp
-    elif has_elo and elo_top_prob is not None and dc_top_prob is not None:
-        try:
-            elo_gap_top_pp = round(abs(float(dc_top_prob) - float(elo_top_prob)) * 100, 1)
-        except Exception:
-            elo_gap_top_pp = elo_gap_pp
+    if has_dc and has_elo:
+        elo_gap_top_pp = round(abs(float(dc_values[top_key]) - float(elo_values[top_key])) * 100, 1)
 
     def _comma(x: float | None, nd: int = 1) -> str:
         return "" if x is None else f"{float(x):.{nd}f}".replace(".", ",")
 
-    # etichetta più esplicita per l'utente non specialista (audit 3.1)
-    if has_elo and top_key == elo_top:
-        if elo_gap_top_pp is not None and elo_gap_top_pp < 5:
-            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito"
+    # Segnale di (dis)accordo con i due soggetti espliciti e le percentuali ricalcolabili
+    # dai vettori salvati: mai uno «scarto» senza dire fra chi (docs/20 §7)
+    if has_dc and has_elo and dc_top is not None and elo_top is not None:
+        if dc_top == elo_top:
+            signal_label = (f"DC ed Elo sullo stesso preferito ({names[dc_top]}): "
+                            f"DC {_comma(float(dc_values[dc_top]) * 100)}% · "
+                            f"Elo {_comma(float(elo_values[elo_top]) * 100)}% · "
+                            f"distanza {_comma(elo_gap_top_pp)} punti")
             signal_tone = "agree"
         else:
-            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito" if elo_gap_top_pp is not None else "Stesso preferito"
-            signal_tone = "agree"
+            signal_label = (f"Preferiti diversi: DC {names[dc_top]} "
+                            f"{_comma(float(dc_values[dc_top]) * 100)}% · "
+                            f"Elo {names[elo_top]} {_comma(float(elo_values[elo_top]) * 100)}%")
+            signal_tone = "split"
     elif has_elo and top_key != elo_top:
-        # quando il blend e l'Elo divergono: se ho entrambi i modelli mostro il confronto DC vs Elo,
-        # altrimenti etichetta generica (test con solo blend+Elo, senza DC)
-        if has_dc and dc_top is not None and dc_top_prob is not None and elo_top is not None and elo_top_prob is not None:
-            # label già con percentuali intere, non serve virgola
-            signal_label = f"Preferiti diversi · DC {names[dc_top]} {int(round(dc_top_prob*100))}% vs Elo {names[elo_top]} {int(round(elo_top_prob*100))}%"
-            signal_tone = "split"
-        else:
-            signal_label = "DC ed Elo divergono"
-            signal_tone = "split"
-    elif has_elo:
         signal_label = "DC ed Elo divergono"
         signal_tone = "split"
+    elif has_elo:
+        signal_label = "Stesso preferito per DC ed Elo"
+        signal_tone = "agree"
     elif has_dc:
         signal_label = "Solo modello sui gol"
         signal_tone = "single"
@@ -488,14 +475,22 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         signal_label = "Segnale unico"
         signal_tone = "single"
 
+    # percentuali intere coerenti (resto massimo, somma 100): il margine pubblicato è la
+    # differenza fra le percentuali STAMPATE, così il lettore può rifare il conto (docs/20 §5)
+    pct = pct_triple((float(values["1"]), float(values["X"]), float(values["2"])))
+    idx = {"1": 0, "X": 1, "2": 2}
+
     return {
         "top_key": top_key,
         "top_name": names[top_key],
         "top_probability": float(top_probability),
+        "pct": pct,
+        "top_pct": pct[idx[top_key]],
         "second_key": second_key,
         "second_name": names[second_key],
         "second_probability": float(second_probability),
-        "margin_pp": round((float(top_probability) - second_probability) * 100, 1),
+        "second_pct": pct[idx[second_key]],
+        "margin_pp": pct[idx[top_key]] - pct[idx[second_key]],
         "signal_label": signal_label,
         "signal_tone": signal_tone,
         "elo_top": elo_top,
@@ -529,6 +524,126 @@ class MatchAnalysis:
         self.h2h_df = store.read("h2h")
         self.insights_df = store.read("insights")
         self.weather_forecast = store.read("weather_forecast")
+        self.backtest = store.read("backtest")
+
+    # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
+    def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Minuti attesi del primo gol, da un ritmo a due tempi MISURATO, non da Poisson puro.
+
+        Il Poisson a tasso costante sbaglia sistematicamente: i gol osservati arrivano più
+        tardi (sullo storico di stagione solo il 42,8% cade nel 1° tempo). Qui il tasso è
+        r1 = s·λ/45 nel 1° tempo e r2 = (1-s)·λ/45 nel 2°, con s = quota dei gol di 1°
+        tempo misurata su events.parquet a ogni build (regola: minuto ≤ 45 vale 1° tempo,
+        i 45+x' recupero del 1°). I quartili arrivano in forma chiusa da
+        S(t) = e^{-r1 t} (t≤45) e S(t) = e^{-r1·45}e^{-r2 (t-45)} dopo; il verificatore
+        ricalcola numeri pubblici dalla stessa formula e dagli stessi eventi, e la card
+        dichiara i conteggi (gol, partite) con cui s è stata misurata. Minuti oltre il 90°
+        non esistono: un quartile oltre il fischio finale diventa «dopo il 90'», mai un
+        numero inventato.
+        """
+        lam = self._lambdas(prediction)
+        if lam is None or self.events.empty or "type" not in self.events.columns:
+            return None
+        g = self.events[self.events.type == "Goal"]
+        if len(g) < 60 or not g.minute.notna().all():
+            return None
+        s = float((g.minute <= 45).mean())                    # misura, non ipotesi
+        lam_tot = float(lam[0] + lam[1])
+        r1, r2 = s * lam_tot / 45.0, (1.0 - s) * lam_tot / 45.0
+        if r1 <= 0 or r2 <= 0:
+            return None
+        s_ht = float(np.exp(-r1 * 45.0))                      # P(0-0 all'intervallo)
+
+        def _q(p: float) -> float | None:
+            tail = 1.0 - p
+            if tail >= s_ht:                                  # il quartile cade nel 1° tempo
+                t = -np.log(tail) / r1
+            else:
+                t = 45.0 + (-np.log(tail) - r1 * 45.0) / r2
+            return None if t > 90.0 else float(t)
+
+        return {"q": [(p, _q(p)) for p in (0.25, 0.50, 0.75)],
+                "s_half": s, "s_ht": s_ht, "lam": lam_tot,
+                "n_goals": int(len(g)), "n_matches": int(g.match_id.nunique()),
+                "zero": float(np.exp(-lam_tot))}
+
+    # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
+    def league_goals_percentile(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Su che scala leggere i gol attesi totali della scheda: il percentile di lega.
+
+        Un λ totale di 3,0 non significa lo stesso ovunque (media stagionale misurata:
+        2,6 in ENG1 ma 3,4 in NED1). Qui il λ della scheda viene ordinato dentro la
+        distribuzione della stessa quantità su tutte le partite della STESSA lega
+        previste dal modello in stagione — così il lettore ottiene «tanto o poco per la
+        sua serie» da un conteggio rifaicibile, non da un giudizio. Numeri e frazione
+        sono ricalcolati a ogni build da predictions.parquet e verificati pagina per pagina.
+        """
+        lam = self._lambdas(prediction)
+        if lam is None or self.preds.empty or "league_key" not in self.preds.columns:
+            return None
+        lg = prediction.get("league_key")
+        if not lg:
+            return None
+        p = self.preds[self.preds.league_key == lg].sort_values("made_at").groupby("match_id").tail(1)
+        tot = (p.lambda_home.astype(float) + p.lambda_away.astype(float))
+        tot = tot[np.isfinite(tot)]
+        n = int(len(tot))
+        if n < 30:
+            return None
+        here = float(lam[0] + lam[1])
+        below = float((tot < here).mean())
+        if below >= 0.75:
+            label = "fra le partite che promettono più gol"
+        elif below <= 0.25:
+            label = "fra le partite più chiuse del campionato"
+        else:
+            label = "nella media del campionato"
+        name = {x.key: x.name for x in leagues()}.get(str(lg), str(lg))
+        return {"here": here, "n": n, "below": below, "mean": float(tot.mean()),
+                "median": float(tot.median()), "label": label, "league": name, "league_key": str(lg)}
+
+    # ---- fascia storica del pronostico (backtest fuori campione) ---------------------------
+    #: fasce di probabilità del favorito usate per dire «quando il favorito aveva questa
+    #: forza, poi ha vinto così spesso». Bordi scelti una volta: 1/3 è il minimo possibile
+    #: (tre esiti equiprobabili) e oltre 0,4 il favorito definisce il tipo di partita.
+    FAVORITE_BANDS: tuple[tuple[float, float, str], ...] = (
+        (0.33, 0.40, "fino al 40%"),
+        (0.40, 0.50, "fra 40% e 50%"),
+        (0.50, 0.60, "fra 50% e 60%"),
+        (0.60, 0.75, "fra 60% e 75%"),
+        (0.75, 1.001, "oltre il 75%"),
+    )
+
+    def favorite_track_record(self, prediction: dict[str, Any] | None) -> list[dict[str, Any]] | None:
+        """Come è andata ogni fascia di pronostico nel backtest: tabella per la scheda.
+
+        Per le 5 fasce di probabilità del favorito pubblica media prevista, frequenza
+        osservata del favorito vincente, intervallo di Wilson 95% e numerosità — sempre
+        dalla tabella ``backtest`` (previsioni fuori campione, nessun risultato visto).
+        Riga ``current=True`` sulla fascia in cui cade QUESTA partita. La frequenza passata
+        non è una promessa: il lettore vede numeri e numerosità e può rifare i conti.
+        """
+        if prediction is None or self.backtest.empty or "outcome" not in self.backtest.columns:
+            return None
+        p = self.backtest[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+        fav = p.max(axis=1)
+        hit = p.argmax(axis=1) == self.backtest["outcome"].to_numpy()
+        here = float(max(prediction["p_home"], prediction["p_draw"], prediction["p_away"]))
+        out = []
+        for lo, hi, label in self.FAVORITE_BANDS:
+            m = (fav >= lo) & (fav < hi)
+            n = int(m.sum())
+            if n < 30:
+                continue
+            k = int(hit[m].sum())
+            wl, wh = wilson_interval(k, n)
+            out.append({"lo": lo, "hi": hi, "label": label, "n": n, "k": k,
+                        "obs": k / n, "wil_lo": wl, "wil_hi": wh,
+                        "pred_mean": float(fav[m].mean()),
+                        "current": bool(lo <= here < hi)})
+        if not any(r["current"] for r in out):
+            return None
+        return {"rows": out, "n_tot": int(len(fav)), "fav": here}
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
@@ -1037,10 +1152,11 @@ class MatchAnalysis:
         home_rows = [r for r in rows if r["home"]]
         away_rows = [r for r in rows if not r["home"]]
         trend = None
+        trend_recent = trend_before = None
         if len(rows) >= 6:                 # ultime 3 contro le precedenti: solo se ci sono 6 gare
-            recent, before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
-            if before > 0:
-                delta = recent - before
+            trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
+            if trend_before > 0:
+                delta = trend_recent - trend_before
                 trend = "in crescita" if delta > 0.15 else "in calo" if delta < -0.15 else "stabile"
         return {"source": source, "played": len(rows), "rows": rows,
                 "xg_pm": sum(xg) / len(xg), "xga_pm": sum(xga) / len(xga),
@@ -1048,7 +1164,9 @@ class MatchAnalysis:
                 "ppda": sum(ppda) / len(ppda) if ppda else None,
                 "home_pm": sum(r["xg"] for r in home_rows) / len(home_rows) if home_rows else None,
                 "away_pm": sum(r["xg"] for r in away_rows) / len(away_rows) if away_rows else None,
-                "trend": trend}
+                "trend": trend, "trend_recent": trend_recent, "trend_before": trend_before,
+                # soglia dichiarata accanto alla frase: il lettore può rifare il giudizio (docs/20 §10)
+                "trend_threshold": 0.15}
 
     def h2h_pattern(self, match_id: int, home_id: int, away_id: int,
                     kickoff: pd.Timestamp, n: int = 60) -> dict[str, Any] | None:
@@ -1062,6 +1180,8 @@ class MatchAnalysis:
         if len(rows) < 3:
             return None
         w = d = l = 0
+        vw = vd = vl = 0                     # sotto-serie: la casa attuale era di casa
+        vgoals = 0
         margins: list[int] = []
         scorelines: dict[str, int] = {}
         btts = over25 = 0
@@ -1077,6 +1197,11 @@ class MatchAnalysis:
                     last_draw = i          # 0 = l'ultimo scontro è stato un pareggio
             else:
                 l += 1
+            if was_home:                   # lo stesso scenario di campo di QUESTA gara
+                vw += int(signed > 0)
+                vd += int(signed == 0)
+                vl += int(signed < 0)
+                vgoals += r["hg"] + r["ag"]
             margins.append(signed)
             key = f"{r['hg']}-{r['ag']}" if was_home else f"{r['ag']}-{r['hg']}"
             scorelines[key] = scorelines.get(key, 0) + 1
@@ -1084,11 +1209,18 @@ class MatchAnalysis:
             over25 += int(r["hg"] + r["ag"] > 2.5)
         total = len(rows)
         top = sorted(scorelines.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
+        # sotto-serie «con la casa attuale in casa»: pubblicata solo da 8 casi —
+        # sotto una doppia cifra di precedenti la frequenza non regge una frase (docs/20 §11)
+        venue = None
+        nv = vw + vd + vl
+        if nv >= 8:
+            venue = {"n": nv, "wins": vw, "draws": vd, "losses": vl, "gpg": vgoals / nv}
         return {"n": total, "wins": w, "draws": d, "losses": l,
                 "gpg": sum(r["hg"] + r["ag"] for r in rows) / total,
                 "margin": sum(margins) / total,
                 "btts": btts / total, "over25": over25 / total, "draw_drought": last_draw,
                 "top_scores": [{"score": s, "n": c, "share": c / total} for s, c in top],
+                "venue": venue,
                 "last": rows[0]["utc"], "first": rows[-1]["utc"]}
 
     def key_players_deep(self, team_id: int, n: int = 3) -> dict[str, Any] | None:
@@ -1766,25 +1898,27 @@ class MatchAnalysis:
                     s.append(f"{h} preme molto più di {a} (PPDA {_f(ppda['h'], 1)} vs {_f(ppda['a'], 1)}).")
                 elif ppda["a"] <= 0.75 * ppda["h"]:
                     s.append(f"{a} preme molto più di {h} (PPDA {_f(ppda['a'], 1)} vs {_f(ppda['h'], 1)}).")
-            op = by.get("xG azione manovrata / gara")
-            st = by.get("xG palle inattive / gara")
-            if op and st and op["h"] is not None and st["h"] is not None and (op["h"] + st["h"]) > 0:
-                share = st["h"] / (op["h"] + st["h"])
-                if share >= 0.40:
-                    s.append(f"{h} crea una quota alta di xG su palla inattiva ({_pct(share)} del totale).")
-            if op and st and op["a"] is not None and st["a"] is not None and (op["a"] + st["a"]) > 0:
-                share = st["a"] / (op["a"] + st["a"])
-                if share >= 0.40:
-                    s.append(f"{a} crea una quota alta di xG su palla inattiva ({_pct(share)} del totale).")
+            # quote interne alla stessa fonte (FotMob): sono la scomposizione coerente,
+            # leggibile come «42% del totale» senza sommare fonti diverse (docs/20 §4)
+            st = by.get("xG da palle inattive (quota)")
+            if st and st["h"] is not None and st["h"] >= 40:
+                s.append(f"{h} crea una quota alta di xG su palla inattiva ({dec(st['h'], 0)}% del totale).")
+            if st and st["a"] is not None and st["a"] >= 40:
+                s.append(f"{a} crea una quota alta di xG su palla inattiva ({dec(st['a'], 0)}% del totale).")
         for side, name in (("home", h), ("away", a)):
             f = ctx.get(f"{side}_form") or []
             if len(f) >= 3:
                 pts = sum(3 if x["res"] == "V" else 1 if x["res"] == "N" else 0 for x in f)
                 seq = "".join(x["res"] for x in f)
+                # la forma è un contenuto obbligatorio, non un'eccezione da segnalare: se non
+                # è estrema si dice comunque, con i numeri (parità fra le 7 leghe, docs/20 §13)
                 if pts >= 2.4 * len(f):
-                    s.append(f"{name} arriva in grande forma: {seq} nelle ultime {len(f)} ({pts} punti).")
+                    giudizio = "grande forma"
                 elif pts <= 0.6 * len(f):
-                    s.append(f"{name} in difficoltà: {seq} nelle ultime {len(f)} ({pts} punti).")
+                    giudizio = "in difficoltà"
+                else:
+                    giudizio = "andamento nella norma"
+                s.append(f"{name}: {pts} punti nelle ultime {len(f)} ({seq}) — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
@@ -1796,10 +1930,22 @@ class MatchAnalysis:
                              f"quanto crea, segnale di sottovalutazione.")
             un = ctx.get(f"{side}_unavailable") or []
             if un:
-                heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
+                # «Giocatore di peso» = titolare abituale (minuti >= metà della media squadra):
+                # criterio interno alla squadra, lo stesso per tutte e 7 le leghe — la soglia
+                # fissa a 15M€ di valore marcava per definizione quasi solo la Premier League
+                # (POR1: 5 rose su 77; verificato 2026-09-15, docs/20 §13). Se mancano i minuti
+                # di stagione si ripiega sul valore di mercato; se manca anche quello, lo si dice.
+                ab = ctx.get(f"{side}_absences")
+                if ab and ab.get("has_stats"):
+                    heavy = [p for p in ab["players"] if p.get("starter")]
+                else:
+                    heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
                 names = ", ".join(u["name"] for u in un[:4])
                 extra = (" (tra cui 1 giocatore di peso)" if len(heavy) == 1
                          else f" (tra cui {len(heavy)} giocatori di peso)") if heavy else ""
+                if not heavy and not (ab and ab.get("has_stats")) \
+                        and all(not u.get("value") for u in un):
+                    extra = " (peso non valutabile: fonte senza minuti né valori di mercato)"
                 s.append(f"Assenze {name}: {len(un)}{extra} — {names}{'…' if len(un) > 4 else ''}.")
             rest = ctx.get(f"{side}_rest")
             if rest is not None and rest <= 3:
@@ -1922,6 +2068,9 @@ class MatchAnalysis:
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
+        ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])
+        ctx["league_pos"] = self.league_goals_percentile(ctx["prediction"])
+        ctx["first_goal"] = self.first_goal_clock(ctx["prediction"])
         ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
         ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None

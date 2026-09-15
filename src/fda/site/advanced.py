@@ -200,23 +200,52 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         return (out[0], out[1], out[2])
 
     steps: list[dict[str, Any]] = []
-    labels = [
-        ("dc_p_", "Modello sui gol (Dixon-Coles)", "attacco/difesa pesati nel tempo, senza rating"),
-        ("blend_p_", "Media con i rating Elo", None),
-    ]
-    prev_top: float | None = None
-    for prefix, label, note in labels:
-        v = _vec(prefix)
-        if not v:
-            continue
-        if note is None:
-            w = pred.get("w_dc")
-            note = (f"peso Dixon-Coles {float(w):.0%}, Elo {1 - float(w):.0%}"
-                    if w is not None and not pd.isna(w) else "media pesata con i rating Elo")
+
+    def _append(label: str, note: str, v: tuple[float, float, float]) -> None:
+        # % mostrate = metodo del resto massimo a 0,1 (stessa resa di |pct3 nel template):
+        # il Δ stampato è per costruzione la differenza fra i valori stampati dei due passi,
+        # quindi la catena è ricalcolabile a occhio (regola «ogni numero mostrato torna»).
+        from .fmt import pct_triple
+
+        disp = pct_triple(v, 1)
+        top_disp = float(max(disp))
+        prev = steps[-1]["top_disp"] if steps else None
         steps.append({"label": label, "note": note, "p_home": v[0], "p_draw": v[1], "p_away": v[2],
-                      "top": _top_name(v), "delta_pp": None if prev_top is None
-                      else round((_top_value(v) - prev_top) * 100, 1)})
-        prev_top = _top_value(v)
+                      "top": _top_name(v), "top_disp": top_disp,
+                      "delta_pp": None if prev is None else round(top_disp - prev, 1)})
+
+    dc = _vec("dc_p_")
+    elo = _vec("elo_p_")
+    if dc is not None:
+        _append("Modello sui gol (Dixon-Coles)",
+                "attacco/difesa pesati nel tempo, senza rating", dc)
+    # passo 2: la media pesata VERA, ricalcolabile dalle colonne salvate (dc_p_*, elo_p_*, w_dc)
+    w = pred.get("w_dc")
+    if dc is not None and elo is not None and w is not None and not pd.isna(w):
+        wf = float(w)
+        media = (wf * dc[0] + (1 - wf) * elo[0],
+                 wf * dc[1] + (1 - wf) * elo[1],
+                 wf * dc[2] + (1 - wf) * elo[2])
+        _append("Media pesata con i rating Elo",
+                f"peso Dixon-Coles {wf:.0%}, Elo {1 - wf:.0%}", media)
+    # passo 3: il vettore che le λ pubblicate producono, prima della calibrazione
+    blend = _vec("blend_p_")
+    if blend is not None:
+        mode = str(pred.get("ensemble_mode") or "")
+        if mode == "tilt":
+            tilt = pred.get("tilt")
+            note = "l'Elo inclina il rapporto casa/trasferta a totale dei gol invariato"
+            if tilt is not None and not pd.isna(tilt) and abs(float(tilt) - 1.0) > 1e-6:
+                note += f" (×{_dec(float(tilt), 3)}): la griglia arriva a questo vettore"
+            else:
+                note += ": qui l'Elo non sposta (inclinazione ≈ 1), il vettore coincide con la media"
+            _append("Griglia sulle λ inclinate dall'Elo", note, blend)
+        else:
+            # previsioni storiche della ricetta precedente: blend_p_* è il vettore obiettivo
+            # 70/30 che le due λ cercate raggiungevano (goal_expectancy, «inverti»)
+            _append("Media con i rating Elo",
+                    "vettore obiettivo dei due rating (previsione precedente alla ricetta attuale)",
+                    blend)
     pub = _vec("p_")
     if pub and steps and max(abs(pub[i] - steps[-1][k]) for i, k in
                              enumerate(("p_home", "p_draw", "p_away"))) > 5e-4:
@@ -237,10 +266,7 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
                         f"{_int_it(pred.get('calibration_n_fit'))} gare fuori campione")
             except (TypeError, ValueError):
                 note = "correzione storica delle λ"
-        steps.append({"label": "Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)",
-                      "note": note, "p_home": pub[0], "p_draw": pub[1], "p_away": pub[2],
-                      "top": _top_name(pub),
-                      "delta_pp": round((_top_value(pub) - prev_top) * 100, 1)})
+        _append("Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)", note, pub)
     # un solo passo non è una scomposizione: la scheda non mostra un blocco vuoto
     return steps if len(steps) >= 2 else []
 
@@ -432,44 +458,103 @@ def shot_quality(shots: pd.DataFrame, team_id: int) -> dict[str, Any] | None:
     }
 
 
+def _quota_split(side: dict[str, Any]) -> tuple[float | None, float | None]:
+    """Quote xG azione / palle inattive (somma 100) da un'unica fonte — mai sommabili a un
+    totale calcolato da un'altra fonte (docs/20 §4): è l'unica scomposizione coerente
+    per costruzione e confrontabile in parità fra tutte e 7 le leghe."""
+    op, sp = side.get("open_pm"), side.get("set_pm")
+    if op is None or sp is None:
+        return None, None
+    tot = float(op) + float(sp)
+    if tot <= 0:
+        return None, None
+    return (round(100.0 * float(op) / tot, 1), round(100.0 * float(sp) / tot, 1))
+
+
 def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
                pred: dict[str, Any] | None) -> dict[str, Any] | None:
     """Card «Scontro tattico»: λ, DC attacco/difesa, xG split, PPDA, deep.
 
     Una riga compare solo se almeno un lato ha il dato. None se non c'è nulla
-    di confrontabile (niente previsione e niente stile di stagione).
+    di confrontabile (niente previsione e niente stile di stagione). Ogni riga
+    dichiara la **sua** fonte nel tooltip (``help``): nella stessa tabella possono
+    convivere modello (λ/DC), Understat (xG/PPDA nelle 5 leghe coperte) e FotMob
+    (xG in NED1/POR1 e sempre per le quote azione/palle inattive) — i due fornitori
+    di xG divergono di ~0,15 a gara su 92 squadre (docs/20 §3), quindi la
+    scomposizione è pubblicata come quota interna a una sola fonte.
     """
     h, a = home or {}, away or {}
     pred = pred or {}
     rows: list[dict[str, Any]] = []
 
-    def add(label: str, hv, av, higher: bool | None = True, nd: int = 2) -> None:
+    def add(label: str, hv, av, higher: bool | None = True, nd: int = 2,
+            help: str | None = None, suffix: str | None = None) -> None:
         if hv is None and av is None:
             return
         best = None
         if hv is not None and av is not None and higher is not None and hv != av:
             best = "h" if (hv > av) == higher else "a"
-        rows.append({"label": label, "h": hv, "a": av, "best": best, "nd": nd})
+        rows.append({"label": label, "h": hv, "a": av, "best": best, "nd": nd,
+                     "help": help, "suffix": suffix})
 
-    add("Gol attesi (λ)", pred.get("lambda_home"), pred.get("lambda_away"), True)
-    add("Attacco DC", pred.get("dc_attack_home"), pred.get("dc_attack_away"), True)
-    add("Difesa DC (↓ meglio)", pred.get("dc_defence_home"), pred.get("dc_defence_away"), False)
-    add("xG / gara", h.get("xg_pm"), a.get("xg_pm"), True)
-    add("xGA / gara", h.get("xga_pm"), a.get("xga_pm"), False)
-    add("xG azione manovrata / gara", h.get("open_pm"), a.get("open_pm"), True)
-    add("xG palle inattive / gara", h.get("set_pm"), a.get("set_pm"), True)
-    add("PPDA (↓ = più pressing)", h.get("ppda"), a.get("ppda"), False, 1)
-    add("PPDA concesso", h.get("ppda_allowed"), a.get("ppda_allowed"), True, 1)
-    add("Passaggi profondi / gara", h.get("deep"), a.get("deep"), True, 1)
-    add("Passaggi profondi subiti / gara", h.get("deep_allowed"), a.get("deep_allowed"), False, 1)
+    def _xg_help(base: str, hs: dict[str, Any], as_: dict[str, Any]) -> str:
+        """Fonte esplicita per lato della stessa riga: qui (e solo qui) le due colonne
+        possono venire da fornitori diversi."""
+        hsrc, asrc = hs.get("source") or "n.d.", as_.get("source") or "n.d."
+        hn, an = hs.get("played") or "—", as_.get("played") or "—"
+        if hsrc == asrc:
+            return f"{base}, media stagionale {hsrc} su {hn} gare"
+        return (f"{base}, media stagionale: colonna a sinistra {hsrc} su {hn} gare, "
+                f"colonna a destra {asrc} su {an} gare — i due fornitori non sono identici")
+
+    add("Gol attesi (λ)", pred.get("lambda_home"), pred.get("lambda_away"), True,
+        help="Media Poisson Dixon-Coles+Elo calibrata, non media delle ultime gare")
+    add("Attacco DC", pred.get("dc_attack_home"), pred.get("dc_attack_away"), True,
+        help="Parametro d'attacco del modello (gol attesi contro una difesa media)")
+    add("Difesa DC (↓ meglio)", pred.get("dc_defence_home"), pred.get("dc_defence_away"), False,
+        help="Parametro di difesa del modello: più basso = subisce meno")
+    add("xG / gara", h.get("xg_pm"), a.get("xg_pm"), True, help=_xg_help("Gol attesi", h, a))
+    add("xGA / gara", h.get("xga_pm"), a.get("xga_pm"), False,
+        help=_xg_help("Gol attesi concessi", h, a))
+    qo_h, qs_h = _quota_split(h)
+    qo_a, qs_a = _quota_split(a)
+
+    def _quota_help(hv, av) -> str:
+        def _one(side, qo, qs) -> str:
+            if side.get("open_pm") is None or side.get("set_pm") is None:
+                return "n.d."
+            n = side.get("split_played") or "—"
+            return (f"{_dec(side['open_pm'], 2)} + {_dec(side['set_pm'], 2)} xG a gara "
+                    f"(FotMob, {n} gare finite)")
+        return (f"Quota del totale xG della squadra, unica fonte FotMob: le due quote sommano "
+                f"sempre 100 e NON si sommano alla riga «xG / gara» se quella viene da "
+                f"Understat. Valori a gara — sinistra {_one(h, qo_h, qs_h)}, "
+                f"destra {_one(a, qo_a, qs_a)}")
+
+    add("xG da azione manovrata (quota)", qo_h, qo_a, None, 0, _quota_help(qo_h, qo_a), "%")
+    add("xG da palle inattive (quota)", qs_h, qs_a, None, 0, _quota_help(qs_h, qs_a), "%")
+    add("PPDA (↓ = più pressing)", h.get("ppda"), a.get("ppda"), False, 1,
+        help="Passaggi concessi prima di un intervento difensivo (Understat): 8 = pressing alto, 18 = blocco basso")
+    add("PPDA concesso", h.get("ppda_allowed"), a.get("ppda_allowed"), True, 1,
+        help="Pressing subito: passaggi che gli avversari completano prima di un intervento (Understat)")
+    add("Passaggi profondi / gara", h.get("deep"), a.get("deep"), True, 1,
+        help="Completamenti negli ultimi ~20 m di campo (Understat): quanto una squadra arriva vicino all'area")
+    add("Passaggi profondi subiti / gara", h.get("deep_allowed"), a.get("deep_allowed"), False, 1,
+        help="Completamenti negli ultimi ~20 m concessi (Understat): più basso = difesa più protetta")
     if not rows:
         return None
     notes = [
-        "Attacco/difesa DC: parametri Dixon-Coles. Difesa più bassa = subisce meno.",
-        "PPDA: passaggi concessi per azione difensiva (basso = più pressing).",
-        "Passaggi profondi: completamenti negli ultimi ~20 m (Understat).",
-        "xG azione / palle inattive: media sulle finite FotMob.",
+        "Attacco/difesa DC: parametri del modello. Difesa più bassa = subisce meno.",
+        "PPDA e passaggi profondi: Understat (nelle leghe coperte).",
+        "Quote azione/palle inattive: FotMob; sommano 100 e non si sommano al totale.",
     ]
+    # le due colonne hanno fornitori xG diversi? Il lettore deve saperlo senza
+    # dover aprire il tooltip (docs/20 §3)
+    hsrc, asrc = h.get("source"), a.get("source")
+    mixed = bool(hsrc and asrc and hsrc != asrc)
+    if mixed:
+        notes.append(f"xG / gara da due fornitori diversi in questa gara: "
+                     f"sinistra {hsrc}, destra {asrc} — confronto indicativo.")
     # dedup con pattern lasco (case/punteggiatura/spazi) — evita nota globale duplicata per variazioni minime
     def _norm(s: str) -> str:
         return re.sub(r"\W+", " ", s.lower().strip()).strip()
@@ -482,4 +567,4 @@ def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
             uniq.append(n)
     # nota globale singola (pattern lasco già applicato) + lista per retro-compatibilità
     global_note = " ".join(uniq[:2])
-    return {"rows": rows, "notes": uniq, "global_note": global_note}
+    return {"rows": rows, "notes": uniq, "global_note": global_note, "mixed_sources": mixed}

@@ -1,6 +1,25 @@
 # 20 — Audit delle dieci sezioni della scheda partita
 
-**Sessione** `arena/01a0a1a3` · **data** 2026-09-15 · **direttiva utente**: le sezioni
+> **Stato: APPLICATO per intero il 2026-09-15** (branch `arena/01a0a4ec-football-deep-analyzer`,
+> blocchi 1-3 `ee9d088`/`667aa89`/`5572dda` + blocco finiture). Soluzioni = quelle proposte qui
+> sotto; misure post-fix su 376 schede (`scripts/audit_match_sections.py`): #1 media pesata vera
+> + passo tilt separato (84 pagine; le 9 residui «media» sono previsioni legacy «inverti», dove la
+> media è onestamente media); #2 numero manuale rimosso (0/376, interdetto per sempre dal
+> controllo [13]); #3 fonte dichiarata per riga con n gare (361 pagine + 15 avvisi «due fornitori
+> diversi»); #4 quote a somma 100 su 376/376; #5 margine = differenza degli interi stampati,
+> **118 → 0 schede incoerenti su 165**; #6 «λ₁ + λ₂ (totale)» ovunque, SEO inclusa; #7 segnale
+> con soggetti e distanza sul preferito pubblicato; #8 migliaia + nota sul dato reale; #9
+> «coprono X partite su 100» su 165/165; #10 tendenza staccata e con i suoi due numeri + soglia;
+> #11 code rinominate e inequivocabili, precedenti per campo da 8 casi (49 pagine); #12 un unico
+> formato xPTS + ◎ sul valore stabilizzato con legenda; #13 forma sempre presente in tutte e 7 le
+> leghe + «giocatore di peso» = titolare abituale (POR1 5/15 contro 1/15 prima); #14 h3 dentro
+> Verifica. Verifiche finali: suite 199 passed, `fda build` 376/2.364/7.476, `verify_site`
+> **0 problemi · 16.541 controlli**. Invarianti nuove: [11] margine/primo/secondo coerenti con la
+> triade; [12] copertura riconciliata col Parquet; Δ della catena esatti sui valori stampati;
+> [13] divieto di conteggi di verifica scritti a mano; [14] divieto di numeri ≥5 cifre senza
+> separatore.
+
+**Sessione** `arena/01a0a4ec` · **data** 2026-09-15 · **direttiva utente**: le sezioni
 *Analisi pre-partita, Previsione del modello, Risultati esatti più probabili, Come nasce questa
 probabilità, Scontro tattico, Fatti rilevanti, Come arrivano, Confronto di stagione, Contesto,
 Verifica approfondita* devono essere «accurate, intuitive, precise, profonde, di qualità e logica».

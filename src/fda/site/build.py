@@ -374,9 +374,12 @@ class SiteBuilder:
             # SEO per la scheda: descrizione compatta con 1X2 se disponibile
             p = ctx.get("prediction")
             if p and p.get("p_home") is not None:
+                _lh, _la = float(p.get("lambda_home", 0.0)), float(p.get("lambda_away", 0.0))
+                _gc = lambda v: f"{v:.2f}".replace(".", ",")
                 page_desc = (f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name}: '
                              f'1 {int(round(p["p_home"]*100))}% X {int(round(p["p_draw"]*100))}% 2 {int(round(p["p_away"]*100))}% '
-                             f'· gol attesi {p.get("lambda_home",0):.2f}–{p.get("lambda_away",0):.2f} · Over 2,5 {int(round(p.get("p_over25",0)*100))}%')
+                             f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(_lh + _la)} totali) · '
+                             f'Over 2,5 {int(round(p.get("p_over25",0)*100))}%')
             else:
                 page_desc = f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name} — analisi pre-partita, forma e precedenti.'
             page_title = f'{ctx.get("home_name")} - {ctx.get("away_name")} — analisi · CalcioMetro'

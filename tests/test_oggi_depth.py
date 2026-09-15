@@ -7,7 +7,9 @@ casa attuale) sono inchiodate da asserzioni e non da un controllo a occhio sul s
 
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
+import pytest
 
 from fda.site.analysis import POSITION_NAMES, MatchAnalysis, prediction_meta
 from fda.store import Store
@@ -186,6 +188,137 @@ def test_arrival_trend_understat(tmp_path):
     assert [r["res"] for r in a["rows"]] == ["V", "N", "P", "N"]
     assert a["home_pm"] == (1.8 + 0.9) / 2 and a["away_pm"] == (1.4 + 1.2) / 2
     assert a["trend"] is None                                 # meno di 6 gare: nessuna etichetta
+    assert a["trend_recent"] is None and a["trend_before"] is None
+
+
+def test_favorite_track_record_bands_and_current_flag():
+    """Fasce storiche del pronostico: conteggi, frequenze e Wilson ricostruiti dal backtest,
+    riga «questa» sulla fascia del favorito in scheda (l'infallibilità è la verifica)."""
+    from fda.models.predict import wilson_interval
+
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    favs = ([0.37] * 40 + [0.45] * 60 + [0.55] * 60 + [0.66] * 60 + [0.80] * 60 +
+            [0.36] * 20)  # 20 partite nella microcoda <30: fascia 34-40% passa comunque
+    rows = []
+    for i, v in enumerate(favs):
+        rest = 1.0 - v
+        rows.append({"p_home": v, "p_draw": rest * 0.6, "p_away": rest * 0.4,
+                     "outcome": 0 if i % 3 else 2})  # il favorito (casa) esce ~1 su 3
+    ma.backtest = pd.DataFrame(rows)
+    pred = {"p_home": 0.52, "p_draw": 0.28, "p_away": 0.20}
+    fr = ma.favorite_track_record(pred)
+    assert fr is not None and fr["fav"] == 0.52
+    cur = [r for r in fr["rows"] if r["current"]]
+    assert len(cur) == 1 and cur[0]["label"] == "fra 50% e 60%"
+    r = cur[0]
+    assert r["n"] == 60 and r["k"] == 40          # outcome=0 (casa=favorito) per i%3 != 0: 40 su 60
+    assert r["obs"] == pytest.approx(40 / 60)
+    wl, wh = wilson_interval(40, 60)
+    assert r["wil_lo"] == wl and r["wil_hi"] == wh
+    assert [x["label"] for x in fr["rows"]] == [
+        "fino al 40%", "fra 40% e 50%", "fra 50% e 60%", "fra 60% e 75%", "oltre il 75%"]
+    # favorito al confine superiore di fascia → fascia successiva
+    fr2 = ma.favorite_track_record({"p_home": 0.80, "p_draw": 0.12, "p_away": 0.08})
+    assert [r["label"] for r in fr2["rows"] if r["current"]] == ["oltre il 75%"]
+
+
+def test_league_goals_percentile_uses_same_league_distribution_only():
+    """Il percentile dei gol attesi conta SOLO le partite dello stesso campionato:
+    3,4 gol attesi può essere «tanto» in una lega e «poco» in NED1 — il lettore deve
+    ricevere la posizione sulla scala giusta, rifaciibile da predictions.parquet."""
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    rows = []
+    for i in range(120):  # NED1: tutte a 3,4 gol attesi totali
+        rows.append({"match_id": 1000 + i, "league_key": "NED1", "lambda_home": 1.7,
+                     "lambda_away": 1.7, "made_at": "2026-01-01"})
+    rows.append({"match_id": 42, "league_key": "NED1", "lambda_home": 2.0,
+                 "lambda_away": 2.4, "made_at": "2026-01-01"})
+    for i in range(80):  # ESP1: più basse — se entrassero nel conteggio il percentile mentirebbe
+        rows.append({"match_id": 2000 + i, "league_key": "ESP1", "lambda_home": 1.0,
+                     "lambda_away": 1.0, "made_at": "2026-01-01"})
+    ma.preds = pd.DataFrame(rows)
+    pred = {"league_key": "NED1", "lambda_home": 2.0, "lambda_away": 2.4, "dc_rho": 0.0}
+    lp = ma.league_goals_percentile(pred)
+    assert lp is not None
+    assert lp["n"] == 121, "le altre leghe devono restare fuori"
+    assert lp["below"] == pytest.approx(120 / 121)      # 4,4 supera tutte le partite NED1
+    assert lp["label"] == "fra le partite che promettono più gol"
+    assert lp["league"] == "Eredivisie"
+    # scheda «chiusa»: stessa logica, quartile basso → etichetta opposta
+    rows_low = rows[:1] + [{"match_id": 3000 + i, "league_key": "NED1", "lambda_home": 3.0,
+                            "lambda_away": 3.0, "made_at": "2026-01-01"} for i in range(119)]
+    ma.preds = pd.DataFrame(rows_low + [dict(r, match_id=42) for r in rows[:1]])
+    lp2 = ma.league_goals_percentile(pred)
+    assert lp2["label"] == "fra le partite più chiuse del campionato"
+
+
+def test_first_goal_clock_two_half_rate_closed_form_and_90_cap():
+    """Tasso a due tempi: s MISURATA dagli eventi (regola minuto≤45 = 1° tempo), quartili in
+    forma chiusa; λ microscopici spingerebbero il 3° quartile a 208' — la coda va «oltre fischio»,
+    non oltre 90, e la card deve mostrare «dopo il 90'» (o il verificatore sgama l'inventato)."""
+    rows = ([{"type": "Goal", "minute": 30, "minute_added": None, "match_id": 1}] * 45 +
+            [{"type": "Goal", "minute": 60, "minute_added": None, "match_id": 2}] * 45)
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.events = pd.DataFrame(rows)
+    pred = {"lambda_home": 1.8, "lambda_away": 1.8, "dc_rho": 0.0}
+    fg = ma.first_goal_clock(pred)
+    assert fg is not None and fg["s_half"] == 0.5 and fg["n_goals"] == 90
+    lam = 3.6
+    rate = 0.5 * lam / 45                                     # = 0,04 gol/min in entrambi i tempi
+    assert fg["q"][0][1] == pytest.approx(-np.log(0.75) / rate)
+    assert fg["q"][1][1] == pytest.approx(np.log(2.0) / rate)
+    assert fg["q"][2][1] == pytest.approx(-np.log(0.25) / rate)
+    assert fg["s_ht"] == pytest.approx(np.exp(-0.5 * lam))
+    assert fg["zero"] == pytest.approx(np.exp(-lam))
+    # quartile che cade nel SECONDO tempo controllato nel ramo dopo 45:
+    fg2 = ma.first_goal_clock({"lambda_home": 0.9, "lambda_away": 0.9, "dc_rho": 0.0})
+    r2 = 0.5 * 1.8 / 45
+    assert fg2["q"][2][1] == pytest.approx(45 + (-np.log(0.25) - 0.5 * 1.8) / r2)  # 69,3'
+    # λ piccoli: il 3° quartile supera il fischio finale → None (mai «104'» in faccia al lettore)
+    fg3 = ma.first_goal_clock({"lambda_home": 0.3, "lambda_away": 0.3, "dc_rho": 0.0})
+    assert fg3["q"][2][1] is None and fg3["q"][0][1] is not None
+    # regola del minuto esatto: 45' e 45+x valgono 1° tempo
+    ma.events = pd.DataFrame(
+        [{"type": "Goal", "minute": 45, "minute_added": None, "match_id": 1}] * 30 +
+        [{"type": "Goal", "minute": 45, "minute_added": 2, "match_id": 1}] * 30)
+    fg4 = ma.first_goal_clock(pred)
+    assert fg4 is None or fg4["s_half"] == 1.0
+
+
+def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
+    """Forma sempre presente (non solo se estrema) e «giocatore di peso» = titolare abituale
+    (criterio interno alla squadra, uguale in tutte e 7 le leghe — docs/20 §13)."""
+    ma = MatchAnalysis(_store(tmp_path))
+    narr = ma.build(100)["narrative"]
+    assert "Alpha: 5 punti nelle ultime 4 (VNPN) — andamento nella norma." in narr
+    assert "Beta: 5 punti nelle ultime 4 (PNVN) — andamento nella norma." in narr
+    # Ala A (135' su 855 di squadra → titolare, min >= metà media) pesa anche se vale
+    # 12M (sotto la vecchia soglia assoluta di 15M); Esordiente A non pesa.
+    assert any(s.startswith("Assenze Alpha: 2 (tra cui 1 giocatore di peso)") for s in narr)
+
+
+def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
+    """La tendenza nominata porta accanto i due valori che la generano (docs/20 §10)."""
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as td:
+        ma = MatchAnalysis(_store(Path(td)))
+        # 6 gare fittizie: ultime 3 con xG bassi → «in calo» con i numeri a verbale
+        base_dates = ["2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29", "2026-09-05"]
+        xgs = [2.4, 2.4, 2.4, 0.8, 0.8, 0.8]
+        ma.fixtures = pd.DataFrame([
+            {"match_id": 900 + i, "league_id": 55, "season": "2026", "utc_kickoff": d,
+             "home_id": 10, "home_name": "Alpha", "away_id": 20 + i, "away_name": f"Avv{i}",
+             "home_goals": 1, "away_goals": 0, "status": "finished", "source": "t", "round": i}
+            for i, d in enumerate(base_dates)])
+        ma.us_team = pd.DataFrame([
+            {"team_name": "Alpha", "date": d, "is_home": True, "xg": x, "xga": 1.0,
+             "goals": 1, "goals_against": 0, "ppda": 10.0, "xpts": 2.0, "pts": 3}
+            for d, x in zip(base_dates, xgs)])
+        a = ma.arrival_trend("Alpha", 10, n=6)
+        assert a["trend"] == "in calo"
+        assert a["trend_recent"] == pytest.approx(0.8) and a["trend_before"] == pytest.approx(2.4)
+        assert a["trend_threshold"] == 0.15
 
 
 def test_arrival_trend_falls_back_to_fotmob(tmp_path):
@@ -213,7 +346,26 @@ def test_h2h_pattern_from_current_home_side(tmp_path):
     assert hp["top_scores"][0]["score"] == "1-1" and hp["top_scores"][0]["n"] == 2
     assert hp["first"] == pd.Timestamp("2023-11-10 18:00", tz="UTC")
     assert hp["last"] == pd.Timestamp("2025-05-10 18:00", tz="UTC")
-    assert ma.h2h_pattern(100, 10, 20, pd.Timestamp("2020-01-01", tz="UTC")) is None  # < 3 casi
+    # sotto 8 casi con la casa attuale in casa: nessuna sotto-serie pubblicata
+    assert hp["venue"] is None
+
+
+def test_h2h_venue_subset_published_from_eight_cases(tmp_path):
+    """I precedenti si distinguono per campo solo quando il campione regge una frase (docs/20 §11)."""
+    ma = MatchAnalysis(_store(tmp_path))
+    rows = [{"match_id": 100, "home_id": 10 if i % 2 == 0 else 20, "away_id": 20 if i % 2 == 0 else 10,
+             "home_goals": 1 + int(i % 3 == 0), "away_goals": 1,
+             "utc": pd.Timestamp(f"20{20 - i:02d}-05-01 18:00", tz="UTC"), "league": "Serie A"}
+            for i in range(16)]          # 16 precedenti; 8 con Alpha in casa: V N N V N N V N
+    ma.h2h_df = pd.DataFrame(rows)
+    hp = ma.h2h_pattern(100, 10, 20, KICK)
+    assert hp is not None and hp["venue"] is not None
+    assert hp["venue"]["n"] == 8
+    assert (hp["venue"]["wins"], hp["venue"]["draws"], hp["venue"]["losses"]) == (3, 5, 0)
+    assert hp["venue"]["wins"] + hp["venue"]["draws"] + hp["venue"]["losses"] == hp["venue"]["n"]
+    assert hp["venue"]["gpg"] == pytest.approx((3 + 2 + 2 + 3 + 2 + 2 + 3 + 2) / 8)
+    # calcio d'inizio troppo presto: prima del 2006 resta un solo precedente (< 3) → niente blocco
+    assert ma.h2h_pattern(100, 10, 20, pd.Timestamp("2006-01-01", tz="UTC")) is None
 
 
 def test_key_players_deep_ranks_by_expected_contribution(tmp_path):
@@ -260,12 +412,36 @@ def test_prediction_meta_is_explicit_about_margin_and_agreement():
             "elo_p_home": 0.36, "elo_p_draw": 0.25, "elo_p_away": 0.39}
     meta = prediction_meta(pred, "Alpha", "Beta")
     assert meta["top_key"] == "1" and meta["top_name"] == "Alpha"
-    assert meta["margin_pp"] == 0.9
+    # il margine è la differenza fra le percentuali intere stampate (38 − 37), non quello grezzo
+    assert meta["pct"] == [38, 25, 37] and meta["top_pct"] == 38 and meta["second_pct"] == 37
+    assert meta["margin_pp"] == 1
     assert meta["signal_label"] == "DC ed Elo divergono" and meta["signal_tone"] == "split"
     assert meta["elo_gap_pp"] == 2.1
     draw = prediction_meta({"p_home": 0.29, "p_draw": 0.43, "p_away": 0.28}, "Alpha", "Beta")
     assert draw["top_key"] == "X" and draw["top_name"] == "Pareggio"
     assert prediction_meta({"p_home": 0.5}, "Alpha", "Beta") is None
+
+
+def test_prediction_meta_signal_names_both_engines_with_recomputeable_numbers():
+    """Il segnale DC/Elo nomina i due soggetti e le percentuali tornano dai vettori salvati."""
+    agree = prediction_meta(
+        {"p_home": 0.402, "p_draw": 0.258, "p_away": 0.340,
+         "dc_p_home": 0.402, "dc_p_draw": 0.260, "dc_p_away": 0.338,
+         "elo_p_home": 0.394, "elo_p_draw": 0.263, "elo_p_away": 0.343,
+         "w_dc": 0.7, "ensemble_mode": "tilt"}, "Alpha", "Beta")
+    assert agree["signal_tone"] == "agree"
+    assert agree["signal_label"] == ("DC ed Elo sullo stesso preferito (Alpha): "
+                                     "DC 40,2% · Elo 39,4% · distanza 0,8 punti")
+    split = prediction_meta(
+        {"p_home": 0.478, "p_draw": 0.281, "p_away": 0.241,
+         "dc_p_home": 0.478, "dc_p_draw": 0.281, "dc_p_away": 0.241,
+         "elo_p_home": 0.240, "elo_p_draw": 0.537, "elo_p_away": 0.223,
+         "w_dc": 0.7, "ensemble_mode": "tilt"}, "Alpha", "Beta")
+    assert split["signal_tone"] == "split"
+    assert split["signal_label"] == "Preferiti diversi: DC Alpha 47,8% · Elo Pareggio 53,7%"
+    # il margine coincide sempre con la differenza delle percentuali stampate accanto a esso
+    for m in (agree, split):
+        assert m["margin_pp"] == m["top_pct"] - m["second_pct"]
 
 
 def test_list_context_reuses_form_and_h2h_without_building_post_match_cards(tmp_path):

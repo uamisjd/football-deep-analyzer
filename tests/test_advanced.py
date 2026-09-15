@@ -137,6 +137,36 @@ def test_style_rows_degrades_without_style():
     assert by["xG / gara"]["best"] == "h"
 
 
+def test_style_rows_split_as_quotas_with_declared_sources():
+    """La scomposizione xG è pubblicata come quota interna a una sola fonte (docs/20 §4)."""
+    pred = {"lambda_home": 1.8, "lambda_away": 1.1}
+    home = {"source": "Understat", "played": 4, "xg_pm": 3.45, "xga_pm": 1.2,
+            "open_pm": 2.55, "set_pm": 0.25, "split_played": 4}
+    away = {"source": "FotMob", "played": 5, "xg_pm": 1.6, "xga_pm": 1.1,
+            "open_pm": 1.30, "set_pm": 0.35, "split_played": 5}
+    clash = style_rows(home, away, pred)
+    by = {r["label"]: r for r in clash["rows"]}
+    # nessuna riga invita a sommare due fonti: le quote sommano a 100 per costruzione
+    for lado in ("h", "a"):
+        assert by["xG da azione manovrata (quota)"][lado] + \
+            by["xG da palle inattive (quota)"][lado] == pytest.approx(100.0, abs=0.15)
+    assert by["xG da azione manovrata (quota)"]["h"] == pytest.approx(91.1, abs=0.1)
+    # le quote non hanno un «migliore»: sono stile, non gradimento — e non portano ▲
+    assert by["xG da azione manovrata (quota)"]["best"] is None
+    assert by["xG da azione manovrata (quota)"]["suffix"] == "%"
+    # ogni riga dichiara la SUA fonte; fonti diverse fra le due colonne sono dette a voce alta
+    assert "colonna a sinistra Understat su 4 gare" in (by["xG / gara"]["help"] or "")
+    assert "colonna a destra FotMob su 5 gare" in (by["xG / gara"]["help"] or "")
+    assert clash["mixed_sources"] is True
+    same = style_rows({**home}, {**home, "xg_pm": 2.0}, pred)
+    assert same["mixed_sources"] is False
+    same_by = {r["label"]: r for r in same["rows"]}
+    assert "media stagionale Understat su 4 gare" in (same_by["xG / gara"]["help"] or "")
+    assert "due fornitori" not in (same_by["xG / gara"]["help"] or "")
+    # i valori assoluti restano nel tooltip, non nella tabella (niente somme spurie)
+    assert "2,55" in (by["xG da azione manovrata (quota)"]["help"] or "")
+
+
 def test_match_analysis_score_matrix_and_wp(tmp_path):
     st = Store(tmp_path / "processed")
     st.upsert("predictions", [
@@ -252,24 +282,42 @@ def test_goals_view_agrees_with_the_published_markets():
 
 
 def test_probability_steps_is_a_real_chain_not_a_reconstruction():
-    row = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
-           "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
-           "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
-           "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
-           "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
-    steps = probability_steps(row)
+    base = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
+            "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
+            "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
+            "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
+            "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
+    # ricetta di produzione (tilt, dal 2026-09-13): la catena ha quattro passi e il passo
+    # della griglia inclinata è quello che ha davvero prodotto il vettore salvato in blend_p_*
+    steps = probability_steps({**base, "ensemble_mode": "tilt", "tilt": 1.0832})
     assert [s["label"] for s in steps] == ["Modello sui gol (Dixon-Coles)",
-                                           "Media con i rating Elo", "Calibrazione"]
-    # il passo 2 è davvero la media pesata dichiarata (verificabile dalla pagina)
-    w = row["w_dc"]
+                                           "Media pesata con i rating Elo",
+                                           "Griglia sulle λ inclinate dall'Elo", "Calibrazione"]
+    # il passo 2 è davvero la media pesata dichiarata (ricalcolabile dalla pagina)
+    w = base["w_dc"]
     for k, elo in (("p_home", "elo_p_home"), ("p_draw", "elo_p_draw"), ("p_away", "elo_p_away")):
-        assert steps[1][k] == pytest.approx(w * steps[0][k] + (1 - w) * row[elo], abs=1e-3)
+        assert steps[1][k] == pytest.approx(w * steps[0][k] + (1 - w) * base[elo], abs=1e-9)
+    # il passo 3 riporta il vettore delle λ inclinate così com'è stato salvato, con la sua misura
+    assert steps[2]["p_home"] == pytest.approx(base["blend_p_home"]) and "1,083" in steps[2]["note"]
     assert steps[0]["delta_pp"] is None
-    assert steps[1]["delta_pp"] == pytest.approx(1.9, abs=0.05)
-    assert steps[2]["delta_pp"] == pytest.approx(-1.1, abs=0.05)
-    assert steps[2]["top"] == "1" and "5.791" in steps[2]["note"]
+    # ogni Δ pubblicato è la differenza fra i valori STAMPATI dei due passi adiacenti
+    from fda.site.fmt import pct_triple
+    from itertools import pairwise
+
+    for prev_asm, cur in pairwise(steps):
+        disp_prev = max(pct_triple((prev_asm["p_home"], prev_asm["p_draw"], prev_asm["p_away"]), 1))
+        disp_cur = max(pct_triple((cur["p_home"], cur["p_draw"], cur["p_away"]), 1))
+        assert cur["delta_pp"] == pytest.approx(round(disp_cur - disp_prev, 1), abs=1e-9)
+    assert steps[3]["top"] == "1" and "5.791" in steps[3]["note"]
     for s in steps:
         assert s["p_home"] + s["p_draw"] + s["p_away"] == pytest.approx(1.0, abs=1e-6)
+    # previsione storica (ricetta precedente): il vettore salvato in blend_p_* è dichiarato
+    # per quello che era — niente etichetta «media» su un numero che non è una media
+    legacy = probability_steps(base)
+    assert [s["label"] for s in legacy] == ["Modello sui gol (Dixon-Coles)",
+                                            "Media pesata con i rating Elo",
+                                            "Media con i rating Elo", "Calibrazione"]
+    assert "obiettivo" in legacy[2]["note"]
 
 
 def test_probability_steps_degrades_when_nothing_is_traced():
