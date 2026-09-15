@@ -11,6 +11,7 @@ import ast
 import re
 from datetime import datetime, timezone
 from typing import Any, ClassVar
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -18,11 +19,11 @@ from scipy.stats import poisson
 
 from ..store import Store
 from ..teams import canonical
-from ..config import leagues
+from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
 from ..sources.news import keyword_score
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
-from .fmt import dec, it_plural, pct_triple
+from .fmt import dec, it_day_time, it_plural, pct_triple
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
 # 616 formazioni: il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in
@@ -706,6 +707,32 @@ class MatchAnalysis:
         last = prev.loc[prev.utc_kickoff.idxmax()]
         name = last["cup_name"]
         return None if pd.isna(name) or not str(name) else str(name)
+
+    def next_commitment(self, team_id: int, after: datetime) -> dict[str, Any] | None:
+        """Prima gara ufficiale dopo ``after`` (campionato + coppe): card post-partita.
+
+        Principio di utilità (docs/21 §9): a fine gara la prima domanda è «quando si
+        rigioca e con quanto riposo». Il calendario è lo stesso di ``rest_days``
+        (``_rest_source``: campionato + coppe europee); contano solo le gare
+        ``scheduled`` — rinviate e annullate non danno un prossimo impegno certo.
+        """
+        src = self._rest_source()
+        if src.empty:
+            return None
+        fut = src[(src.utc_kickoff > after) & (src.status == "scheduled")
+                  & ((src.home_id == team_id) | (src.away_id == team_id))]
+        if fut.empty:
+            return None
+        nxt = fut.loc[fut.utc_kickoff.idxmin()]
+        is_home = int(nxt.home_id) == team_id
+        opp = str(nxt.away_name if is_home else nxt.home_name)
+        cup = nxt["cup_name"] if "cup_name" in src.columns else None
+        comp = _competition_it(cup) if cup is not None and not pd.isna(cup) and str(cup).strip() else "Campionato"
+        rest = int((pd.Timestamp(nxt.utc_kickoff) - pd.Timestamp(after)).total_seconds() // 86400)
+        tz = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
+        line = (f"{comp} · {opp} {'in casa' if is_home else 'in trasferta'} · "
+                f"{it_day_time(nxt.utc_kickoff, tz)} · {rest} {'giorni' if rest != 1 else 'giorno'} di riposo")
+        return {"line": line, "rest": rest, "is_cup": comp != "Campionato", "opponent": opp}
 
     # ---- panchina e posta in gioco (docs/21, P0-1) ------------------------------------------
     def coach(self, team_id: int, kickoff: datetime | None = None) -> dict[str, Any] | None:
@@ -2092,6 +2119,9 @@ class MatchAnalysis:
         big = s[s.xg >= 0.3]
         return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(_on_target(s).sum()),
                 "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": int(len(big)),
+                # quante grandi occasioni sono diventate gol: la conversione di serata
+                # distingue «ha creato poco» da «ha sprecato» (utile per la gara successiva)
+                "big_goals": int((big.event_type == "Goal").sum()),
                 "goals": int((s.event_type == "Goal").sum()),
                 "best": _first(s.sort_values("xg", ascending=False)[["player_name", "xg", "minute", "event_type"]])}
 
@@ -2540,6 +2570,9 @@ class MatchAnalysis:
             "home_form": self.form(home_id, kickoff), "away_form": self.form(away_id, kickoff),
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
             "home_rest_cup": self.rest_cup(home_id, kickoff), "away_rest_cup": self.rest_cup(away_id, kickoff),
+            # post-partita: quando si rigioca (campionato + coppe) e con quanto riposo
+            "home_next": self.next_commitment(home_id, kickoff) if status == "finished" else None,
+            "away_next": self.next_commitment(away_id, kickoff) if status == "finished" else None,
             "home_xg": self.season_xg(f["home_name"], home_id), "away_xg": self.season_xg(f["away_name"], away_id),
             "home_standing": self.standing(f["home_name"]), "away_standing": self.standing(f["away_name"]),
             "season_compare": self.season_compare(self.standing(f["home_name"]), self.standing(f["away_name"])),

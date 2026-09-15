@@ -1300,6 +1300,71 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: avviso top contributor assente coerente? {has_alert} vs {alerts}")
     print(f"[23] badge «giocherà?» riconciliati: {n_status} pagine")
 
+    # 24) post-partita «Il prossimo impegno»: prima gara ufficiale (campionato + coppe)
+    # ricalcolata dal calendario e confrontata con la riga stampata; se nessuna delle due
+    # squadre ha gare future la card non deve esserci.
+    n_next = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Lettura della partita" not in html or fx19.empty:
+            continue
+        rows = fx19[fx19.match_id == int(pg.stem)]
+        if rows.empty or str(rows.iloc[0].status) != "finished":
+            continue
+        fr = rows.iloc[0]
+        txt = html_unescape(html)
+        ko = pd.Timestamp(fr.utc_kickoff)
+        has_card, nx_lines = False, []
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            nx = ma19.next_commitment(tid, ko)
+            if nx:
+                has_card = True
+                nx_lines.append(nx["line"])
+        checks += 1
+        if has_card != ("Il prossimo impegno" in txt):
+            fails.append(f"{pg.name}: card «Il prossimo impegno» incoerente col calendario")
+            continue
+        if not has_card:
+            continue
+        n_next += 1
+        for line in nx_lines:
+            checks += 1
+            if line not in txt:
+                fails.append(f"{pg.name}: riga prossimo impegno assente o diversa: «{line[:60]}…»")
+    print(f"[24] «Il prossimo impegno» verificato: {n_next} pagine")
+
+    # 25) conversione delle grandi occasioni: le celle «X su Y» devono coincidere coi tiri
+    # mappati a xG ≥ 0,30 (autogol esclusi); la riga c'è se e solo se qualcuno ne ha avute.
+    n_conv = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if "Tiri e occasioni" not in html or fx19.empty:
+            continue
+        rows = fx19[fx19.match_id == int(pg.stem)]
+        if rows.empty or str(rows.iloc[0].status) != "finished":
+            continue
+        fr = rows.iloc[0]
+        txt = html_unescape(html)
+        cells, tot_big = [], 0
+        for tid in (int(fr.home_id), int(fr.away_id)):
+            summ = ma19.shot_summary(int(pg.stem), tid)
+            big, bg = summ.get("big_chances", 0), summ.get("big_goals", 0)
+            tot_big += big
+            cells.append(f"{bg} su {big}")
+        checks += 1
+        if tot_big > 0:
+            n_conv += 1
+            if "…di cui convertite in gol" not in txt:
+                fails.append(f"{pg.name}: riga conversione grandi occasioni assente")
+            else:
+                for cell in cells:
+                    checks += 1
+                    if cell not in txt:
+                        fails.append(f"{pg.name}: cella conversione «{cell}» assente o diversa")
+        elif "…di cui convertite in gol" in txt:
+            fails.append(f"{pg.name}: riga conversione presente ma nessuna grande occasione")
+    print(f"[25] conversione grandi occasioni verificata: {n_conv} pagine")
+
     st.close()
     return fails, checks
 

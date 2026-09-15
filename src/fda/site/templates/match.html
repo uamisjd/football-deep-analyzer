@@ -453,6 +453,16 @@
 
 {% if c.status == 'finished' %}
 <div class="grid detail-card" id="postpartita">
+  {% if c.home_next or c.away_next %}
+  <div class="card"><h2>Il prossimo impegno</h2>
+    <p class="small mut" style="margin:0 0 8px">La prima gara ufficiale dopo questa (campionato e coppe europee), con i giorni di riposo contati dal calcio d'inizio di stasera.</p>
+    <table>
+      {% for nm, nx in ((c.home_name, c.home_next), (c.away_name, c.away_next)) %}
+      <tr><th style="white-space:nowrap">{{ nm }}</th><td>{% if nx %}{{ nx.line }}{% else %}Nessuna gara in calendario nella fonte.{% endif %}</td></tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endif %}
   {% if c.timeline %}
   <div class="card"><h2>Cronaca essenziale</h2><table>
     {% for e in c.timeline %}<tr><td class="r mut" style="width:48px">{{ e.minute }}{% if e.added %}+{{ e.added }}{% endif %}'</td>
@@ -464,6 +474,8 @@
       <tr><td>Tiri (in porta)</td><td class="r">{{ c.home_shots.n }} ({{ c.home_shots.on_target }})</td><td class="r">{{ c.away_shots.n }} ({{ c.away_shots.on_target }})</td></tr>
       <tr><td>xG da tiri</td><td class="r">{{ (c.home_shots.xg or 0)|dec }}</td><td class="r">{{ (c.away_shots.xg or 0)|dec }}</td></tr>
       <tr><td>Grandi occasioni (xG ≥ 0,30)</td><td class="r">{{ c.home_shots.big_chances }}</td><td class="r">{{ c.away_shots.big_chances }}</td></tr>
+      {# `or 0`: una squadra senza tiri mappati ha summary {} e l'aritmetica su Undefined solleverebbe #}
+      {% if ((c.home_shots.big_chances or 0) + (c.away_shots.big_chances or 0)) > 0 %}<tr><td>…di cui convertite in gol</td><td class="r">{{ c.home_shots.big_goals or 0 }} su {{ c.home_shots.big_chances or 0 }}</td><td class="r">{{ c.away_shots.big_goals or 0 }} su {{ c.away_shots.big_chances or 0 }}</td></tr>{% endif %}
       <tr><td>Tiri dall'area</td><td class="r">{{ c.home_shots.inside_box }}</td><td class="r">{{ c.away_shots.inside_box }}</td></tr>
     </table>
     <p class="small mut" style="margin-top:6px">Conteggi sulla mappa dei tiri FotMob, autogol esclusi. L'xG qui è la somma dei singoli tiri mappati e può differire di qualche centesimo dall'xG di squadra riportato nelle Statistiche.</p>

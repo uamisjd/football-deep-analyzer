@@ -325,3 +325,42 @@ l'indisponibilità); `verify_site` **0 problemi · 25.237 controlli** con invari
 contributor presente se e solo se serve, 76 pagine). Resa reale su Ajax–Willem II: «duello
 chiave: attacco Ajax (1,43× la media gol della lega) contro difesa Willem II (1,43× la media
 gol subiti)».
+
+
+---
+
+## 9. Principio di utilità applicato al post-partita (2026-09-15, sesto turno)
+
+**Richiesta utente:** «procedi» → estendo alle sezioni post-partita la domanda «che
+decisione aiuta a prendere?». Audit delle 10 sezioni post: cronaca, tiri, migliori in
+campo, cartina, corsa xG, qualità tiri, probabilità in-play, momentum, verifica
+distribuzione, dettaglio — tutte *cosa è successo*; la «Lettura della partita» già
+confronta xG-risultato e dà la probabilità che il modello assegnava all'esito. Mancava
+lo sguardo in avanti: **quando si rigioca, con quanto riposo, e chi ha sprecato**.
+
+**«Il prossimo impegno» (card nuova, in testa alla griglia post-partita).** Per squadra:
+prima gara ufficiale dopo questa da `_rest_source()` (campionato + coppe europee, la
+stessa fonte di `rest_days`), con competizione, avversario, casa/trasferta, giorno e ora
+nel fuso display e giorni di riposo dal calcio d'inizio di stasera. Contano solo le gare
+`scheduled`: rinviate/annullate non danno un impegno certo. Esempio reale online
+(5749640): «Roma · Campionato · Inter in casa · sabato 19/09, ore 18:00 · 25 giorni di
+riposo».
+
+**Conversione delle grandi occasioni (riga nuova in «Tiri e occasioni»).** `shot_summary`
+guadagna `big_goals` (gol tra i tiri a xG ≥ 0,30, autogol esclusi): «…di cui convertite
+in gol: 3 su 4 / 0 su 0». Distingue «ha creato poco» da «ha sprecato», il segnale più
+utile per la gara successiva. La riga c'è se e solo se almeno una squadra ha avuto grandi
+occasioni; `or 0` nel template perché una squadra senza tiri mappati ha summary `{}`
+(l'aritmetica su Undefined Jinja solleva: trovato dai test sintetici, non in produzione).
+
+**Nota di riuso:** i nomi di giorni/mesi italiani vivevano in `build.py`; spostati in
+`fmt.py` (fonte unica) con il nuovo helper `it_day_time(ts, tz)` usato da
+`next_commitment` per comporre la riga pronta per il template.
+
+**Verifica:** suite **223 passed** (+4: coppa che batte campionato e gara annullata
+saltata; riga esatta campionato con fuso; nessun impegno → None; 2 grandi occasioni con
+1 convertita e autogol escluso); `verify_site` **0 problemi · 26.973 controlli** con
+invarianti nuove **[24]** (righe «prossimo impegno» ricalcolate dal calendario su tutte
+le **300** pagine finite; card presente se e solo se esiste una gara futura) e **[25]**
+(celle «X su Y» = conteggi dai tiri mappati, **268** pagine; riga assente se nessuna
+grande occasione). Ruff: nessun avviso sul codice nuovo.
