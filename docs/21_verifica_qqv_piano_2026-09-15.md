@@ -582,3 +582,113 @@ card buie come da dark launch onesto; ESPN dai runner risponde 403 su standings 
 (lato fonte). I log testuali di Actions non sono scaricabili dal sandbox (blob storage
 irraggiungibile): i conteggi esatti («transfers: N righe») restano nell'artifact
 ``run-log`` del run.
+
+## 15. Diagnostica delle due fonti a zero righe (`news`, `transfers`) — piano proposto (2026-09-15, tredicesimo turno)
+
+### 15.1 Punto di partenza: quello che i dati committati dicono già (offline, run `35031258981`)
+
+- `source_status`: `news:NEWS` **139 richieste**, `ok=True`, nessun errore; `transfers:TRANSFERS`
+  **263 richieste**, `ok=True`, nessun errore. In `data/processed` **non esistono** `news.parquet`
+  né `transfers.parquet` (il dark launch onesto non crea tabelle vuote).
+- **Il contatore delle richieste è cumulativo sul client condiviso**, non per fase: `fotmob:CUPS` 131
+  → `transfers:TRANSFERS` 263 ⇒ la fase transfers ha fatto **132 richieste = una per squadra** della
+  tabella `fotmob_standings` (verificato offline: 132 righe, 132 `team_id` distinti, 7 leghe). Poiché
+  nessuna voce di `source_status` inizia con «transfers», `_safe` non ha catturato eccezioni:
+  **132 payload su 132 sono arrivati con HTTP 200 e `parse_transfers` ne ha estratto 0 righe.**
+- Stessa lettura per le notizie: 139 = **132 feed RSS** (uno per squadra) + **7 ESPN di lega**; nessun
+  errore «news rss …». Quindi **la rete ha risposto**: i due zeri nascono da *cosa c'è dentro il
+  payload* o da *cosa il parser ne fa*, non da un blocco di rete.
+- Limite dichiarato: dal sandbox `news.google.com` e FotMob sono irraggiungibili (verificato: SSLError),
+  quindi la forma esatta dei payload resta non osservabile da qui; si progetta per **non doverla
+  osservare a mano**.
+
+### 15.2 Difetto meccanico dimostrato sulla fonte notizie (offline, deterministico)
+
+`NewsClient.team_rss_raw` pre-codifica la query con `quote()` e poi la passa a `requests` in `params=`,
+che la codifica **una seconda volta**:
+
+```
+requests.Request("GET", GOOGLE_RSS, params={"q": quote('"Ajax" calcio'), ...}).prepare().url
+→ .../rss/search?q=%2522Ajax%2522%2520calcio&hl=it&gl=IT&ceid=IT%3Ait     # doppia codifica
+atteso:                q=%22Ajax%22%20calcio
+```
+
+Google riceve la ricerca del testo letterale `%22Ajax%22 calcio`: feed **valido con 0 `<item>`** → `parse_rss`
+ritorna `[]` → nessuna riga → nessun errore → «OK ma zero righe». È il sintomo osservato, spiegato senza
+ipotesi. **[dimostrato offline; la conferma sul payload reale richiede Actions]**
+
+### 15.3 Cosa manca oggi: perché un run «OK ma zero righe» non si spiega da solo
+
+1. `source_status` registra **richieste ed esito**, mai **quante righe** sono state raccolte: «OK» e «OK
+   senza niente» sono indistinguibili a schermo.
+2. I parser inghiottono il silenzio: `parse_rss` ritorna `[]` sia per un feed vuoto sia per un corpo
+   non-RSS (`ET.ParseError`), `parse_transfers` ritorna `[]` per qualunque forma non riconosciuta.
+   Nessuno dei tre casi lascia traccia.
+3. La contabilità è **conflata**: le richieste ESPN di lega passano dal client `news` (139) ma l'errore
+   finisce sulla riga `espn:NEWS` (14, contatore del client ESPN condiviso) — due righe che raccontano
+   una cosa sola.
+4. `parse_rss` documenta «date illeggibili → la riga resta», ma `collect_news` scarta le righe senza
+   data (`if pa is None: continue`): comportamento e documentazione divergono, e le righe scartate per
+   questo motivo non si contano.
+5. La diagnosi dell'utente («articoli fuori finestra / parsing fallito» per news, «schema cambiato /
+   sezione assente» per transfers) **non è oggi decidibile** con i dati disponibili.
+
+### 15.4 Piano proposto (4 blocchi, in ordine di dipendenza)
+
+**Blocco 1 — imbuto dei conteggi per fonte (P0).** In `collect.py`: `CollectReport` acquisisce
+`rows` (righe effettivamente salvate) e `detail` (imbuto compatto: `fetch=132 ok · item=0 · parsed=0 ·
+kept=0 · stored=0`), pubblicati come **due colonne nuove** di `source_status`. In `stato.html`: colonna
+«Righe» e, per le fonti `ok=True` con 0 righe, il motivo in chiaro accanto alla pill. Invariante nuova
+in `verify_site.py`: *nessuna fonte con `ok=True` e `rows=0` può comparire in pagina senza spiegazione*.
+- *Alternative valutate*: **(A1)** solo la colonna numerica `rows` → non dice *perché* è zero;
+  **(A2)** solo testo in `warn` → mescola la semantica di `warn` («problema non bloccante») e non è
+  testabile né aggregabile; **(A3)** tabella separata `source_diag` (una riga per fase) → più ricca ma
+  raddoppia le superfici da mantenere per un guadagno marginale.
+- *Scelta*: A su `source_status` (superficie che già esiste, già committata a ogni run, già in pagina).
+  *Trade-off*: cambio di schema su Parquet → le righe vecchie avranno `NaN` in pagina (mostrate «—») e
+  il costo è una manciata di kB per run.
+
+**Blocco 2 — firma dello schema, *committata* e non solo loggata (P0).** Quando un payload arriva e le
+righe sono 0, il parser produce un **digest**: solo **nomi** di campo (regex `[A-Za-z0-9_]{1,40}`,
+max 12 per livello, max ~200 caratteri) del livello superiore e della sezione attesa, mai valori.
+Il digest finisce in `detail` (quindi **nel Parquet committato**, leggibile dall'agente nel turno
+successivo) *e* nel log.
+- *Perché non la sola proposta (b) dell'utente (log dei nomi)*: i log di Actions non sono raggiungibili
+  dal sandbox (blob storage) — già successo tre volte — mentre `data/processed/*.parquet` sì. Scrivere
+  la diagnosi dove l'agente può leggerla costa zero e chiude il ciclo in un turno invece di chiedere
+  all'utente di copiare righe di log a mano.
+- *Trade-off/rischi*: nessun dato grezzo (solo nomi), lunghezza limitata, sanitizzazione; un test
+  dedicato verifica che il digest non contenga valori né PII.
+
+**Blocco 3 — correzione del difetto dimostrato sulle notizie (P0).** (a) `q` non più pre-codificato
+(test con `requests.PreparedRequest` che asserisce **una sola** codifica); (b) `Accept` dedicato
+`application/rss+xml, application/xml;q=0.9, */*;q=0.8` (oggi l'header di default è `application/json`,
+che su un endpoint RSS è un invito a ricevere la pagina sbagliata); (c) il corpo non-RSS e il feed vuoto
+diventano **conteggi** dell'imbuto (`bytes`, `items`, `parse_error`), mai silenzio; (d) contatori
+**separati** `news` (RSS squadre) ed `espn` (notizie di lega, richieste fatte dal client ESPN);
+(e) righe senza data: contate a parte (`no_date`) e **tenute**, con data «—» in card (allineando codice
+e documentazione).
+- *Criterio*: se dopo il fix i feed arrivano popolati, `news` mostra decine di righe per squadra;
+  se Google risponde ancora con 0 `<item>`, il `detail` lo dirà con i byte scaricati (feed vuoto ≠ blocco).
+
+**Blocco 4 — `parse_transfers` tollerante *dopo* la firma (P1, turno successivo).** Sapendo da 15.1 che
+i 132 payload arrivano e che il parser non estrae nulla, le forme candidate sono tre: `{incoming,
+outgoing}` (già gestita), lista piatta (già gestita), **contenitore `{"data": [...]}`** (frequente nelle
+API FotMob, *non* gestita). Il Blocco 2 dirà quale è; poi il parser accetta anche il contenitore, con
+**guardie anti-falso-positivo** (una voce è un trasferimento solo se ha un nome giocatore *e* almeno un
+campo da trasferimento: fee/type/date/club) — così la rosa di una squadra non può essere letta come
+mercato. *Perché non farlo subito*: la regola B8 («prima si dimostra, poi si integra») e il rischio di
+pubblicare righe sbagliate in una card nuova; *costo*: un secondo ciclo di run invece di uno.
+
+### 15.5 Criteri di accettazione e cosa non faremo
+
+- **Verifica**: suite verde + `ruff` pulito sul nuovo; `fda build` + `verify_site.py` **0 problemi** con
+  l'invariante nuova; un run daily reale (cron o dispatch utente) che mostri in `stato.html` o
+  `righe>0` (fonte sana) o `righe=0` **con motivo** — mai più «OK» muto.
+- **Chiusura del punto aperto**: se la firma rivela una forma nuova, il Blocco 4 la copre e si torna qui
+  con i numeri; se i feed restano vuoti con byte>0, si valuta una seconda fonte RSS (o il ritorno a ESPN
+  news quando il 403 cesserà) **solo con i dati in mano**.
+- **Non faremo**: nuove fonti a pagamento, scraper che richiedono il PC, allargamento della finestra
+  delle notizie «per far salire i numeri» (sarebbe un aggiustamento a caso), toccare ESPN 403 (degrado
+  lato fonte, già coperto da FotMob/Google). Zero richieste in più verso le fonti: tutti i conteggi
+  nascono da payload già scaricati.
