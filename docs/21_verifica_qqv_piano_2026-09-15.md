@@ -435,3 +435,48 @@ verificatore vanno scritti tolleranti agli attributi, non solo al testo.
 **Nota dati:** la tabella `news` nel repo è vuota ([20] = 0 pagine, card «Ultime dalle
 società» assente): stato preesistente a questo turno, si popola al primo run di Actions
 con Google News raggiungibile — stessa logica del dark launch di `transfers`.
+
+
+---
+
+## 12. Anteprime di `docs/preview/` rigenerate sul layout corrente (P2-8b, 2026-09-15 — nono turno)
+
+**Richiesta utente:** «procedi, e spiegami meglio le proposte ogni volta». Prima di
+proporre ho riletto come nascono le anteprime: **non sono screenshot del browser** ma
+disegni Pillow di `scripts/render_preview.py`, coi token del CSS copiati a mano. Nel
+sandbox un browser non c'è (e la CDN Playwright è irraggiungibile), ma Pillow sì: il
+problema vero non era «serve un workflow Actions», era che lo script disegnava ancora il
+layout del 09/09 (nav a 7 voci senza «Giocatori», card col chip-data in mezzo, niente
+barra 1X2 con etichette sotto, niente segnale DC/Elo, footer vecchio).
+
+**Cosa ho ridisegnato (tutto verificato sul sito reale prima di scrivere):**
+- header: brand + sottotitolo, nav a **8 voci** con pill «Oggi», badge «v2 · aggiornato
+  15/09/2026 23:32 (ora italiana)», bottone tema ◐;
+- home: titolo e sottotitolo della pagina, striscia riepilogo giornata (4 partite ·
+  2 campionati · 4/4 con modello · 1 in corso · 3 terminate + nota), chip dei filtri e
+  ricerca, etichetta del giorno;
+- card partite con l'anatomia attuale: stato col pallino (in corso rosso / terminata
+  grigio), orario, tag lega, «Analisi ↗», squadre con posizione e punti in classifica,
+  punteggio centrale, «Lettura del modello» (favorito + %, margine sul secondo), barra
+  1X2 con etichette sotto e favorito in accent, striscia segnale DC/Elo, piede
+  «MODELLO» con gol attesi e Over 2,5, forme V/N/P e fatti rapidi (infermeria, meteo,
+  arbitro, precedenti);
+- footer con la nota legale per esteso (18+).
+I numeri nelle due card sono **quelli veri pubblicati su `site/index.html` nel build del
+15/09**: Elche–Real Madrid *in corso* 0–2 (con l'infermeria 2+3 assenti) e Ajax–Willem II
+5–1: l'anteprima mostra sia lo stato live sia quello finale.
+
+**SVG ritirati:** `home-preview.svg` e `header-preview.svg` erano mock vettoriali
+disegnati a mano, derivati dal sito e non referenziati da nessuna parte: tenerli accanto
+ai PNG nuovi avrebbe mostrato due design diversi per la stessa pagina. Ora i PNG generati
+dallo script sono l'unica anteprima ufficiale (riproducibile: `python
+scripts/render_preview.py [--out DIR]`, Pillow dichiarata tra le dev-extras; smoke test
+`test_render_preview` che rigenera in tmp e controlla le dimensioni). I PNG li ho
+ispezionati a occhio dopo la generazione (sovrapposizione sottotitolo/nav corretta,
+sottolineatura del giorno fuori dal testo).
+
+**Nota operativa:** il sandbox è stato riavviato a metà turno (persi `.venv/` e `site/`,
+`.git` riportato shallow al commit base). Ripristinato da `origin/arena/…` (tip
+`db7aaa3`), `git fetch --unshallow`, merge di `origin/main` (data run 20:48 UTC: dati
+freschi, sito e verify rigirati: **26.933 controlli · 0 problemi**), venv ricreato.
+Suite finale **241 passed** (+1 smoke preview).

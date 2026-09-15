@@ -26,6 +26,9 @@ dependencies = [
 dev = [
     "pytest>=8",
     "ruff>=0.5",
+    # scripts/render_preview.py disegna i PNG di docs/preview (P2-8b): senza libreria
+    # di sistema, ma la dipendenza va dichiarata o il tool non gira in un ambiente nuovo
+    "pillow>=10",
 ]
 plots = [
     "mplsoccer>=1.5",
