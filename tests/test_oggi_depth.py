@@ -260,12 +260,36 @@ def test_prediction_meta_is_explicit_about_margin_and_agreement():
             "elo_p_home": 0.36, "elo_p_draw": 0.25, "elo_p_away": 0.39}
     meta = prediction_meta(pred, "Alpha", "Beta")
     assert meta["top_key"] == "1" and meta["top_name"] == "Alpha"
-    assert meta["margin_pp"] == 0.9
+    # il margine è la differenza fra le percentuali intere stampate (38 − 37), non quello grezzo
+    assert meta["pct"] == [38, 25, 37] and meta["top_pct"] == 38 and meta["second_pct"] == 37
+    assert meta["margin_pp"] == 1
     assert meta["signal_label"] == "DC ed Elo divergono" and meta["signal_tone"] == "split"
     assert meta["elo_gap_pp"] == 2.1
     draw = prediction_meta({"p_home": 0.29, "p_draw": 0.43, "p_away": 0.28}, "Alpha", "Beta")
     assert draw["top_key"] == "X" and draw["top_name"] == "Pareggio"
     assert prediction_meta({"p_home": 0.5}, "Alpha", "Beta") is None
+
+
+def test_prediction_meta_signal_names_both_engines_with_recomputeable_numbers():
+    """Il segnale DC/Elo nomina i due soggetti e le percentuali tornano dai vettori salvati."""
+    agree = prediction_meta(
+        {"p_home": 0.402, "p_draw": 0.258, "p_away": 0.340,
+         "dc_p_home": 0.402, "dc_p_draw": 0.260, "dc_p_away": 0.338,
+         "elo_p_home": 0.394, "elo_p_draw": 0.263, "elo_p_away": 0.343,
+         "w_dc": 0.7, "ensemble_mode": "tilt"}, "Alpha", "Beta")
+    assert agree["signal_tone"] == "agree"
+    assert agree["signal_label"] == ("DC ed Elo sullo stesso preferito (Alpha): "
+                                     "DC 40,2% · Elo 39,4% · distanza 0,8 punti")
+    split = prediction_meta(
+        {"p_home": 0.478, "p_draw": 0.281, "p_away": 0.241,
+         "dc_p_home": 0.478, "dc_p_draw": 0.281, "dc_p_away": 0.241,
+         "elo_p_home": 0.240, "elo_p_draw": 0.537, "elo_p_away": 0.223,
+         "w_dc": 0.7, "ensemble_mode": "tilt"}, "Alpha", "Beta")
+    assert split["signal_tone"] == "split"
+    assert split["signal_label"] == "Preferiti diversi: DC Alpha 47,8% · Elo Pareggio 53,7%"
+    # il margine coincide sempre con la differenza delle percentuali stampate accanto a esso
+    for m in (agree, split):
+        assert m["margin_pp"] == m["top_pct"] - m["second_pct"]
 
 
 def test_list_context_reuses_form_and_h2h_without_building_post_match_cards(tmp_path):

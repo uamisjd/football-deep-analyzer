@@ -252,24 +252,42 @@ def test_goals_view_agrees_with_the_published_markets():
 
 
 def test_probability_steps_is_a_real_chain_not_a_reconstruction():
-    row = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
-           "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
-           "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
-           "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
-           "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
-    steps = probability_steps(row)
+    base = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
+            "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
+            "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
+            "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
+            "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
+    # ricetta di produzione (tilt, dal 2026-09-13): la catena ha quattro passi e il passo
+    # della griglia inclinata è quello che ha davvero prodotto il vettore salvato in blend_p_*
+    steps = probability_steps({**base, "ensemble_mode": "tilt", "tilt": 1.0832})
     assert [s["label"] for s in steps] == ["Modello sui gol (Dixon-Coles)",
-                                           "Media con i rating Elo", "Calibrazione"]
-    # il passo 2 è davvero la media pesata dichiarata (verificabile dalla pagina)
-    w = row["w_dc"]
+                                           "Media pesata con i rating Elo",
+                                           "Griglia sulle λ inclinate dall'Elo", "Calibrazione"]
+    # il passo 2 è davvero la media pesata dichiarata (ricalcolabile dalla pagina)
+    w = base["w_dc"]
     for k, elo in (("p_home", "elo_p_home"), ("p_draw", "elo_p_draw"), ("p_away", "elo_p_away")):
-        assert steps[1][k] == pytest.approx(w * steps[0][k] + (1 - w) * row[elo], abs=1e-3)
+        assert steps[1][k] == pytest.approx(w * steps[0][k] + (1 - w) * base[elo], abs=1e-9)
+    # il passo 3 riporta il vettore delle λ inclinate così com'è stato salvato, con la sua misura
+    assert steps[2]["p_home"] == pytest.approx(base["blend_p_home"]) and "1,083" in steps[2]["note"]
     assert steps[0]["delta_pp"] is None
-    assert steps[1]["delta_pp"] == pytest.approx(1.9, abs=0.05)
-    assert steps[2]["delta_pp"] == pytest.approx(-1.1, abs=0.05)
-    assert steps[2]["top"] == "1" and "5.791" in steps[2]["note"]
+    # ogni Δ pubblicato è la differenza fra i valori STAMPATI dei due passi adiacenti
+    from fda.site.fmt import pct_triple
+    from itertools import pairwise
+
+    for prev_asm, cur in pairwise(steps):
+        disp_prev = max(pct_triple((prev_asm["p_home"], prev_asm["p_draw"], prev_asm["p_away"]), 1))
+        disp_cur = max(pct_triple((cur["p_home"], cur["p_draw"], cur["p_away"]), 1))
+        assert cur["delta_pp"] == pytest.approx(round(disp_cur - disp_prev, 1), abs=1e-9)
+    assert steps[3]["top"] == "1" and "5.791" in steps[3]["note"]
     for s in steps:
         assert s["p_home"] + s["p_draw"] + s["p_away"] == pytest.approx(1.0, abs=1e-6)
+    # previsione storica (ricetta precedente): il vettore salvato in blend_p_* è dichiarato
+    # per quello che era — niente etichetta «media» su un numero che non è una media
+    legacy = probability_steps(base)
+    assert [s["label"] for s in legacy] == ["Modello sui gol (Dixon-Coles)",
+                                            "Media pesata con i rating Elo",
+                                            "Media con i rating Elo", "Calibrazione"]
+    assert "obiettivo" in legacy[2]["note"]
 
 
 def test_probability_steps_degrades_when_nothing_is_traced():

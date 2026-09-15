@@ -19,7 +19,7 @@ from scipy.stats import poisson
 from ..store import Store
 from ..teams import canonical
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
-from .fmt import dec, it_plural
+from .fmt import dec, it_plural, pct_triple
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
 # 616 formazioni: il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in
@@ -437,50 +437,35 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
     elo_top_prob = None
     if has_elo and elo_top:
         elo_top_prob = float(elo_values[elo_top])
-    # scarto sul preferito (audit 1.4) — più leggibile dello scarto max assoluto
+    # distanza DC–Elo **sul preferito pubblicato**, fra i due modelli (non fra blend ed Elo):
+    # è il numero che rende leggibile «quanto sono d'accordo i due motori» (docs/20 §7)
     elo_gap_top_pp = None
-    if has_dc and has_elo and dc_top_prob is not None and elo_top_prob is not None and top_key in values and top_key in elo_values and top_key in dc_values:
-        # scarto sul preferito effettivo (top del blend), non sul top DC/Elo isolato
-        try:
-            elo_gap_top_pp = round(abs(float(values[top_key]) - float(elo_values[top_key])) * 100, 1)
-        except Exception:
-            elo_gap_top_pp = None
-        # fallback: scarto fra DC ed Elo sul loro top rispettivo se top_key diverso
-        if elo_gap_top_pp is None:
-            try:
-                elo_gap_top_pp = round(abs(float(dc_top_prob) - float(elo_top_prob)) * 100, 1)
-            except Exception:
-                elo_gap_top_pp = elo_gap_pp
-    elif has_elo and elo_top_prob is not None and dc_top_prob is not None:
-        try:
-            elo_gap_top_pp = round(abs(float(dc_top_prob) - float(elo_top_prob)) * 100, 1)
-        except Exception:
-            elo_gap_top_pp = elo_gap_pp
+    if has_dc and has_elo:
+        elo_gap_top_pp = round(abs(float(dc_values[top_key]) - float(elo_values[top_key])) * 100, 1)
 
     def _comma(x: float | None, nd: int = 1) -> str:
         return "" if x is None else f"{float(x):.{nd}f}".replace(".", ",")
 
-    # etichetta più esplicita per l'utente non specialista (audit 3.1)
-    if has_elo and top_key == elo_top:
-        if elo_gap_top_pp is not None and elo_gap_top_pp < 5:
-            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito"
+    # Segnale di (dis)accordo con i due soggetti espliciti e le percentuali ricalcolabili
+    # dai vettori salvati: mai uno «scarto» senza dire fra chi (docs/20 §7)
+    if has_dc and has_elo and dc_top is not None and elo_top is not None:
+        if dc_top == elo_top:
+            signal_label = (f"DC ed Elo sullo stesso preferito ({names[dc_top]}): "
+                            f"DC {_comma(float(dc_values[dc_top]) * 100)}% · "
+                            f"Elo {_comma(float(elo_values[elo_top]) * 100)}% · "
+                            f"distanza {_comma(elo_gap_top_pp)} punti")
             signal_tone = "agree"
         else:
-            signal_label = f"Stesso preferito · scarto {_comma(elo_gap_top_pp,1)} punti sul preferito" if elo_gap_top_pp is not None else "Stesso preferito"
-            signal_tone = "agree"
+            signal_label = (f"Preferiti diversi: DC {names[dc_top]} "
+                            f"{_comma(float(dc_values[dc_top]) * 100)}% · "
+                            f"Elo {names[elo_top]} {_comma(float(elo_values[elo_top]) * 100)}%")
+            signal_tone = "split"
     elif has_elo and top_key != elo_top:
-        # quando il blend e l'Elo divergono: se ho entrambi i modelli mostro il confronto DC vs Elo,
-        # altrimenti etichetta generica (test con solo blend+Elo, senza DC)
-        if has_dc and dc_top is not None and dc_top_prob is not None and elo_top is not None and elo_top_prob is not None:
-            # label già con percentuali intere, non serve virgola
-            signal_label = f"Preferiti diversi · DC {names[dc_top]} {int(round(dc_top_prob*100))}% vs Elo {names[elo_top]} {int(round(elo_top_prob*100))}%"
-            signal_tone = "split"
-        else:
-            signal_label = "DC ed Elo divergono"
-            signal_tone = "split"
-    elif has_elo:
         signal_label = "DC ed Elo divergono"
         signal_tone = "split"
+    elif has_elo:
+        signal_label = "Stesso preferito per DC ed Elo"
+        signal_tone = "agree"
     elif has_dc:
         signal_label = "Solo modello sui gol"
         signal_tone = "single"
@@ -488,14 +473,22 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         signal_label = "Segnale unico"
         signal_tone = "single"
 
+    # percentuali intere coerenti (resto massimo, somma 100): il margine pubblicato è la
+    # differenza fra le percentuali STAMPATE, così il lettore può rifare il conto (docs/20 §5)
+    pct = pct_triple((float(values["1"]), float(values["X"]), float(values["2"])))
+    idx = {"1": 0, "X": 1, "2": 2}
+
     return {
         "top_key": top_key,
         "top_name": names[top_key],
         "top_probability": float(top_probability),
+        "pct": pct,
+        "top_pct": pct[idx[top_key]],
         "second_key": second_key,
         "second_name": names[second_key],
         "second_probability": float(second_probability),
-        "margin_pp": round((float(top_probability) - second_probability) * 100, 1),
+        "second_pct": pct[idx[second_key]],
+        "margin_pp": pct[idx[top_key]] - pct[idx[second_key]],
         "signal_label": signal_label,
         "signal_tone": signal_tone,
         "elo_top": elo_top,

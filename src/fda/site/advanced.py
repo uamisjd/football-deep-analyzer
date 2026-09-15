@@ -200,23 +200,52 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         return (out[0], out[1], out[2])
 
     steps: list[dict[str, Any]] = []
-    labels = [
-        ("dc_p_", "Modello sui gol (Dixon-Coles)", "attacco/difesa pesati nel tempo, senza rating"),
-        ("blend_p_", "Media con i rating Elo", None),
-    ]
-    prev_top: float | None = None
-    for prefix, label, note in labels:
-        v = _vec(prefix)
-        if not v:
-            continue
-        if note is None:
-            w = pred.get("w_dc")
-            note = (f"peso Dixon-Coles {float(w):.0%}, Elo {1 - float(w):.0%}"
-                    if w is not None and not pd.isna(w) else "media pesata con i rating Elo")
+
+    def _append(label: str, note: str, v: tuple[float, float, float]) -> None:
+        # % mostrate = metodo del resto massimo a 0,1 (stessa resa di |pct3 nel template):
+        # il Δ stampato è per costruzione la differenza fra i valori stampati dei due passi,
+        # quindi la catena è ricalcolabile a occhio (regola «ogni numero mostrato torna»).
+        from .fmt import pct_triple
+
+        disp = pct_triple(v, 1)
+        top_disp = float(max(disp))
+        prev = steps[-1]["top_disp"] if steps else None
         steps.append({"label": label, "note": note, "p_home": v[0], "p_draw": v[1], "p_away": v[2],
-                      "top": _top_name(v), "delta_pp": None if prev_top is None
-                      else round((_top_value(v) - prev_top) * 100, 1)})
-        prev_top = _top_value(v)
+                      "top": _top_name(v), "top_disp": top_disp,
+                      "delta_pp": None if prev is None else round(top_disp - prev, 1)})
+
+    dc = _vec("dc_p_")
+    elo = _vec("elo_p_")
+    if dc is not None:
+        _append("Modello sui gol (Dixon-Coles)",
+                "attacco/difesa pesati nel tempo, senza rating", dc)
+    # passo 2: la media pesata VERA, ricalcolabile dalle colonne salvate (dc_p_*, elo_p_*, w_dc)
+    w = pred.get("w_dc")
+    if dc is not None and elo is not None and w is not None and not pd.isna(w):
+        wf = float(w)
+        media = (wf * dc[0] + (1 - wf) * elo[0],
+                 wf * dc[1] + (1 - wf) * elo[1],
+                 wf * dc[2] + (1 - wf) * elo[2])
+        _append("Media pesata con i rating Elo",
+                f"peso Dixon-Coles {wf:.0%}, Elo {1 - wf:.0%}", media)
+    # passo 3: il vettore che le λ pubblicate producono, prima della calibrazione
+    blend = _vec("blend_p_")
+    if blend is not None:
+        mode = str(pred.get("ensemble_mode") or "")
+        if mode == "tilt":
+            tilt = pred.get("tilt")
+            note = "l'Elo inclina il rapporto casa/trasferta a totale dei gol invariato"
+            if tilt is not None and not pd.isna(tilt) and abs(float(tilt) - 1.0) > 1e-6:
+                note += f" (×{_dec(float(tilt), 3)}): la griglia arriva a questo vettore"
+            else:
+                note += ": qui l'Elo non sposta (inclinazione ≈ 1), il vettore coincide con la media"
+            _append("Griglia sulle λ inclinate dall'Elo", note, blend)
+        else:
+            # previsioni storiche della ricetta precedente: blend_p_* è il vettore obiettivo
+            # 70/30 che le due λ cercate raggiungevano (goal_expectancy, «inverti»)
+            _append("Media con i rating Elo",
+                    "vettore obiettivo dei due rating (previsione precedente alla ricetta attuale)",
+                    blend)
     pub = _vec("p_")
     if pub and steps and max(abs(pub[i] - steps[-1][k]) for i, k in
                              enumerate(("p_home", "p_draw", "p_away"))) > 5e-4:
@@ -237,10 +266,7 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
                         f"{_int_it(pred.get('calibration_n_fit'))} gare fuori campione")
             except (TypeError, ValueError):
                 note = "correzione storica delle λ"
-        steps.append({"label": "Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)",
-                      "note": note, "p_home": pub[0], "p_draw": pub[1], "p_away": pub[2],
-                      "top": _top_name(pub),
-                      "delta_pp": round((_top_value(pub) - prev_top) * 100, 1)})
+        _append("Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)", note, pub)
     # un solo passo non è una scomposizione: la scheda non mostra un blocco vuoto
     return steps if len(steps) >= 2 else []
 
