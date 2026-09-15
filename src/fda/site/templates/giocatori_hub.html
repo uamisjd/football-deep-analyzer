@@ -13,8 +13,8 @@ Soglia minima per i confronti: {{ min_minutes }} minuti. Aggiornato a ogni run d
   <h2><a href="{{ root }}giocatori/{{ lg.key }}.html">{{ lg.name }}</a> <span class="tag">{{ lg.n_played }} allineati</span></h2>
   {% if lg.top %}
   <div class="tablewrap"><table>
-    <tr><th>Giocatore</th><th>Squadra</th><th>Ruolo</th><th class="r">Voto</th><th class="r">Min</th>
-        <th class="r">G</th><th class="r">xG</th><th class="r">A</th><th class="r">xA</th></tr>
+    <tr><th scope="col">Giocatore</th><th scope="col">Squadra</th><th scope="col">Ruolo</th><th scope="col" class="r">Voto</th><th scope="col" class="r">Min</th>
+        <th scope="col" class="r">G</th><th scope="col" class="r">xG</th><th scope="col" class="r">A</th><th scope="col" class="r">xA</th></tr>
     {% for r in lg.top %}
     <tr>
       <td><a href="{{ root }}giocatori/{{ r.id }}.html">{{ r.name }}</a></td>

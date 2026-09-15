@@ -403,3 +403,35 @@ conteggi della card = tabella transfers; card presente se e solo se la fonte ha 
 oggi vacua per costruzione: 0 pagine, diventa attiva al primo dato reale). Ruff: RUF012
 risolto con `ClassVar` (come `_COUNTRY_IT`); UP017 su `datetime.now(timezone.utc)`
 lasciato: è l'idioma del file (6 occorrenze identiche a baseline).
+
+
+---
+
+## 11. Accessibilità delle tabelle: `scope` su ogni `<th>` (P2-8a, 2026-09-15 — settimo turno, parte 2)
+
+**Richiesta utente:** «procedi» → prima metà del P2-8 (i PNG di `docs/preview/` restano
+bloccati nel sandbox: CDN di Playwright irraggiungibile). L'audit Q6 aveva contato
+4.125 celle d'intestazione senza `scope`: i lettori di schermo non potevano dire se
+l'intestazione vale per la colonna o per la riga.
+
+**Intervento:** trasformazione meccanica delle 7 template con `<th>` (193 attributi
+aggiunti: `scope="col"` nelle righe d'intestazione, `scope="row"` nelle etichette di
+riga, `scope="colgroup"` sui `colspan` che coprono più colonne — half-split e gruppi
+statistiche giocatore). Due casi multiriga (etichetta dello Scontro tattico e intestazioni
+della matrice punteggi) gestiti esplicitamente perché il `<td>` vive nelle righe
+successive. Resa visiva invariata: il CSS usa selettori d'elemento, non attributi.
+
+**Verifica:** invariante nuova **[27]** in `check_pages` — ogni `<th>` di ogni pagina
+generata deve dichiarare `scope` (oggi **101.958 celle** su 376 pagine, 0 violazioni) —
+più test statico sulle template (`test_scope_th`, 11 parametrizzati) che scatta prima
+ancora del build. Suite **240 passed**.
+
+**Regressione trovata e riparata:** `verify_site` [5] cercava il letterale
+`<th>Precedenti (N)</th>`; con lo scope l'archivio precedenti non veniva più contato
+(0 archivi, −74 controlli sul totale). Regex allargata a `<th[^>]*>`: [5] torna a 74
+archivi e il totale a **26.973 controlli · 0 problemi**. Lezione: i parser del
+verificatore vanno scritti tolleranti agli attributi, non solo al testo.
+
+**Nota dati:** la tabella `news` nel repo è vuota ([20] = 0 pagine, card «Ultime dalle
+società» assente): stato preesistente a questo turno, si popola al primo run di Actions
+con Google News raggiungibile — stessa logica del dark launch di `transfers`.

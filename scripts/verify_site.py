@@ -23,6 +23,7 @@ from typing import Any
 
 # ---- residui che non devono mai arrivare a schermo -----------------------------------------
 BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp\()(?![\w.])")
+TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
 # decimale col punto: esclusi i separatori di migliaia (1-3 cifre . esattamente 3 cifre)
 DECIMAL_POINT = re.compile(r"(?<![\w/,\-:])\d{1,3}\.\d{1,2}(?![\w.])|\d{1,3}\.\d{4,}")
 ENGLISH = re.compile(
@@ -72,11 +73,21 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     """Controlli di contenuto e collegamenti su tutte le pagine HTML. Ritorna (problemi, pagine)."""
     fails: list[str] = []
     pages = sorted(site.rglob("*.html"))
+    n_th = 0
     for page in pages:
         rel = str(page.relative_to(site))
+        raw = page.read_text(encoding="utf-8")
         parser = Text()
-        parser.feed(page.read_text(encoding="utf-8"))
+        parser.feed(raw)
         text = re.sub(r"\s+", " ", "".join(parser.parts))
+
+        # 27) intestazioni di tabella: ogni <th> deve dichiarare scope (docs/21 P2-8;
+        # prima dell'intervento 4.125 celle non lo avevano, i lettori di schermo non
+        # sapevano dire se l'intestazione vale per la colonna o per la riga)
+        for m in TH_SCOPE.finditer(raw):
+            n_th += 1
+            if "scope=" not in m.group(0):
+                fails.append(f"{rel}: <th> senza scope: {m.group(0)[:56]}")
 
         for m in BAD_TOKENS.finditer(text):
             fails.append(f"{rel}: residuo {m.group(0)!r}")
@@ -104,6 +115,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
                     target_ids = target_parser.ids
                 if fragment not in target_ids:
                     fails.append(f"{rel}: ancora interna mancante {href}")
+    print(f"[27] celle <th> con scope verificate: {n_th}")
     return fails, len(pages)
 
 
@@ -546,7 +558,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     role_re = re.compile(r'giocatori/(\d+)\.html">([^<]+)</a>\s*<span class="mut small">'
                          r'(portiere|difensore|centrocampista|attaccante)</span>')
     abs_re = re.compile(r"Indisponibili \((\d+)\)")
-    prev_re = re.compile(r"<th>Precedenti \((\d+)\)</th>")
+    # `<th[^>]*>`: le celle d'intestazione portano scope="row" da P2-8; il letterale
+    # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi)
+    prev_re = re.compile(r"<th[^>]*>Precedenti \((\d+)\)</th>")
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
                         r' · ([^<]*?) (\d+) assenti', re.S)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
