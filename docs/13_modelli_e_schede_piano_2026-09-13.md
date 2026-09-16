@@ -724,3 +724,31 @@ PR ma in un difetto latente della card notizie di PR #34, che è stato possibile
 proprio grazie a un fix di questa PR (la query Google News corretta ha popolato `news.parquet`,
 attivando il percorso che conteneva il difetto). Diagnosi, fix e strumento di lettura dei log:
 `docs/21` §16; fix in PR #36.
+
+### 9.11 Merge PR #40 — P1 contenuti + verify_site gate in CI (2026-09-16, deroga esplicita)
+
+**Contenuto PR #40** (7 commit, base `main`, testa `arena/01a0aa56`; `docs/21` §19):
+- **P1.2+P1.3 arbitro**: un solo profilo (`referee_profile()`) ed etichetta relativa alla media
+  di lega con `MIN_REFEREE_MATCHES=15` (0 «molto severo» assoluto sul sito reale; morso al vivo
+  «su 12 12 gare» corretto con test anti-doppio);
+- **P1.4**: 5+1 template FotMob recuperati (fatti tradotti 66,0% → 74,3%), scarti osservati per
+  forma canonica in `stato.html`;
+- **P1.5**: `DETAIL_WINDOW_DAYS` unica fonte del «7 giorni» + test di unicità;
+- **P1.6**: `404.html` (link/CSS assoluti, noindex) + sitemap onesta (lastmod reali: 39 date
+  contro 1; home unica; 7 pagine di lega);
+- **P1.13**: skip-link + footer h3→h2 (scope/main/salti già coperti, misurato all'avvio);
+- **CI**: `verify_site` come gate nel daily, prima di commit dati e deploy.
+
+**Verifiche prima del merge (misurate):** suite **286 passed**; check `test` **pass** (1m24s);
+PR **MERGEABLE**; `git status --porcelain` vuoto; `verify_site` **0 problemi · 32.868 controlli**
+sul build reale; ruff src+tests 601 → 600.
+
+**Deroga merge PR #40**: l'utente ha scritto esplicitamente «Please merge the pull request»
+(2026-09-16). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha
+riverificato check verdi e mergeable, poi eseguito `gh pr merge 40 --merge`; merge commit
+**`7e23e4d`** in `main`. Documentata qui e in `STATO.md`. Catena deroghe precedenti: PR #23
+(2026-09-12), #27/#28 (2026-09-13), #29 (2026-09-13), #34 (2026-09-15), #35 (2026-09-15),
+#38 (2026-09-16).
+
+**Primo daily con il gate `verify_site`**: run `35106840117` partito col merge — esito da
+confermare (il passo nuovo deve restare verde in Actions per chiudere la voce di §18.5/§19.7).
