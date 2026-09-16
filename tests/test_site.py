@@ -952,3 +952,24 @@ def test_verify_site_accetta_404_con_css_assoluto(tmp_path):
         '<link rel="stylesheet" href="assets/site.css?v=abc123">', encoding="utf-8")
     fails, _ = vs.check_assets(site)
     assert fails and "404.html" in fails[0]
+
+
+def test_a11y_strutturale(tmp_path):
+    """P1.13 (docs/19 §3.6): skip-link, landmark main, niente salti di heading, scope sui th."""
+    st = _seed(tmp_path)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    pagine = list(out.rglob("*.html"))
+    assert pagine
+    for pg in pagine:
+        h = pg.read_text(encoding="utf-8")
+        assert 'class="skip-link"' in h, f"{pg.name}: manca lo skip-link"
+        assert '<main id="main">' in h, f"{pg.name}: manca il landmark main con ancora"
+        # il link punta all'ancora del main
+        assert 'href="#main"' in h
+        livelli = [int(x) for x in re.findall(r"<h([1-6])[\s>]", h)]
+        salti = [(a, b) for a, b in zip(livelli, livelli[1:]) if b - a > 1]
+        assert not salti, f"{pg.name}: salto di livello {salti[:3]}"
+        th = re.findall(r"<th\b[^>]*>", h)
+        senza = [t for t in th if "scope=" not in t]
+        assert not senza, f"{pg.name}: {len(senza)}/{len(th)} <th> senza scope"
