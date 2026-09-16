@@ -9,7 +9,7 @@ import pandas as pd
 import pytest
 
 from fda.site.analysis import MatchAnalysis
-from fda.sources.news import clean_text, keyword_score, parse_rss
+from fda.sources.news import classify_news, clean_text, keyword_score, parse_rss
 from fda.store import Store
 
 KO = lambda s: pd.Timestamp(s, tz="UTC")
@@ -129,67 +129,214 @@ def test_riposo_con_coppe_e_nota(analysis):
     assert analysis.rest_cup(1, KO("2026-09-13 18:00")) is None
 
 
-def test_notizie_selezione_specifiche_e_finestra(analysis):
-    items = analysis.team_news(2, "Inter", KO("2026-09-15 12:00"))
-    titles = [i["title"] for i in items]
-    assert titles[0].startswith("Inter, infermeria")      # parole chiave + nome squadra prima
-    assert "notizia vecchia" not in " ".join(titles)       # fuori dalla finestra 12 giorni
-    assert all("Roma" not in t for t in titles)            # mai notizie di altre squadre
-    assert items[0]["source"] == "Gazzetta"
+def test_bollettino_tiene_solo_le_notizie_utili(analysis):
+    """Selezione: categoria dichiarata, finestra vera, gate di soggetto, ordine giusto.
 
-
-def test_notizie_con_indisponibili_regressione_run_35037211442(tmp_path):
-    """Regressione del run `35037211442` (2026-09-15): notizie piene **e** indisponibili.
-
-    Il primo run con notizie reali è morto in build con `TypeError: string indices must be
-    integers` perché `unavailable_for_news` restituisce **nomi** (stringhe) mentre
-    `team_news` li leggeva come righe di tabella (`u["name"]`). Il difetto era latente:
-    scattava solo con la tabella `news` **non vuota** *e* almeno un indisponibile in
-    distinta — condizione che nessun test copriva, perché la card notizie era in dark
-    launch (tabella sempre vuota → uscita anticipata).
+    Le fixture contengono una notizia utile («Inter, infermeria…»), una di cronaca
+    generica, una fuori finestra e una che parla di un'altra squadra: nella card resta
+    solo la prima — ed è la versione **più recente** (il difetto precedente ordinava a
+    parità di punteggio per data crescente).
     """
-    st = Store(tmp_path / "processed")
-    st.write("fixtures", FX)
-    st.write("news", NEWS)
-    st.write("lineup", pd.DataFrame([
-        {"match_id": 4, "team_id": 2, "player_id": None, "player_name": "Marco Indisponibile",
-         "role": "unavailable", "unavailability_type": "injury", "return_info": "Day to day"},
-        {"match_id": 4, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    nw = analysis.team_news(2, "Inter", KO("2026-09-15 12:00"))
+    assert [n["title"] for n in nw["notizie"]] == ["Inter, infermeria: torna il titolare"]
+    assert nw["notizie"][0]["topic"] == "infortuni"
+    assert nw["notizie"][0]["topic_label"] == "Infortuni"
+    assert nw["notizie"][0]["source"] == "Gazzetta"
+    # «esaminate» conta i titoli DENTRO la finestra: quello di agosto è fuori e non entra
+    assert nw["esaminate"] == 2 and nw["pertinenti"] == 1 and nw["scartate"] == 1
+    assert nw["argomenti"] == [("Infortuni", 1)]
+    # la notizia di un'altra squadra non compare mai nel bollettino di questa
+    roma = analysis.team_news(1, "Roma", KO("2026-09-15 12:00"))
+    assert all("Inter" not in n["title"] for n in roma["notizie"])
+
+
+def test_bollettino_scarta_dirette_pronostici_e_cronaca(analysis):
+    """Le pagine di servizio non entrano: dirette, «dove vederla», pronostici, pagelle,
+    e la cronaca di una gara già giocata (il titolo porta il risultato)."""
+    for titolo in ("Inter-Lazio risultati in diretta, testa a testa e formazioni",
+                   "Pronostico Inter-Lazio: probabili formazioni",
+                   "Dove vedere Inter-Lazio in tv e streaming",
+                   "Inter-Lazio 3-1: le pagelle dei nerazzurri"):
+        assert classify_news(titolo)[0] is None, titolo
+    # la testata non è contenuto: un pezzo di cronaca ripreso da TUTTOmercatoWEB non
+    # diventa «Mercato» (era il difetto: la categoria la decideva la testata)
+    assert classify_news("Fumogeni in campo: sospesa la sfida",
+                         "Fumogeni in campo: sospesa la sfida TUTTOmercatoWEB",
+                         "TUTTOmercatoWEB")[0] is None
+    assert classify_news("Roma, Dybala torna in gruppo", "", "Corriere dello Sport")[0] == "infortuni"
+    assert classify_news("Napoli, il giudice sportivo: due turni a Di Lorenzo")[0] == "squalifiche"
+    assert classify_news("Fiorentina, Grosso esonerato")[0] == "allenatore"
+
+
+def test_bollettino_limite_per_squadra_e_ordine_per_categoria(tmp_path):
+    """Al più 3 voci per squadra, la categoria più importante prima, poi la più recente."""
+    st = Store(tmp_path / "bollettino")
+    rows = [
+        {"team_id": 2, "published_at": KO("2026-09-14 18:00"), "title": "Inter, sponsor nuovo per la stagione",
+         "url": "u1", "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"), "title": "Inter, infortunio: out un mese",
+         "url": "u2", "source": "S2", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-13 09:00"), "title": "Inter, esonerato il tecnico",
+         "url": "u3", "source": "S3", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 16:00"), "title": "Inter, due turni di squalifica per X",
+         "url": "u4", "source": "S4", "description": ""},
+    ]
+    st.write("news", pd.DataFrame(rows))
+    nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
+    assert len(nw["notizie"]) == 3 and nw["pertinenti"] == 4
+    assert [n["topic"] for n in nw["notizie"]] == ["squalifiche", "infortuni", "allenatore"]
+    # fra voci di pari peso vince la più recente: squalifica 16:00, infortunio 09:00
+    assert nw["notizie"][0]["topic"] == "squalifiche" and nw["notizie"][0]["published_at"].hour == 16
+    # l'argomento meno importante non è perso: resta dichiarato nei conteggi
+    assert ("Club", 1) in nw["argomenti"]
+    st.close()
+
+
+def test_bollettino_dedup_fra_le_due_squadre_della_partita(tmp_path):
+    """Lo stesso articolo non compare due volte in pagina (era: 58 duplicati su 535 voci).
+
+    Il feed ripubblica lo stesso pezzo con data aggiornata per la stessa squadra, e la
+    stessa notizia torna dal feed di entrambe le squadre: l'insieme dei titoli visti è
+    condiviso fra le due colonne.
+    """
+    st = Store(tmp_path / "bollettino_dedup")
+    st.write("news", pd.DataFrame([
+        {"team_id": 2, "published_at": KO("2026-09-14 08:00"), "title": "Inter, infortunio a X",
+         "url": "u1", "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 12:00"), "title": "Inter, infortunio a X",
+         "url": "u1", "source": "S1", "description": ""},   # stessa notizia, data aggiornata
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"), "title": "Inter, infortunio a X",
+         "url": "u1", "source": "S1", "description": ""},   # e arriva anche dal feed di Roma
     ]))
-    a = MatchAnalysis(st)
-    assert a.unavailable_for_news("Inter") == ["Marco Indisponibile"]   # il contratto: nomi, non righe
-    items = a.team_news(2, "Inter", KO("2026-09-15 12:00"))
-    assert items and items[0]["title"].startswith("Inter, infermeria")
+    an = MatchAnalysis(st)
+    visti: set[str] = set()
+    casa = an.team_news(2, "Inter", KO("2026-09-15 12:00"), seen=visti)
+    ospiti = an.team_news(1, "Roma", KO("2026-09-15 12:00"), seen=visti)
+    assert len(casa["notizie"]) == 1 and casa["notizie"][0]["published_at"].hour == 8
+    assert ospiti["notizie"] == []                      # già pubblicata nell'altra colonna
     st.close()
 
 
-def test_notizie_dedup_stesso_titolo_url_diversi(tmp_path):
-    """Regressione del primo run con notizie vere (2026-09-16, verify_site): lo stesso
-    articolo torna dal feed con URL diversi (misurato: 116 righe con stesso team_id+titolo
-    nel Parquet del 16/09, es. «SC Cambuur - NEC Altre partite…» due volte) e la card
-    mostrava due copie dello stesso pezzo sprecando gli slot del limite — ora il limite
-    si riempie di notizie DISTINTE."""
-    news_dup = pd.concat([NEWS, pd.DataFrame([
-        # stessa notizia dell'infermeria Inter, URL e testata diversi (sindacazione)
-        {"team_id": 2, "published_at": KO("2026-09-14 12:00"),
-         "title": "Inter, infermeria: torna il titolare",
-         "url": "https://esempio.it/1-bis", "source": "Roma Today", "description": "copia sindacata"},
-    ])], ignore_index=True)
-    st = Store(tmp_path / "processed")
-    st.write("fixtures", FX)
-    st.write("news", news_dup)
-    a = MatchAnalysis(st)
-    items = a.team_news(2, "Inter", KO("2026-09-15 12:00"))
-    titles = [i["title"] for i in items]
-    assert titles.count("Inter, infermeria: torna il titolare") == 1   # una sola copia in card
-    assert items[0]["url"] == "https://esempio.it/1"      # resta la copia più rilevante (parole chiave)
+def test_bollettino_perche_conta_collega_la_notizia_ai_nostri_dati(tmp_path):
+    """«Perché conta»: se il titolo nomina un indisponibile o un titolare, la card lo dice."""
+    st = Store(tmp_path / "bollettino_why")
+    st.write("news", pd.DataFrame([
+        {"team_id": 2, "published_at": KO("2026-09-14 08:00"),
+         "title": "Inter, lesione per Marco Indisponibile: out un mese",
+         "url": "u1", "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"),
+         "title": "Inter, infortunio per Coach Nuovo",
+         "url": "u2", "source": "S2", "description": ""},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 4, "team_id": 2, "player_id": 1, "player_name": "Marco Indisponibile",
+         "role": "unavailable", "unavailability_type": "injury", "expected_return": "Day to day"},
+        {"match_id": 4, "team_id": 2, "player_id": 2, "player_name": "Titolare X", "role": "starter"},
+    ]))
+    an = MatchAnalysis(st)
+    nw = an.team_news(2, "Inter", KO("2026-09-15 12:00"),
+                      squad=an.match_squad(4, 2))
+    voce = next(n for n in nw["notizie"] if "Marco" in n["title"])
+    assert voce["why"].startswith("«Marco Indisponibile» è nella lista indisponibili")
+    # il titolo che cita un titolare lo dice (la notizia può essere più fresca del dato)
+    assert all(not n["why"] or "Indisponibile" in n["why"] for n in nw["notizie"])
     st.close()
 
 
-def test_notizie_tabella_vuota_degrada(tmp_path):
-    st = Store(tmp_path / "empty")
+def test_bollettino_finestra_superiore_e_inferiore(tmp_path):
+    """Finestra vera: né notizie più vecchie di 12 giorni né pubblicate dopo il calcio d'inizio."""
+    st = Store(tmp_path / "bollettino_finestra")
+    st.write("news", pd.DataFrame([
+        {"team_id": 2, "published_at": KO("2026-09-01 08:00"), "title": "Inter, infortunio vecchio",
+         "url": "u1", "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-15 20:00"), "title": "Inter, infortunio dopo la gara",
+         "url": "u2", "source": "S2", "description": ""},
+    ]))
+    nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
+    assert nw["esaminate"] == 0 and nw["scartate"] == 0
+    # la notizia del 1° settembre è fuori finestra: può entrare solo dal recupero, con la
+    # data vera e l'etichetta; quella pubblicata dopo il calcio d'inizio non entra mai
+    assert all(n["recupero"] for n in nw["notizie"])
+    assert all(n["published_at"] < KO("2026-09-15 12:00") for n in nw["notizie"])
+    assert all("dopo la gara" not in n["title"] for n in nw["notizie"])
+    st.close()
+
+
+def test_bollettino_recupero_fuori_finestra(tmp_path):
+    """Se la finestra di 12 giorni è vuota la card non resta muta: recupera fino a 45
+    giorni e lo dichiara, con la data vera e l'etichetta di recupero.
+
+    Misurato il 2026-09-16: 91 colonne su 140 (65%) restavano senza voci perché nella
+    finestra c'erano solo dirette e pronostici. Il recupero preferisce infortuni,
+    panchina, società e squadra: il mercato è già nella card qui sopra.
+    """
+    st = Store(tmp_path / "bollettino_recupero")
+    st.write("news", pd.DataFrame([
+        {"team_id": 2, "published_at": KO("2026-08-25 09:00"), "title": "Inter, ufficiale: preso il terzino",
+         "url": "u1", "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-08-20 09:00"), "title": "Inter, lesione per il capitano: out un mese",
+         "url": "u2", "source": "S2", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-07-01 09:00"), "title": "Inter, infortunio troppo vecchio",
+         "url": "u3", "source": "S3", "description": ""},
+    ]))
+    nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
+    assert nw["pertinenti"] == 0 and nw["esaminate"] == 0
+    assert nw["recupero_usato"] is True and nw["finestra_recupero"] == 45
+    assert [n["title"] for n in nw["notizie"]] == ["Inter, lesione per il capitano: out un mese"]
+    assert nw["notizie"][0]["recupero"] is True          # il mercato cede il posto all'infortunio
+    assert nw["notizie"][0]["topic"] == "infortuni"
+    st.close()
+
+
+def test_bollettino_biglietti_e_merch_scartati(tmp_path):
+    """Le pagine di servizio non entrano: biglietti, prevendite, merchandising, figurine.
+
+    Misurato il 2026-09-16 sul sito pubblicato: 27 voci su 162 erano «Come acquistare i
+    biglietti per X-Y» mentre la card dichiarava di escluderle. Il filtro le scarta e
+    conta la riga fra le scartate, così il numero stampato resta riconciliabile.
+    """
+    st = Store(tmp_path / "bollettino_servizio")
+    st.write("news", pd.DataFrame([
+        {"team_id": 2, "published_at": KO("2026-09-14 08:00"),
+         "title": "Come acquistare i biglietti per Inter-Milan: prezzi e informazioni",
+         "url": "u1", "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"),
+         "title": "Inter, lesione per il capitano: out un mese",
+         "url": "u2", "source": "S2", "description": ""},
+    ]))
+    nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
+    assert [n["title"] for n in nw["notizie"]] == ["Inter, lesione per il capitano: out un mese"]
+    assert nw["esaminate"] == 2 and nw["scartate"] == 1 and nw["pertinenti"] == 1
+    st.close()
+
+
+def test_bollettino_un_soggetto_per_categoria(tmp_path):
+    """Stessa categoria e stesso nome proprio = stesso fatto: la seconda voce non entra."""
+    st = Store(tmp_path / "bollettino_soggetto")
+    st.write("news", pd.DataFrame([
+        {"team_id": 2, "published_at": KO("2026-09-14 10:00"),
+         "title": "Inter, Calhanoglu ko: lesione all'adduttore", "url": "u1",
+         "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 08:00"),
+         "title": "Inter, Calhanoglu: risentimento muscolare, salta la Roma", "url": "u2",
+         "source": "S2", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-13 08:00"),
+         "title": "Inter, infortunio per Stones: gli esami di giovedì", "url": "u3",
+         "source": "S3", "description": ""},
+    ]))
+    nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
+    # due infortuni su giocatori diversi restano, il doppione su Calhanoglu no
+    assert [n["title"].split(",")[1].strip().split()[0] for n in nw["notizie"]] == \
+        ["Calhanoglu", "infortunio"]
+    assert nw["pertinenti"] == 2 and nw["scartate"] == 1
+    st.close()
+
+
+def test_bollettino_tabella_vuota_degrada(tmp_path):
+    st = Store(tmp_path / "bollettino_vuoto")
     a = MatchAnalysis(st)
-    assert a.team_news(1, "Roma", KO("2026-09-15 12:00")) == []
+    nw = a.team_news(1, "Roma", KO("2026-09-15 12:00"))
+    assert nw["notizie"] == [] and nw["esaminate"] == 0 and nw["finestra"] == 12
     assert a.coach(1) is None and a.stakes("Roma") is None
     assert a.bench_side(1, "Roma") is None
 

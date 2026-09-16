@@ -223,6 +223,7 @@
     <div class="card" style="margin:0">
       <h3 style="margin:0 0 8px">{{ name }}</h3>
       {% if kp and kp.rows %}
+      <div class="tablewrap">
       <table>
         <tr><th scope="col" class="mut small">giocatore</th><th scope="col" class="r" style="width:40px">min</th><th scope="col" class="r" style="width:34px">gol</th><th scope="col" class="r" style="width:38px">assist</th><th scope="col" class="r" style="width:44px">xG</th><th scope="col" class="r" style="width:44px">xA</th><th scope="col" class="r" style="width:52px">xG+xA/90</th><th scope="col" class="r" style="width:44px">voto</th></tr>
         {% for p in kp.rows %}
@@ -238,6 +239,7 @@
         </tr>
         {% endfor %}
       </table>
+      </div>
       {% if kp.rows %}{% set k0 = (c[side ~ '_key_status'] or {}).get(kp.rows[0].id) %}{% if k0 and k0.status == 'unavailable' %}<p class="small warn" style="margin:6px 0 0">Il contributo offensivo più alto della lista, {{ kp.rows[0].name }}, è indisponibile ({{ k0.note }}): il valore per 90 è stagionale e non vale per questa gara.</p>{% endif %}{% endif %}
       {% else %}<p class="mut small">Nessun giocatore sopra la soglia di minutaggio con dati xG.</p>{% endif %}
       {% if kp %}<p class="small mut">Soglia di minutaggio: {{ kp.floor }} minuti · {{ kp.eligible }} {{ 'giocatore in classifica' if kp.eligible == 1 else 'giocatori in classifica' }}. ◎ stima stabilizzata della rata per 90 (media dei pari per lega e ruolo e peso misurati dai dati del run, non costanti) per campioni sotto 270′: con pochi minuti il valore grezzo è rumore. ◇ = sotto i 90′ la rata grezza non si pubblica, si pubblica la stima.</p>{% endif %}
@@ -364,32 +366,41 @@
     {% for side in ('home','away') %}{% set mk = c[side ~ '_market'] %}
       <div class="card" style="margin:0">
         <h3 style="margin:0 0 8px">{{ c[side ~ '_name'] }}</h3>
-        {% if mk %}
-        <p class="small mut" style="margin:0 0 8px">{{ mk.n_in }} {{ 'arrivo' if mk.n_in == 1 else 'arrivi' }} · {{ mk.n_out }} {{ 'partenza' if mk.n_out == 1 else 'partenze' }} nell'ultima finestra pubblicata dalla fonte</p>
+        {% if not mk %}
+        <p class="mut small">Nessun movimento pubblicato dalla fonte per questa squadra.</p>
+        {% elif mk.stale %}
+        <p class="mut small">La fonte non pubblica movimenti recenti per questa squadra: l'ultimo risale al <b>{{ mk.ultimo }}</b>.</p>
+        {% else %}
+        <p class="small" style="margin:0 0 4px"><b>{{ mk.n_in }}</b> {{ 'arrivo' if mk.n_in == 1 else 'arrivi' }} · <b>{{ mk.n_out }}</b> {{ 'partenza' if mk.n_out == 1 else 'partenze' }} nella finestra dal <b>{{ mk.window_start }}</b> al <b>{{ mk.window_end }}</b></p>
+        {% if mk.spesa is not none %}<p class="small mut" style="margin:0 0 8px" title="Somma dei soli importi pubblicati dalla fonte, al netto di prestiti e gratuiti. Importi non resi noti dalla fonte per {{ mk.importi_mancanti }} movimenti su {{ mk.n_in + mk.n_out }}.">Bilancio sui soli importi pubblicati: spesa {{ mk.spesa|fee_it }} · incasso {{ mk.incasso|fee_it }} · saldo {{ mk.saldo_segno }}{{ mk.saldo_it }}{% if mk.importi_mancanti %} <span class="mut">(importo non noto per {{ mk.importi_mancanti }} {{ 'movimento' if mk.importi_mancanti == 1 else 'movimenti' }})</span>{% endif %}</p>{% endif %}
         {% for label, rows, prep in (('Arrivi', mk.arrivals, 'da'), ('Partenze', mk.departures, 'a')) %}
         {% if rows %}<p class="small" style="margin:8px 0 4px;text-transform:uppercase;letter-spacing:.06em;color:var(--mut)">{{ label }}</p>
         <table style="margin:0">{% for t in rows %}<tr>
-          <td>{{ t.name }}{% if t.type_it %} <span class="mut small">· {{ t.type_it }}</span>{% endif %}</td>
+          <td>{{ t.name }}</td>
           <td class="mut small">{% if t.counterpart %}{{ prep }} {{ t.counterpart }}{% if t.date_it %} · {{ t.date_it }}{% endif %}{% elif t.date_it %}{{ t.date_it }}{% endif %}</td>
-          <td class="r small" style="white-space:nowrap">{{ t.fee or '—' }}</td>
+          <td class="r small" style="white-space:nowrap">{{ t.fee }}</td>
         </tr>{% endfor %}</table>{% endif %}
         {% endfor %}
-        {% else %}<p class="mut small">Nessun movimento pubblicato dalla fonte per questa squadra.</p>{% endif %}
+        {% if mk.in_campo %}<p class="small" style="margin:10px 0 0"><b>Già in campo:</b> {{ mk.in_campo|length }} {{ 'arrivo' if mk.in_campo|length == 1 else 'arrivi' }} di questa finestra {{ 'è nella distinta' if mk.in_campo|length == 1 else 'sono nella distinta' }} di questa partita — {% for p in mk.in_campo %}{{ p.name }} ({{ p.status }}){% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+        {% endif %}
       </div>
     {% endfor %}
     </div>
-    <p class="small mut" style="margin-top:10px">Movimenti pubblicati da FotMob per l'ultima finestra; importi e formule come riportati dalla fonte, senza conversioni o stime; in elenco i 4 più recenti per direzione. Un arrivo delle ultime settimane può non essere ancora riflesso nelle statistiche di stagione di questa scheda.</p>
+    <p class="small mut" style="margin-top:10px">Movimenti pubblicati da FotMob. La finestra non è dichiarata dalla fonte: è ricavata dai dati partendo dal movimento più recente e andando indietro finché non passa più di 3 settimane fra un movimento e il successivo, così l'elenco non mescola la finestra in corso con quella di gennaio (la versione precedente di questa card pubblicava come «ultima finestra» anche i movimenti della stagione passata). In elenco fino a quattro movimenti per direzione, ordinati per <b>importo pubblicato</b> — a parità di importo, il più recente: un colpo da 30 M€ non resta fuori per una firma di secondo piano di ieri. «Importo non noto» significa che la fonte non lo pubblica: non si stima e non si converte nulla. Un arrivo delle ultime settimane può non essere ancora riflesso nelle statistiche di stagione di questa scheda.</p>
   </div>
   {% endif %}
-  {% if (c.home_news or c.away_news) and c.status != 'finished' %}
+  {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate) and c.status != 'finished' %}
   <div class="card" id="notizie">
     <h2>Ultime dalle società</h2>
-    {% for side in ('home','away') %}{% set items = c[side ~ '_news'] %}
-    <p style="margin:0 0 6px"><b>{{ c[side ~ '_name'] }}</b>{% if items %} <span class="small mut">· {{ items|length }} {{ 'notizia verificata' if items|length == 1 else 'notizie verificate' }} negli ultimi 12 giorni, la più recente {{ items[0].published_at|it_dt }}</span>{% endif %}</p>
-    {% if items %}<ul class="news-list">{% for n in items %}<li><span class="mut small">{{ n.published_at|it_dt }} · {{ n.source }}</span><br><a href="{{ n.url }}" rel="noopener noreferrer nofollow">{{ n.title }}</a>{% if n.description %}<br><span class="small mut">{{ n.description }}</span>{% endif %}</li>{% endfor %}</ul>
-    {% else %}<p class="small mut">Nessuna notizia verificata sulla società negli ultimi 12 giorni.</p>{% endif %}
+    <p class="small mut" style="margin:0 0 10px">Che cosa dicono le testate della società e della squadra, filtrato: restano solo le notizie che cambiano qualcosa — infortuni, squalifiche, panchina, società, mercato — con la categoria dichiarata. Dirette, «dove vederla», pronostici, pagelle e pagine di biglietti o merchandising non entrano: sono pagine di servizio, non informazione. Il titolo è quello pubblicato, il link porta alla fonte.</p>
+    {% for side in ('home','away') %}{% set nw = c[side ~ '_news'] %}
+    <p style="margin:12px 0 6px"><b>{{ c[side ~ '_name'] }}</b> <span class="small mut">· {{ nw.esaminate }} {{ 'titolo esaminato' if nw.esaminate == 1 else 'titoli esaminati' }} negli ultimi {{ nw.finestra }} giorni · {{ nw.pertinenti }} {{ 'notizia pertinente' if nw.pertinenti == 1 else 'notizie pertinenti' }}{% if nw.recupero_usato %}: nessuna nella finestra, qui le più recenti (fino a {{ nw.finestra_recupero }} giorni fa, {{ nw.esaminate_recupero }} titoli in più guardati){% endif %}</span></p>
+    {% if nw.notizie %}<ul class="news-list">{% for n in nw.notizie %}<li><span class="topic">{{ n.topic_label }}</span> <span class="mut small">{{ n.published_at|it_dt }} · {{ n.source }}{% if n.recupero %} · fuori finestra{% endif %}</span><br><a href="{{ n.url }}" rel="noopener noreferrer nofollow">{{ n.title }}</a>{% if n.sintesi %}<br><span class="small mut">{{ n.sintesi }}</span>{% endif %}{% if n.why %}<br><span class="small"><b>Perché conta:</b> {{ n.why }}</span>{% endif %}</li>{% endfor %}</ul>
+    {% if nw.argomenti %}<p class="small mut" style="margin:4px 0 0">Argomenti trovati nella finestra: {% for label, k in nw.argomenti %}{{ label }} ({{ k }}){% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    {% elif nw.esaminate %}<p class="small mut">Nessuna notizia utile su questa società negli ultimi {{ nw.finestra }} giorni: {{ nw.esaminate }} {{ 'titolo esaminato' if nw.esaminate == 1 else 'titoli esaminati' }}, tutti dirette, pronostici, biglietti o cronaca — e anche guardando indietro fino a {{ nw.finestra_recupero }} giorni non c'è nulla che cambi qualcosa su infortuni, panchina, società o mercato. Meglio nessuna notizia che una notizia che non serve.</p>
+    {% else %}<p class="small mut">Nessuna notizia raccolta su questa società negli ultimi {{ nw.finestra_recupero }} giorni.</p>{% endif %}
     {% endfor %}
-    <p class="small mut">Titoli e brani come pubblicati dalle testate (Google News RSS e ESPN), selezionati per squadra: prima le notizie che citano allenatore, indisponibili o parole chiave di società (crisi, esonero, vigilia, mercato). Niente è riscritto: il link porta alla fonte.</p>
+    <p class="small mut" style="margin-top:10px">Fonte: Google News RSS per squadra ed ESPN news di lega, finestra di {{ c.home_news.finestra }} giorni prima del calcio d'inizio (il limite superiore esiste: una notizia pubblicata dopo la gara non entra). Se nella finestra non c'è nulla di utile la card guarda indietro fino a {{ c.home_news.finestra_recupero }} giorni e lo dichiara: una notizia di tre settimane prima, con la sua data, è informazione; una diretta di ieri no. In recupero entrano prima infortuni, panchina, società e squadra, e solo se non c'è altro il mercato — che è già nella card qui sopra. La selezione è deterministica: titoli di servizio esclusi, categoria assegnata con le parole del titolo, e il titolo deve parlare della squadra o citare un suo giocatore o l'allenatore. «Perché conta» collega la notizia ai nostri dati: se il titolo nomina un indisponibile o un titolare di questa partita, è scritto lì. Nessun testo è riscritto: titolo, testata, data e link come pubblicati.</p>
   </div>
   {% endif %}
   <div class="card">

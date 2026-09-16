@@ -26,7 +26,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 </div>
 {% if markets %}
 <div class="card"><h2>Accuratezza per mercato</h2>
-  <table><tr><th scope="col">mercato</th><th scope="col" class="r">gare</th><th scope="col" class="r">previsto</th><th scope="col" class="r">osservato</th>
+  <div class="tablewrap"><table><tr><th scope="col">mercato</th><th scope="col" class="r">gare</th><th scope="col" class="r">previsto</th><th scope="col" class="r">osservato</th>
     <th scope="col" class="r">intervallo 95%</th>
     <th scope="col" class="r">Brier</th><th scope="col" class="r">Brier base</th><th scope="col" class="r">Δ</th><th scope="col" class="r">scelte indovinate</th>
     <th scope="col" class="r">segnale</th></tr>
@@ -36,7 +36,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
     <td class="r">{{ (m.hit*100)|round|int }}%</td>
-    <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}</table>
+    <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}</table></div>
   <p class="small mut">«Previsto» è la probabilità media dichiarata, «osservato» la frequenza reale nello
   stesso campione: se sono vicini il mercato è calibrato. Il Brier misura l'errore quadratico della
   probabilità (0 = perfetto); <b>Brier base</b> è l'errore di chi pronostica sempre la frequenza di

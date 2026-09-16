@@ -1,5 +1,6 @@
-"""Test offline del blocco mercato (docs/21 P2-7): parser FotMob `teams.transfers`,
-collettore isolato e card «Mercato: arrivi e partenze»."""
+"""Test offline del blocco mercato (docs/21 P2-7, rifatto in docs/24 §4): parser FotMob
+`teams.transfers`, collettore isolato e card «Mercato: arrivi e partenze» con finestra
+ricavata dai dati, importi leggibili e collegamento con la distinta della partita."""
 
 import pandas as pd
 
@@ -194,19 +195,117 @@ def test_collect_transfers_imbuto_reale(tmp_path):
     st.close()
 
 
-def test_summer_market_con_disposizione_reale(tmp_path):
-    """End-to-end: righe dal payload reale → card con fee e tipi in italiano."""
-    st = Store(tmp_path / "mercato5")
-    rows = FotMobClient.parse_transfers(RAW_REALE, 1, "Roma", "ITA1")
-    st.write("transfers", pd.DataFrame(rows))
+def _transfers(rows):
+    """Righe della tabella `transfers` per la squadra 1 (Roma), con date già utc."""
+    base = {"team_id": 1, "team_name": "Roma", "league_code": "ITA1", "position": "",
+            "counterpart": "", "direction": "in", "fee_text": "", "transfer_type": "",
+            "date": "2026-08-01T00:00:00Z"}
+    return pd.DataFrame([{**base, **r} for r in rows])
+
+
+def test_transfer_window_finestra_ricavata_dai_dati(tmp_path):
+    """La finestra è ricavata dai dati, non dall'agenda: i movimenti della stagione
+    precedente (gennaio 2026) non entrano nella card della finestra in corso."""
+    from datetime import UTC, datetime, timedelta
+    oggi = datetime.now(UTC)
+    st = Store(tmp_path / "mercato_finestra")
+    st.write("transfers", _transfers([
+        {"player_name": "Colpo Grosso", "direction": "in", "fee_text": "30000000",
+         "date": (oggi - timedelta(days=3)).isoformat()},
+        {"player_name": "Altro Arrivo", "direction": "in", "fee_text": "1000000",
+         "date": (oggi - timedelta(days=15)).isoformat()},
+        # il buco: nessun movimento per 5 mesi → la finestra vecchia resta fuori
+        {"player_name": "Vecchio Di Gennaio", "direction": "in", "fee_text": "9000000",
+         "date": (oggi - timedelta(days=200)).isoformat()},
+    ]))
     an = MatchAnalysis(st)
-    mk = an.summer_market(1)
-    assert mk is not None and mk["n_in"] == 2 and mk["n_out"] == 1
-    a0 = mk["arrivals"][0]                                       # data desc: 10/08 prima del 02/08
-    assert a0["name"] == "Nuovo Acquisto" and a0["fee"] == "€18.5M"
-    assert a0["type_it"] == "titolo definitivo" and a0["date_it"] == "10/08/2026"
-    assert mk["arrivals"][1]["type_it"] == "prestito"            # «on loan» → italiano
-    assert mk["departures"][0]["type_it"] == "gratuito" and mk["departures"][0]["fee"] == "gratuito"
+    mk = an.transfer_window(1)
+    assert mk["n_in"] == 2 and mk["n_out"] == 0               # gennaio escluso
+    assert [a["name"] for a in mk["arrivals"]] == ["Colpo Grosso", "Altro Arrivo"]
+    assert mk["window_end"] == (oggi - timedelta(days=3)).strftime("%d/%m/%Y")
+    assert mk["window_start"] == (oggi - timedelta(days=15)).strftime("%d/%m/%Y")
+    st.close()
+
+
+def test_transfer_window_ordina_per_importo_pubblicato(tmp_path):
+    """Ordine per importo pubblicato (a parità, il più recente): il colpo non resta fuori."""
+    from datetime import UTC, datetime, timedelta
+    oggi = datetime.now(UTC)
+    st = Store(tmp_path / "mercato_ordine")
+    st.write("transfers", _transfers([
+        {"player_name": "Firma Di Ieri", "fee_text": "", "date": (oggi - timedelta(days=1)).isoformat()},
+        {"player_name": "Colpo Da 30", "fee_text": "30000000", "date": (oggi - timedelta(days=20)).isoformat()},
+        {"player_name": "Prestito", "fee_text": "prestito", "date": (oggi - timedelta(days=5)).isoformat()},
+        {"player_name": "Gratuito", "fee_text": "gratuito", "date": (oggi - timedelta(days=6)).isoformat()},
+    ]))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1)
+    # importo pubblicato decrescente; senza importo, il più recente prima
+    assert [a["name"] for a in mk["arrivals"]] == ["Colpo Da 30", "Firma Di Ieri", "Prestito", "Gratuito"]
+    assert mk["arrivals"][0]["fee"] == "30 M€"
+    assert mk["arrivals"][1]["fee"] == "importo non noto"     # mai un numero inventato
+    assert mk["arrivals"][3]["fee"] == "gratuito"
+    assert mk["importi_noti"] == 1 and mk["importi_mancanti"] == 3
+    assert mk["spesa"] == 30000000.0 and mk["saldo"] == 30000000.0
+    st.close()
+
+
+def test_transfer_window_stantio_dichiara_l_ultimo_movimento(tmp_path):
+    """Se la fonte non pubblica movimenti recenti la card lo dice invece di sparire."""
+    from datetime import UTC, datetime, timedelta
+    vecchia = datetime.now(UTC) - timedelta(days=200)
+    st = Store(tmp_path / "mercato_stantio")
+    st.write("transfers", _transfers([
+        {"player_name": "Movimento Vecchio", "fee_text": "1000000", "date": vecchia.isoformat()},
+    ]))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1)
+    assert mk["stale"] is True and mk["n_in"] == 0
+    assert mk["ultimo"] == vecchia.strftime("%d/%m/%Y")
+    st.close()
+
+
+def test_transfer_window_fee_da_testo_della_fonte():
+    """Importi e formule: numeri leggibili, inglese mai a schermo, nulla inventato."""
+    assert MatchAnalysis.fee_it("21250000") == "21,2 M€"
+    assert MatchAnalysis.fee_it("850000") == "850 k€"
+    assert MatchAnalysis.fee_it("900") == "900 €"
+    assert MatchAnalysis.fee_it("") == "importo non noto"
+    assert MatchAnalysis.fee_it("undisclosed") == "importo non noto"
+    assert MatchAnalysis.fee_it("Prestito") == "prestito"
+    assert MatchAnalysis.fee_it("free transfer") == "gratuito"
+    assert MatchAnalysis.fee_eur("prestito") is None and MatchAnalysis.fee_eur("") is None
+    assert MatchAnalysis.fee_eur("1,5 M") == 1500000.0
+
+
+def test_transfer_window_senza_tabella(tmp_path):
+    st = Store(tmp_path / "mercato_vuoto")
+    an = MatchAnalysis(st)
+    assert an.transfer_window(1) is None                      # tabella mai raccolta → None
+    st.close()
+
+
+def test_arrivi_gia_in_distinta(tmp_path):
+    """Il collegamento che mancava: quali arrivi sono già nella distinta di questa partita."""
+    from datetime import UTC, datetime, timedelta
+    oggi = datetime.now(UTC)
+    st = Store(tmp_path / "mercato_distinta")
+    st.write("transfers", _transfers([
+        {"player_name": "Nuovo Acquisto", "fee_text": "18000000",
+         "date": (oggi - timedelta(days=10)).isoformat()},
+        {"player_name": "Sconosciuto", "fee_text": "", "date": (oggi - timedelta(days=10)).isoformat()},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 4, "team_id": 1, "player_id": 111, "player_name": "Nuovo Acquisto",
+         "role": "starter", "market_value_eur": 25000000.0},
+        {"match_id": 4, "team_id": 1, "player_id": 112, "player_name": "Titolare Storico",
+         "role": "sub", "market_value_eur": 1000000.0},
+    ]))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1, match_id=4)
+    assert [p["name"] for p in mk["in_campo"]] == ["Nuovo Acquisto"]
+    assert mk["in_campo"][0]["status"] == "titolare"
+    assert an.transfer_window(1, match_id=99)["in_campo"] == []   # nessuna distinta → nessuna riga
     st.close()
 
 
@@ -238,26 +337,3 @@ def test_collect_transfers_isolato_e_tollerante(tmp_path):
     st.close()
 
 
-def test_summer_market_card_e_ordine(tmp_path):
-    st = Store(tmp_path / "mercato2")
-    rows = FotMobClient.parse_transfers(RAW_DICT, 1, "Roma", "ITA1")
-    # terza entrata, la più vecchia: l'ordine in card deve essere per data desc
-    rows.append({**rows[0], "player_name": "Arrivo Vecchio",
-                 "date": "2026-06-01T00:00:00Z"})
-    st.write("transfers", pd.DataFrame(rows))
-    an = MatchAnalysis(st)
-    assert an.summer_market(2) is None                        # squadra senza righe → None
-    mk = an.summer_market(1)
-    assert mk is not None
-    assert mk["n_in"] == 3 and mk["n_out"] == 1
-    assert len(mk["arrivals"]) == 3 and mk["arrivals"][0]["name"] == "Prestito Nuovo"  # data desc
-    assert mk["arrivals"][0]["type_it"] == "prestito" and mk["arrivals"][0]["date_it"] == "01/08/2026"
-    assert mk["departures"][0]["name"] == "Vecchia Gloria"
-    st.close()
-
-
-def test_summer_market_senza_tabella(tmp_path):
-    st = Store(tmp_path / "mercato3")
-    an = MatchAnalysis(st)
-    assert an.summer_market(1) is None                        # tabella mai raccolta → None
-    st.close()
