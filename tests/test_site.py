@@ -2,6 +2,7 @@ from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 
 from fda.collect import collect_league
 from fda.config import league
@@ -818,3 +819,49 @@ def test_scheda_dice_nessun_indisponibile_quando_la_distinta_c_e(tmp_path):
     assert "<b>Indisponibili (" in h
     assert "Nessun indisponibile segnalato" not in h
     st.close()
+
+
+def test_baseline_naive_usa_frequenze_reali():
+    """[P1.1, docs/19 §1.6] La base naive è la frequenza reale 1·X·2, non 45/27/28 fisso.
+
+    Sostituisce l'avversario hard-coded che gonfiava il Δ pubblicato fino a +0,00205 RPS
+    (ITA1): con lo storico per lega il Δ dichiara il vantaggio contro il caso reale.
+    """
+    from fda.site.build import NAIVE_FALLBACK, outcome_freqs
+
+    # ITA1: 30 gare valide (15V 10N 5P), POR1: 2 gare (sotto NAIVE_MIN → fallback)
+    rows = ([("ITA1", 2, 0)] * 15 + [("ITA1", 1, 1)] * 10 + [("ITA1", 0, 1)] * 5
+            + [("POR1", 1, 1), ("POR1", 0, 0)])
+    hist = pd.DataFrame(rows, columns=["league_key", "home_goals", "away_goals"])
+    f = outcome_freqs(hist)
+    assert np.allclose(f["ITA1"][0], [0.5, 1 / 3, 1 / 6])     # frequenze reali di lega
+    assert f["ITA1"][1] == 30
+    assert np.allclose(f["Tutti"][0], [15 / 32, 12 / 32, 5 / 32]) and f["Tutti"][1] == 32
+    # sotto le NAIVE_MIN gare la lega resta sul fallback dichiarato, con il suo n reale
+    assert np.allclose(f["POR1"][0], NAIVE_FALLBACK) and f["POR1"][1] == 2
+    # n = 0 e nessuna chiave se lo storico manca o non ha i gol
+    assert outcome_freqs(pd.DataFrame(columns=["home_goals", "away_goals"])) == {}
+    assert outcome_freqs(pd.DataFrame({"league_key": ["ITA1"], "home_goals": [None],
+                                       "away_goals": [1]})) == {}
+
+
+def test_composizione_campione_dichiara_le_versioni():
+    """[P0.6, docs/19 §1.5] Il campione live dichiara quante gare sono del modello corrente.
+
+    Misura reale 2026-09-16: 2.152 previsioni di cui 81 di ricette precedenti — senza la
+    dichiarazione la tabella live sembrava contraddirsi col backtest (solo ricetta corrente).
+    """
+    from fda.site.build import composizione_campione
+
+    p = pd.DataFrame({
+        "model_version": ["dc-elo-tilt-0.4"] * 3 + ["dc-elo-ens-0.1"] + [None],
+        "calibration_version": ["cal-momenti-1.1", "cal-momenti-1.1", "identity", "cal-momenti-1.1", None],
+    })
+    c = composizione_campione(p, "dc-elo-tilt-0.4")
+    assert c["n"] == 5
+    assert c["corrente"] == 3
+    assert c["calibrate"] == 3            # identity e NaN non sono calibrazione attiva
+    assert c["versioni"] == ["dc-elo-ens-0.1", "dc-elo-tilt-0.4"]
+    # colonne assenti → tutte non correnti, n sempre pubblicato
+    c2 = composizione_campione(pd.DataFrame({"x": [1, 2]}), "dc-elo-tilt-0.4")
+    assert c2["n"] == 2 and c2["corrente"] == 0 and c2["calibrate"] == 0

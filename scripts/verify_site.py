@@ -469,8 +469,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     if not p.empty and acc_path.exists():
         outc = np.where(p.home_goals > p.away_goals, 0, np.where(p.home_goals == p.away_goals, 1, 2))
         mine = pb_rps(p[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(), outc.tolist())
-        mrow = re.search(r'Tutti</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>',
-                         acc_path.read_text(encoding="utf-8"))
+        acc_txt = acc_path.read_text(encoding="utf-8")
+        mrow = re.search(r'Tutti</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>', acc_txt)
         if not mrow:
             fails.append("accuratezza.html: riga 'Tutti' non trovata")
         else:
@@ -481,6 +481,37 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if abs(rps_page - mine) > 0.002:
                 fails.append(f"accuratezza: RPS pagina {rps_page} vs ricalcolato {mine:.4f}")
             print(f"[3] accuratezza: {len(p)} gare, RPS pagina {rps_page} = ricalcolato {mine:.4f}")
+        # 3b) invarianti di pubblicazione (docs/19 P0.8): ogni Δ della tabella riepilogo deve
+        # equalare RPS − naive ricalcolati dai numeri stampati, e la composizione dichiarata
+        # del campione deve coincidere con la somma delle gare della tabella.
+        righe_riep = re.findall(
+            r'<td>([^<]+)</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>'
+            r'<td class="r">(\d+,\d+)</td><td class="r">\d+%</td><td class="r">(\d+,\d+)</td>'
+            r'<td class="r">(?:[\d.]+|fisso)</td><td class="r [a-z]+">([+\-−]?[\d,]+)</td></tr>', acc_txt)
+        if not righe_riep:
+            fails.append("accuratezza.html: tabella riepilogo non leggibile per il controllo [3b]")
+        n_leghe, n_tutti = 0, 0
+        for lg, n_r, rps_r, _brier, naive_r, delta_r in righe_riep:
+            checks += 1
+            if lg.strip() == "Tutti":
+                n_tutti = int(n_r)
+            else:
+                n_leghe += int(n_r)
+            ric = float(rps_r.replace(",", ".")) - float(naive_r.replace(",", "."))
+            pub = float(delta_r.replace(",", ".").replace("−", "-"))
+            if abs(pub - ric) > 0.0011:   # rps/naive a 4 decimali + Δ a 3: tolleranza di stampa
+                fails.append(f"accuratezza: Δ {lg} pubblicato {pub:+.4f} ≠ RPS − naive {ric:+.4f}")
+        if n_tutti and n_leghe and n_tutti != n_leghe:
+            fails.append(f"accuratezza: riga Tutti {n_tutti} gare ≠ somma leghe {n_leghe}")
+        m_comp = re.search(r"Composizione del campione: (\d+) gare valutate", acc_txt)
+        if m_comp:
+            checks += 1
+            if int(m_comp.group(1)) != n_tutti:
+                fails.append(f"accuratezza: composizione {m_comp.group(1)} gare ≠ riga Tutti {n_tutti}")
+        elif "Riepilogo" in acc_txt:
+            fails.append("accuratezza.html: composizione del campione assente (docs/19 §1.5)")
+        else:
+            print("[3b] accuratezza: pagina senza riepilogo (nessuna previsione valutabile)")
 
     # 7) accuratezza: intervalli di Wilson pubblicati, ricalcolati con la funzione del progetto
     if acc_path.exists():

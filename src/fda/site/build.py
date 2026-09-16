@@ -15,7 +15,7 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import REPO_ROOT, leagues, load_leagues_config
-from ..models.predict import latest_per_match, outcome_index, wilson_interval
+from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..store import Store
 from .analysis import MatchAnalysis, prediction_meta
 from .audit import audit_match
@@ -30,6 +30,67 @@ OUTCOME_LABELS = ("1", "X", "2")
 # forme brevi per il calendario completo: una riga per partita deve stare in poco spazio
 ITALIAN_DAYS_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
 ITALIAN_MONTHS_SHORT = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"]
+
+# Baseline «naive» della pagina Accuratezza: frequenze reali 1·X·2 misurate sullo storico
+# (docs/19 §1.6). Il 45/27/28 fisso era un avversario più debole di quello reale e gonfiava
+# il Δ pubblicato fino a +0,00205 RPS (ITA1, misurato). Sotto NAIVE_MIN gare di storico la
+# frequenza di una lega è troppo rumorosa: si resta sul fallback dichiarato, mai inventare.
+NAIVE_FALLBACK = np.array([0.45, 0.27, 0.28])
+NAIVE_MIN = 30
+
+
+def outcome_freqs(hist: pd.DataFrame) -> dict[str, tuple[np.ndarray, int]]:
+    """Frequenze reali 1·X·2 per ``league_key`` (+ chiave «Tutti») da ``history.parquet``.
+
+    Sostituisce il 45/27/28 hard-coded come avversario della colonna «Δ vs naive»:
+    una baseline più debole del reale gonfia il vantaggio dichiarato del modello
+    (docs/19 §1.6). Restituisce ``chiave → (frequenze, n)`` dove ``n`` è il numero di
+    gare di storico dietro la stima (0 se la colonna manca); una lega con meno di
+    ``NAIVE_MIN`` gare valide riceve ``NAIVE_FALLBACK`` con il suo ``n`` reale, perché
+    la pagina dichiari il fallback invece di fingere precisione.
+    """
+    out: dict[str, tuple[np.ndarray, int]] = {}
+    if hist is None or hist.empty or not {"home_goals", "away_goals"}.issubset(hist.columns):
+        return out
+    hg = pd.to_numeric(hist["home_goals"], errors="coerce")
+    ag = pd.to_numeric(hist["away_goals"], errors="coerce")
+    ok = (hg.notna() & ag.notna()).to_numpy()
+    if not ok.any():
+        return out
+    hg, ag = hg.to_numpy()[ok], ag.to_numpy()[ok]
+    o = np.where(hg > ag, 0, np.where(hg == ag, 1, 2))
+    keys = (hist["league_key"].astype(str).to_numpy()[ok] if "league_key" in hist.columns
+            else np.full(int(ok.sum()), ""))
+
+    def freq_n(mask: np.ndarray) -> tuple[np.ndarray, int]:
+        c = np.bincount(o[mask], minlength=3).astype(float)
+        n = int(c.sum())
+        return (c / n if n >= NAIVE_MIN else NAIVE_FALLBACK.copy()), n
+
+    out["Tutti"] = freq_n(np.ones(len(o), dtype=bool))
+    for k in pd.unique(keys):
+        out[str(k)] = freq_n(keys == k)
+    return out
+
+
+def composizione_campione(p: pd.DataFrame, model_version: str) -> dict[str, Any]:
+    """Composizione del campione live valutato in *Accuratezza* (docs/19 §1.5).
+
+    Le previsioni restano in archivio per tracciabilità: il campione valutato mescola
+    versioni del modello e, senza questa dichiarazione, la tabella live sembra
+    contraddirsi con il backtest (che usa solo la ricetta corrente). Nessuna modifica
+    al modello: solo honestà sul campione pubblicato.
+    """
+    ver = (p["model_version"].dropna().astype(str) if "model_version" in p.columns
+           else pd.Series(dtype=str))
+    cal = (p["calibration_version"].dropna().astype(str) if "calibration_version" in p.columns
+           else pd.Series(dtype=str))
+    return {
+        "n": len(p),
+        "corrente": int((ver == model_version).sum()),
+        "calibrate": int(((cal != "") & (cal != "identity") & (cal.str.lower() != "nan")).sum()),
+        "versioni": sorted(ver.unique().tolist()),
+    }
 
 
 # ``pct_triple`` vive in fmt.py (unico punto di definizione, testato con property-based):
@@ -456,6 +517,9 @@ class SiteBuilder:
 
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")
+        # baseline naive = frequenze reali per lega (docs/19 §1.6); chiave = league_key
+        base_freqs = outcome_freqs(self.store.read("history"))
+        key_of = {lg.name: lg.key for lg in leagues()}
         summary, recent, calib, markets = [], [], [], []
         if not preds.empty:
             fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id"]]
@@ -475,11 +539,20 @@ class SiteBuilder:
                     pr = g[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
                     oc = g["outcome"].to_numpy()
                     onehot = np.eye(3)[oc]
-                    naive = np.tile([0.45, 0.27, 0.28], (len(g), 1))
+                    # baseline = frequenze reali della lega (o complessive per «Tutti»),
+                    # mai un avversario hard-coded più debole del necessario (docs/19 §1.6)
+                    freq, n_base = base_freqs.get("Tutti" if lg_name == "Tutti" else key_of.get(lg_name, ""),
+                                                  (NAIVE_FALLBACK, 0))
+                    naive = np.tile(freq, (len(g), 1))
                     rps, rps_naive = _rps(pr, oc), _rps(naive, oc)
                     summary.append({"league": lg_name, "n": len(g), "rps": rps, "brier": float(((pr - onehot) ** 2).sum(1).mean()),
-                                    "hit": float((pr.argmax(1) == oc).mean()), "naive": rps_naive, "delta": rps - rps_naive})
+                                    "hit": float((pr.argmax(1) == oc).mean()), "naive": rps_naive, "delta": rps - rps_naive,
+                                    "naive_n": n_base})
                 summary.sort(key=lambda r: (r["league"] == "Tutti", r["league"]))
+                # composizione del campione: senza questa riga la tabella live e il backtest
+                # sembrano contraddirsi (docs/19 §1.5). Le gare valutate non sono tutte
+                # del modello corrente: le previsioni restano in archivio per tracciabilità.
+                composizione = composizione_campione(p, MODEL_VERSION)
                 # calibrazione: probabilità media prevista vs frequenza osservata (tutte le gare valutate)
                 oc_all = p["outcome"].to_numpy()
                 n_all = int(len(p))
@@ -581,7 +654,9 @@ class SiteBuilder:
             bt = backtest_summary(calibrate_rows(bt_rows, cal))
             bt["grezzo"] = backtest_summary(bt_rows)
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
-                     markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [])
+                     markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
+                     composizione=composizione if 'composizione' in locals() else {},
+                     model_version=MODEL_VERSION)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")
