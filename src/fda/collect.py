@@ -38,7 +38,7 @@ log = logging.getLogger(__name__)
 WEATHER_HORIZON_DAYS = 7
 
 # Errori di fonte che degradano senza bloccare il run: la fonte primaria copre il dato.
-_WARN_NON_BLOCCANTE = ("espn standings", "espn news")
+_WARN_NON_BLOCCANTE = ("espn standings", "espn news", "espn scoreboard")
 
 # Versione dello snapshot per-partita. Va incrementata quando cambia il modo in cui le
 # tabelle per-partita vengono salvate: le partite finite salvate con una versione più
@@ -93,7 +93,9 @@ class CollectReport:
             err = next((e for e in self.errors if e.startswith(prefisso)), None)
             # Fonti il cui 403 è un degrado noto e già coperto da un'altra fonte: vengono
             # registrate come AVVISO, non come errore bloccante (ESPN standings 403 cronico,
-            # coperto dalla classifica FotMob; ESPN news 403, coperto da Google News).
+            # coperto dalla classifica FotMob; ESPN news 403, coperto da Google News; ESPN
+            # scoreboard 403 su 7/7 leghe — misurato nel run `35131980208`, docs/23 §5 — con
+            # gli eventi del giorno già coperti da FotMob).
             warn = err is not None and err.startswith(_WARN_NON_BLOCCANTE)
             out.append({"run_at": self.run_at, "source": f"{src}:{self.league}", "requests": n,
                         "ok": err is None, "warn": warn, "error": err,
@@ -248,7 +250,7 @@ def collect_league(
 
     # Backoff (docs/19 P1.9): se la classifica ESPN ha fallito negli ultimi BACKOFF_FAILS run
     # la richiesta non parte — il 403 cronico costava 7 richieste a run e 7 righe di avviso
-    # identiche nella pagina *Stato fonti*. Lo scoreboard, che risponde, resta sempre attivo.
+    # identiche nella pagina *Stato fonti*.
     sospesa = sospensione(store, f"espn:{lg.key}", "espn standings")
     espn_standings_rows = 0
     espn_inizio = ec.http.mark()
@@ -257,7 +259,17 @@ def collect_league(
     else:
         espn_standings_rows = _safe("espn standings", _standings, report) or 0
     espn_dopo_standings = ec.http.mark()
-    report.espn_events = _safe("espn scoreboard", _scoreboards, report) or 0
+    # Lo scoreboard ha la **sua** serie e la **sua** sospensione (docs/23 §5). Fino al run
+    # `35131980208` (2026-09-16 18:09 UTC) era l'unica fase ESPN fuori dal backoff perché lo si
+    # dichiarava «attivo, risponde»: misurato su una riga propria per la prima volta, risponde
+    # **403 su 7/7 leghe** — 7 richieste a run (35 al giorno) per 0 righe, e nel repository non
+    # è mai esistita una tabella `espn_events`/`espn_team_stats`. Stesso costo senza dato che
+    # P1.9 aveva tolto alla classifica, stessa regola: la chiave è `espn scoreboard:<lega>`.
+    sospesa_scoreboard = sospensione(store, f"espn scoreboard:{lg.key}", "espn scoreboard")
+    if sospesa_scoreboard:
+        report.errors.append(f"espn scoreboard: {sospesa_scoreboard}")
+    else:
+        report.espn_events = _safe("espn scoreboard", _scoreboards, report) or 0
     espn_fine = ec.http.mark()
 
     # 5) meteo previsionale Open-Meteo (fallback: riempie il vuoto FotMob sui futuri) ------
@@ -327,9 +339,10 @@ def collect_league(
             continue
         report.requests[src] = client.http.mark() - req0[src]
     # ESPN: **due** contatori, uno per fase (docs/23 §3). Prima la riga «espn:ITA1» contava il
-    # totale del client, quindi includeva le richieste dello scoreboard — che non è governato dal
-    # backoff: la riga della classifica risultava «SOSPESA ma con 1 richiesta» e il verificatore
-    # non poteva più distinguere un backoff attivo da un backoff che non esiste (run 35129006426).
+    # totale del client, quindi includeva le richieste dello scoreboard — che allora non era
+    # governato dal backoff (oggi lo è, docs/23 §5): la riga della classifica risultava
+    # «SOSPESA ma con 1 richiesta» e il verificatore non poteva più distinguere un backoff
+    # attivo da un backoff che non esiste (run 35129006426).
     # La chiave della classifica resta «espn» perché è l'identità su cui cammina lo storico di
     # `backoff.state()` (`f"espn:{lg.key}"`): cambiarla azzererebbe la serie dei fallimenti.
     report.requests["espn"] = espn_dopo_standings - espn_inizio
@@ -351,8 +364,9 @@ def collect_league(
                                    "riserva: la classifica primaria è FotMob" if not espn_standings_rows else "",
                                    "eventi del giorno: riga a parte"))
     report.note("espn scoreboard", rows=report.espn_events,
-                detail_text=detail(f"eventi del giorno {report.espn_events}",
-                                   "sempre attivo: non è governato dal backoff della classifica"))
+                detail_text=detail(
+                    f"eventi del giorno {report.espn_events}",
+                    "fase a parte: ha il suo backoff, serie distinta dalla classifica"))
     report.note("openmeteo", rows=weather_rows, detail_text=weather_reason)
     store.upsert("source_status", report.as_status_rows())
     return report

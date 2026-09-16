@@ -16,7 +16,9 @@ La decisione è ricostruibile a mano dallo stesso Parquet che l'utente vede in *
 
 Limite dichiarato: la chiave è la coppia (fonte, fase) — `("espn:ITA1", "espn standings")` —
 quindi la sospensione copre esattamente le richieste il cui errore è quello osservato, non
-tutto il client. Lo scoreboard ESPN, che risponde, continua a essere interrogato.
+tutto il client. Ogni fase ESPN ha la sua serie: classifica (`espn standings`), notizie
+(`espn news`) ed eventi del giorno (`espn scoreboard`, misurato 403 su 7/7 leghe nel run
+`35131980208` e quindi sospeso con la stessa regola — ``docs/23`` §5).
 """
 
 from __future__ import annotations
