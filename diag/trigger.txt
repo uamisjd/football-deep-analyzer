@@ -1,1 +1,1 @@
-trigger 00:00:25
+trigger 00:00:57 secondo tentativo
