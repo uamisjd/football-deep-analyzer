@@ -85,7 +85,13 @@ def test_shape_of_espone_solo_nomi_di_campo():
     assert "Segreto" not in firma and "Rossi" not in firma and "45000000" not in firma
     assert shape_of(["a", "b", "c"]) == "lista(3)"
     assert shape_of(None) == "NoneType"
-    assert key_names({"chiave con spazi": 1, "ok_key": 2}) == ["ok_key"]
+    # dal 2026-09-16 (docs/21 §17) gli spazi singoli fra parole sono ammessi: la sezione
+    # transfers di FotMob usa chiavi come «Players in»/«Players out»
+    assert key_names({"chiave con spazi": 1, "ok_key": 2}) == ["chiave con spazi", "ok_key"]
+    # …ma il resto della whitelist non cambia: niente spazi doppi, davanti/dietro,
+    # simboli, testo con punteggiatura o nomi oltre il tetto di lunghezza
+    assert key_names({"doppio  spazio": 1, " davanti": 2, "simboli!": 3, "punto.": 4,
+                      "a" * 41: 5}) == []
 
 
 def test_digest_e_detail_hanno_un_tetto():
@@ -225,7 +231,7 @@ def test_la_firma_non_contiene_mai_valori_dall_endpoint_vero():
     firma = shape_of(vero["transfers"])
     diag: dict = {}
     assert len(FotMobClient.parse_transfers(vero, 1, "Real Madrid", "ESP1", diag)) == 1
-    assert diag["sezione"] == "dict" and "incoming" in diag["campi_sezione"]
+    assert diag["sezione"] == "dict/in-out" and "incoming" in diag["campi_sezione"]
     for valore in ("Mbappé", "PSG", "Real Madrid"):
         assert valore not in firma and valore not in diag["campi_sezione"]
 

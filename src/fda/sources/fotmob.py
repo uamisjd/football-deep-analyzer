@@ -20,6 +20,22 @@ from ..http import HttpClient
 
 log = logging.getLogger(__name__)
 
+# Chiavi di localizzazione e testi inglesi dei fee FotMob → italiano pubblicabile
+# (docs/21 §17; regola F: mai inglese a schermo). I testi non riconosciuti restano come
+# la fonte li scrive (es. «€18.5M»): si traduce solo ciò che è noto, non si inventa nulla.
+_FEE_KEY_IT: dict[str, str] = {
+    "free": "gratuito", "free transfer": "gratuito",
+    "transfer_type_free_transfer": "gratuito",
+    "on loan": "prestito", "on_loan": "prestito", "loan": "prestito",
+}
+
+
+def _same_id(a: Any, b: Any) -> bool:
+    """Confronto tollerante fra id della stessa entità, che può arrivare come int o str."""
+    if a is None or b is None:
+        return False
+    return a == b or str(a) == str(b)
+
 
 def _dt(value: Any) -> datetime | None:
     """Converte 'YYYY-MM-DDTHH:MM:SS(.sss)Z' in datetime UTC."""
@@ -274,87 +290,172 @@ class FotMobClient:
         return self._get("teams", {"id": team_id}, ttl_h=self.ttl.get("teams", 24))
 
     @staticmethod
+    def _transfer_voice(e: dict[str, Any], direction: str, team_id: int, team_name: str,
+                        league_code: str) -> dict[str, Any] | None:
+        """Normalizza una voce di trasferimento (disposizioni note e alias) → riga piatta.
+
+        Ritorna ``None`` se la voce non ha un nome giocatore: nessuna riga è inventata.
+        Le chiavi sono quelle documentate per l'endpoint `teams` (docs/21 §17, tipi Go
+        `go-fotmob`): ``name/playerId/position{label,key}/transferDate/fromClub/fromClubId/
+        toClub/toClubId/fee{value,feeText,localizedFeeText}/transferType{text,localizationKey}/
+        onLoan/contractExtension/marketValue``, più gli alias delle disposizioni legacy.
+        """
+        name = e.get("name") or e.get("playerName")
+        if not name and isinstance(e.get("player"), dict):
+            name = e["player"].get("name")
+        if not isinstance(name, str) or not name.strip():
+            return None
+        # controparte per direzione: un arrivo arriva *da* un club, una partenza va *verso*
+        keys = ("fromClub", "from", "club", "team") if direction == "in" \
+            else ("toClub", "to", "club", "team")
+        counterpart = ""
+        for key in keys:
+            v = e.get(key)
+            if isinstance(v, dict) and v.get("name"):
+                counterpart = str(v["name"])
+                break
+            if isinstance(v, str) and v.strip():
+                counterpart = v.strip()
+                break
+        fee = ""
+        fv = e.get("fee")
+        if isinstance(fv, dict):
+            val = fv.get("value")
+            if isinstance(val, (str, int, float)) and str(val).strip():
+                fee = str(val).strip()
+            else:
+                raw_fee = str(fv.get("localizedFeeText") or fv.get("feeText") or "").strip()
+                # chiave di localizzazione nota → italiana; altro testo (disposizioni
+                # legacy che qui mettevano l'importo vero) → passa così com'è
+                fee = _FEE_KEY_IT.get(raw_fee.lower(), raw_fee) if raw_fee else ""
+        elif isinstance(fv, (str, int, float)) and str(fv).strip():
+            fee = str(fv).strip()
+        if fee:
+            fee = _FEE_KEY_IT.get(fee.lower(), fee)
+        tv = e.get("transferType") or e.get("type")
+        if isinstance(tv, dict):
+            ttype = str(tv.get("text") or tv.get("localizationKey") or "").strip()
+        else:
+            ttype = str(tv).strip() if tv is not None else ""
+        date = e.get("transferDate") or e.get("date") or ""
+        if isinstance(date, dict):
+            date = date.get("utc") or date.get("localized") or ""
+        pos = e.get("position")
+        if isinstance(pos, dict):
+            pos = pos.get("label") or pos.get("key") or ""
+        return {"team_id": team_id, "team_name": team_name, "league_code": league_code,
+                "player_name": name.strip(), "position": pos if isinstance(pos, str) else "",
+                "direction": direction, "counterpart": counterpart, "fee_text": fee,
+                "transfer_type": ttype, "date": str(date)}
+
+    @staticmethod
     def parse_transfers(raw: dict | None, team_id: int, team_name: str,
                         league_code: str, diag: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         """Trasferimenti dal payload `teams` di FotMob → righe normalizzate arrivi/partenze.
 
-        Schema non documentato (docs/02: `teams?id=...` verificato ✅, ma la forma della
-        sezione `transfers` può cambiare): accettiamo le due disposizioni note —
-        ``{incoming: [...], outgoing: [...]}`` e lista piatta con direzione per voce —
-        e gli alias comuni dei campi (fee come oggetto o stringa, from/to come oggetto
-        o stringa, date come stringa o oggetto). Forme non riconosciute → zero righe:
-        nessuna riga è inventata.
+        Schema non documentato ufficialmente, ma **misurato dal primo run con la firma**
+        (docs/21 §15→§17, run 2026-09-16 09:34: sezione ``transfers`` dict con ``type, data,
+        allTransfers, allRumours, maxFee, ourTeamId``) e confermato dai tipi Go di
+        `mheers/go-fotmob` (``Team.Transfers.Data`` = ``{"Players in": […], "Players out": […],
+        "Contract extension": […]}``). Disposizioni accettate, in ordine di preferenza:
 
-        Con zero righe **serve sapere perché** (docs/21 §15: il 2026-09-15 arrivarono 132
-        payload su 132 con HTTP 200 e il parser estrasse zero righe, senza che nessuno
-        potesse dire se la sezione fosse assente o solo scritta in un altro modo). Quando
-        ``diag`` è passato, il parser registra: tipo della sezione, nomi dei campi del
-        livello superiore e della sezione (solo nomi, mai valori) e il conteggio delle voci
-        viste. La firma finisce in ``source_status`` — quindi nel Parquet committato, che
+        1. ``transfers.data["Players in"|"Players out"]`` — quella vera, direzione esplicita;
+        2. ``transfers.allTransfers`` — lista piatta: direzione da ``ourTeamId`` vs
+           ``toClubId``/``fromClubId`` (o campo ``transferDirection`` se presente);
+        3. legacy ``transfers.incoming/outgoing`` e lista piatta di sole voci.
+
+        Scelte deliberate (docs/21 §17): i **rinnovi** («Contract extension», o voce con
+        ``contractExtension: true``) non sono movimenti in/out e non vengono pubblicati
+        come tali — solo contati; le **voci di mercato** (``allRumours``) non sono
+        confermate e non entrano mai nella tabella — solo contate. Forme non riconosciute
+        → zero righe: nessuna riga è inventata.
+
+        Con ``diag`` il parser registra l'imbuto e la firma (solo nomi di campo, mai
+        valori): tipo+direzione della sezione (``dict``, ``dict/data``, ``dict/allTransfers``,
+        ``dict/in-out``, ``lista``, ``assente``), campi della sezione, di ``data`` e della
+        prima voce, conteggi di voci/righe/rinnovi/voci di mercato/senza direzione/ senza
+        nome. La firma finisce in ``source_status`` — quindi nel Parquet committato, che
         l'agente può leggere anche quando i log di Actions non sono raggiungibili.
         """
         if diag is not None:
             diag["top"] = shape_of(raw)
         section = (raw or {}).get("transfers")
-        if isinstance(section, dict):
-            if diag is not None:
-                diag["sezione"] = "dict"
-                diag["campi_sezione"] = ",".join(key_names(section))
-            groups: list[tuple[str | None, Any]] = [("in", section.get("incoming")),
-                                                    ("out", section.get("outgoing"))]
-        elif isinstance(section, list):
-            if diag is not None:
-                diag["sezione"] = "lista"
-                diag["campi_sezione"] = ",".join(key_names(section))
-            groups = [(None, section)]
-        else:
+        if not isinstance(section, (dict, list)):
             if diag is not None:
                 diag["sezione"] = "assente" if section is None else type(section).__name__
                 diag["campi_sezione"] = ""
             return []
+        groups: list[tuple[str | None, list]] = []
+        disposition = ""
+        if isinstance(section, dict):
+            if diag is not None:
+                diag["campi_sezione"] = ",".join(key_names(section))
+            data = section.get("data")
+            if isinstance(data, dict):
+                if diag is not None:
+                    diag["campi_data"] = ",".join(key_names(data))
+                    ce = data.get("Contract extension") or data.get("contract extension")
+                    if isinstance(ce, list):
+                        diag["rinnovi"] = len(ce)
+                for key, direction in (("Players in", "in"), ("Players out", "out"),
+                                       ("players in", "in"), ("players out", "out"),
+                                       ("incoming", "in"), ("outgoing", "out")):
+                    v = data.get(key)
+                    if isinstance(v, list) and v:
+                        groups.append((direction, v))
+                if groups:
+                    disposition = "/data"
+            if not groups and isinstance(section.get("allTransfers"), list) and section["allTransfers"]:
+                groups.append((None, section["allTransfers"]))
+                disposition = "/allTransfers"
+            if not groups:
+                for key, direction in (("incoming", "in"), ("outgoing", "out")):
+                    v = section.get(key)
+                    if isinstance(v, list) and v:
+                        groups.append((direction, v))
+                if groups:
+                    disposition = "/in-out"
+            rumours = section.get("allRumours")
+            if isinstance(rumours, list) and diag is not None:
+                diag["voci_mercato"] = len(rumours)
+        else:
+            if diag is not None:
+                diag["campi_sezione"] = ",".join(key_names(section))
+            groups = [(None, section)]
+        if diag is not None:
+            diag["sezione"] = ("dict" if isinstance(section, dict) else "lista") + disposition
         rows: list[dict[str, Any]] = []
         for direction, entries in groups:
-            if not isinstance(entries, list):
-                continue
             for e in entries:
                 if not isinstance(e, dict):
                     continue
                 bump(diag, "voci")
+                if diag is not None and "campi_voce" not in diag:
+                    diag["campi_voce"] = ",".join(key_names(e))
+                if e.get("contractExtension") is True:
+                    # rinnovo: non è un movimento in/out, non si pubblica come tale
+                    bump(diag, "rinnovi")
+                    continue
                 d = direction
                 if d is None:
                     raw_dir = str(e.get("transferDirection", e.get("direction", ""))).lower()
-                    d = "out" if raw_dir in ("out", "outgoing") else "in"
-                name = e.get("name") or e.get("playerName")
-                if not name and isinstance(e.get("player"), dict):
-                    name = e["player"].get("name")
-                if not isinstance(name, str) or not name.strip():
+                    if raw_dir in ("in", "incoming"):
+                        d = "in"
+                    elif raw_dir in ("out", "outgoing"):
+                        d = "out"
+                    elif isinstance(section, dict):
+                        if _same_id(e.get("toClubId"), section.get("ourTeamId")):
+                            d = "in"
+                        elif _same_id(e.get("fromClubId"), section.get("ourTeamId")):
+                            d = "out"
+                if d is None:
+                    bump(diag, "senza_direzione")
                     continue
-                counterpart = ""
-                for key in ("from", "to", "club", "team", "fromClub", "toClub"):
-                    v = e.get(key)
-                    if isinstance(v, dict) and v.get("name"):
-                        counterpart = str(v["name"])
-                        break
-                    if isinstance(v, str) and v.strip():
-                        counterpart = v.strip()
-                        break
-                fee = ""
-                fv = e.get("fee")
-                if isinstance(fv, dict):
-                    fee = str(fv.get("localizedFeeText") or fv.get("feeText") or "")
-                elif isinstance(fv, (str, int, float)) and str(fv).strip():
-                    fee = str(fv)
-                date = e.get("date") or e.get("transferDate") or ""
-                if isinstance(date, dict):
-                    date = str(date.get("utc") or date.get("localized") or "")
-                pos = e.get("position")
-                rows.append({
-                    "team_id": team_id, "team_name": team_name, "league_code": league_code,
-                    "player_name": name.strip(), "position": pos if isinstance(pos, str) else "",
-                    "direction": d, "counterpart": counterpart, "fee_text": fee,
-                    "transfer_type": str(e.get("transferType") or e.get("type") or ""),
-                    "date": str(date),
-                })
+                row = FotMobClient._transfer_voice(e, d, team_id, team_name, league_code)
+                if row is None:
+                    bump(diag, "voci_senza_nome")
+                    continue
+                rows.append(row)
                 bump(diag, "righe")
         return rows
 

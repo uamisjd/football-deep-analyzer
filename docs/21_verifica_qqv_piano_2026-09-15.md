@@ -799,3 +799,136 @@ dark launch, esercitarla in locale con la **tabella popolata**, non solo con tab
 punto in cui il difetto di oggi è passato. (2) Un run rosso non deve restare muto:
 `diag-fetch-log.yml` porta i log nel repository e rende la diagnosi possibile anche quando il
 sandbox non vede il blob.
+
+## 17. Blocco 4: parser `transfers` sulla firma reale + card notizie al primo esercizio vero (2026-09-16, quindicesimo turno)
+
+### 17.1 Post-merge della PR #36 e primo run verde con notizie
+
+PR #36 fusa dall'utente (merge commit `f75ea6d`, 09:29:07Z). Il push ha fatto partire il daily su
+`main` (run **`35079677152`**): **Success in 12m57s**, commit dati `6674adc` (run 09:41 UTC),
+deploy Pages ok. Il sito è tornato a muoversi e — per la prima volta — la tabella `news` è
+**popolata**.
+
+**Imbuto del run, letto dai Parquet committati** (il prodotto del §15.6):
+
+| fonte | richieste | righe | dettaglio |
+|---|---|---|---|
+| `news:NEWS` | 132 | **5.341** | il fix della doppia codifica funziona: ~40 notizie/squadra |
+| `transfers:TRANSFERS` | 132 | **0** | 132 payload letti, 0 voci — ma ora **con la firma dello schema** |
+| `espn:*` | 14 | 0 | standings/news 403 (lato fonte, isolati in avviso come da §15.6) |
+| `fotmob:*` / `understat:*` | — | 380/380/306… · 866…938 | regolare |
+
+Firma di `transfers` (dal `digest` in `source_status`):
+`top dict(12): tabs,allAvailableSeasons,details,seostr,QAData,table,transfers,overview,stats,fixtures,squad,history · sezione dict campi type,data,allTransfers,allRumours,maxFee,ourTeamId`.
+
+### 17.2 Ricerca: la forma reale della sezione (docs/02 aggiornato di fatto qui)
+
+La firma dice **dove** stanno i dati ma non i campi delle voci. Prima di scrivere il parser
+(regola: ricerca prima di ogni modifica importante) — fonte trovata: il pacchetto Go
+**`mheers/go-fotmob`** (pkg.go.dev), che modella l'endpoint `teams` con tipi completi:
+
+```go
+type Team struct { Tabs …; Details *Details; Table …; Transfers *Transfers; Overview …; … }   // = le 12 chiavi della firma
+type Transfers struct { Type *string; Data *TransfersData }                                   // + allTransfers/allRumours/maxFee/ourTeamId (non modellati lì, presenti nella firma)
+type TransfersData struct {
+    PlayersIn         []*Players            `json:"Players in,omitempty"`
+    PlayersOut        []*Players            `json:"Players out,omitempty"`
+    ContractExtension []*ContractExtension  `json:"Contract extension,omitempty"` }
+type Players struct {  // la voce di trasferimento
+    Name *string; PlayerID *int; Position *Position /*{label,key}*/; TransferDate *time.Time
+    TransferText []interface{}; FromClub *string; FromClubID *int; ToClub *string; ToClubID *int
+    Fee interface{} /*{feeText,localizedFeeText,value}*/; TransferType *TransferType /*{text,localizationKey}*/
+    ContractExtension bool; OnLoan bool; FromDate *time.Time; ToDate *time.Time; MarketValue *string }
+```
+
+Punti salienti: le chiavi di `data` **contengono spazi** («Players in», «Players out», «Contract
+extension»); `fee` è un dict `{value, feeText, localizedFeeText}` con chiavi di localizzazione
+(`on_loan`, `transfer_fee`, `transfer_type_free_transfer`); `transferType` è un dict `{text,
+localizationKey}`; la direzione è deducibile da `ourTeamId` vs `fromClubId`/`toClubId`.
+
+### 17.3 Il parser tollerante (blocco 4 attuato)
+
+`FotMobClient.parse_transfers` riscritto con **disposizioni a strati**, in ordine di preferenza:
+
+1. `transfers.data["Players in" / "Players out"]` — quella vera, direzione esplicita;
+2. `transfers.allTransfers` — lista piatta: direzione da `ourTeamId` vs `toClubId`/`fromClubId`
+   (confronto tollerante int/str), o campo `transferDirection` se presente;
+3. legacy `transfers.incoming/outgoing` e lista piatta (i test del P2-7 continuano a passare).
+
+Scelte deliberate, dichiarate nella docstring:
+- **Rinnovi** («Contract extension», o voce con `contractExtension: true`) **non sono movimenti
+  in/out** e non vengono pubblicati come tali: solo contati nell'imbuto (`rinnovi`). La card
+  «Mercato» mostra arrivi e partenze, non le proroghe.
+- **Voci di mercato** (`allRumours`) **non confermate**: mai nella tabella, solo contate
+  (`voci_mercato`). Pubblicare una trattativa come se fosse un trasferimento fatto sarebbe
+  un dato falso.
+- `marketValue` non si salva: colonna che nessuna pagina usa oggi (l'audit del §1 misurava i
+  «dati raccolti mai pubblicati» come difetto, non come obiettivo).
+- Fee e tipo **tradotti** (`_FEE_KEY_IT` nel parser + `_FEE_IT` e «on loan»/«contract» in
+  `analysis`): le chiavi di localizzazione e i testi inglesi noti non vanno a schermo; i valori
+  sconosciuti restano come la fonte li scrive (es. «€18.5M»), nessun dato inventato.
+- Controparte **per direzione**: un arrivo arriva *da* (`fromClub`), una partenza va *verso*
+  (`toClub`).
+
+Diagnostica estesa (sempre e solo nomi di campo, mai valori): `campi_data` (chiavi di `data`,
+ora visibili perché la whitelist `FIELD_NAME` ammette spazi singoli fra parole — rischio residuo
+documentato nel codice), `campi_voce` (chiave della prima voce), contatori `rinnovi`,
+`voci_mercato`, `senza_direzione`, `voci_senza_nome`; la «disposizione» vinta finisce in
+`sezione` (`dict/data`, `dict/allTransfers`, `dict/in-out`, `lista`, `assente`) e quindi nel
+detail di `stato.html` **anche con righe > 0** (prima il «perché» si pubblicava solo a righe
+zero). La firma in `source_status` ora include `campi data` e `campi voce`: se la forma cambia
+ancora, il Parquet del run successivo lo dice da solo.
+
+Test: +4 su `test_mercato.py` (disposizione reale con tutti i tipi di campo; `allTransfers` con
+direzione calcolata, movimento estraneo scartato, rinnovo contato; imbuto del collettore con
+detail/digest; card end-to-end con fee/tipi italiani) — **272 righe di fixture sulla forma
+misurata**.
+
+### 17.4 La card notizie al primo esercizio vero: 115 problemi, tutti diagnosticati
+
+`verify_site` sul sito costruito con le notizie vere (il daily **non** lo esegue: è un gate
+locale) ha segnalato **115 problemi**: 99 sulla card notizie («notizia di squadra estranea» ×95,
+«N notizie (max 4)» ×4) e 16 «decimale col punto». Diagnosi, con i dati alla mano:
+
+1. **Attribuzione per URL (difetto del verificatore).** Lo stesso articolo viene raccolto per
+   **entrambe** le squadre che cita (misurato: **885 URL su 4.419** presenti in `news.parquet`
+   per più `team_id`; es. «Formazioni Toulouse - Le Havre AC» sta nei feed di Toulouse *e* Le
+   Havre). [20] attribuiva ogni link alla **prima riga** con quell'URL → notizie giuste lette
+   come «estranee» e conteggi gonfiati. Erano falsi positivi: la ricomputazione con
+   attribuzione corretta dà **0** estranee vere e **0** sforamenti del tetto.
+2. **Decimali col punto dentro titoli e brani verbatim** («quote 13.09.2026», «Valutazione
+   Sofascore 8.9», «venerdì alle 13.15»): sono parole delle testate, pubblicate *verbatim* per
+   scelta progettuale (P1-5, dichiarato nel footer della card). L'invariante protegge i numeri
+   **nostri**, non le citazioni.
+3. **Un difetto VERO trovato sotto i falsi positivi**: 116 righe con stesso `team_id`+titolo e
+   URL diversi (sindacazione) → **2 pagine** con lo stesso titolo stampato due volte nella
+   stessa card (Sassuolo su 5749686, Cambuur su 5781755). Sembra un bug del sito, sprecava uno
+   slot del limite.
+
+Correzioni:
+- **`analysis.team_news`**: dedup per titolo (case-insensitive) prima del taglio a `limit` —
+  la card mostra 4 notizie **distinte**, resta la copia più rilevante (regressione testata);
+- **`verify_site` [20] riscritto per blocchi**: l'header «<p><b>Squadra</b> · N notizie…</p>»
+  dice di chi è la card; ogni link deve esistere in `news.parquet` **per quella squadra**,
+  conteggio ≤ 4 e **uguale al dichiarato** nell'header;
+- **`verify_site` controlli token** (decimali/inglese/residui/concordanza): la card
+  `id="notizie"` è esclusa dal testo verificato (parser `Text` con salto del blocco), come
+  già accade per style/script/svg.
+
+**Prova di morso** (un verificatore che non morde è decorativo): pagina reale 5802944 con una
+notizia di Le Havre spostata nella card di Toulouse → `[20]` segnala **«notizia di squadra
+estranea alla card di Toulouse»**, «5 notizie per Toulouse (max 4)» e «dichiara 4 notizie ma ne
+stampa 5»; pagina ripristinata → 0 problemi.
+
+### 17.5 Verifiche e cosa resta da confermare in Actions
+
+- Suite **268 passed** (262 + 6: 4 parser mercato + dedup notizie + esclusione verbatim),
+  `fda build` 376/2.364/7.490, `verify_site` **0 problemi · 27.501 controlli** (prima:
+  115 problemi), ruff **invariato sul baseline** (64 = 64 sui file toccati).
+- **Non verificabile dal sandbox** (fonti irraggiungibili): il parse dei **payload reali** di
+  `transfers` — la firma dice che la forma è quella del §17.2 e il parser la copre, ma il
+  conteggio vero (righe, rinnovi, voci di mercato) lo dirà il **prossimo run daily**, leggibile
+  dall'imbuto in `stato.html` e da `transfers.parquet`. Se fosse di nuovo zero, la firma estesa
+  (`campi data`, `campi voce`) dirà esattamente cosa cambia, senza aprire i log.
+- Da quel run si attiva anche l'invariante **[26]** della card mercato (oggi vacua: tabella
+  vuota), già compatibile con le colonne del parser.

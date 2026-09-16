@@ -1126,8 +1126,20 @@ class MatchAnalysis:
 
         rows = [r._asdict() for r in df.itertuples(index=False)]
         rows.sort(key=score, reverse=False)
+        # dedup per titolo: lo stesso articolo torna dai feed di più squadre o due volte
+        # dallo stesso feed con URL diversi (misurato il 2026-09-16: 116 righe con stesso
+        # team_id+titolo, es. «SC Cambuur - NEC Altre partite…» due volte) — la card
+        # mostra `limit` notizie DISTINTE, non due copie dello stesso pezzo
+        visti: set[str] = set()
+        distinti: list[dict[str, Any]] = []
+        for r in rows:
+            key = str(r.get("title") or "").strip().lower()
+            if not key or key in visti:
+                continue
+            visti.add(key)
+            distinti.append(r)
         out = []
-        for r in rows[:limit]:
+        for r in distinti[:limit]:
             out.append({"title": r.get("title"), "source": r.get("source"),
                         "url": r.get("url"), "description": r.get("description"),
                         "published_at": pd.to_datetime(r.get("published_at"), utc=True)})
@@ -1136,9 +1148,18 @@ class MatchAnalysis:
     # ---- mercato: arrivi e partenze (docs/21, P2-7) -------------------------------------------
     _TRANSFER_TYPE_IT: ClassVar[dict[str, str]] = {
         "loan": "prestito", "free": "gratuito", "free transfer": "gratuito",
+        "on loan": "prestito",
         "transfer": "titolo definitivo", "return": "rientro dal prestito",
         "returned": "rientro dal prestito", "retired": "ritirato",
+        "contract": "rinnovo di contratto",
         "release": "svincolato", "released": "svincolato"}
+
+    # rete di sicurezza per i fee come li pubblica la fonte: il parser FotMob traduce già
+    # le chiavi di localizzazione note (docs/21 §17), qui si coprono i testi inglesi che
+    # possono arrivare per altra via (regola F: mai inglese a schermo)
+    _FEE_IT: ClassVar[dict[str, str]] = {
+        "free": "gratuito", "free transfer": "gratuito",
+        "on loan": "prestito", "loan": "prestito"}
 
     def summer_market(self, team_id: int, n: int = 4) -> dict[str, Any] | None:
         """Mercato della squadra come pubblicato da FotMob (ultima finestra).
@@ -1161,12 +1182,14 @@ class MatchAnalysis:
             out = []
             for r in d.head(n).to_dict("records"):
                 t = str(r.get("transfer_type") or "").strip().lower()
+                fee = str(r.get("fee_text") or "")
+                fee = self._FEE_IT.get(fee.strip().lower(), fee)
                 date_s = str(r.get("date") or "")[:10]
                 date_it = f"{date_s[8:10]}/{date_s[5:7]}/{date_s[:4]}" \
                     if len(date_s) == 10 and date_s[4] == "-" else ""
                 out.append({"name": str(r["player_name"]),
                             "counterpart": str(r.get("counterpart") or ""),
-                            "fee": str(r.get("fee_text") or ""),
+                            "fee": fee,
                             "type_it": self._TRANSFER_TYPE_IT.get(t, str(r.get("transfer_type") or "")),
                             "date_it": date_it})
             return out
