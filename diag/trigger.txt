@@ -16,3 +16,4 @@ Come si usa (agente o utente):
 
 DEFAULT_RUN_ID=35037211442   # run daily del 2026-09-15 23:47 UTC (primo rosso post-merge)
 trigger 00:14:21 — prova del flusso su diag-logs (senza skip ci)
+# trigger 2026-09-16 17:52 UTC
