@@ -105,9 +105,17 @@ def test_panchina_stabile_senza_cambio(analysis):
 def test_stakes_etichette_e_interi(analysis):
     s = analysis.stakes("Inter")
     assert s["label"] == "corsa al titolo" and s["p_title_pct"] == 22 and s["p_top4_pct"] == 81
+    assert s["ucl_spots"] == 4 and s["ucl_legacy"] is True
     r = analysis.stakes("Roma")
     assert r["label"] == "lotta salvezza" and r["p_rel_pct"] == 41
     assert analysis.stakes("Squadra Inesistente") is None
+
+
+def test_stakes_usa_la_soglia_nuova_e_non_il_fallback(analysis):
+    analysis.season_sim = SIM.assign(top_n=2, p_top_n=[0.55, 0.08])
+    s = analysis.stakes("Inter")
+    assert s["ucl_spots"] == 2 and s["ucl_legacy"] is False
+    assert s["p_top_n_pct"] == 55
 
 
 def test_riposo_con_coppe_e_nota(analysis):

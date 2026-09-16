@@ -6,6 +6,7 @@ def test_seven_leagues_configured():
     assert [lg.key for lg in lgs] == ["ITA1", "ENG1", "ESP1", "GER1", "FRA1", "NED1", "POR1"]
     assert all(lg.fotmob_id > 0 for lg in lgs)
     assert all(lg.espn_code.endswith(".1") for lg in lgs)
+    assert [lg.ucl_spots for lg in lgs] == [4, 4, 4, 4, 3, 2, 1]
 
 
 def test_understat_coverage():

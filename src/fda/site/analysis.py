@@ -851,9 +851,9 @@ class MatchAnalysis:
     def stakes(self, team_name: str) -> dict[str, Any] | None:
         """Cosa vale la stagione della squadra: Monte Carlo di ``season_sim``.
 
-        Percentuali già arrotondate all'intero (``*_pct``) così scheda e verificatore
-        stampano lo stesso numero con lo stesso ``round`` Python; ``label`` è la lettura
-        narrativa con soglie dichiarate (titolo ≥15%, Europa ≥35%, salvezza ≤35%/≤15%).
+        Gli snapshot P1.7 portano ``p_top_n`` e ``top_n`` dalla configurazione della
+        lega. Quelli storici con ``p_top4`` restano leggibili come migrazione, ma non
+        vengono più interpretati come soglia universale per tutte le competizioni.
         """
         if self.season_sim.empty or "team" not in self.season_sim.columns:
             return None
@@ -862,19 +862,36 @@ class MatchAnalysis:
         if rows.empty:
             return None
         r = rows.iloc[0]
-        p_t, p_e, p_r = float(r.p_title), float(r.p_top4), float(r.p_rel)
+        p_t = float(r.p_title)
+        p_r = float(r.p_rel)
+        raw_top = r.get("p_top_n")
+        legacy_top = raw_top is None or pd.isna(raw_top)
+        if legacy_top:
+            raw_top = r.get("p_top4")
+        if raw_top is None or pd.isna(raw_top):
+            p_e = None
+            legacy_top = False
+        else:
+            p_e = float(raw_top)
+        raw_n = r.get("top_n")
+        top_n = None if raw_n is None or pd.isna(raw_n) else int(raw_n)
+        if top_n is None and p_e is not None:
+            top_n = 4  # vecchio snapshot: il nome p_top4 documenta la soglia
         if p_t >= 0.15:
             label = "corsa al titolo"
-        elif p_e >= 0.35:
-            label = "corsa all'Europa"
+        elif p_e is not None and p_e >= 0.35:
+            label = "corsa alla Champions" if top_n and top_n < 4 else "corsa all'Europa"
         elif p_r >= 0.35:
             label = "lotta salvezza"
         elif p_r >= 0.15:
             label = "zona salvezza non lontana"
         else:
             label = "stagione di metà classifica"
-        return {"p_title": p_t, "p_top4": p_e, "p_rel": p_r,
-                "p_title_pct": round(p_t * 100), "p_top4_pct": round(p_e * 100),
+        p_e_pct = None if p_e is None else round(p_e * 100)
+        return {"p_title": p_t, "p_top_n": p_e, "p_top4": p_e, "p_rel": p_r,
+                "ucl_spots": top_n, "ucl_legacy": legacy_top,
+                "p_title_pct": round(p_t * 100),
+                "p_top_n_pct": p_e_pct, "p_top4_pct": p_e_pct,
                 "p_rel_pct": round(p_r * 100),
                 "pos_mean": float(r.pos_mean), "exp_points": float(r.exp_points),
                 "label": label, "played": int(r.played)}
@@ -1018,13 +1035,20 @@ class MatchAnalysis:
                                if need > 0 else "in zona salvezza diretta")
                 else:
                     gap_rel = None
-                if 4 in by_rank.index:
-                    if rank <= 4:
-                        gap_eur = "in zona Europa (4º posto o meglio)"
+                ucl_n = self.ucl_spots(code)
+                if ucl_n is not None and ucl_n in by_rank.index:
+                    if rank <= ucl_n:
+                        # Manteniamo «Europa» per la frase storica della scheda; il
+                        # numero di posizione è quello ufficiale configurato per lega.
+                        gap_eur = (f"in zona Europa ({ucl_n}º posto o meglio)"
+                                   if ucl_n == 4 else
+                                   f"in zona Champions ({ucl_n}º posto o meglio)")
                     else:
-                        ge = int(by_rank.loc[4, "points"]) - pts
-                        gap_eur = (f"{ge} {'punto' if ge == 1 else 'punti'} dal 4º posto"
-                                   if ge > 0 else "a pari punti col 4º posto")
+                        ge = int(by_rank.loc[ucl_n, "points"]) - pts
+                        gap_eur = (
+                            f"{ge} {'punto' if ge == 1 else 'punti'} dal {ucl_n}º posto"
+                            if ge > 0 else f"a pari punti col {ucl_n}º posto"
+                        )
                 else:
                     gap_eur = None
                 parts = [f"{rank}º con {pts} punti"]
@@ -1428,6 +1452,16 @@ class MatchAnalysis:
             rows = df[df.team_name.map(canonical) == canon]
             if not rows.empty:
                 return rows.iloc[0].to_dict()
+        return None
+
+    @staticmethod
+    def ucl_spots(league_code: Any) -> int | None:
+        """Posizioni UCL ordinarie della lega configurata, senza indovinare fallback."""
+        if league_code is None or pd.isna(league_code):
+            return None
+        for lg in leagues():
+            if lg.key == str(league_code):
+                return lg.ucl_spots
         return None
 
     # ---- confronto di stagione (tabella di lega) -----------------------------------------------

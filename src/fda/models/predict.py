@@ -39,6 +39,11 @@ MODEL_VERSION = "dc-elo-tilt-0.4"
 # Pseudo-partite del prior sui parametri attacco/difesa (shrinkage verso la media di lega).
 SHRINK_PRIOR = 8.0
 
+# Limiti condivisi per il prior di lega usato quando una squadra non compare nello storico.
+# La simulazione di stagione deve usare gli stessi limiti di `predict_matches`: due percorsi
+# diversi non possono trasformare la stessa media osservata in λ diverse (docs/19 §1.8d).
+NEUTRAL_LAMBDA_BOUNDS: tuple[float, float] = (0.6, 2.2)
+
 
 def _grid_markets(grid: Any) -> dict[str, float]:
     """Estrae i mercati principali da un FootballProbabilityGrid di penaltyblog."""
@@ -511,8 +516,8 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     neutral_lh = float(hist["home_goals"].mean()) if not hist.empty and "home_goals" in hist.columns else 1.35
     neutral_la = float(hist["away_goals"].mean()) if not hist.empty and "away_goals" in hist.columns else 1.15
     # sanity clamp (in caso di storico degenere)
-    neutral_lh = float(np.clip(neutral_lh, 0.6, 2.2))
-    neutral_la = float(np.clip(neutral_la, 0.6, 2.2))
+    neutral_lh = float(np.clip(neutral_lh, *NEUTRAL_LAMBDA_BOUNDS))
+    neutral_la = float(np.clip(neutral_la, *NEUTRAL_LAMBDA_BOUNDS))
     rows = []
     for f in fixtures.itertuples(index=False):
         is_prior = False

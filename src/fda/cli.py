@@ -293,7 +293,7 @@ def simulate_cmd(
     sims: int = typer.Option(10000, help="Numero di stagioni simulate per lega"),
     seasons_back: int = typer.Option(3, help="Stagioni storiche oltre a quella corrente"),
 ) -> None:
-    """Monte Carlo del resto di stagione → tabella `season_sim` (prob. titolo/top-4/retrocessione)."""
+    """Monte Carlo del resto di stagione → tabella `season_sim` (titolo/UCL ordinaria/retrocessione)."""
     from .models.season_sim import simulate_all
     from .store import Store
 

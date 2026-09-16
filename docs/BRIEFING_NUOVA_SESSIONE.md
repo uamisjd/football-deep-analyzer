@@ -23,6 +23,14 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 - Il sito è **statico**: `index.html` (Oggi), `prossime.html`, `risultati.html`, `partite/<id>.html` (tutte le finite di stagione, archivio), `giocatori/` (hub + tabellone per lega + schede giocatore con percentili/radar, fase 3), `accuratezza.html` (RPS/Brier reali), `stagione.html` (proiezioni), `stato.html` (stato fonti). Report in italiano generati dai template `analysis.py` → `narrative`.
 - Il pacchetto è installabile: `pip install -e ".[dev]"`; entry point CLI `fda` (typer).
 
+## 1-bis. Ultimo checkpoint — P1.7 (2026-09-16)
+
+- `ucl_spots` ora è per lega: 4/4/4/4/3/2/1 (ITA/ENG/ESP/GER/FRA/NED/POR), sulla base dell'access list UCL ufficiale 2026/27; EPS, vincitrici coppe e scorrimenti non sono simulati né presentati come qualificazione certa.
+- La simulazione espone `top_n`/`p_top_n`, mantiene `p_top4` solo per gli snapshot legacy, usa tie-break punti → differenza reti → gol fatti → alfabetico e dichiara che non simula scontri diretti.
+- `mc_se()` e le percentuali intere rendono leggibile l'incertezza; il limite a 10.000 simulazioni è ±0,5 punti percentuali a 1σ. La card stampa `UCL (prime N)` e gli snapshot legacy sono marcati visibilmente come «dato storico».
+- Verifica locale completata: `fda build` 376/2.364/7.478; `scripts/verify_site.py` 0 problemi / 32.876 controlli; run mirato 61 passed e suite completa **290 passed**. Il delta ruff è invariato rispetto al baseline; commit/push sono il lavoro immediatamente successivo. Il primo daily dopo il merge deve confermare le soglie FRA1/NED1/POR1.
+- Dettaglio, fonte UEFA e limiti: [`docs/21_verifica_qqv_piano_2026-09-15.md`](21_verifica_qqv_piano_2026-09-15.md) §20. Merge sempre dell'utente.
+
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
 
 - **Sessione `arena/01a0aa56-football-deep-analyzer` (2026-09-16, diciassettesimo giro — P1 contenuti + verify_site in CI):** PR #38 fusa, daily verde; chiusi **P1.2–P1.6 e P1.13** di `docs/19` §4 e attivato `verify_site` come **gate nel daily** (prima del commit dati e del deploy — la voce «0 anche in CI» di docs/21 §18.5 era rimasta vuota perché il workflow non lo eseguiva). Arbitro: un solo profilo + etichetta relativa alla media di lega (MIN_REFEREE_MATCHES=15; 0 «molto severo» assoluto sul reale; morso «su 12 12 gare» corretto). Curiosità: 5+1 template recuperati (66,0% → 74,3%), scarti osservati per forma canonica in stato.html. `DETAIL_WINDOW_DAYS` unica fonte del «7 giorni». `404.html` assoluto/noindex + sitemap onesta (lastmod reali: 39 date contro 1). Skip-link + footer h3→h2 (scope/main già coperti). Suite **286 passed** (+10), `verify_site` **0 problemi · 32.868 controlli**, ruff 601→600. Dettagli: `docs/21` §19. In coda: P1.7-P1.11, P1.14-P1.15, P2.

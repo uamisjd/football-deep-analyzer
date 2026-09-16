@@ -2442,7 +2442,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P1.4 | ✅ **FATTO** (2026-09-16, `docs/21` §19.3) — 5+1 template recuperati (66,0% → 74,3%), `INSIGHT_DROP_LOG` + contatori in stato.html | | `analysis.py:262+` | basso |
 | P1.5 | ✅ **FATTO** (2026-09-16, `docs/21` §19.4) — `DETAIL_WINDOW_DAYS` in config.py, test di unicità col criterio del §2.4 | | `config.py`, `collect.py`, `cli.py`, `build.py`, 2 template | basso |
 | P1.6 | ✅ **FATTO** (2026-09-16, `docs/21` §19.5) — 404.html assoluto/noindex + sitemap onesta (lastmod reali, 7 leghe, home unica) | | nuovo template, `build.py:_write_seo_files` | medio (percorsi assoluti nel 404) |
-| P1.7 | Proiezioni: arrotondamento all'unità + `mc_se()`, `TOP_N` da config, tie-break dichiarato, `neutral` limitato | `season_sim.py`, `stagione.html`, `leagues.yaml` | medio |
+| P1.7 | ✅ **FATTO 2026-09-16** — Proiezioni: arrotondamento all'unità + `mc_se()`, `ucl_spots` da config, tie-break dichiarato, `neutral` limitato; dettagli `docs/21` §20 | `season_sim.py`, `stagione.html`, `leagues.yaml` | medio |
 | P1.8 | Assert di coerenza 1X2/doppia chance | `predict.py` | basso |
 | P1.9 | Backoff ESPN standings + stato "SOSPESO" in *Stato fonti* | `collect.py`, `status.html` | basso |
 | P1.10 | Open-Meteo: pubblicare il motivo delle 0 chiamate + test settimanale del fallback | `collect.py`, `status.html`, `daily.yml` | basso |
