@@ -24,6 +24,25 @@ from typing import Any
 # ---- residui che non devono mai arrivare a schermo -----------------------------------------
 BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp\()(?![\w.])")
 TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
+
+
+def notizia_in_finestra(righe: Any, kickoff: Any, giorni: int = 12) -> bool:
+    """True se **almeno una** riga raccolta per (url, squadra) cade nella finestra.
+
+    Lo stesso URL può comparire più volte in ``news.parquet`` per la stessa squadra con
+    ``published_at`` diversi: il feed di Google News ripubblica il link con data aggiornata
+    (caso reale 2026-09-16, ``5868080.html``: due righe 07:00 e 01:21). Il build filtra su
+    ``kickoff - giorni`` e stampa la riga dentro finestra; il verificatore non deve guardare
+    solo ``iloc[0]`` (che può essere la riga vecchia) altrimenti segnala un falso positivo.
+    Righe senza data sono ignorate, non considerate valide.
+    """
+    import pandas as pd
+
+    pa = pd.to_datetime(pd.Series(list(righe["published_at"])), utc=True)
+    lo = pd.Timestamp(kickoff) - pd.Timedelta(days=giorni)
+    hi = pd.Timestamp(kickoff) + pd.Timedelta(days=1)
+    return bool(((pa >= lo) & (pa <= hi)).any())
+
 # decimale col punto: esclusi i separatori di migliaia (1-3 cifre . esattamente 3 cifre)
 DECIMAL_POINT = re.compile(r"(?<![\w/,\-:])\d{1,3}\.\d{1,2}(?![\w.])|\d{1,3}\.\d{4,}")
 ENGLISH = re.compile(
@@ -1289,12 +1308,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     fails.append(f"{pg.name}: notizia di squadra estranea alla card di {team_name[:20]} "
                                  f"({title[:40]})")
                     continue
-                r = riga_team.iloc[0]
                 checks += 1
-                if html_unescape(r.title) != html_unescape(title):
+                # lo stesso (url, team_id) può avere più righe con published_at diversi (il feed
+                # ripubblica il link con data aggiornata): la card stampa quella dentro finestra,
+                # quindi il controllo passa se ALMENO una riga raccolta rispetta titolo e finestra
+                if not any(html_unescape(str(r.title)) == html_unescape(title)
+                           for r in riga_team.itertuples(index=False)):
                     fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
-                pa = pd.to_datetime(r.published_at, utc=True)
-                if not pd.isna(pa) and not (kickoff - pd.Timedelta(days=12) <= pa <= kickoff + pd.Timedelta(days=1)):
+                if not notizia_in_finestra(riga_team, kickoff):
                     fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
             if len(stampati) > 4:
                 fails.append(f"{pg.name}: {len(stampati)} notizie per {team_name[:20]} (max 4)")
