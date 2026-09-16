@@ -38,6 +38,10 @@ class League:
     clubelo_country: str
     teams: int
     datahub_base: str | None = None  # override del raw_base del mirror "datahub" per questa lega
+    # Posizioni di classifica che danno l'accesso ordinario alla league phase UCL per
+    # la stagione configurata. Non include EPS, vincitrice UCL/UEL o scivolamenti da
+    # spareggi: sono eccezioni non deducibili dalla sola classifica nazionale.
+    ucl_spots: int | None = None
 
     @property
     def has_understat(self) -> bool:

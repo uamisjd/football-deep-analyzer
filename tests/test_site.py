@@ -358,9 +358,9 @@ def test_site_build_end_to_end(tmp_path):
 
     stag = (out / "stagione.html").read_text(encoding="utf-8")
     assert "Proiezioni di stagione" in stag and "Serie A" in stag and "Inter" in stag
-    assert "84,2" in stag and "61,0%" in stag and "66,0%" in stag   # virgola decimale italiana
+    assert "84,2" in stag and "61%" in stag and "66%" in stag   # probabilità alla risoluzione sostenuta dalla simulazione
     assert "10.000" not in stag  # niente formattazioni inglesi
-    assert "Top-4" in stag and "Retro" in stag and "Media pos." in stag
+    assert "UCL (prime 4)" in stag and "Retro" in stag and "Media pos." in stag
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
     assert "Analisi pre-partita" in pre and "Formazione probabile" in pre and "Cronaca" not in pre

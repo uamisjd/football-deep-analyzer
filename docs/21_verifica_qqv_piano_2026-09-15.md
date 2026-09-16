@@ -1128,3 +1128,65 @@ controllo richiesto: la copertura è completa e ogni fix P0 ha la sua invariante
 chance, P1.9 backoff ESPN, P1.10 motivo Open-Meteo, P1.11 griglia pre-registrata, P1.14 shrinkage,
 P1.15 debounce prossime) e i P2. Da confermare al prossimo daily: verify_site verde **in Actions**,
 404 e sitemap su Pages, `benchmark-quote` al primo giorno del mese.
+
+---
+
+## 20. P1.7 — Proiezioni di stagione rese oneste e specifiche per lega (2026-09-16, diciottesimo giro)
+
+### 20.1 Ricerca prima della modifica: cosa significa «top N» nel 2026/27
+
+La vecchia tabella usava `Top-4` per tutte le leghe, quindi attribuiva lo stesso significato a
+una posizione in Bundesliga, Eredivisie e Liga Portugal. Prima di inserire numeri in config è stata
+verificata la fonte ufficiale: l'articolo UEFA sulla stagione **2026/27** elenca gli accessi ordinari
+alla league phase come **Inghilterra 4 · Italia 4 · Spagna 4 · Germania 4 · Francia 3 · Paesi Bassi 2 ·
+Portogallo 1** ([UEFA, aggiornato 1 giugno 2026](https://www.uefa.com/uefachampionsleague/news/02a2-1fdbe9a25733-8d37ff5f9226-1000--2026-27-uefa-champions-league-liverpool-and-real-betis-se/)).
+La stessa fonte distingue inoltre i due *European Performance Spots* (Inghilterra e Spagna) dalle
+posizioni ordinarie: il quinto posto non è una regola generale della classifica e non va incorporato
+silenziosamente in una soglia fissa.
+
+Decisione editoriale: `ucl_spots` descrive **solo la probabilità di chiudere nelle prime N posizioni
+con accesso ordinario alla league phase della stagione configurata**. Non è la probabilità completa
+di qualificarsi: la scheda lo dichiara e non simula EPS, vincitrice UCL/UEL, scorrimenti o percorsi di
+qualificazione. Se cambia la stagione, cambiano i dati di config dopo una verifica della nuova access
+list; non si deduce N dalla dimensione della lega.
+
+### 20.2 Correzioni applicate
+
+- `League.ucl_spots` è opzionale e i sette campionati 2026/27 sono configurati in `config/leagues.yaml`
+  con `[4, 4, 4, 4, 3, 2, 1]` nell'ordine ITA1→POR1.
+- `simulate_league()` riceve `top_n`, valida `1 ≤ N ≤ numero squadre` e pubblica `p_top_n` + `top_n`.
+  `p_top4` resta un alias di migrazione per gli snapshot già versionati; dal primo snapshot nuovo il
+  verificatore controlla che sia identico a `p_top_n`, non lo interpreta più come top-4 universale.
+- Il tie-break ora usa la classifica simulata per **punti → differenza reti → gol fatti → ordine
+  alfabetico**. Gli scontri diretti non sono simulati: dirlo è più accurato che lasciare che l'ordine
+  del DataFrame decida senza dichiarazione. `simulate_all()` passa anche i gol fatti già segnati,
+  prima ignorati.
+- Il prior neutro per una squadra senza storico è limitato agli stessi `[0,6; 2,2]` di
+  `predict_matches()`, tramite `NEUTRAL_LAMBDA_BOUNDS` condiviso: scheda e simulazione non possono
+  trasformare la stessa media in regimi diversi.
+- La pagina `stagione.html` non stampa più una cifra decimale per le probabilità Monte Carlo: usa
+  percentuali intere e pubblica la formula dell'errore standard. Con 10.000 simulazioni il massimo è
+  `sqrt(0,5·0,5/10.000) = 0,005`, cioè **0,5 punti percentuali**. Il numero è incertezza della
+  simulazione, non un intervallo predittivo sulla stagione reale.
+- La card «Panchina e posta in gioco» legge il nuovo campo e mostra `UCL (prime N)`; la riga della
+  classifica virtuale non cerca più sempre il 4º posto. Gli snapshot storici sono migrati in lettura
+  e marcati visibilmente come **dato storico** (top-4 legacy), così il sito non resta vuoto né presenta
+  il fallback come soglia già aggiornata fra il merge e il primo `daily` che rigenera `season_sim`.
+
+### 20.3 Verifiche misurate
+
+- Test mirati: **61 passed** (`config`, simulazione, card panchina e build del sito); nuovi test su
+  `mc_se()`, arrotondamento intero e somma delle probabilità con `top_n=3`.
+- Suite completa dopo il fix finale: **290 passed** (il baseline del checkpoint precedente era 286; i test
+  aggiunti coprono precisione Monte Carlo, soglia UCL configurata, tie-break e fallback storico dichiarato).
+- `fda build` locale sui Parquet committati: **376 schede · 2.364 fixture · 7.478 pagine giocatore**;
+  la build legge correttamente gli snapshot legacy e pubblica il nuovo contratto della pagina.
+- `verify_site.py`: **0 problemi · 32.876 controlli**. Il controllo [4] verifica ora la somma della
+  colonna configurata `p_top_n` e la parità con l'alias `p_top4`; il controllo [19] ricalcola la posta
+  in gioco con l'etichetta `UCL (prime N)`.
+- Le righe `season_sim.parquet` committate nel checkout sono ancora lo snapshot del daily precedente:
+  il passaggio da 4 a 3/2/1 nelle pagine FRA1/NED1/POR1 sarà **da confermare nel primo daily** che
+  eseguirà `simulate_all()` dopo il merge. Non viene dichiarato come già visto dal vivo.
+
+**Prossimo passo:** P1.8 (assert di coerenza 1X2/doppia chance) oppure, se l'ordine operativo resta
+quello della coda, P1.9–P1.10 sulla diagnostica delle fonti; il merge resta di competenza dell'utente.

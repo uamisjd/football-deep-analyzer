@@ -17,6 +17,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..config import DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
+from ..models.season_sim import mc_percent, mc_se
 from ..store import Store
 from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
 from .audit import audit_match
@@ -518,7 +519,12 @@ class SiteBuilder:
         return n
 
     def build_stagione(self) -> None:
-        """Pagina «Proiezioni di stagione» dalla tabella `season_sim` (vuota → segnaposto)."""
+        """Pagina «Proiezioni di stagione» dalla tabella `season_sim`.
+
+        Gli snapshot precedenti a P1.7 hanno solo ``p_top4``: vengono letti come legacy
+        con soglia 4, ma i nuovi snapshot portano ``top_n``/``p_top_n`` dalla config.
+        La migrazione in lettura evita una pagina vuota fra un merge e il primo daily.
+        """
         sim = self.store.read("season_sim")
         if sim.empty:
             self._render("stagione.html", "stagione.html", title="Proiezioni di stagione",
@@ -528,13 +534,40 @@ class SiteBuilder:
         names = {l.key: l.name for l in leagues(None)}
         blocks = []
         for key, grp in sim.groupby("league_key"):
-            rows = grp.sort_values("exp_points", ascending=False)
-            blocks.append({"key": str(key), "name": names.get(str(key), str(key)),
-                           "rows": rows.to_dict("records")})
+            grp = grp.sort_values("exp_points", ascending=False).copy()
+            # `top_n` è metadato della simulazione, non un numero dedotto dalla grandezza
+            # della lega. Se manca, l'unico fallback ammissibile è il vecchio snapshot
+            # esplicitamente etichettato Top-4.
+            top_n = None
+            legacy_top = False
+            if "top_n" in grp.columns:
+                vals = pd.to_numeric(grp["top_n"], errors="coerce").dropna().unique()
+                if len(vals):
+                    top_n = int(vals[0])
+            if top_n is None and "p_top4" in grp.columns and grp["p_top4"].notna().any():
+                top_n = 4
+                legacy_top = True
+            rows = []
+            for row in grp.to_dict("records"):
+                raw_top = row.get("p_top_n")
+                if raw_top is None or pd.isna(raw_top):
+                    raw_top = row.get("p_top4")
+                row["p_top_n"] = raw_top
+                row["p_title_pct"] = mc_percent(row["p_title"])
+                row["p_top_n_pct"] = None if raw_top is None or pd.isna(raw_top) else mc_percent(raw_top)
+                row["p_rel_pct"] = mc_percent(row["p_rel"])
+                rows.append(row)
+            n_sims = int(pd.to_numeric(grp["n_sims"], errors="coerce").max())
+            blocks.append({
+                "key": str(key), "name": names.get(str(key), str(key)), "top_n": top_n,
+                "legacy_top": legacy_top,
+                "mc_se_max_pp": round(mc_se(0.5, n_sims) * 100, 2), "rows": rows,
+            })
         order = {k: i for i, k in enumerate(["ITA1", "ENG1", "ESP1", "GER1", "FRA1", "NED1", "POR1"])}
         blocks.sort(key=lambda b: order.get(b["key"], 99))
+        n_sims = int(pd.to_numeric(sim["n_sims"], errors="coerce").max())
         self._render("stagione.html", "stagione.html", title="Proiezioni di stagione",
-                     n_sims=sim["n_sims"].max(), updated=it_from_utc(sim["made_at"].max(), self.tz),
+                     n_sims=n_sims, updated=it_from_utc(sim["made_at"].max(), self.tz),
                      leagues=blocks)
 
     # mercati binari pubblicati dal modello → (colonna, etichetta, evento osservato)

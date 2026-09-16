@@ -17,6 +17,7 @@ leagues:
     datahub_dir: "serie-a"
     clubelo_country: "ITA"
     teams: 20
+    ucl_spots: 4             # accesso ordinario alla league phase 2026/27
 
   - key: ENG1
     name: "Premier League"
@@ -29,6 +30,7 @@ leagues:
     datahub_dir: "premier-league"
     clubelo_country: "ENG"
     teams: 20
+    ucl_spots: 4             # posti ordinari; EPS separato e non simulato
 
   - key: ESP1
     name: "LaLiga"
@@ -41,6 +43,7 @@ leagues:
     datahub_dir: "la-liga"
     clubelo_country: "ESP"
     teams: 20
+    ucl_spots: 4             # posti ordinari; EPS separato e non simulato
 
   - key: GER1
     name: "Bundesliga"
@@ -53,6 +56,7 @@ leagues:
     datahub_dir: "bundesliga"
     clubelo_country: "GER"
     teams: 18
+    ucl_spots: 4
 
   - key: FRA1
     name: "Ligue 1"
@@ -65,6 +69,7 @@ leagues:
     datahub_dir: "ligue-1"
     clubelo_country: "FRA"
     teams: 18
+    ucl_spots: 3
 
   - key: NED1
     name: "Eredivisie"
@@ -78,6 +83,7 @@ leagues:
     datahub_base: "https://raw.githubusercontent.com/huhao930422-debug/football-odds-mirror/main/data"
     clubelo_country: "NED"
     teams: 18
+    ucl_spots: 2
 
   - key: POR1
     name: "Liga Portugal"
@@ -91,6 +97,7 @@ leagues:
     datahub_base: "https://raw.githubusercontent.com/huhao930422-debug/football-odds-mirror/main/data"
     clubelo_country: "POR"
     teams: 18
+    ucl_spots: 1
 
 # Coppe: per ora solo calendario (servono per la congestione delle squadre), nessuna analisi dedicata.
 cups_calendar_only:

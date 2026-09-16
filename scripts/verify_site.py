@@ -623,15 +623,33 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                       f"· pareggio {somm_raw['pareggio_previsto'] * 100:.1f}% → {somm['pareggio_previsto'] * 100:.1f}%"
                       f" (osservato {somm['pareggio_osservato'] * 100:.1f}%)")
 
-    # 4) proiezioni di stagione: le probabilità di ogni lega sommano come devono
+    # 4) proiezioni di stagione: le probabilità di ogni lega sommano come devono.
+    # P1.7: i nuovi snapshot portano la soglia configurata (`top_n`/`p_top_n`); i
+    # vecchi hanno solo `p_top4` e restano verificabili come migrazione esplicita.
     sim = st.read("season_sim")
     if not sim.empty:
         for lg, g in sim.groupby("league_key"):
             checks += 1
             if abs(g.p_title.sum() - 1) > 0.01:
                 fails.append(f"season_sim {lg}: somma P(titolo) = {g.p_title.sum():.3f}")
-            if abs(g.p_top4.sum() - min(4, len(g))) > 0.02:
-                fails.append(f"season_sim {lg}: somma P(top4) = {g.p_top4.sum():.3f}")
+            top_col = "p_top_n" if "p_top_n" in g.columns else "p_top4"
+            top_values = pd.to_numeric(g[top_col], errors="coerce").dropna()
+            if not top_values.empty:
+                top_n_values = (pd.to_numeric(g["top_n"], errors="coerce").dropna()
+                                if "top_n" in g.columns else pd.Series(dtype=float))
+                top_n = int(top_n_values.iloc[0]) if not top_n_values.empty else 4
+                checks += 1
+                if abs(top_values.sum() - min(top_n, len(g))) > 0.02:
+                    fails.append(f"season_sim {lg}: somma P(top-{top_n}) = {top_values.sum():.3f}")
+                if "p_top_n" in g.columns and "p_top4" in g.columns:
+                    checks += 1
+                    current = pd.to_numeric(g["p_top_n"], errors="coerce")
+                    legacy = pd.to_numeric(g["p_top4"], errors="coerce")
+                    both = current.notna() & legacy.notna()
+                    if not both.all() or not np.allclose(
+                            current[both].to_numpy(), legacy[both].to_numpy(), atol=1e-6):
+                        fails.append(f"season_sim {lg}: alias p_top4 diverso da p_top_n")
+            checks += 1
             if abs(g.p_rel.sum() - 3) > 0.02:
                 fails.append(f"season_sim {lg}: somma P(retrocessione) = {g.p_rel.sum():.3f}")
         print(f"[4] leghe simulate: {sim.league_key.nunique()} · righe {len(sim)}")
@@ -1250,12 +1268,21 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                             fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
                 if sr is not None and 'id="panchina"' in html:
                     checks += 1
-                    pt, pe, pr = (int(round(float(sr.p_title) * 100)), int(round(float(sr.p_top4) * 100)),
-                                  int(round(float(sr.p_rel) * 100)))
-                    if f"titolo {pt}% · Europa {pe}% · salvezza {pr}%" not in txt:
+                    raw_top = getattr(sr, "p_top_n", None)
+                    if raw_top is None or pd.isna(raw_top):
+                        raw_top = getattr(sr, "p_top4", None)
+                    raw_n = getattr(sr, "top_n", None)
+                    top_n = 4 if raw_n is None or pd.isna(raw_n) else int(raw_n)
+                    pt = int(round(float(sr.p_title) * 100))
+                    pe = None if raw_top is None or pd.isna(raw_top) else int(round(float(raw_top) * 100))
+                    pr = int(round(float(sr.p_rel) * 100))
+                    atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
+                              if pe is not None else f"titolo {pt}%")
+                    if atteso not in txt or f"salvezza {pr}%" not in txt:
                         fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
                     lab = ("corsa al titolo" if float(sr.p_title) >= 0.15 else
-                           "corsa all'Europa" if float(sr.p_top4) >= 0.35 else
+                           ("corsa alla Champions" if top_n < 4 else "corsa all'Europa")
+                           if raw_top is not None and not pd.isna(raw_top) and float(raw_top) >= 0.35 else
                            "lotta salvezza" if float(sr.p_rel) >= 0.35 else
                            "zona salvezza non lontana" if float(sr.p_rel) >= 0.15 else
                            "stagione di metà classifica")

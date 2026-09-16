@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fda.models.season_sim import simulate_league
+from fda.models.season_sim import mc_percent, mc_se, simulate_league
 
 
 def _synthetic_hist(seed=7):
@@ -49,6 +49,44 @@ def test_simulate_league_invariants():
     # determinismo con lo stesso seed
     df2 = simulate_league(hist, rem, pts, gd, pl, n_sims=300, seed=42, rel_count=3)
     pd.testing.assert_frame_equal(df.drop(columns=["made_at"]), df2.drop(columns=["made_at"]))
+
+
+def test_mc_precision_is_published_at_supported_resolution():
+    """10.000 simulazioni sostengono al massimo 0,5 punti percentuali di SE."""
+    assert mc_se(0.5) == pytest.approx(0.005, abs=1e-12)
+    assert mc_se(0.0) == 0.0 and mc_se(1.0) == 0.0
+    assert mc_percent(0.605) == 61
+    with pytest.raises(ValueError):
+        mc_se(0.5, 0)
+
+
+def test_simulate_league_uses_configured_ucl_spots():
+    """La somma delle probabilità UCL segue top_n, non il 4 fisso."""
+    warnings.filterwarnings("ignore")
+    hist = _synthetic_hist()
+    teams = sorted(set(hist.home))
+    rem = pd.DataFrame({"home": ["T1", "T2"], "away": ["T0", "T3"]})
+    pts, gd, pl = _bases(teams)
+    df = simulate_league(hist, rem, pts, gd, pl, n_sims=300, seed=42, rel_count=3, top_n=3)
+    assert set(df.top_n) == {3}
+    assert abs(df.p_top_n.sum() - 3.0) < 1e-3
+    # p_top4 resta soltanto l'alias di migrazione, non una quarta posizione implicita.
+    assert np.allclose(df.p_top4, df.p_top_n)
+
+
+def test_simulate_league_tie_breaks_gf_then_alphabetically():
+    """A parità di punti e differenza reti, gol fatti e nome chiudono l'ordine."""
+    warnings.filterwarnings("ignore")
+    hist = _synthetic_hist()
+    rem = pd.DataFrame(columns=["home", "away"])
+    base_points = {"A": 10.0, "B": 10.0, "C": 10.0}
+    base_gd = {team: 0 for team in base_points}
+    base_gf = {"A": 5, "B": 4, "C": 4}
+    base_played = {team: 6 for team in base_points}
+    df = simulate_league(hist, rem, base_points, base_gd, base_played, base_gf=base_gf,
+                         n_sims=10, seed=1, rel_count=1, top_n=1)
+    assert list(df.team) == ["A", "B", "C"]
+    assert list(df.pos_mean) == [1.0, 2.0, 3.0]
 
 
 def test_simulate_league_missing_team_neutral():
