@@ -222,7 +222,7 @@ _UNAVAIL_IT = {"injury": "infortunio", "suspension": "squalifica", "suspended": 
 def _no_news() -> dict[str, Any]:
     """Bollettino vuoto per le partite finite (la card non si stampa, il contesto resta tipato)."""
     return {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
-            "oltre": 0, "annunci": 0, "piatti": 0, "vecchie": 0, "pertinenti": 0,
+            "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "vecchie": 0, "pertinenti": 0,
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
 
 
@@ -635,16 +635,38 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
     }
 
 
+#: Parole tutte maiuscole che non sono nomi propri. I titoli di agenzia («UFFICIALE –
+#: BOLOGNA, ESONERATO TEDESCO…») sono scritti in maiuscolo e senza questa lista i soggetti
+#: diventavano «esonerato» o «allenatore», quindi il dedup non riconosceva lo stesso fatto
+#: raccontato due volte (misurato il 2026-09-17 sulla colonna del Bologna: due titoli
+#: sull'esonero di Tedesco pubblicati insieme).
+_MAIUSCOLE_NON_NOMI = frozenset({
+    "ufficiale", "ufficialmente", "ufficializzata", "esonero", "esonerato", "esonerati",
+    "allenatore", "panchina", "calcio", "calciomercato", "mercato", "nuovo", "nuova",
+    "scelto", "ultimora", "ultime", "live", "video", "foto", "pagelle", "probabili",
+    "formazioni", "convocati", "infortunio", "squalifica", "rifiuta", "accordo",
+    "contratto", "presidente", "società", "squadra", "partita", "gara", "campionato",
+})
+
+
 def news_subjects(title: str, club_tokens: set[str] | None = None) -> set[str]:
     """Nomi propri di un titolo (persone, città, enti) esclusi i nomi dei club.
 
     Serve al bollettino stampa per non pubblicare due volte la stessa notizia: due titoli
     della stessa categoria che citano lo stesso nome proprio (Calhanoglu, Idzes, Tedesco)
     raccontano lo stesso fatto. Il nome del club non conta — compare in qualunque titolo.
+    Un titolo scritto **tutto in maiuscolo** (agenzie, siti locali) non ha iniziali
+    minuscole: lì i nomi si prendono dalle parole maiuscole, tolte quelle di servizio
+    (``_MAIUSCOLE_NON_NOMI``).
     """
     drop = club_tokens or set()
+    testo = title or ""
+    nomi = re.findall(r"\b[A-ZÀ-Ý][a-zà-ÿ']{3,}\b", testo)
+    if len(re.findall(r"[a-zà-ÿ]", testo)) < 4:
+        nomi += [w for w in re.findall(r"\b[A-ZÀ-Ý][A-ZÀ-Ý']{3,}\b", testo)
+                 if soft_key(w) not in _MAIUSCOLE_NON_NOMI]
     out: set[str] = set()
-    for w in re.findall(r"\b[A-ZÀ-Ý][a-zà-ÿ']{3,}\b", title or ""):
+    for w in nomi:
         k = soft_key(w)
         if len(k) >= 4 and k not in drop:
             out.add(k)
@@ -1327,7 +1349,8 @@ class MatchAnalysis:
         limit = self.NEWS_LIMIT if limit is None else limit
         out: dict[str, Any] = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0,
                                "scartate": 0, "oltre": 0, "annunci": 0, "piatti": 0,
-                               "vecchie": 0, "pertinenti": 0, "finestra": days, "limite": limit,
+                               "altre": 0, "vecchie": 0, "pertinenti": 0,
+                               "finestra": days, "limite": limit,
                                "categoria_limite": self.NEWS_CATEGORY_LIMIT,
                                "riserva_limite": self.NEWS_RESERVE_LIMIT}
         if self.news_df.empty:
@@ -1408,6 +1431,29 @@ class MatchAnalysis:
                 return ""
             return ""
 
+        def altra_squadra(title: str) -> str | None:
+            """Il titolo parla di **un'altra** squadra del nostro archivio, non di questa.
+
+            Misurato il 2026-09-17: «Indagine a Roma: pressioni su Lotito a cedere la
+            Lazio» finiva nella colonna della Roma (Roma è la città, la procura e il club
+            insieme). Se manca l'avversario, un nostro tesserato (allenatore o giocatore
+            della distinta) e un token distintivo della squadra, l'unico aggancio è un
+            altro club: la voce non riguarda questa gara e si conta a parte.
+            """
+            key = soft_key(title or "")
+            if avversario and any(t in key for t in avversario):
+                return None
+            if coach and soft_key(str(coach)) in key:
+                return None
+            if any(soft_key(str(nm)) in key for nm in entities if len(nm) >= 5):
+                return None
+            if any(t in key for t in tokens if len(t) >= 5):
+                return None
+            for c in sorted(self._club_tokens or ()):
+                if len(c) >= 5 and c not in tokens and c not in avversario and c in key:
+                    return c
+            return None
+
         def rilevanza(title: str) -> float:
             """Quanto la notizia riguarda **questa** partita (docs/24 §3.5).
 
@@ -1459,6 +1505,9 @@ class MatchAnalysis:
             motivo = news_value(title, r.get("description"), r.get("source"))
             if motivo is not None:
                 out["annunci" if motivo == "annuncio" else "piatti"] += 1
+                continue
+            if altra_squadra(title):
+                out["altre"] += 1
                 continue
             # la chiave entra subito nell'insieme condiviso: il feed ripubblica lo stesso
             # articolo con data aggiornata (misurato: 231 coppie (squadra, url) con più righe)

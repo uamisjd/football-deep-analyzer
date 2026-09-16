@@ -120,7 +120,10 @@ Nove regole, tutte dichiarate nel testo della card:
    compleanni) vanno in `annunci`; i fatti senza frizione né decisione (dichiarazioni di
    circostanza, cronaca, «un punto più») vanno in `piatti`. Entrambi restano fuori **e si
    contano**: è la correzione chiesta dall'utente;
-6. **gate di soggetto**: il titolo deve parlare della squadra o citare un suo giocatore/allenatore;
+6. **gate di soggetto**: il titolo deve parlare della squadra o citare un suo giocatore/allenatore,
+   e **non di un'altra squadra**: se nomina un altro club del nostro archivio e l'unico aggancio
+   a questa è il nome della città (misurato: «Indagine a Roma: pressioni su Lotito a cedere la
+   Lazio» nella colonna della Roma), la voce si conta a parte (`altre`);
 7. **punteggio**: categoria + sostanza (numeri e decisioni sopra le dichiarazioni) + freschezza
    (ore al fischio d'inizio: ≤12h +6, ≤24h +5, ≤36h +4, ≤48h +3, ≤72h +1,5, oltre 0) + rilevanza
    per **questa** partita (avversario o vigilia +5, allenatore +4, un giocatore della distinta
@@ -136,7 +139,7 @@ Nove regole, tutte dichiarate nel testo della card:
 
 Ogni colonna dichiara il lavoro fatto, non solo il risultato: «Real Betis · 20 titoli esaminati
 negli ultimi 7 giorni · 3 pubblicati · 2 annunci o logistica · 9 servizio o cronaca · 3 non
-spostano nulla · 2 troppo vecchi · 1 in riserva». Se non c'è nulla, la card scrive **perché**:
+spostano nulla · 2 troppo vecchi». Se non c'è nulla, la card scrive **perché**:
 «**Niente che possa spostare qualcosa** su questa squadra: 19 servizio o cronaca · 2 annunci o
 logistica · 3 non spostano nulla. La card non riempie lo spazio con conferenze stampa, orari,
 lavori allo stadio o frasi di circostanza».
@@ -180,8 +183,9 @@ Il port del prototipo approvato ha cambiato tre cose rispetto alla card di sette
    vantaggio»;
 3. **il gate del valore e la riserva**: 1.053 righe su 2.582 in finestra (tutte le partite future
    del 17/09) hanno una categoria e un punteggio, ma 270 sono «piatte» e 9 sono annunci: restano
-   fuori, contate. I **26 fatti pubblicati** su 4.110 colonne-squadra sono: 10 Panchina, 7 Società,
-   5 Tifoseria, 2 Spogliatoio, 1 Fuori dal campo, 1 Club — più **1 in riserva**. Fra questi:
+   fuori, contate. I **24 fatti pubblicati** su 4.110 colonne-squadra (12 partite) sono: 9 Panchina,
+   6 Società, 5 Tifoseria, 2 Spogliatoio, 1 Fuori dal campo, 1 Club; **nessuno in riserva** con
+   questo archivio — la riserva si accende quando una squadra ha più di tre fatti. Fra questi:
    «Bologna, esonerato Tedesco: arriva Palladino con contratto fino al 2029», «Le false offerte, i
    450 milioni e l'indagine: dentro il complotto per spingere Lotito a cedere la Lazio», «Daniel
    Maldini positivo all'etilometro: ritirata la patente», «Calcio: protesta dei tifosi del Genoa
@@ -190,17 +194,28 @@ Il port del prototipo approvato ha cambiato tre cose rispetto alla card di sette
    Il numero misura l'**archivio attuale**, che contiene la sola edizione italiana: la seconda
    edizione è il rifornimento previsto e si misurerà al primo run di raccolta in Actions.
 
-Due difetti trovati proprio misurando il port (e corretti): i titoli italiani delle inchieste e
-delle sentenze finivano **fuori categoria** («indagine», «sentenza», «perquisizioni», «minacce»
-non erano nelle regole) e il pattern spagnolo `contrat` pescava il «contratto» italiano di un
-giocatore. Il campione dei titoli resta verificabile: 1.130 scartati come servizio, 32 fuori
-categoria su 2.582.
+Quattro difetti trovati proprio misurando il port (e corretti, uno con un test):
+
+1. i titoli italiani delle inchieste e delle sentenze finivano **fuori categoria** («indagine»,
+   «sentenza», «perquisizioni», «minacce» non erano nelle regole);
+2. il pattern spagnolo `contrat` pescava il «contratto» italiano di un giocatore;
+3. **i titoli di agenzia in maiuscolo** («UFFICIALE – BOLOGNA, ESONERATO TEDESCO…») sfuggivano al
+   dedup dei soggetti, che cerca l'iniziale maiuscola seguita da minuscole: la colonna del Bologna
+   pubblicava **due volte** lo stesso esonero. Ora i titoli senza minuscole passano da una lista di
+   parole di servizio (`_MAIUSCOLE_NON_NOMI`) e il secondo titolo resta fuori;
+4. **la voce di un'altra squadra**: il nome della città è anche il nome del club, e la regola 6 la
+   conta a parte.
+
+Il campione dei titoli resta verificabile: 1.130 scartati come servizio, 32 fuori categoria su
+2.582. Resta dichiarato un residuo che il codice non chiude: **due testate sullo stesso episodio**
+(due pezzi sui Daspo della curva) possono entrare insieme quando non condividono nessun nome
+proprio — l'evento è lo stesso, il titolo no.
 
 ## §4 — Prima e dopo, sullo stesso sito
 
 | Misura | Card vecchia (live) | Dopo il primo giro | Card v4 (port in produzione) |
 |---|---|---|---|
-| voci pubblicate | **535** (70 schede) | 135 | **26** su 2.055 partite future |
+| voci pubblicate | **535** (70 schede) | 135 | **24** su 2.055 partite future |
 | finestra | nessuna (anche notizie dopo la gara) | 12 giorni + recupero a 45 | **7 giorni, nessun recupero** |
 | voci di servizio/dirette pubblicate | ~38% del corpus | 0 | **0** |
 | duplicati esatti in pagina | **58** | 0 | **0** |
@@ -210,7 +225,7 @@ categoria su 2.582.
 | «Da sapere» | assente | assente | presente quando i dati lo dicono |
 
 Il calo di volume è **voluto**: le voci che escono erano in maggioranza doppioni di altre card o
-riempitivo. Le 4.084 colonne vuote oggi dichiarano l'imbuto; il rifornimento è la seconda
+riempitivo. Le 4.086 colonne vuote oggi dichiarano l'imbuto; il rifornimento è la seconda
 edizione, non un allargamento dei filtri.
 
 ## §5 — Cosa è cambiato nei file
@@ -229,7 +244,7 @@ edizione, non un allargamento dei filtri.
 ## §6 — Cosa resta aperto (dichiarato, non nascosto)
 
 1. **Il volume dipende dalla seconda edizione.** Nell'archivio attuale c'è la sola edizione
-   italiana: 26 fatti pubblicati su 2.055 partite future. Il run di raccolta di Actions
+   italiana: 24 fatti pubblicati su 2.055 partite future. Il run di raccolta di Actions
    interrogherà anche le edizioni locali (244 richieste); Google News **non è raggiungibile dal
    sandbox** (TLS azzerato, misurato il 17/09), quindi l'effetto della seconda edizione si potrà
    misurare solo dal primo build successivo alla raccolta. Il codice è coperto dai test con

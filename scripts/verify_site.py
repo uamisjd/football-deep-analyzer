@@ -1482,6 +1482,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     ("pubblicati", atteso["pubblicate"], r"· (\d+) pubblicat[oi]"),
                     ("annunci o logistica", atteso["annunci"], r"· (\d+) annunc"),
                     ("servizio o cronaca", atteso["scartate"], r"· (\d+) servizio o cronaca"),
+                    ("altra squadra", atteso["altre"], r"· (\d+) su un'altra squadra"),
                     ("non spostano nulla", atteso["piatti"], r"· (\d+) non (?:sposta|spostano) nulla"),
                     ("oltre il limite", atteso["oltre"], r"· (\d+) oltre il limite"),
                     ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):

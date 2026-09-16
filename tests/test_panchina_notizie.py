@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from fda.site.analysis import MatchAnalysis
+from fda.site.analysis import MatchAnalysis, news_subjects
 from fda.sources.news import classify_news, clean_text, keyword_score, news_value, parse_rss
 from fda.store import Store
 
@@ -290,6 +290,37 @@ def test_bollettino_un_soggetto_per_categoria(tmp_path):
     assert nw["pertinenti"] == 2 and nw["scartate"] == 1
     assert "Calhanoglu" in nw["notizie"][0]["title"]
     st.close()
+
+
+def test_bollettino_scarta_le_voci_di_un_altra_squadra(tmp_path):
+    """Un titolo su un'altra squadra del nostro archivio non è informazione per questa gara.
+
+    Misurato il 2026-09-17 sulla colonna della Roma: «Indagine a Roma: pressioni su Lotito a
+    cedere la Lazio» entrava fra i pubblicati perché «Roma» è la città, la procura e il club
+    insieme. Senza avversario, tesserati o token distintivi, la voce si conta a parte.
+    """
+    st = _store_news(tmp_path, "bollettino_altre", [
+        {"team_id": 2, "published_at": KO("2026-09-14 12:00"),
+         "title": "Indagine a Roma: pressioni su Lotito a cedere la Lazio", "url": "u1",
+         "source": "S1", "description": ""},
+        {"team_id": 2, "published_at": KO("2026-09-14 11:00"),
+         "title": "Roma, ricorso respinto: la multa resta", "url": "u2", "source": "S2",
+         "description": ""},
+    ])
+    st.write("fixtures", FX)          # i token dei club arrivano dalle partite in archivio
+    nw = MatchAnalysis(st).team_news(2, "Roma", KO("2026-09-15 12:00"))
+    assert [n["title"] for n in nw["notizie"]] == ["Roma, ricorso respinto: la multa resta"]
+    assert nw["altre"] == 1 and nw["scartate"] == 0
+    st.close()
+
+
+def test_soggetti_dei_titoli_maiuscoli():
+    """I titoli di agenzia sono in maiuscolo: i nomi si prendono, le parole di servizio no."""
+    soggetti = news_subjects("UFFICIALE – BOLOGNA, ESONERATO TEDESCO DOPO IL KO DI NAPOLI")
+    assert "tedesco" in soggetti
+    assert "esonerato" not in soggetti and "allenatore" not in soggetti
+    # stesso fatto in due titoli (uno in maiuscolo) = stesso soggetto
+    assert soggetti & news_subjects("Bologna, esonerato Tedesco: arriva Palladino")
 
 
 def test_bollettino_rilevanza_per_questa_partita(tmp_path):
