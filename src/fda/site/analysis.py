@@ -2672,10 +2672,10 @@ class MatchAnalysis:
                                 if ref.get("pens") is not None else "."))
             elif y is not None:
                 # campione ridotto (mediana 33, minimo 6): la media ha un errore standard
-                # grande → si pubblica il numero, mai l'aggettivo (P1.2, docs/19 §2.6)
-                pens = (f", {it_plural(ref['pens'], 'rigore')} totale" if ref.get("pens") is not None else "")
-                s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita su {n} "
-                         f"{it_plural(n, 'gara')} designate (campione ridotto{pens}, nessuna valutazione).")
+                # grande → si pubblica il numero, mai l'aggettivo (P1.2, docs/19 §2.6);
+                # i rigori compaiono comunque nella card «Contesto», qui non servono
+                s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita su "
+                         f"{it_plural(n, 'gara')} designate (campione ridotto, nessuna valutazione).")
         w = ctx.get("weather")
         if w and w.get("desc"):
             extra = ""

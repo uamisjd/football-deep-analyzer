@@ -503,12 +503,16 @@ def test_referee_narrative_above_and_below_league(tmp_path):
 
 
 def test_referee_narrative_small_sample_numbers_only(tmp_path):
-    """Campione ridotto (minimo 6, mediana 33): il numero sì, l'aggettivo mai."""
+    """Campione ridotto (minimo 6, mediana 33): il numero sì, l'aggettivo mai, no doppi numeri."""
     ma = MatchAnalysis(_store(tmp_path))
     base = {"home_name": "Alpha", "away_name": "Beta"}
     frasi = ma.narrative({**base, "referee": {"name": "C", "matches": 6, "yellows": 6.4,
                                               "league_yellows": 4.0}})
-    assert any("campione ridotto, nessuna valutazione" in f for f in frasi)
+    ref = [f for f in frasi if f.startswith("Arbitro C")]
+    assert len(ref) == 1
+    assert "campione ridotto, nessuna valutazione" in ref[0]
+    assert "6 6 gare" not in ref[0]           # it_plural include già il numero
+    assert "su 6 gare designate" in ref[0]
     assert not any("molto severo" in f for f in frasi)
 
 
