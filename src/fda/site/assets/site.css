@@ -82,6 +82,10 @@ p{margin:0 0 12px}
 a{color:var(--accent);text-decoration:none;transition:color .13s}
 a:hover{color:var(--accent-hover)}
 a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
+/* skip-link (P1.13, docs/19 §3.6): fuori schermo finché non riceve il focus da tastiera,
+   così non sposta il layout; visibile in alto a sinistra quando si tabula */
+.skip-link{position:absolute;left:-9999px;top:0;z-index:100;padding:10px 16px;background:var(--accent);color:var(--on-accent,#06231a);font:700 14px var(--font-head,system-ui);border-radius:0 0 10px 0}
+.skip-link:focus{left:0}
 ::selection{background:var(--sel-bg);color:var(--sel-fg)}
 ::-moz-selection{background:var(--sel-bg);color:var(--sel-fg)}
 
@@ -406,7 +410,7 @@ footer .fbrand .h .me{color:var(--brand-b)}
 footer .legal{line-height:1.7;max-width:720px}
 footer .dati{margin-top:8px;color:var(--mut2)}
 footer .cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px;margin-bottom:18px}
-footer .cols h3{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--mut2);text-transform:uppercase;letter-spacing:.06em}
+footer .cols h2{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--mut2);text-transform:uppercase;letter-spacing:.06em}
 footer .cols ul{list-style:none;margin:0;padding:0}
 footer .cols li{margin:6px 0}
 

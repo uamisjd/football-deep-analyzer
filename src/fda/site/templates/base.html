@@ -24,6 +24,7 @@
 <link rel="stylesheet" href="{{ root }}assets/site.css?v={{ css_v }}">
 </head>
 <body>
+<a class="skip-link" href="#main">Salta al contenuto</a>
 {% macro logo(size, cls) -%}
 <svg class="mark {{ cls or '' }}" viewBox="0 0 64 64" width="{{ size }}" height="{{ size }}" style="width:{{ size }}px;height:{{ size }}px" role="img" aria-label="Logo CalcioMetro" focusable="false">
   <defs>
@@ -88,13 +89,13 @@
     </div>
   </div>
 </header>
-<main>{% block content %}{% endblock %}</main>
+<main id="main">{% block content %}{% endblock %}</main>
 <footer>
   <div class="inner">
     <div class="fbrand">{{ logo(40) }}<span class="h"><span class="ca">Calcio</span><span class="me">Metro</span></span></div>
     <div class="cols">
       <div>
-        <h3>Naviga</h3>
+        <h2>Naviga</h2>
         <ul>
           <li><a href="{{ root }}index.html">Partite di oggi</a></li>
           <li><a href="{{ root }}prossime.html">Prossime partite e calendario</a></li>
@@ -103,7 +104,7 @@
         </ul>
       </div>
       <div>
-        <h3>Approfondisci</h3>
+        <h2>Approfondisci</h2>
         <ul>
           <li><a href="{{ root }}stagione.html">Proiezioni di stagione</a></li>
           <li><a href="{{ root }}giocatori/index.html">Schede giocatori</a></li>
@@ -112,7 +113,7 @@
         </ul>
       </div>
       <div>
-        <h3>Nota</h3>
+        <h2>Nota</h2>
         <p class="legal">Progetto personale a scopo informativo e statistico. Le probabilità sono stime di un modello matematico, non consigli: nessuna garanzia di risultato. Il gioco d'azzardo è vietato ai minori e può causare dipendenza (18+).</p>
       </div>
     </div>
