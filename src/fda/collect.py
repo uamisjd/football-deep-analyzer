@@ -129,9 +129,9 @@ def collect_league(
     # non il totale cumulativo del client condiviso (difetto misurato il 2026-09-15:
     # `fotmob:POR1` 129 includeva anche le richieste di NED1, `transfers:TRANSFERS` 263
     # tutte quelle delle fasi precedenti → il numero per fase non era ricostruibile).
-    req0 = {"fotmob": fm.http.stats.requests, "understat": uc.http.stats.requests,
-            "espn": ec.http.stats.requests,
-            "openmeteo": om.http.stats.requests if om is not None else 0}
+    req0 = {"fotmob": fm.http.mark(), "understat": uc.http.mark(),
+            "espn": ec.http.mark(),
+            "openmeteo": om.http.mark() if om is not None else 0}
 
     # 1) calendario -------------------------------------------------------------------------
     fixtures = _safe("fotmob", lambda: fm.parse_fixtures(lg.fotmob_id, fm.fixtures_raw(lg.fotmob_id)), report)
@@ -297,11 +297,16 @@ def collect_league(
 
     weather_rows = _safe("openmeteo forecast", _weather, report) or 0
 
-    report.requests = {"fotmob": fm.http.stats.requests - req0["fotmob"],
-                       "understat": uc.http.stats.requests - req0["understat"],
-                       "espn": ec.http.stats.requests - req0["espn"]}
+    used = {"fotmob": fm, "understat": uc, "espn": ec}
     if om is not None:
-        report.requests["openmeteo"] = om.http.stats.requests - req0["openmeteo"]
+        used["openmeteo"] = om
+    report.requests = {}
+    for src, client in used.items():
+        # Understat non copre NED1/POR1 (has_understat=False): una riga «OK, 0 richieste»
+        # direbbe che la fonte è stata interrogata con successo, il che è falso (docs/19 §2.1).
+        if src == "understat" and not lg.has_understat:
+            continue
+        report.requests[src] = client.http.mark() - req0[src]
     report.note("fotmob", rows=report.fixtures,
                 detail_text=detail(f"calendario {report.fixtures}",
                                    f"partite {report.matches_fetched}",
@@ -332,7 +337,7 @@ def collect_cups(store: Store, fotmob: FotMobClient | None = None) -> CollectRep
     now = datetime.now(timezone.utc)
     report = CollectReport(league="CUPS", run_at=now)
     fm = fotmob or FotMobClient()
-    fm0 = fm.http.stats.requests
+    fm0 = fm.http.mark()
     rows: list[dict[str, Any]] = []
     for cp in cups():
         fx = _safe(f"fotmob cups {cp.key}",
@@ -350,7 +355,7 @@ def collect_cups(store: Store, fotmob: FotMobClient | None = None) -> CollectRep
     if rows:
         store.upsert("cup_fixtures", rows)
         report.fixtures = len(rows)
-    report.requests = {"fotmob": fm.http.stats.requests - fm0}
+    report.requests = {"fotmob": fm.http.mark() - fm0}
     report.note("fotmob", rows=report.fixtures,
                 detail_text=detail(f"coppe {len(cups())}",
                                    f"gare di calendario {report.fixtures}"))
@@ -375,7 +380,7 @@ def collect_news(store: Store, keys: list[str] | None = None,
     report = CollectReport(league="NEWS", run_at=now)
     nc = news or NewsClient()
     ec = espn or EspnClient()
-    nc0, ec0 = nc.http.stats.requests, ec.http.stats.requests
+    nc0, ec0 = nc.http.mark(), ec.http.mark()
     fx = store.read("fixtures")
     if fx.empty:
         report.errors.append("news: fixtures vuote, salto")
@@ -426,8 +431,8 @@ def collect_news(store: Store, keys: list[str] | None = None,
         else:
             fuori_finestra += 1
     stored = store.upsert("news", fresh) if fresh else 0
-    report.requests = {"news": nc.http.stats.requests - nc0,
-                       "espn": ec.http.stats.requests - ec0}
+    report.requests = {"news": nc.http.mark() - nc0,
+                       "espn": ec.http.mark() - ec0}
     report.note("news", rows=stored,
                 detail_text=detail(f"ricerche {diag.get('ricerche', 0)}",
                                    f"articoli {diag.get('items', 0)}",
@@ -462,7 +467,7 @@ def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> Colle
     now = datetime.now(timezone.utc)
     report = CollectReport(league="TRANSFERS", run_at=now)
     fm = fotmob or FotMobClient()
-    fm0 = fm.http.stats.requests
+    fm0 = fm.http.mark()
     st = store.read("fotmob_standings")
     if st.empty or "team_id" not in st.columns:
         report.errors.append("transfers: classifica vuota, salto")
@@ -500,7 +505,7 @@ def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> Colle
     stored = store.upsert("transfers", rows) if rows else 0
     log.info("transfers: %d righe da %d squadre (voci viste %d; rinnovi %d; voci di mercato %d; sezioni %s)",
              stored, n_teams, voci, rinnovi, voci_mercato, sezioni)
-    report.requests = {"transfers": fm.http.stats.requests - fm0}
+    report.requests = {"transfers": fm.http.mark() - fm0}
     report.note("transfers", rows=stored,
                 detail_text=detail(f"payload letti {n_teams}", f"voci viste {voci}",
                                    f"salvate {stored}",
