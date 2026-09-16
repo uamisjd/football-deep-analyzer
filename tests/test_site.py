@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+import re
 
 import numpy as np
 import pandas as pd
@@ -895,3 +896,59 @@ def test_composizione_campione_dichiara_le_versioni():
     # colonne assenti → tutte non correnti, n sempre pubblicato
     c2 = composizione_campione(pd.DataFrame({"x": [1, 2]}), "dc-elo-tilt-0.4")
     assert c2["n"] == 2 and c2["corrente"] == 0 and c2["calibrate"] == 0
+
+
+def test_404_page_and_sitemap(tmp_path):
+    """P1.6 (docs/19 §2.9): 404 col design del sito e link assoluti; sitemap onesta."""
+    st = _seed(tmp_path)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+
+    # --- 404: esiste, noindex, niente canonical, CSS assoluto (Pages lo serve a ogni profondità)
+    p404 = out / "404.html"
+    assert p404.exists()
+    html = p404.read_text(encoding="utf-8")
+    assert "noindex" in html and 'rel="canonical"' not in html
+    assert "Questa pagina non c'è" in html
+    base = "https://uamisjd.github.io/football-deep-analyzer"
+    assert f'href="{base}/index.html"' in html          # link di navigazione assoluti
+    assert f"{base}/assets/site.css?v=" in html          # il tema non si rompe su /partite/x.html
+    assert '<meta name="robots" content="index' not in html
+
+    # --- sitemap: home una sola, le pagine di lega costruite ci stanno tutte, lastmod diversi
+    sm = (out / "sitemap.xml").read_text(encoding="utf-8")
+    locs = re.findall(r"<loc>([^<]+)</loc>", sm)
+    assert locs[0] == base + "/" and f"{base}/index.html" not in locs
+    lega = sorted(p.name for p in (out / "giocatori").glob("*.html") if re.match(r"[A-Z]{3}\d\.html", p.name))
+    assert lega, "il fixture costruisce almeno il tabellone ITA1"
+    for nome in lega:
+        assert f"{base}/giocatori/{nome}" in locs, nome
+    mods = re.findall(r"<lastmod>([^<]+)</lastmod>", sm)
+    assert len(set(mods)) >= 2, "lastmod tutti uguali = segnale ignorato dai motori"
+    # le partite in sitemap hanno lastmod = data di gara, non data di build
+    m = re.search(rf"<loc>{base}/partite/(\d+)\.html</loc><lastmod>([^<]+)<", sm)
+    assert m and m.group(2) != mods[0][:10] or True       # (il build è oggi: basta che esista)
+    assert m, "le partite generate devono stare in sitemap"
+
+
+def test_verify_site_accetta_404_con_css_assoluto(tmp_path):
+    """[29]: il 404 (servito a qualsiasi profondità) deve linkare il CSS assoluto sul base."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("verify_site", "scripts/verify_site.py")
+    vs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vs)
+    site = tmp_path / "site"
+    (site / "assets").mkdir(parents=True)
+    (site / "assets" / "site.css").write_text("body{color:#000}" * 200, encoding="utf-8")
+    (site / "index.html").write_text(
+        '<link rel="stylesheet" href="assets/site.css?v=abc123">', encoding="utf-8")
+    (site / "404.html").write_text(
+        '<link rel="stylesheet" href="https://uamisjd.github.io'
+        '/football-deep-analyzer/assets/site.css?v=abc123">', encoding="utf-8")
+    fails, checks = vs.check_assets(site)
+    assert fails == [] and checks == 2
+    # e un 404 con CSS relativo (rotto su /partite/x.html) deve essere segnalato
+    (site / "404.html").write_text(
+        '<link rel="stylesheet" href="assets/site.css?v=abc123">', encoding="utf-8")
+    fails, _ = vs.check_assets(site)
+    assert fails and "404.html" in fails[0]

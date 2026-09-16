@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Pagina non trovata — CalcioMetro{% endblock %}
+{% block og_title %}Pagina non trovata — CalcioMetro{% endblock %}
+{% block og_description %}La pagina cercata non esiste: riparti da Oggi, Prossime o Risultati.{% endblock %}
+{% block meta_description %}La pagina cercata non esiste (o non esiste più): riparti dalle partite di oggi, dal calendario o dai risultati con analisi e previsioni.{% endblock %}
+{% block content %}
+<div class="card">
+  <h1>Questa pagina non c'è (o non c'è più)</h1>
+  <p class="mut">Le schede delle partite restano online in archivio, ma i calendari vengono
+    rigenerati a ogni run: un indirizzo vecchio può smettere di esistere. Da qui si riparte in
+    un clic — il menu qui sopra è sempre valido.</p>
+  <div class="grid">
+    <div>
+      <h2>Da dove ripartire</h2>
+      <ul class="mut small">
+        <li><a href="{{ root }}index.html">Partite di oggi</a> — le gare in programma con l'analisi completa</li>
+        <li><a href="{{ root }}prossime.html">Prossime partite</a> — i prossimi giorni e tutto il calendario</li>
+        <li><a href="{{ root }}risultati.html">Risultati</a> — le gare giocate con xG e momentum</li>
+        <li><a href="{{ root }}accuratezza.html">Accuratezza del modello</a> — RPS e Brier reali</li>
+      </ul>
+    </div>
+    <div>
+      <h2>Cerchi una squadra o un giocatore?</h2>
+      <p class="small mut">Le schede giocatore sono tutte sotto
+        <a href="{{ root }}giocatori/index.html">giocatori</a>, una pagina per campionato
+        con percentili e radar. La pagina <a href="{{ root }}stato.html">stato</a> racconta
+        invece la salute delle fonti dati.</p>
+    </div>
+  </div>
+</div>
+{% endblock %}

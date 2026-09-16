@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="index, follow, max-image-preview:large">
-{% set canonical = "https://uamisjd.github.io/football-deep-analyzer/" + (canonical_path if canonical_path is defined else "") %}<link rel="canonical" href="{{ canonical }}">
+{% if no_index is defined and no_index %}<meta name="robots" content="noindex">{% else %}<meta name="robots" content="index, follow, max-image-preview:large">{% endif %}
+{% set canonical = "https://uamisjd.github.io/football-deep-analyzer/" + (canonical_path if canonical_path is defined else "") %}{% if not (no_index is defined and no_index) %}<link rel="canonical" href="{{ canonical }}">{% endif %}
 <meta name="description" content="{% block meta_description %}{{ page_description if page_description is defined and page_description else 'CalcioMetro — analisi calcistica profonda con previsioni calibrate Dixon-Coles+Elo, xG, forma, indisponibili, arbitro e meteo su 7 campionati.' }}{% endblock %}">
 <meta property="og:type" content="website">
 <meta property="og:locale" content="it_IT">
