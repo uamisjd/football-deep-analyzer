@@ -15,10 +15,10 @@ import numpy as np
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..config import REPO_ROOT, leagues, load_leagues_config
+from ..config import DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..store import Store
-from .analysis import MatchAnalysis, prediction_meta
+from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
 from .audit import audit_match
 from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, it_plural, pct_triple
 from .players import PlayerCatalog
@@ -27,6 +27,10 @@ log = logging.getLogger(__name__)
 
 SITE_DIR = REPO_ROOT / "site"
 TEMPLATES = Path(__file__).parent / "templates"
+# base pubblico del sito (GitHub Pages, project site): canonical, og:url, 404 e sitemap
+SITE_BASE_URL = "https://uamisjd.github.io/football-deep-analyzer"
+# tetto di URL per partite/giocatori nella sitemap (prudenziale: il file resta gestibile)
+MAX_SITEMAP_URLS = 50_000
 OUTCOME_LABELS = ("1", "X", "2")
 # forme brevi per il calendario completo: una riga per partita deve stare in poco spazio
 ITALIAN_DAYS_SHORT = ["lun", "mar", "mer", "gio", "ven", "sab", "dom"]
@@ -207,12 +211,15 @@ class SiteBuilder:
         if not self._assets_done:
             self._write_assets()
         depth = rel_path.count("/")
-        root = "../" * depth
-        section = self.NAV_SECTIONS.get(rel_path, "")
+        # `root`/`section`/`canonical_path` sono sovrascrivibili dal chiamante: il 404 di
+        # GitHub Pages viene servito a QUALSIASI profondità, quindi i suoi link debbono
+        # essere assoluti sul base del sito (P1.6, docs/19 §2.9).
+        root = ctx.pop("root", "../" * depth)
+        section = ctx.pop("section", self.NAV_SECTIONS.get(rel_path, ""))
         if not section:
             section = next((s for prefix, s in self.NAV_PREFIXES if rel_path.startswith(prefix)), "")
         # SEO: percorso canonico per <link rel="canonical"> e og:url
-        canonical_path = rel_path if rel_path != "index.html" else ""
+        canonical_path = ctx.pop("canonical_path", rel_path if rel_path != "index.html" else "")
         html = self.env.get_template(template).render(root=root, generated_at=self.now, section=section, canonical_path=canonical_path, **ctx)
         path = self.out / rel_path
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -371,7 +378,8 @@ class SiteBuilder:
         fx = fx[fx.status != "cancelled"].copy()
         fx["local_date"] = pd.to_datetime(fx.utc_kickoff).dt.tz_convert(self.tz).dt.date
         today = fx[fx.local_date == today_local]
-        upcoming = fx[(fx.local_date > today_local) & (fx.local_date <= today_local + timedelta(days=7))]
+        upcoming = fx[(fx.local_date > today_local)
+                      & (fx.local_date <= today_local + timedelta(days=DETAIL_WINDOW_DAYS))]
         results = fx[(fx.local_date < today_local) & (fx.local_date >= today_local - timedelta(days=7))
                      & (fx.status == "finished")]
         today_rows = self._match_rows(today)
@@ -381,7 +389,8 @@ class SiteBuilder:
         # --- calendario completo: ciò che la finestra breve non copre, in forma compatta ---
         # non costa richieste extra (le partite sono già state raccolte da `fda collect`) e
         # nemmeno analisi per partita: una riga = data, squadre e ultima previsione disponibile
-        lontano = fx[(fx.status.isin(["scheduled", "postponed", "suspended", "cancelled"])) & (fx.local_date > today_local + timedelta(days=7))]
+        lontano = fx[(fx.status.isin(["scheduled", "postponed", "suspended", "cancelled"]))
+                     & (fx.local_date > today_local + timedelta(days=DETAIL_WINDOW_DAYS))]
         calendar, calendar_missing = self._calendar_rows(lontano, self.store.read("predictions"), ids_breve)
         log.info("calendario completo: %d partite in %d mesi (%d senza previsione)",
                  len(lontano), len(calendar), calendar_missing)
@@ -392,13 +401,16 @@ class SiteBuilder:
                      days=self._group_by_day(today_rows), view_kind="today",
                      summary=self._today_summary(today_rows), filters=self._list_filters(today_rows))
         self._render("index.html", "prossime.html", title="Prossime partite",
-                     subtitle="I prossimi 7 giorni con la scheda completa, poi tutto il calendario "
-                              "della stagione in forma compatta.",
+                     subtitle=f"I prossimi {DETAIL_WINDOW_DAYS} giorni con la scheda completa, "
+                              "poi tutto il calendario della stagione in forma compatta.",
                      page_title="Prossime partite e calendario completo · CalcioMetro",
-                     page_description="I prossimi 7 giorni con schede dettagliate e l'intero calendario stagionale in forma compatta: pronostici, gol attesi e Over 2,5 per ogni gara.",
+                     page_description=f"I prossimi {DETAIL_WINDOW_DAYS} giorni con schede "
+                                      "dettagliate e l'intero calendario stagionale in forma "
+                                      "compatta: pronostici, gol attesi e Over 2,5 per ogni gara.",
                      days=self._group_by_day(upcoming_rows), view_kind="upcoming", summary=None,
                      filters=self._list_filters(upcoming_rows),
-                     calendar=calendar, calendar_missing=calendar_missing, calendar_days=7)
+                     calendar=calendar, calendar_missing=calendar_missing,
+                     calendar_days=DETAIL_WINDOW_DAYS)
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
                      subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
                      page_title="Risultati recenti e analisi post-partita · CalcioMetro",
@@ -712,33 +724,76 @@ class SiteBuilder:
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []
         by_state = {s: sum(1 for a in self.audit_rows for i in a["items"] if i["state"] == s)
                     for s in ("presente", "atteso", "mancante")}
+        # Osservabilità dei fatti FotMob (P1.4, docs/19 §2.5): il blocco «Curiosità» scartava
+        # il 34% dei fatti in silenzio. Se FotMob cambia un template, qui si vede subito.
         self._render("status.html", "stato.html", sources=rows, tables=tables,
-                     audit=self.audit_rows, audit_counts=by_state)
+                     audit=self.audit_rows, audit_counts=by_state,
+                     insight_stats=insight_drop_stats())
 
     def _write_seo_files(self, built_match_ids: set[int] | None = None) -> None:
-        """robots.txt aperto + sitemap.xml per indicizzazione organica (SEO)."""
-        base = "https://uamisjd.github.io/football-deep-analyzer"
+        """robots.txt aperto + sitemap.xml per indicizzazione organica (SEO).
+
+        Sitemap onesta (P1.6, docs/19 §2.9): una sola URL per la home (``/index.html``
+        duplicava ``/``), le 7 pagine di lega incluse (sono le più ricche di contenuto
+        indicizzabile), ``lastmod`` = data reale dell'ultimo contenuto (partite → data di
+        gara; giocatori → aggiornamento di ``player_stats``) invece della data di build
+        uguale per tutte: 4.128 ``lastmod`` identici a ogni run insegnano ai motori a
+        ignorarli.
+        """
+        base = SITE_BASE_URL
         (self.out / "robots.txt").write_text(
             "User-agent: *\nAllow: /\nSitemap: " + base + "/sitemap.xml\n"
         )
-        urls = ["", "index.html", "prossime.html", "risultati.html",
-                "accuratezza.html", "stagione.html", "stato.html", "info.html",
-                "giocatori/index.html"]
+        build_date = self.now.strftime("%Y-%m-%d")
+        urls: list[tuple[str, str]] = [
+            ("", build_date), ("prossime.html", build_date), ("risultati.html", build_date),
+            ("accuratezza.html", build_date), ("stagione.html", build_date),
+            ("stato.html", build_date), ("info.html", build_date),
+            ("giocatori/index.html", build_date),
+        ]
+        # le pagine di lega del tabellone giocatori (7 leghe = 7 URL in più)
+        try:
+            for lg in leagues():
+                pg = self.out / "giocatori" / f"{lg.key}.html"
+                if pg.exists():
+                    urls.append((f"giocatori/{lg.key}.html", build_date))
+        except Exception:
+            pass
+        # partite: lastmod = data della gara (il contenuto di una scheda cambia solo
+        # quando la gara si avvicina o si gioca); tetto prudente per il file
+        match_days: dict[int, str] = {}
         if built_match_ids:
-            urls += [f"partite/{mid}.html" for mid in sorted(built_match_ids)]
-            # schede giocatore (opzionale, sitemap solo se presenti)
+            try:
+                fx = self.store.read("fixtures")
+                if not fx.empty and "utc_kickoff" in fx.columns:
+                    sub = fx[fx.match_id.isin(set(built_match_ids))]
+                    for mid, k in zip(sub.match_id.astype(int), pd.to_datetime(sub.utc_kickoff, utc=True)):
+                        match_days[int(mid)] = k.strftime("%Y-%m-%d")
+            except Exception:
+                match_days = {}
+            for mid in sorted(built_match_ids)[:MAX_SITEMAP_URLS]:
+                urls.append((f"partite/{mid}.html", match_days.get(mid, build_date)))
+            # schede giocatore: lastmod = data dell'aggiornamento dei dati giocatore
+            players_date = build_date
+            try:
+                ps = self.store.read("player_stats")
+                col = next((c for c in ("updated_at", "scraped_at", "made_at") if c in ps.columns), None)
+                if col and not ps.empty:
+                    players_date = pd.to_datetime(ps[col], utc=True, errors="coerce").max().strftime("%Y-%m-%d")
+            except Exception:
+                pass
             try:
                 from ..site.players import PlayerCatalog
                 cat = PlayerCatalog(self.store)
-                urls += [f"giocatori/{pid}.html" for pid in cat.player_ids()[:5000]]
+                urls += [(f"giocatori/{pid}.html", players_date)
+                         for pid in cat.player_ids()[:MAX_SITEMAP_URLS - len(urls)]]
             except Exception:
                 pass
-        now = self.now.strftime("%Y-%m-%d")
         lines = ['<?xml version="1.0" encoding="UTF-8"?>',
                  '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
-        for u in urls:
+        for u, lastmod in urls:
             loc = f"{base}/{u}" if u else base + "/"
-            lines.append(f"  <url><loc>{loc}</loc><lastmod>{now}</lastmod></url>")
+            lines.append(f"  <url><loc>{loc}</loc><lastmod>{lastmod}</lastmod></url>")
         lines.append("</urlset>")
         (self.out / "sitemap.xml").write_text("\n".join(lines), encoding="utf-8")
 
@@ -748,7 +803,7 @@ class SiteBuilder:
         self.out.mkdir(parents=True)
         (self.out / ".nojekyll").write_text("")
         (self.out / "robots.txt").write_text(
-            "User-agent: *\nAllow: /\nSitemap: https://uamisjd.github.io/football-deep-analyzer/sitemap.xml\n"
+            "User-agent: *\nAllow: /\nSitemap: " + SITE_BASE_URL + "/sitemap.xml\n"
         )
         fx = self.store.read("fixtures")
         if fx.empty:
@@ -756,6 +811,8 @@ class SiteBuilder:
                          subtitle="Esegui `fda collect` per popolare il database.", days=[],
                          view_kind="today", summary=None, filters=[])
             self.build_status()
+            self._render("404.html", "404.html", root=f"{SITE_BASE_URL}/", no_index=True,
+                         title="Pagina non trovata — CalcioMetro")
             return {"matches": 0}
         ids = self.build_indexes(fx)
         # tutte le partite finite con dati raccolti hanno la loro pagina (archivio:
@@ -795,6 +852,10 @@ class SiteBuilder:
         except Exception:
             lab_rows = 0
         self._render("info.html", "info.html", title="Metodologia e fonti", cal=cal_info, lab_rows=lab_rows)
+        # 404 del sito (P1.6, docs/19 §2.9): GitHub Pages lo serve a QUALSIASI percorso,
+        # quindi i link sono assoluti sul base del sito e la pagina è noindex.
+        self._render("404.html", "404.html", root=f"{SITE_BASE_URL}/", no_index=True,
+                     title="Pagina non trovata — CalcioMetro")
         # sitemap finale con tutte le partite effettivamente generate
         try:
             self._write_seo_files(built)

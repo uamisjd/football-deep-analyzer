@@ -17,6 +17,12 @@ RAW_DIR = DATA_DIR / "raw"
 CACHE_DIR = DATA_DIR / "cache"
 PROCESSED_DIR = DATA_DIR / "processed"
 
+#: Giorni avanti per cui si raccolgono i dettagli partita (formazione, arbitro, meteo, h2h)
+#: e per cui il sito promette «la scheda completa». UN SOLO PUNTO: collect, build e i testi
+#: delle pagine leggono questo valore — un run manuale con un default diverso pubblicava un
+#: elenco che prometteva più schede di quante ne esistano (P1.5, docs/19 §2.4).
+DETAIL_WINDOW_DAYS: int = 7
+
 
 @dataclass(frozen=True)
 class League:

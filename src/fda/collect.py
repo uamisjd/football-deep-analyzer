@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
-from .config import League, cups, leagues, season_start_year
+from .config import DETAIL_WINDOW_DAYS, League, cups, leagues, season_start_year
 from .diagnostics import MAX_DETAIL, MAX_DIGEST, bump, detail, digest, shape_of
 from .sources.espn import EspnClient, to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
@@ -108,7 +108,7 @@ def collect_league(
     lg: League,
     store: Store,
     past_days: int = 3,
-    future_days: int = 3,
+    future_days: int = DETAIL_WINDOW_DAYS,
     max_matches: int = 40,
     max_backfill: int = 40,
     max_refresh: int = 6,

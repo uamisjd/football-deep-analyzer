@@ -1561,9 +1561,14 @@ def check_assets(site: Path) -> tuple[list[str], int]:
         return fails, 0
     for pg in sorted(site.rglob("*.html")):
         html = pg.read_text(encoding="utf-8")
-        # index.html → 0; partite/123.html → 1; giocatori/123.html → 1
+        # index.html → 0; partite/123.html → 1; giocatori/123.html → 1.
+        # Eccezione 404.html (P1.6): GitHub Pages la serve a QUALSIASI percorso, quindi
+        # il suo CSS deve essere assoluto sul base del sito, non relativo alla profondità.
         depth = len(pg.parent.relative_to(site).parts)
-        atteso = "../" * depth + "assets/site.css?v="
+        if pg.name == "404.html" and depth == 0:
+            atteso = "https://uamisjd.github.io/football-deep-analyzer/assets/site.css?v="
+        else:
+            atteso = "../" * depth + "assets/site.css?v="
         links = re.findall(r'<link rel="stylesheet" href="([^"]+)">', html)
         checks += 1
         if not any(h.startswith(atteso) for h in links):

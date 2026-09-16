@@ -82,6 +82,15 @@ jobs:
           path: run.log
           retention-days: 7
 
+      # Invarianti di pubblicazione (docs/19 P0.8, §18.5): verify_site rilegge i numeri
+      # pubblicati e li confronta con i Parquet e con il modello. Un numero che non torna
+      # fallisce il run PRIMA del commit dei dati e del deploy Pages (prima si girava solo
+      # in locale: il gate in CI era una voce «da confermare» rimasta vuota).
+      - name: Verifica il sito (verify_site)
+        run: |
+          set -euo pipefail
+          python scripts/verify_site.py --site site --data data/processed 2>&1 | tee verify.log | tail -20
+
       - name: Commit dei dati aggiornati
         run: |
           git config user.name "fda-bot"

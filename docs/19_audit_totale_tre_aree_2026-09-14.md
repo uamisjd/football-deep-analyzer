@@ -2437,18 +2437,18 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | # | Intervento | File | Rischio |
 |---|---|---|---|
 | P1.1 | ✅ **FATTO** (2026-09-16, `docs/21` §18.3) — `outcome_freqs()` su history (7.396 gare), fallback dichiarato, colonna «n base» | `build.py` | — | test + invariante [3b] sul Δ |
-| P1.2 | Etichette arbitro relative alla lega + campione minimo 15 | `analysis.py:1806`, `build()` | basso |
-| P1.3 | Un solo profilo arbitro (`referee_profile`) usato anche dalla narrazione | `analysis.py:1894` | basso |
-| P1.4 | 5 template di curiosità recuperabili + contatore degli scarti | `analysis.py:262+` | basso |
-| P1.5 | `DETAIL_WINDOW_DAYS` come unica fonte del "7 giorni" | `config.py`, `collect.py`, `cli.py`, `build.py`, 2 template | basso |
-| P1.6 | `404.html` + sitemap (home unica, 7 leghe, lastmod reale, niente `[:5000]`) | nuovo template, `build.py:_write_seo_files` | medio (percorsi assoluti nel 404) |
+| P1.2 | ✅ **FATTO** (2026-09-16, `docs/21` §19.2) — etichette relative alla lega + MIN_REFEREE_MATCHES=15; senza media di lega solo numeri | | `analysis.py:1806`, `build()` | basso |
+| P1.3 | ✅ **FATTO** (2026-09-16, `docs/21` §19.2) — un solo profilo `referee_profile()` in build() e list_context(); chiave duplicata eliminata | | `analysis.py:1894` | basso |
+| P1.4 | ✅ **FATTO** (2026-09-16, `docs/21` §19.3) — 5+1 template recuperati (66,0% → 74,3%), `INSIGHT_DROP_LOG` + contatori in stato.html | | `analysis.py:262+` | basso |
+| P1.5 | ✅ **FATTO** (2026-09-16, `docs/21` §19.4) — `DETAIL_WINDOW_DAYS` in config.py, test di unicità col criterio del §2.4 | | `config.py`, `collect.py`, `cli.py`, `build.py`, 2 template | basso |
+| P1.6 | ✅ **FATTO** (2026-09-16, `docs/21` §19.5) — 404.html assoluto/noindex + sitemap onesta (lastmod reali, 7 leghe, home unica) | | nuovo template, `build.py:_write_seo_files` | medio (percorsi assoluti nel 404) |
 | P1.7 | Proiezioni: arrotondamento all'unità + `mc_se()`, `TOP_N` da config, tie-break dichiarato, `neutral` limitato | `season_sim.py`, `stagione.html`, `leagues.yaml` | medio |
 | P1.8 | Assert di coerenza 1X2/doppia chance | `predict.py` | basso |
 | P1.9 | Backoff ESPN standings + stato "SOSPESO" in *Stato fonti* | `collect.py`, `status.html` | basso |
 | P1.10 | Open-Meteo: pubblicare il motivo delle 0 chiamate + test settimanale del fallback | `collect.py`, `status.html`, `daily.yml` | basso |
 | P1.11 | Griglia pre-registrata nel laboratorio (`Candidate.grid`, `n_tentativi`) | `lab.py`, `docs/00 §D` | basso |
 | P1.12 | Griglia di calibrazione allineata ai bounds (o claim ridotto in `info.html`) | `calibration.py` | **alto** se si rifa il fit → preferire il claim ridotto |
-| P1.13 | A11y: skip-link, `<main>`, `scope` su 99.839 `<th>`, `h4`→`h3` | `base.html` + ~15 template | medio (esteso) |
+| P1.13 | ✅ **FATTO** (2026-09-16, `docs/21` §19.6) — skip-link + footer h3→h2; scope e main già coperti (P2-8a); test strutturale | | `base.html` + ~15 template | medio (esteso) |
 | P1.14 | Shrinkage per-90 con `shrink_rate()` unitario + eliminare `p90_shrunk()` morto | `players.py` | medio (cambia le classifiche) |
 | P1.15 | `prossime.html`: debounce filtro + `content-visibility` sulle card | `index.html`/JS, `base.html` | basso |
 

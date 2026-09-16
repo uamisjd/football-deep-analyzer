@@ -12,7 +12,9 @@
 <div class="card"><h2>Tabelle</h2>
 <div class="tablewrap"><table><tr><th scope="col">Tabella</th><th scope="col" class="r">Righe</th><th scope="col" class="r">KB</th></tr>
 {% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows|it_num }}</td><td class="r">{{ t.kb|dec(1) }}</td></tr>{% endfor %}
-</table></div></div>
+</table></div>
+{% if insight_stats %}<p class="small mut">Fatti FotMob (blocco «Curiosità»): {{ insight_stats.tradotti|it_num }} tradotti · {{ insight_stats.scartati|it_num }} scartati. Scarto più frequente ({{ insight_stats.top_n }}×, template originale): <code>{{ insight_stats.top_shape }}</code> — se cresce di colpo, FotMob ha cambiato un template e va aggiunta la traduzione.</p>{% endif %}
+</div>
 </div>
 <div class="card">
 <h2>Completezza schede future</h2>

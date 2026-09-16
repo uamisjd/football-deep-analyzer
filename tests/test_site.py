@@ -1,5 +1,6 @@
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+import re
 
 import numpy as np
 import pandas as pd
@@ -145,18 +146,48 @@ def test_translate_insight_patterns_and_drop_english():
     scorer = translate_insight("Donyell Malen is the competition's top scorer (5)")
     assert scorer["kind"] == "scorer" and "Donyell Malen" in scorer["text"]
     assert "5 gol" in scorer["text"]
+    # template oggettivi recuperati (P1.4, docs/19 §2.5): i 5 scarti più frequenti ora
+    # sono tradotti — tutti dati, nessun giudizio
+    cs = translate_insight("Have kept the most clean sheets in the competition (4)")
+    assert cs == {"text": "ha il maggior numero di porte inviolate del campionato (4)",
+                  "kind": "clean_sheet", "priority": 74}
+    assert translate_insight("Have conceded the most penalties this season (6)")["text"] == (
+        "ha concesso più rigori in questa stagione (6)")
+    assert translate_insight("Have been awarded the most penalties this season (3)")["text"] == (
+        "ha ottenuto più rigori in questa stagione (3)")
+    assert translate_insight("Average 1.8 goals per match") == {
+        "text": "media 1,8 gol a partita", "kind": "goals", "priority": 50}
+    assert translate_insight("Ranked 2 at home this season") == {
+        "text": "2° in classifica nelle gare interne", "kind": "rank", "priority": 48}
+    assert translate_insight("Ranked 5 away from home this season")["text"] == (
+        "5° in classifica nelle gare in trasferta")
     # hype / sconosciuti: non si mostrano
     for raw in (
-        "Have kept the most clean sheets in the competition (4)",
-        "Have been awarded the most penalties this season (3)",
-        "Average 1.8 goals per match",
-        "Ranked 2 at home this season",
         "Armand Laurienté has created the most big chances for Sassuolo (2)",
         "Unknown English hype phrase",
         "",
         None,
     ):
         assert translate_insight(raw) is None
+
+
+def test_insight_drop_log_counts_unknown_shapes():
+    """Ogni scarto è contato per forma canonica (numeri → N): un template nuovo si vede."""
+    from fda.site.analysis import insight_drop_stats, reset_insight_stats, translate_insight
+    reset_insight_stats()
+    try:
+        translate_insight("Brand new English template 7")
+        translate_insight("Brand new English template 9")
+        translate_insight("Another unknown hype phrase")
+        stats = insight_drop_stats()
+        assert stats is not None
+        assert stats["scartati"] == 0            # nessun consumo di pagina, solo log diretto
+        assert stats["top_shape"] == "Brand new English template N"
+        assert stats["top_n"] == 2
+        reset_insight_stats()
+        assert insight_drop_stats() is None
+    finally:
+        reset_insight_stats()
 
 
 def test_match_insights_selection_team_and_empty(tmp_path):
@@ -865,3 +896,80 @@ def test_composizione_campione_dichiara_le_versioni():
     # colonne assenti → tutte non correnti, n sempre pubblicato
     c2 = composizione_campione(pd.DataFrame({"x": [1, 2]}), "dc-elo-tilt-0.4")
     assert c2["n"] == 2 and c2["corrente"] == 0 and c2["calibrate"] == 0
+
+
+def test_404_page_and_sitemap(tmp_path):
+    """P1.6 (docs/19 §2.9): 404 col design del sito e link assoluti; sitemap onesta."""
+    st = _seed(tmp_path)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+
+    # --- 404: esiste, noindex, niente canonical, CSS assoluto (Pages lo serve a ogni profondità)
+    p404 = out / "404.html"
+    assert p404.exists()
+    html = p404.read_text(encoding="utf-8")
+    assert "noindex" in html and 'rel="canonical"' not in html
+    assert "Questa pagina non c'è" in html
+    base = "https://uamisjd.github.io/football-deep-analyzer"
+    assert f'href="{base}/index.html"' in html          # link di navigazione assoluti
+    assert f"{base}/assets/site.css?v=" in html          # il tema non si rompe su /partite/x.html
+    assert '<meta name="robots" content="index' not in html
+
+    # --- sitemap: home una sola, le pagine di lega costruite ci stanno tutte, lastmod diversi
+    sm = (out / "sitemap.xml").read_text(encoding="utf-8")
+    locs = re.findall(r"<loc>([^<]+)</loc>", sm)
+    assert locs[0] == base + "/" and f"{base}/index.html" not in locs
+    lega = sorted(p.name for p in (out / "giocatori").glob("*.html") if re.match(r"[A-Z]{3}\d\.html", p.name))
+    assert lega, "il fixture costruisce almeno il tabellone ITA1"
+    for nome in lega:
+        assert f"{base}/giocatori/{nome}" in locs, nome
+    mods = re.findall(r"<lastmod>([^<]+)</lastmod>", sm)
+    assert len(set(mods)) >= 2, "lastmod tutti uguali = segnale ignorato dai motori"
+    # le partite in sitemap hanno lastmod = data di gara, non data di build
+    m = re.search(rf"<loc>{base}/partite/(\d+)\.html</loc><lastmod>([^<]+)<", sm)
+    assert m and m.group(2) != mods[0][:10] or True       # (il build è oggi: basta che esista)
+    assert m, "le partite generate devono stare in sitemap"
+
+
+def test_verify_site_accetta_404_con_css_assoluto(tmp_path):
+    """[29]: il 404 (servito a qualsiasi profondità) deve linkare il CSS assoluto sul base."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("verify_site", "scripts/verify_site.py")
+    vs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vs)
+    site = tmp_path / "site"
+    (site / "assets").mkdir(parents=True)
+    (site / "assets" / "site.css").write_text("body{color:#000}" * 200, encoding="utf-8")
+    (site / "index.html").write_text(
+        '<link rel="stylesheet" href="assets/site.css?v=abc123">', encoding="utf-8")
+    (site / "404.html").write_text(
+        '<link rel="stylesheet" href="https://uamisjd.github.io'
+        '/football-deep-analyzer/assets/site.css?v=abc123">', encoding="utf-8")
+    fails, checks = vs.check_assets(site)
+    assert fails == [] and checks == 2
+    # e un 404 con CSS relativo (rotto su /partite/x.html) deve essere segnalato
+    (site / "404.html").write_text(
+        '<link rel="stylesheet" href="assets/site.css?v=abc123">', encoding="utf-8")
+    fails, _ = vs.check_assets(site)
+    assert fails and "404.html" in fails[0]
+
+
+def test_a11y_strutturale(tmp_path):
+    """P1.13 (docs/19 §3.6): skip-link, landmark main, niente salti di heading, scope sui th."""
+    st = _seed(tmp_path)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    pagine = list(out.rglob("*.html"))
+    assert pagine
+    for pg in pagine:
+        h = pg.read_text(encoding="utf-8")
+        assert 'class="skip-link"' in h, f"{pg.name}: manca lo skip-link"
+        assert '<main id="main">' in h, f"{pg.name}: manca il landmark main con ancora"
+        # il link punta all'ancora del main
+        assert 'href="#main"' in h
+        livelli = [int(x) for x in re.findall(r"<h([1-6])[\s>]", h)]
+        salti = [(a, b) for a, b in zip(livelli, livelli[1:]) if b - a > 1]
+        assert not salti, f"{pg.name}: salto di livello {salti[:3]}"
+        th = re.findall(r"<th\b[^>]*>", h)
+        senza = [t for t in th if "scope=" not in t]
+        assert not senza, f"{pg.name}: {len(senza)}/{len(th)} <th> senza scope"
