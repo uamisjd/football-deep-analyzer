@@ -724,3 +724,34 @@ PR ma in un difetto latente della card notizie di PR #34, che è stato possibile
 proprio grazie a un fix di questa PR (la query Google News corretta ha popolato `news.parquet`,
 attivando il percorso che conteneva il difetto). Diagnosi, fix e strumento di lettura dei log:
 `docs/21` §16; fix in PR #36.
+
+### 9.10 Merge PR #38 — conferme blocco 4 + coda P0 vuota in `main` (2026-09-16, deroga esplicita)
+
+**Contenuto PR #38** (9 commit, base `main`, testa `arena/01a0a9eb`; `docs/21` §18):
+- **conferme dal vivo** del primo daily post-PR #37: `transfers` **4.230 righe vere** (132/132
+  squadre), invariante **[26]** attiva su 72 pagine, card notizie senza doppi;
+- **[20]** falso positivo corretto (stesso URL raccolto 2 volte con date diverse →
+  `notizia_in_finestra`, «almeno una riga nella finestra» + test sulle righe reali);
+- **P1.1** baseline naive = frequenze reali per lega (`outcome_freqs`, 7.396 gare, colonna
+  «n base», fallback dichiarato sotto le 30) e **P0.6** composizione del campione
+  (`composizione_campione`: 93 gare valutate, 12 col modello corrente) con invariante **[3b]**;
+- **P0.5** CSS esterno con cache-busting (**sito 273 → 109 MB, −60%**), controllo **[29]**;
+- coda P0 chiusa prima del merge su richiesta esplicita dell'utente: **P0.9** (`HttpClient.mark()`,
+  fonti non usate, recenza 48h in `stato.html`), **P0.7** decisione A (`scripts/benchmark_quote.py`
+  + workflow mensile `benchmark.yml`; misura reale riprodotta identica al §1.1 di `docs/19`:
+  n=4.372, Δ +0,00960, 0/7 leghe), **P0.8** giudicato coperto.
+
+**Verifiche prima del merge (misurate, non presunte):** suite **276 passed**; build completa
+376/2.364/7.490 + `verify_site` **0 problemi · 32.867 controlli**; ruff invariato sul baseline;
+check `test` **pass** (1m20s); PR **MERGEABLE · CLEAN**; `git status --porcelain` vuoto.
+
+**Deroga merge PR #38**: l'utente ha scritto esplicitamente «Please merge the pull request»
+(2026-09-16). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 38 --merge` **dopo aver verificato** check verdi, PR mergeable e assenza di lavoro
+residuo; merge commit **`6459952`** in `main` (2026-09-16). Documentata qui e in `STATO.md`
+sedicesimo giro. Catena delle deroghe precedenti: PR #23 (2026-09-12), #27 e #28 (2026-09-13),
+#29 (2026-09-13), #34 (2026-09-15), #35 (2026-09-15).
+
+**Da verificare al primo daily post-merge** (run `35098123287` partito col push del merge):
+verify_site 0 in CI, CSS esterno (`assets/site.css`) servito da Pages, righe
+`understat:NED1/POR1` in transizione d'uscita (48h), workflow `benchmark-quote` disponibile.
