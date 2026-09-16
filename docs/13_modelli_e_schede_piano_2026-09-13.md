@@ -813,3 +813,64 @@ PR #23 (2026-09-12), #27 e #28 (2026-09-13), #29 (2026-09-14), #34 (2026-09-15),
 `tests` `35129006479`): `verify_site` come gate in CI verde, deploy Pages con `assets/site.css`
 esterno, schede giocatore con le nuove stime (`◇`/`◎`) e **0 tooltip «/90′»** sulle quote.
 
+### 9.13 Merge PR #44 — verifica totale del progetto + backoff esteso allo scoreboard ESPN (2026-09-16, deroga esplicita)
+
+**Contenuto PR #44** (4 commit, testa `arena/01a0ab67`, 10 file; misura completa in `docs/23` §5):
+
+- **fix — lo scoreboard ESPN era l'unica fase ESPN fuori dal backoff.** PR #43 gli ha dato una
+  riga propria in `source_status` e il primo run con quella contabilità (`35131980208`, raccolta
+  18:09-18:11 UTC) lo ha misurato: **HTTP 403 su 7 leghe su 7**, 1 richiesta ciascuna, **0 righe**;
+  in `data/processed/` **non è mai esistita** una tabella `espn_events`/`espn_team_stats`/
+  `espn_standings`, quindi ESPN non ha mai portato un dato in produzione. La frase «lo scoreboard,
+  **che risponde**, resta attivo» era un'assunzione, non una misura. Costo: **7 richieste a run =
+  35 al giorno (~1.050 al mese) per zero righe** + **7 righe rosse «ERRORE»** a ogni run in *Stato
+  fonti*. Ora `collect.py` chiama `sospensione(store, f"espn scoreboard:{lg.key}",
+  "espn scoreboard")` come per classifica e notizie, e la fase è in `_WARN_NON_BLOCCANTE` (degrado
+  coperto da FotMob → AVVISO). **`scripts/verify_site.py` non è cambiato**: l'invariante `[28]` era
+  già generica su qualunque riga «SOSPESO»;
+- **docs**: `docs/23` §5 (diagnosi, misure, prova end-to-end, nota sulla doppia numerazione §3 del
+  documento) e annotate le due affermazioni smentite (`docs/22` §3 e la riga P1.9 di `docs/19` §4);
+- **regola D**: `STATO.md` aggiornato al merge di **PR #43** (`6404a74`, 18:03:11Z, eseguito
+  dall'**utente**) con l'esito del primo daily post-merge **verde** (`35131980208`: gate
+  `verify_site` success, deploy Pages 18:23, dati `c969b6b`) e le conferme dal vivo che il giro
+  precedente lasciava «da verificare» (8 righe `espn:*` SOSPESO con 0 richieste, CSS esterno
+  servito, 0 tooltip «/90′» sulle quote, 2.825 schede giocatore con ◇/◎);
+- **regola A5**: i giri dal **tredicesimo al ventesimo** archiviati in
+  `docs/STATO_archivio_2026-09-16.md` (testo identico), in `STATO.md` restano 3 giri + i link
+  (66,9 → 52,7 KB); corrette la baseline ruff (47 del 2026-09-08 → **173** misurata con ruff 0.16.8)
+  e l'avviso sulle voci storiche della sezione «In corso»;
+- **P2.5 chiuso**: indice completo dei **27 file di `docs/`** nel briefing §6 con l'albero reale del
+  codice (`backoff.py`, `diagnostics.py`, `site/rates.py`, `sources/news.py`, `sources/openmeteo.py`,
+  `models/` e `scripts/` completi, 12 template, 5 workflow), «`tests/` 20+ test» → **347**,
+  limitazione ESPN riscritta sulla misura, e tre voci stale corrette («PR #16 in attesa di merge»,
+  «Accuratezza: 20 gare, RPS 0,205», «STATO aggiornato al 2026-09-12»).
+
+**Verifiche pre-merge (misurate, non presunte):** suite **347 passed** (343 → +4); `fda build`
+exit 0 con 376/2.364/7.478; `verify_site` exit 0 con **0 problemi · 89.448 controlli**; **prova
+end-to-end sul caso reale** (righe vere del run 18:22 + 4 run falliti per lega + la riga di pausa
+che `collect_league` scriverebbe, Parquet poi ripristinato) con **0 problemi · 89.455 controlli** e
+*Stato fonti* a **15 righe ESPN tutte SOSPESO con 0 richieste · 0 ERRORE**; ruff **173** = baseline
+(0 nuove: 10 prima e 10 dopo sui file toccati); check `test` **pass** (1m19s); PR **MERGEABLE ·
+CLEAN**; `git status --porcelain` vuoto; `git log origin/main..HEAD` con solo i 4 commit della PR;
+HEAD locale = HEAD remoto (`ffe0529`).
+
+**Deroga merge PR #44**: l'utente ha scritto esplicitamente «Please merge the pull request»
+(2026-09-16). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 44 --merge` **dopo aver verificato** check verdi, PR mergeable e assenza di lavoro
+residuo; merge commit **`63403bb`** in `main` (2026-09-16T19:27:50Z). Catena delle deroghe:
+PR #23 (2026-09-12), #27 e #28 (2026-09-13), #29 (2026-09-14), #34 (2026-09-15), #35 (2026-09-15),
+#38 (2026-09-16), #42 (2026-09-16), **#44 (2026-09-16)**. *(PR #43 non è in catena: l'ha fusa
+l'utente.)*
+
+**Chiuso anche il «da verificare» del §9.12.** Le quattro voci lasciate aperte dal merge di PR #42
+sono state verificate in questo giro sul run **`35131980208`** e sul build locale: gate `verify_site`
+verde in CI (dopo il fix di PR #43, che era la causa del rosso di `35129006426`), deploy Pages con
+`assets/site.css` esterno (4.131 pagine, 125 MB), **2.825** schede giocatore con le stime ◇/◎ e
+**0 tooltip «/90′»** sulle quote.
+
+**Da verificare al primo daily post-merge** (run `35140709937`, partito col push del merge assieme a
+`tests` `35140709946`): gate `verify_site` verde e deploy Pages; in *Stato fonti* le righe
+`espn scoreboard:*` come **AVVISO** e non più ERRORE rosso, con 1 richiesta ciascuna — la
+**sospensione** scatta solo quando la serie arriva a `BACKOFF_FAILS = 5` run e la serie è partita dal
+run `35131980208`, quindi è attesa dal **2026-09-17** (righe SOSPESO con 0 richieste e richieste
+ESPN del run da 7 a 0).
