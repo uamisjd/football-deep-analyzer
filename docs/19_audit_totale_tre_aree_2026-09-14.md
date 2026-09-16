@@ -2428,9 +2428,9 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P0.4 | ✅ **FATTO** — scala dell'istogramma inclusa la coda (nessun clamp), copertura reale pubblicata al posto del «90%» dichiarato, `q90_label` per l'estremo aperto, 3 invarianti nuove in `verify_site.py` e regex della didascalia rese indipendenti dagli a capo | `advanced.py`, `match.html`, `verify_site.py` §3.4 | **basso** | `grep height:[0-9]*%` → **0**; 15.548 controlli OK |
 | P0.5 | ✅ **FATTO** (2026-09-16, `docs/21` §18.4) — CSS esterno con cache-busting, **sito 273 → 109 MB (−60%)**, invariante [29] (4.136 pagine) | `build.py`, `base.html`, `assets/site.css` | — | verify_site 0 problemi · 32.867 controlli |
 | P0.6 | ✅ **FATTO** (2026-09-16, `docs/21` §18.3) — composizione dichiarata: 12 su 93 col modello corrente | `build.py`, `accuracy.html` | — | invariante [3b]: composizione = riga «Tutti» |
-| P0.7 | `benchmark_quote.py` + job mensile: il mercato come riferimento misurato | nuovo script, nuovo workflow | **nessuno** (non tocca il modello) | n≈4.372, Δ≈+0,0096 |
-| P0.8 | `verify_site.py [11]` invarianti di pubblicazione | `scripts/verify_site.py` | **basso** | deve fallire prima delle fix, passare dopo |
-| P0.9 | Contatore richieste per lega (delta) + nessuna riga per fonti non usate | `collect.py:246`, `http.py` | **basso** | `stato.html`: numeri non monotoni, somma = totale run |
+| P0.7 | ✅ **FATTO** (2026-09-16, `docs/21` §18.7) — decisione A, misura riprodotta identica (n=4.372, Δ +0,00960), job mensile in CI | `scripts/benchmark_quote.py`, `benchmark.yml` | — | 4 test offline + misura reale |
+| P0.8 | ✅ **COPERTO** (2026-09-16, `docs/21` §18.8) — [9]/[10]/[11]/[11a] esistenti + [3b] e [29] nuovi coprono ogni fix P0 | — | — | verify_site 32.867 controlli |
+| P0.9 | ✅ **FATTO** (2026-09-16, `docs/21` §18.6) — `HttpClient.mark()`, nessuna riga per fonti non usate, filtro recenza 48h in stato.html | `collect.py`, `http.py`, `build.py` | — | test delta fra leghe + riga understat:NED1 assente |
 
 ## P1 — entro la settimana (correttezza dei contenuti e struttura)
 

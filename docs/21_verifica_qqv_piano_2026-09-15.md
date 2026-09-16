@@ -991,11 +991,61 @@ profondità. `verify_site` finale: **0 problemi · 32.867 controlli**.
 ### 18.5 Stato della coda P0 dopo questo turno
 
 - ✅ P0.5 (CSS esterno), ✅ P0.6 (composizione), ✅ P1.1 (baseline naive) — questo turno.
-- Restano in coda: **P0.7** (`benchmark_quote.py` + job mensile, il mercato come riferimento
-  misurato — raccomandata opzione A di `docs/19` §1.1), **P0.8** (altre invarianti di
-  pubblicazione oltre [3b]/[29]), **P0.9** (contatore richieste per lega), poi i P1
-  (`docs/19` §4, sequenza consigliata).
+- ✅ **P0.9, P0.7 e P0.8 completati nello stesso giro, PRIMA del merge** (su richiesta
+  esplicita dell'utente «meglio completare il lavoro prima del merge?», in applicazione della
+  regola D: finché la PR è aperta un commit in più è immediato) — vedi §18.6-18.8.
+- **La coda P0 di `docs/19` è vuota.** Restano i P1 (§4, sequenza consigliata) e i P2.
 
 **Prossimo passo**: merge utente della PR → al prossimo daily confermare che `verify_site` in
-CI resta a 0 e che il deploy Pages serve il CSS esterno; poi P0.7 (script benchmark quote in
-CI mensile) come blocco successivo.
+CI resta a 0, che il deploy Pages serve il CSS esterno e che le righe `understat:NED1/POR1`
+escono di pagina (transizione 48h).
+
+### 18.6 P0.9 completato: richieste per lega e fonti non usate (`docs/19` §2.1)
+
+Lo stato della questione: §15.6 (giro 13) aveva già reso i contatori **per fase**; restavano
+(a) l'idioma esplicito e (b) le righe per le **fonti non usate**. Fatto:
+- **`HttpClient.mark()`** (nuovo, `http.py`): istantanea del contatore, unico idioma per i
+  delta — usato in `collect_league` (req0 + report), coppe, news, transfers.
+- **Nessuna riga per le fonti non usate**: `collect_league` non registra più `understat` per
+  NED1/POR1 (`has_understat=False`) — una riga «OK, 0 richieste» diceva che la fonte era
+  stata interrogata con successo, il che è falso. Verifica del §2.1: per FotMob i numeri per
+  lega sono già non monotoni (ITA1 18, …) e la somma per lega equalizza il totale del run.
+- **`stato.html` con filtro di recenza**: una fonte non aggiornata da **48h** esce di pagina
+  (il daily aggiorna tutto 5×/giorno) — le righe `understat:NED1/POR1` storiche restano
+  visibili 2 giorni con la loro spiegazione onesta, poi escono; nel Parquet restano tutte.
+- Test nuovo: due leghe in sequenza con client condiviso → ogni report riporta il proprio
+  delta (2, non 4); NED1 senza voce `understat` né riga `understat:NED1`. Fakes dei test
+  allineati al contratto `mark()`. Suite **272 passed** al commit del blocco.
+
+### 18.7 P0.7 completato: il mercato come riferimento misurato (decisione **A**, `docs/19` §1.1)
+
+- **`scripts/benchmark_quote.py`**: scarica i CSV Pinnacle di chiusura dal mirror già in uso
+  (7 leghe × 3 stagioni, cache 30 giorni in `data/cache/odds`, gitignored), aggancia il
+  backtest via `canonical()` e misura RPS modello vs mercato de-vigged con bootstrap appaiato.
+  Le quote **non entrano nel modello** (nessuna modifica a config/leagues.yaml, il test
+  `test_history_uses_datahub_base_override` resta com'è): solo riferimento esterno — coerenza
+  con la direttiva utente sulle quote (non sono contenuto editoriale).
+- **Misura reale riprodotta oggi** (dal sandbox, cache popolata): n agganciate **5.543**
+  (95,3%), n valutate **4.372**, RPS modello **0,19803** vs mercato **0,18843**, **Δ +0,00960**
+  IC95 [+0,00792; +0,01125] interamente positivo, **0 leghe vinte su 7** — **identico** alla
+  misura del §1.1 (stesso seed). La lettura onesta resta: il modello chiude il 77% della
+  distanza naive→mercato; il resto è il margine da chiudere.
+- **`.github/workflows/benchmark.yml`**: mensile (il 3 del mese) + dispatch manuale,
+  artifact JSON. Attivato dal merge (i cron girano solo sul ramo di default).
+- 4 test offline: devig (quota invalida → NaN, mai inventata), rps coerente con quella del
+  progetto, Δ = modello − mercato ricalcolato (stessa regola di [3b]), aggancio via nomi
+  canonici («Man United» → «Manchester United»).
+- **Limite del sandbox e workaround** (per le prossime sessioni): `raw.githubusercontent.com`
+  non è raggiungibile (TLS EOF, regola B.6); i 21 CSV si possono leggere via **API contents**
+  di `api.github.com` (base64) popolando `data/cache/odds/` con i nomi
+  `<dir>-<stagione>.csv` — fatto, e il benchmark gira poi tutto da cache. In CI la rete c'è:
+  il workflow non ha bisogno del workaround.
+
+### 18.8 P0.8: giudicato coperto (senza codice nuovo)
+
+L'obiettivo del P0.8 era «invarianti di pubblicazione» per proteggere le fix P0.1-P0.4.
+Stato effettivo: **[9]** (distribuzioni dei gol, 3 invarianti), **[10]** (scomposizioni),
+**[11]/[11a]** (calendario e barre 1X2) esistono già e girano a ogni verifica; a questi
+questo giro ha aggiunto **[3b]** (Δ e composizione in Accuratezza) e **[29]** (CSS esterno).
+I test di tema/contrasto (14) proteggono il CSS a livello di sorgente. Nessun ulteriore
+controllo richiesto: la copertura è completa e ogni fix P0 ha la sua invariante o il suo test.
