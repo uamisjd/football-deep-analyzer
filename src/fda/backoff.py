@@ -44,11 +44,24 @@ def is_suspended_row(errore: Any) -> bool:
 
 
 def state(store: Store, source: str, step: str) -> tuple[int, int]:
-    """(fallimenti consecutivi, pause consecutive) dell'ultima serie di errore.
+    """(tentativi falliti consecutivi, pause consecutive) dell'ultima serie di errore.
 
     Si cammina a ritroso nella storia della coppia (``source``, ``step``) partendo dal run più
-    recente: prima le righe di pausa, poi quelle di fallimento, e ci si ferma alla prima riga
-    riuscita o a una pausa più vecchia dell'ultimo tentativo (inizio di un ciclo precedente).
+    recente e si contano due cose distinte:
+
+    - le **pause** consecutive in testa (righe «sospeso …»: la fonte non è stata interrogata);
+    - gli **tentativi falliti** che precedono quelle pause, **saltando le pause delle serie
+      precedenti**, fino al primo run riuscito.
+
+    La seconda regola è la correzione del 2026-09-16 (docs/23 §3). Prima una **sonda** che
+    falliva veniva contata come il primo fallimento di una serie nuova: dopo ogni sonda la
+    fonte ripartiva da ``fails = 1``, servivano altri 4 tentativi prima di risospenderla e il
+    costo reale diventava ~5 richieste ogni 9 run invece di 1 ogni 5 — misurato sul run
+    `35129006426`, dove `espn:ITA1` aveva **76 fallimenti consecutivi** e una richiesta nel run.
+    Con la semantica corretta il ciclo di una fonte rotta è «``BACKOFF_PROBE_RUNS`` pause +
+    1 tentativo» = **5 run, una sola richiesta** (una al giorno con 5 run al giorno), e una fonte
+    rientrata si riattiva subito, perché una riga riuscita chiude comunque la serie.
+
     ``step`` è il prefisso dell'errore (es. ``"espn standings"``): una fonte che fallisce su una
     richiesta e non su un'altra non viene sospesa a torto.
     """
@@ -69,19 +82,16 @@ def state(store: Store, source: str, step: str) -> tuple[int, int]:
     if rows.empty:
         return 0, 0
     fails = pause = 0
-    fase = "pausa"
+    in_pausa = True
     for ok, errore in zip(rows["ok"].astype(bool).tolist()[::-1],
                           rows["error"].fillna("").astype(str).tolist()[::-1]):
         if ok:
-            break
-        sospesa = is_suspended_row(errore)
-        if fase == "pausa":
-            if sospesa:
-                pause += 1
-                continue
-            fase = "falli"
-        if sospesa:
-            break                          # pausa più vecchia dell'ultimo tentativo: nuovo ciclo
+            break                          # una riga riuscita chiude la serie: la fonte è viva
+        if is_suspended_row(errore):
+            if in_pausa:
+                pause += 1                 # pause in testa: quante volte di fila non si è provato
+            continue                       # quelle vecchie non azzerano la serie dei fallimenti
+        in_pausa = False
         fails += 1
     return fails, pause
 
@@ -90,9 +100,11 @@ def sospensione(store: Store, source: str, step: str) -> str | None:
     """Messaggio di sospensione se questa esecuzione **non** deve interrogare la fonte, altrimenti None.
 
     Regola: ``BACKOFF_FAILS`` fallimenti consecutivi → pausa; dopo ``BACKOFF_PROBE_RUNS`` pause
-    consecutive si riprova comunque (sonda). Un run di sonda che fallisce riparte dalla pausa,
-    quindi con 5 run al giorno il costo di una fonte rotta scende da 14 richieste a run a
-    **una ogni cinque run**, senza mai perdere la capacità di accorgersi del rientro.
+    consecutive si riprova comunque (sonda). Una sonda che fallisce **non azzera la serie** (si
+    conta come tentativo fallito in più, ``state()``), quindi la fonte resta sospesa e si ritenta
+    dopo altre ``BACKOFF_PROBE_RUNS`` pause: il ciclo è di **5 run con una sola richiesta dentro**
+    (una al giorno con 5 run al giorno), testato in `tests/test_backoff.py`, che a regime conta
+    4 richieste in 20 run.
     """
     fails, pause = state(store, source, step)
     if fails < BACKOFF_FAILS or pause >= BACKOFF_PROBE_RUNS:

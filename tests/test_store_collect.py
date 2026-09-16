@@ -81,6 +81,28 @@ class FakeEspnNoStandings(FakeEspn):
         raise RuntimeError("standings temporarily unavailable")
 
 
+class FakeEspnContato(FakeEspn):
+    """Come :class:`FakeEspn`, ma con un contatore che si muove a ogni richiesta.
+
+    Serve a misurare ciò che il backoff promette: `FakeEspn` serve i payload dalle fixture, quindi
+    `http.mark()` del client vero (che conta le richieste di rete) resta fermo e un test sul costo
+    non proverebbe nulla. Qui invece ogni chiamata incrementa il contatore, come in produzione.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self.n = 0
+        self.http = type("S", (), {"stats": self, "mark": lambda s: self.n})()
+
+    def standings_raw(self, code):
+        self.n += 1
+        return super().standings_raw(code)
+
+    def scoreboard_raw(self, code, day=None):
+        self.n += 1
+        return super().scoreboard_raw(code, day)
+
+
 class FakeOpenMeteo:
     """Previsione fissa, senza rete (per i test del passo meteo)."""
 
@@ -141,7 +163,9 @@ def test_collect_league_offline(tmp_path):
     )
     assert rep2.matches_skipped == 1 and rep2.matches_fetched == 1
     status = st.read("source_status")
-    assert status["ok"].all() and len(status) == 6
+    # due run × 4 righe: fotmob, understat, espn classifica, espn scoreboard (docs/23 §3:
+    # prima erano 3 × run, con la classifica e lo scoreboard contati in una riga sola)
+    assert status["ok"].all() and len(status) == 8
     # i datetime sono salvati in UTC
     assert str(pd.read_parquet(st.path("fixtures"))["utc_kickoff"].dt.tz) == "UTC"
     st.close()
@@ -397,4 +421,29 @@ def test_richieste_per_lega_non_cumulative_e_fonti_non_usate(tmp_path):
     fonti = {r["source"] for r in rep.as_status_rows()}
     assert "understat:NED1" not in fonti
     assert {"fotmob:NED1", "espn:NED1"} <= fonti
+    st.close()
+
+
+def test_lo_scoreboard_separato_dalla_classifica(tmp_path):
+    """Due righe di stato per ESPN (docs/23 §3), con l'errore attribuito alla **sua** fase.
+
+    Difetto corretto: l'errore era cercato con `startswith("espn")`, quindi con la classifica
+    rotta e lo scoreboard sano l'errore della prima finiva anche sulla riga del secondo (e
+    viceversa con l'ordine di chiamata invertito).
+    """
+    from fda.collect import collect_league
+    from fda.config import league
+
+    st = Store(tmp_path / "processed")
+    rep = collect_league(league("ITA1"), st, past_days=30, future_days=30,
+                         fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+                         espn=FakeEspnNoStandings(), today=date(2026, 9, 6))
+    righe = st.read("source_status")
+    classifica = righe[righe.source == "espn:ITA1"].iloc[-1]
+    scoreboard = righe[righe.source == "espn scoreboard:ITA1"].iloc[-1]
+    assert "espn standings" in str(classifica["error"]) and not bool(classifica["ok"])
+    # l'errore della classifica NON deve finire sulla riga dello scoreboard (era il difetto:
+    # `startswith("espn")` prendeva il primo errore della fonte, qualunque fase fosse)
+    assert pd.isna(scoreboard["error"]) and bool(scoreboard["ok"]) and scoreboard["rows"] > 0
+    assert rep.espn_events > 0
     st.close()

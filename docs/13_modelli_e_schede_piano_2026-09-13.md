@@ -768,3 +768,48 @@ successivi (**#40** `7e23e4d` e **#41** `950acd4`) e i rispettivi daily sono ver
 CI» di `docs/21` §18.5 è quindi coperta da un controllo, non da una speranza. Restano da guardare
 nel prossimo daily, come per ogni giro: righe `understat:NED1/POR1` in transizione d'uscita (48h) e
 disponibilità del workflow `benchmark-quote` per il dispatch.
+
+### 9.12 Merge PR #42 — P1.14 (stime stabilizzate) + quote non più rate per 90 (2026-09-16, deroga esplicita)
+
+**Contenuto PR #42** (6 commit, testa `arena/01a0aad1`, 16 file; misura completa in `docs/23`):
+
+- **P1.14** — la contrazione dei numeri su campione piccolo usava un prior di **180′ fissi** e le
+  costanti di ruolo dell'**xG+xA** applicate a qualunque statistica: sul sito pubblicato valeva
+  **8.705 celle su 54.957** con una stima «stabilizzata» (284 con grezzo ≥ 3× la stima), fino a
+  `90,00 tiri/90` su **1′** giocato e `15,30 xG+xA/90` per un assente con 1′ in stagione. Nuovo
+  `src/fda/site/rates.py`: media dei pari = Σ conteggi / Σ minuti dei pari sopra i 270′ (ripiego
+  ≥ 90′, dichiarato in `Pool.soglia`), peso **`k` = 0,25 × mediana dei minuti dei pari**
+  (88-90′ oggi, ~450′ a stagione piena), gruppi (lega, ruolo) → (lega, tutti) → (tutte le leghe) con
+  minimo 8 pari. Regola di pubblicazione unica in `players.py`: **≥ 270′** grezzo · **90-270′**
+  grezzo **+ ◎ stima** · **< 90′** solo **◇ stima**; percentili di lega calcolati sulla **stima**;
+  `p90_shrunk()` (codice morto) eliminato;
+- **le percentuali non sono rate per 90**: «Passaggi riusciti %» e «Duelli vinti %» uscivano grezze
+  sotto i 90′ (`33,3%` su **37′**) con il tooltip «**89,2%/90′**»; ora il denominatore della stima
+  sono gli **eventi** (tentativi, duelli) e il tooltip dice la frazione esatta. I percentili delle
+  quote seguono la stima: 2 assi del radar dei difensori erano ordinati per rumore;
+- **`◇` senza numero** in `match.html`: Jinja rende i campi non emessi come stringa vuota, quindi il
+  ramo «non pubblicabile» poteva stampare il marcatore da solo (0 casi oggi su 241, difetto latente)
+  → terzo ramo `—` con spiegazione;
+- **invariante `[32]`** in `scripts/verify_site.py`: 55.060 righe per-90 delle schede giocatore
+  (gruppo, peso e `n` dichiarati; nessun grezzo sotto i 90′; nessuna rata > 25/90 sotto i 270′;
+  nessuna quota dichiarata come rata per 90) **e** 241 celle ◇/◎ delle 376 schede partita.
+
+Con la fusione è entrato in `main` anche il **debito documentale di PR #39** (§9.11): la deroga di
+PR #38 è ora registrata e la numerazione duplicata è risolta.
+
+**Verifiche pre-merge (misurate, non presunte):** suite **339 passed** (+23 sul giro precedente);
+`fda build` **376/2.364/7.478**; `verify_site` **0 problemi · 89.448 controlli** (erano 34.144);
+ruff **173** (baseline 175: 0 nuove); `audit_match_sections.py` #12/#13 invariati; check `test`
+**pass** (1m00s); PR **MERGEABLE · CLEAN**; `git status --porcelain` vuoto.
+
+**Deroga merge PR #42**: l'utente ha scritto esplicitamente «ok puoi farlo ti autorizzo io»
+(2026-09-16). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 42 --merge` **dopo aver verificato** check verdi, PR mergeable e assenza di lavoro
+residuo; merge commit **`4c63ee7`** in `main` (2026-09-16T17:34:12Z). Catena delle deroghe:
+PR #23 (2026-09-12), #27 e #28 (2026-09-13), #29 (2026-09-14), #34 (2026-09-15), #35 (2026-09-15),
+#38 (2026-09-16), **#42 (2026-09-16)**.
+
+**Da verificare al primo daily post-merge** (run `35129006426`, partito col push del merge assieme a
+`tests` `35129006479`): `verify_site` come gate in CI verde, deploy Pages con `assets/site.css`
+esterno, schede giocatore con le nuove stime (`◇`/`◎`) e **0 tooltip «/90′»** sulle quote.
+

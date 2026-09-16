@@ -40,7 +40,16 @@ jobs:
           ref: ${{ github.ref_name }}
 
       - id: rid
-        run: echo "run_id=${{ github.event.inputs.run_id || '35037211442' }}" >> "$GITHUB_OUTPUT"
+        run: |
+          # Da dispatch: input della UI. Da push (agente): `run_id` scritto in diag/trigger.txt,
+          # perché gli input non esistono sugli eventi push e il default era l'unico valore usato.
+          rid="${{ github.event.inputs.run_id }}"
+          if [ -z "$rid" ]; then
+            rid=$(grep -oE 'run_id=[0-9]+' diag/trigger.txt 2>/dev/null | head -1 | cut -d= -f2)
+          fi
+          [ -z "$rid" ] && rid="35037211442"
+          echo "run_id=$rid" >> "$GITHUB_OUTPUT"
+          echo "run analizzato: $rid"
 
       - uses: actions/download-artifact@v4
         continue-on-error: true
@@ -50,6 +59,40 @@ jobs:
           merge-multiple: true
           path: diag_raw
           github-token: ${{ github.token }}
+
+      - name: Scarica il log dei job falliti (dai runner il blob storage è raggiungibile)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.rid.outputs.run_id }}
+        run: |
+          set -u
+          mkdir -p diag_jobs
+          # Perché serve: l'artifact `run-log-*` contiene solo l'output di `fda daily`, non quello
+          # dei passi successivi. Quando il gate `verify_site` morde (run 35129006426, 2026-09-16)
+          # l'elenco dei problemi resta nel log del *job*, che il sandbox dell'agente non può
+          # scaricare (EOF sul blob storage): qui invece la rete funziona, quindi lo portiamo nel
+          # repository. Nessun dato di fonte, nessuna richiesta esterna: solo API GitHub.
+          # `--log-failed` (invece di `gh api .../jobs/{id}/logs`) perché la risposta dell'API è un
+          # 302 verso il blob storage: `gh api` non lo segue e restituiva 0 righe.
+          gh run view "$RUN_ID" --log-failed > diag_jobs/passi-falliti.log 2> diag_jobs/errore.txt || true
+          wc -l diag_jobs/passi-falliti.log | tee diag_jobs/sommario.txt
+          gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" > /tmp/jobs.json || echo '{}' > /tmp/jobs.json
+          python3 - <<'PYJSON'
+          import json, pathlib, os
+          data = json.loads(pathlib.Path("/tmp/jobs.json").read_text() or "{}")
+          righe = [pathlib.Path("diag_jobs/sommario.txt").read_text().strip()]
+          for job in data.get("jobs", []):
+              if job.get("conclusion") != "failure":
+                  continue
+              righe.append(f"job {job.get('id')} «{job.get('name')}»: {job.get('conclusion')}")
+              for s in job.get("steps", []):
+                  if s.get("conclusion") == "failure":
+                      righe.append(f"  passo fallito: {s.get('name')}")
+          testo = "\n".join(righe) + "\n"
+          pathlib.Path("diag_jobs/sommario.txt").write_text(testo)
+          print(testo)
+          PYJSON
 
       - name: Pubblica la coda sul branch diag-logs
         env:
@@ -67,6 +110,13 @@ jobs:
           else
             echo "artifact run-log-* non trovato per il run $RUN_ID" > "$out/run-tail.txt"
           fi
+          # i log dei passi falliti (il gate verify_site stampa l'elenco dei problemi: è la riga
+          # che serve quando il daily diventa rosso). Interi, non a coda: sono poche centinaia di righe.
+          if [ -f diag_jobs/passi-falliti.log ]; then
+            cp diag_jobs/passi-falliti.log "$out/passi-falliti.log"
+            echo "passi falliti: $(wc -l < diag_jobs/passi-falliti.log) righe"
+          fi
+          [ -f diag_jobs/sommario.txt ] && cp diag_jobs/sommario.txt "$out/sommario.txt"
           {
             echo "run_id=$RUN_ID"
             echo "estratto_il=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"

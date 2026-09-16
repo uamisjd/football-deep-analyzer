@@ -126,3 +126,73 @@ dichiara `n`); (b) il peso `k` misurato a settembre (88-90′) sale a ~450′ a 
 lo fissano sulla formula, non sul valore, quindi la stima si rivaluta da sola a ogni run; (c) le
 statistiche di quota con `0` tentativi restano fuori dalla stima (nessuna quota senza
 denominatore), e la cella lo dichiara.
+
+## §3 — Il gate in CI ha morso: due difetti reali nel backoff (dopo il merge di PR #42)
+
+**Come è stato scoperto.** Il daily partito col push del merge (run `35129006426`, 2026-09-16
+17:34:12Z) è **fallito sul passo «Verifica il sito (verify_site)»** con 7 problemi, uno per lega:
+
+```
+PROBLEMI (7): {'espn:ENG1': 1, 'espn:ESP1': 1, 'espn:FRA1': 1, 'espn:GER1': 1,
+               'espn:ITA1': 1, 'espn:NED1': 1, 'espn:POR1': 1}
+  - stato.html: espn:ITA1 sospesa ma con 1 richieste nel run
+```
+
+Il gate ha quindi funzionato come previsto: ha fermato il run **prima** del commit dei dati e del
+deploy. Ma ha fermato anche la mia capacità di capirlo: i log dei run non sono leggibili dal
+sandbox (blob storage fuori allowlist) e l'artifact `run-log-*` contiene solo l'output di
+`fda daily`, non quello dei passi successivi. Il workflow `diag` — creato il 2026-09-15 proprio
+per questa classe di problemi — è stato esteso in questo turno: su un runner la rete funziona,
+quindi ora scarica il **log dei passi falliti** (`gh run view --log-failed`, che segue il 302
+verso il blob storage; `gh api .../actions/jobs/{id}/logs` restituisce 0 righe) e lo pubblica sul
+branch `diag-logs`; il `run_id` si legge da `diag/trigger.txt` quando il workflow parte da un push.
+Dal rosso alla diagnosi: **~15 minuti**, senza chiedere log a nessuno. *(La lezione è generale: un
+gate che non si può diagnosticare è un gate che si finisce per spegnere.)*
+
+### §3.1 [P1] La riga di una fonte sospesa contava le richieste di un'altra fase
+
+**Osservato.** `report.requests` ha una chiave per **client** (`espn`), non per fase: la riga
+`espn:ITA1` sommava la richiesta della classifica con quelle dello **scoreboard** (che non è in
+backoff). Con la classifica sospesa la riga risultava «SOSPESA … 1 richiesta»: l'invariante [28]
+(«una fonte sospesa non può avere richieste») leggeva un numero vero come se fosse una contraddizione.
+
+**Impatto.** Due effetti, uno dei quali grave: (a) la pagina *Stato fonti* non distingueva più un
+backoff **attivo** da un backoff **inesistente** — l'unico controllo che il progetto ha su questa
+meccanica; (b) lo scoreboard, che funziona, era invisibile dentro una riga sospesa.
+
+**Correzione.** Due righe e due contatori, uno per fase: la classifica mantiene la chiave `espn`
+(**l'identità su cui cammina `backoff.state()`**: cambiarla avrebbe azzerato la serie dei
+fallimenti) e lo scoreboard ha la sua riga `espn scoreboard`, con le sue richieste, le sue righe e
+il suo esito. Aggiunto anche `error_prefix` in `CollectReport`: l'errore di una riga si cerca col
+prefisso della **sua fase**, non con `startswith("espn")` (che attribuiva l'errore dello scoreboard
+alla classifica quando solo la seconda falliva).
+
+### §3.2 [P1] Una sonda che falliva riapriva la fonte: il costo reale era 5 volte il dichiarato
+
+**Osservato.** In `state()` una sonda fallita veniva letta come **primo fallimento di una serie
+nuova** (`fails = 1`): dopo ogni sonda servivano altri 4 tentativi prima di risospendere, quindi
+il costo di una fonte rotta era ~5 richieste ogni 9 run invece di 1 ogni 5. Sul run incriminato
+`espn:ITA1` aveva **76 fallimenti consecutivi** e una richiesta nel run.
+
+**Correzione.** La serie dei fallimenti non si azzera più con le pause: si contano le pause in
+testa e, dietro di esse, i tentativi falliti **saltando le pause delle serie precedenti**, fino al
+primo run riuscito (che chiude la serie, come prima). Il ciclo di una fonte rotta è
+`BACKOFF_PROBE_RUNS` pause + 1 tentativo = **5 run con una sola richiesta** (una al giorno con 5
+run al giorno), che è il numero dichiarato in `docs/22` §3 e nella pagina.
+
+**Test che lo fissa** (`tests/test_backoff.py`): simulando il ciclo a regime, **4 richieste in 20
+run** (non ~11 come con la semantica precedente); una sonda fallita porta lo stato a
+`(BACKOFF_FAILS + 1, 0)` e la fonte resta sospesa.
+
+### Verifica di questo turno
+
+| Verifica | Comando | Esito |
+|---|---|---|
+| Suite completa | `pytest -q` | **343 passed** (339 → +4, tutti nuovi casi sul backoff) |
+| Prova del caso CI (classifica sospesa + scoreboard attivo) | righe sintetiche nello store + `fda build` + `verify_site` | **0 problemi · 89.455 controlli**; pagina: **7 righe `espn:*` SOSPESO con 0 richieste** + **7 righe `espn scoreboard:*` OK con 1 richiesta e 42 righe** |
+| Ruff sui file toccati | `ruff check` | invariato sul baseline (0 nuove) |
+| Attribuzione degli errori per fase | `tests/test_store_collect.py::test_lo_scoreboard_separato_dalla_classifica` | l'errore della classifica non finisce sulla riga dello scoreboard |
+
+**Perché è urgente**: finché la correzione non è in `main`, **ogni run del daily fallisce al gate**
+e il sito resta all'ultimo build buono (nessun aggiornamento dati né deploy).
+

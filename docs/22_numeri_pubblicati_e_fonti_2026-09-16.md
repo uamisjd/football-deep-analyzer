@@ -122,7 +122,10 @@ Dopo `BACKOFF_FAILS = 5` fallimenti consecutivi della stessa fase la fonte non v
 interrogata; ogni `BACKOFF_PROBE_RUNS = 4` pause si fa comunque una **sonda**, così una fonte
 che riapre rientra da sola. Costo di una fonte rotta: da 14 richieste a run a **una ogni cinque
 run** (≈1 al giorno). Lo scoreboard ESPN, che risponde, resta attivo: la chiave è la coppia
-(fonte, fase), non il client.
+(fonte, fase), non il client. *(La frase «una ogni cinque run» è diventata vera solo con la
+correzione del 2026-09-16: la prima versione faceva ripartire la serie a ogni sonda fallita e
+contava le richieste dello scoreboard dentro la riga della classifica sospesa — due difetti
+trovati dal gate in CI, diagnosi e misure in `docs/23` §3.)*
 
 **Pagina *Stato fonti*.** Pill **SOSPESO** dedicata (token `--s-bg`/`--s-fg`, contrasto AA in
 entrambi i temi, aggiunti anche ai test di contrasto) con il motivo: «sospeso dopo 76 run
