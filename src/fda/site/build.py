@@ -15,10 +15,10 @@ import numpy as np
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from ..config import REPO_ROOT, leagues, load_leagues_config
+from ..config import DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..store import Store
-from .analysis import MatchAnalysis, prediction_meta
+from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
 from .audit import audit_match
 from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, it_plural, pct_triple
 from .players import PlayerCatalog
@@ -371,7 +371,8 @@ class SiteBuilder:
         fx = fx[fx.status != "cancelled"].copy()
         fx["local_date"] = pd.to_datetime(fx.utc_kickoff).dt.tz_convert(self.tz).dt.date
         today = fx[fx.local_date == today_local]
-        upcoming = fx[(fx.local_date > today_local) & (fx.local_date <= today_local + timedelta(days=7))]
+        upcoming = fx[(fx.local_date > today_local)
+                      & (fx.local_date <= today_local + timedelta(days=DETAIL_WINDOW_DAYS))]
         results = fx[(fx.local_date < today_local) & (fx.local_date >= today_local - timedelta(days=7))
                      & (fx.status == "finished")]
         today_rows = self._match_rows(today)
@@ -381,7 +382,8 @@ class SiteBuilder:
         # --- calendario completo: ciò che la finestra breve non copre, in forma compatta ---
         # non costa richieste extra (le partite sono già state raccolte da `fda collect`) e
         # nemmeno analisi per partita: una riga = data, squadre e ultima previsione disponibile
-        lontano = fx[(fx.status.isin(["scheduled", "postponed", "suspended", "cancelled"])) & (fx.local_date > today_local + timedelta(days=7))]
+        lontano = fx[(fx.status.isin(["scheduled", "postponed", "suspended", "cancelled"]))
+                     & (fx.local_date > today_local + timedelta(days=DETAIL_WINDOW_DAYS))]
         calendar, calendar_missing = self._calendar_rows(lontano, self.store.read("predictions"), ids_breve)
         log.info("calendario completo: %d partite in %d mesi (%d senza previsione)",
                  len(lontano), len(calendar), calendar_missing)
@@ -392,13 +394,16 @@ class SiteBuilder:
                      days=self._group_by_day(today_rows), view_kind="today",
                      summary=self._today_summary(today_rows), filters=self._list_filters(today_rows))
         self._render("index.html", "prossime.html", title="Prossime partite",
-                     subtitle="I prossimi 7 giorni con la scheda completa, poi tutto il calendario "
-                              "della stagione in forma compatta.",
+                     subtitle=f"I prossimi {DETAIL_WINDOW_DAYS} giorni con la scheda completa, "
+                              "poi tutto il calendario della stagione in forma compatta.",
                      page_title="Prossime partite e calendario completo · CalcioMetro",
-                     page_description="I prossimi 7 giorni con schede dettagliate e l'intero calendario stagionale in forma compatta: pronostici, gol attesi e Over 2,5 per ogni gara.",
+                     page_description=f"I prossimi {DETAIL_WINDOW_DAYS} giorni con schede "
+                                      "dettagliate e l'intero calendario stagionale in forma "
+                                      "compatta: pronostici, gol attesi e Over 2,5 per ogni gara.",
                      days=self._group_by_day(upcoming_rows), view_kind="upcoming", summary=None,
                      filters=self._list_filters(upcoming_rows),
-                     calendar=calendar, calendar_missing=calendar_missing, calendar_days=7)
+                     calendar=calendar, calendar_missing=calendar_missing,
+                     calendar_days=DETAIL_WINDOW_DAYS)
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
                      subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
                      page_title="Risultati recenti e analisi post-partita · CalcioMetro",
@@ -712,8 +717,11 @@ class SiteBuilder:
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []
         by_state = {s: sum(1 for a in self.audit_rows for i in a["items"] if i["state"] == s)
                     for s in ("presente", "atteso", "mancante")}
+        # Osservabilità dei fatti FotMob (P1.4, docs/19 §2.5): il blocco «Curiosità» scartava
+        # il 34% dei fatti in silenzio. Se FotMob cambia un template, qui si vede subito.
         self._render("status.html", "stato.html", sources=rows, tables=tables,
-                     audit=self.audit_rows, audit_counts=by_state)
+                     audit=self.audit_rows, audit_counts=by_state,
+                     insight_stats=insight_drop_stats())
 
     def _write_seo_files(self, built_match_ids: set[int] | None = None) -> None:
         """robots.txt aperto + sitemap.xml per indicizzazione organica (SEO)."""

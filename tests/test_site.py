@@ -145,18 +145,48 @@ def test_translate_insight_patterns_and_drop_english():
     scorer = translate_insight("Donyell Malen is the competition's top scorer (5)")
     assert scorer["kind"] == "scorer" and "Donyell Malen" in scorer["text"]
     assert "5 gol" in scorer["text"]
+    # template oggettivi recuperati (P1.4, docs/19 §2.5): i 5 scarti più frequenti ora
+    # sono tradotti — tutti dati, nessun giudizio
+    cs = translate_insight("Have kept the most clean sheets in the competition (4)")
+    assert cs == {"text": "ha il maggior numero di porte inviolate del campionato (4)",
+                  "kind": "clean_sheet", "priority": 74}
+    assert translate_insight("Have conceded the most penalties this season (6)")["text"] == (
+        "ha concesso più rigori in questa stagione (6)")
+    assert translate_insight("Have been awarded the most penalties this season (3)")["text"] == (
+        "ha ottenuto più rigori in questa stagione (3)")
+    assert translate_insight("Average 1.8 goals per match") == {
+        "text": "media 1,8 gol a partita", "kind": "goals", "priority": 50}
+    assert translate_insight("Ranked 2 at home this season") == {
+        "text": "2° in classifica nelle gare interne", "kind": "rank", "priority": 48}
+    assert translate_insight("Ranked 5 away from home this season")["text"] == (
+        "5° in classifica nelle gare in trasferta")
     # hype / sconosciuti: non si mostrano
     for raw in (
-        "Have kept the most clean sheets in the competition (4)",
-        "Have been awarded the most penalties this season (3)",
-        "Average 1.8 goals per match",
-        "Ranked 2 at home this season",
         "Armand Laurienté has created the most big chances for Sassuolo (2)",
         "Unknown English hype phrase",
         "",
         None,
     ):
         assert translate_insight(raw) is None
+
+
+def test_insight_drop_log_counts_unknown_shapes():
+    """Ogni scarto è contato per forma canonica (numeri → N): un template nuovo si vede."""
+    from fda.site.analysis import insight_drop_stats, reset_insight_stats, translate_insight
+    reset_insight_stats()
+    try:
+        translate_insight("Brand new English template 7")
+        translate_insight("Brand new English template 9")
+        translate_insight("Another unknown hype phrase")
+        stats = insight_drop_stats()
+        assert stats is not None
+        assert stats["scartati"] == 0            # nessun consumo di pagina, solo log diretto
+        assert stats["top_shape"] == "Brand new English template N"
+        assert stats["top_n"] == 2
+        reset_insight_stats()
+        assert insight_drop_stats() is None
+    finally:
+        reset_insight_stats()
 
 
 def test_match_insights_selection_team_and_empty(tmp_path):

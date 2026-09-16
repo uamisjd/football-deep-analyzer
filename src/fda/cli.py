@@ -9,7 +9,7 @@ from rich.console import Console
 from rich.table import Table
 
 from . import __version__
-from .config import leagues, season
+from .config import DETAIL_WINDOW_DAYS, leagues, season
 
 app = typer.Typer(help="Football Deep Analyzer", no_args_is_help=True)
 console = Console()
@@ -157,7 +157,7 @@ def espn_today_cmd(league_key: str = typer.Argument("ITA1"), day: str = typer.Op
 def collect_cmd(
     league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     past_days: int = typer.Option(3, help="Giorni indietro per i dettagli partita"),
-    future_days: int = typer.Option(3, help="Giorni avanti per i dettagli partita"),
+    future_days: int = typer.Option(DETAIL_WINDOW_DAYS, help="Giorni avanti coi dettagli"),
     max_matches: int = typer.Option(40, help="Massimo partite per campionato per run"),
     max_backfill: int = typer.Option(40, help="Massimo partite finite recuperate per lega (fuori finestra)"),
 ) -> None:
@@ -589,9 +589,9 @@ def daily_cmd(
     """Run giornaliero completo: collect → predict → build. È ciò che esegue GitHub Actions."""
     from typer.testing import CliRunner  # noqa: F401  (import di controllo)
 
-    # future_days=7: i dettagli (incluse le coordinate stadio) sono raccolti per l'intera
-    # settimana "prossime", così il meteo previsionale Open-Meteo può colmare il vuoto FotMob.
-    collect_cmd(league_keys=league_keys, past_days=3, future_days=7,
+    # DETAIL_WINDOW_DAYS: i dettagli (incluse le coordinate stadio) sono raccolti per l'intera
+    # finestra "prossime", così il meteo previsionale Open-Meteo può colmare il vuoto FotMob.
+    collect_cmd(league_keys=league_keys, past_days=3, future_days=DETAIL_WINDOW_DAYS,
                 max_matches=40, max_backfill=40)
     if not skip_predict:
         try:  # calibrazione della griglia dal backtest del run precedente (solo dati passati)

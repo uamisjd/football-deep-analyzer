@@ -250,6 +250,10 @@ _INSIGHT_EN_LEAK = re.compile(
     re.I,
 )
 
+# Sotto questa soglia la media gialli/partita di un arbitro ha un errore standard grande
+# (su 6 partite ~0,6): si pubblicano i numeri, mai l'aggettivo (P1.2, docs/19 §2.6).
+MIN_REFEREE_MATCHES = 15
+
 
 def _n_partite(n: int) -> str:
     return "1 partita" if n == 1 else f"{n} partite"
@@ -363,7 +367,74 @@ def translate_insight(text: str) -> dict[str, Any] | None:
         return {"text": f"{name} è il capocannoniere del campionato ({n} gol)",
                 "kind": "scorer", "priority": 55}
 
+    # Template oggettivi recuperati (P1.4, docs/19 §2.5): i 5 più frequenti fra gli scarti
+    # (685 fatti scartati su 2.014, 34%) — tutti dati, nessun giudizio/hype.
+    m = re.fullmatch(r"Have kept the most clean sheets in the competition \((\d+)\)", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"ha il maggior numero di porte inviolate del campionato ({n})",
+                "kind": "clean_sheet", "priority": 74}
+
+    m = re.fullmatch(r"Have conceded the most penalties this season \((\d+)\)", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"ha concesso più rigori in questa stagione ({n})",
+                "kind": "penalty", "priority": 72}
+
+    m = re.fullmatch(r"Have been awarded the most penalties this season \((\d+)\)", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"ha ottenuto più rigori in questa stagione ({n})",
+                "kind": "penalty", "priority": 72}
+
+    m = re.fullmatch(r"Average (\d+(?:\.\d+)?) goals per match", t)
+    if m:
+        v = f"{float(m.group(1)):.1f}".replace(".", ",")   # FotMob pubblica 1 decimale
+        return {"text": f"media {v} gol a partita", "kind": "goals", "priority": 50}
+
+    m = re.fullmatch(r"Ranked (\d+) at home this season", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"{n}° in classifica nelle gare interne", "kind": "rank", "priority": 48}
+
+    m = re.fullmatch(r"Ranked (\d+) away from home this season", t)
+    if m:
+        n = int(m.group(1))
+        return {"text": f"{n}° in classifica nelle gare in trasferta", "kind": "rank", "priority": 48}
+
+    insight_dropped(t)
     return None
+
+
+# Osservabilità degli scarti (P1.4, docs/19 §2.5): il 34% dei fatti FotMob veniva scartato
+# in silenzio. Il conteggio per forma canonica (numeri → «N») distingue un template nuovo
+# (centinaia di occorrenze identiche) dal caso singolo; il build lo pubblica in stato.html.
+INSIGHT_DROP_LOG: dict[str, int] = {}
+INSIGHT_SEEN: dict[str, int] = {"tradotti": 0, "scartati": 0}
+
+
+def insight_dropped(text: str) -> None:
+    """Registra un fatto non tradotto, per forma canonica. Mai in pagina come testo inglese."""
+    key = re.sub(r"\d+", "N", str(text))[:80]
+    INSIGHT_DROP_LOG[key] = INSIGHT_DROP_LOG.get(key, 0) + 1
+
+
+def insight_drop_stats() -> dict[str, Any] | None:
+    """Riepilogo per stato.html: fatti visti dal build, tradotti, scartati, forma top."""
+    tot_seen = INSIGHT_SEEN["tradotti"] + INSIGHT_SEEN["scartati"]
+    if not tot_seen and not INSIGHT_DROP_LOG:
+        return None
+    top_key, top_n = (max(INSIGHT_DROP_LOG.items(), key=lambda kv: kv[1])
+                      if INSIGHT_DROP_LOG else (None, 0))
+    return {"tradotti": INSIGHT_SEEN["tradotti"], "scartati": INSIGHT_SEEN["scartati"],
+            "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n}
+
+
+def reset_insight_stats() -> None:
+    """Azzera i contatori (per i test e per build multipli nello stesso processo)."""
+    INSIGHT_DROP_LOG.clear()
+    INSIGHT_SEEN["tradotti"] = 0
+    INSIGHT_SEEN["scartati"] = 0
 
 
 def select_insights(rows: list[dict[str, Any]], n: int = 3) -> list[dict[str, Any]]:
@@ -1248,10 +1319,10 @@ class MatchAnalysis:
                      "form": self.form_summary(self.form(away_id, kickoff, n=5))},
             "prediction": self.prediction(match_id, home_name, away_name),
             "weather": weather,
-            "referee": {"name": _val(info, "referee_name"),
-                        "yellows": _val(info, "referee_yellows_per_match"),
-                        "pens": _val(info, "referee_penalties_total"),
-                        "reds": _val(info, "referee_reds_total")},
+            # una sola fonte per l'arbitro (P1.3, docs/19 §2.6): referee_profile() porta
+            # anche il confronto con la media di lega; il dizionario scritto a mano qui
+            # non l'aveva ed è lo schema che generava etichette sbagliate.
+            "referee": self.referee_profile(match_id),
             "h2h_n": h2h_n,
             "h2h": h2h_pat,
             "h2h_recent": h2h_stat,
@@ -2292,6 +2363,7 @@ class MatchAnalysis:
             raw = _val(d, "text")
             tr = translate_insight(raw if isinstance(raw, str) else "")
             if not tr:
+                INSIGHT_SEEN["scartati"] += 1
                 continue
             body = tr["text"]
             if _INSIGHT_EN_LEAK.search(body):
@@ -2299,6 +2371,7 @@ class MatchAnalysis:
             if body in seen_text:
                 continue
             seen_text.add(body)
+            INSIGHT_SEEN["tradotti"] += 1
             out.append({"team": names[team_id], "team_id": team_id,
                         "side": "home" if team_id == home_id else "away",
                         "text": body, "kind": tr["kind"], "priority": tr["priority"]})
@@ -2577,12 +2650,32 @@ class MatchAnalysis:
                 s.append(f"{name} gioca dopo soli {rest} giorni di riposo{tail}.")
         ref = ctx.get("referee")
         if ref and ref.get("name"):
-            y = ref.get("yellows")
-            if y is not None:
-                tone = "molto severo" if y >= 5 else "severo" if y >= 4.2 else "permissivo" if y <= 3.2 else "nella media"
-                s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita ({tone})"
-                         + (f", {it_plural(ref['pens'], 'rigore')} in {it_plural(ref['matches'], 'gara')}."
-                            if ref.get("pens") is not None else "."))
+            y, ly = ref.get("yellows"), ref.get("league_yellows")
+            n = int(ref.get("matches") or 0)
+            if y is not None and n >= MIN_REFEREE_MATCHES:
+                # Soglie RELATIVE alla lega (P1.2, docs/19 §2.6): in Liga Portugal la media
+                # è 5,04 gialli/partita, in Ligue 1 3,85 — un valore assoluto (≥5 = «molto
+                # severo») chiamava «molto severo» un arbitro portoghese nella media.
+                # Senza media di lega si pubblicano i numeri, non il giudizio.
+                if ly is None:
+                    pens = (f", {it_plural(ref['pens'], 'rigore')} in {it_plural(n, 'gara')}"
+                            if ref.get("pens") is not None else "")
+                    s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita su "
+                             f"{it_plural(n, 'gara')} designate{pens}.")
+                else:
+                    tone = ("sopra la media del campionato" if y >= 1.15 * ly
+                            else "sotto la media del campionato" if y <= 0.85 * ly
+                            else "nella media del campionato")
+                    s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita, {tone} "
+                             f"({_f(ly, 1)} la media di lega)"
+                             + (f", {it_plural(ref['pens'], 'rigore')} in {it_plural(n, 'gara')}."
+                                if ref.get("pens") is not None else "."))
+            elif y is not None:
+                # campione ridotto (mediana 33, minimo 6): la media ha un errore standard
+                # grande → si pubblica il numero, mai l'aggettivo (P1.2, docs/19 §2.6)
+                pens = (f", {it_plural(ref['pens'], 'rigore')} totale" if ref.get("pens") is not None else "")
+                s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita su {n} "
+                         f"{it_plural(n, 'gara')} designate (campione ridotto{pens}, nessuna valutazione).")
         w = ctx.get("weather")
         if w and w.get("desc"):
             extra = ""
@@ -2681,13 +2774,13 @@ class MatchAnalysis:
             # mercato (docs/21 P2-7): None finché collect_transfers non ha girato in Actions
             "home_market": self.summer_market(home_id) if status != "finished" else None,
             "away_market": self.summer_market(away_id) if status != "finished" else None,
-            "referee_profile": self.referee_profile(match_id),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),
             "home_value": _val(info, "home_starters_value_eur"), "away_value": _val(info, "away_starters_value_eur"),
-            "referee": {"name": _val(info, "referee_name"), "matches": _val(info, "referee_matches"),
-                        "yellows": _val(info, "referee_yellows_per_match"), "pens": _val(info, "referee_penalties_total"),
-                        "reds": _val(info, "referee_reds_total")},
+            # un unico profilo arbitro (P1.3, docs/19 §2.6): la chiave separata
+            # «referee_profile» era una seconda fonte per lo stesso dato, meno informata
+            # (senza il confronto con la media di lega).
+            "referee": self.referee_profile(match_id),
             "stadium": {"name": _val(info, "stadium_name"), "city": _val(info, "stadium_city"),
                         "attendance": _val(info, "attendance")},
             "weather": weather,

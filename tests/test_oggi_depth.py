@@ -460,7 +460,7 @@ def test_build_exposes_new_pre_match_keys(tmp_path):
     ma = MatchAnalysis(_store(tmp_path))
     ctx = ma.build(100)
     for k in ("home_arrival", "away_arrival", "h2h_pattern", "home_key_deep", "away_key_deep",
-              "home_absences", "away_absences", "referee_profile"):
+              "home_absences", "away_absences", "referee"):
         assert k in ctx
     assert ctx["home_arrival"]["played"] == 4
     assert ctx["away_arrival"]["source"] == "FotMob" and ctx["away_arrival"]["played"] == 4
@@ -468,7 +468,60 @@ def test_build_exposes_new_pre_match_keys(tmp_path):
     assert ctx["home_absences"]["n"] == 2 and ctx["away_absences"] is None
     ctx_fin = ma.build(4)
     assert ctx_fin["home_arrival"] is None and ctx_fin["h2h_pattern"] is None
-    assert ctx_fin["referee_profile"]["name"] == "AltraPersona"
+    assert ctx_fin["referee"]["name"] == "AltraPersona"
+    # P1.3 (docs/19 §2.6): un solo profilo arbitro — la chiave duplicata non esiste più
+    assert "referee_profile" not in ctx and "referee_profile" not in ctx_fin
+    # il profilo unico porta anche il confronto con la lega che il vecchio dict non aveva
+    assert ctx["referee"]["league_yellows"] == 4.0
+
+
+# ---- P1.2 (docs/19 §2.6): etichette arbitro relative alla lega, campione minimo ------------
+def test_referee_narrative_relative_to_league(tmp_path):
+    """In una lega severa (media 5,04) 5,0 gialli/partita è «nella media», non «molto severo»."""
+    ma = MatchAnalysis(_store(tmp_path))
+    base = {"home_name": "Alpha", "away_name": "Beta"}
+    frasi = ma.narrative({**base, "referee": {"name": "Hugo Miguel", "matches": 34, "yellows": 5.0,
+                                              "pens": 2, "league_yellows": 5.04}})
+    ref = [f for f in frasi if f.startswith("Arbitro Hugo Miguel")]
+    assert len(ref) == 1
+    assert "nella media del campionato" in ref[0]
+    assert "molto severo" not in ref[0]
+    assert "(5,0 la media di lega)" in ref[0]
+
+
+def test_referee_narrative_above_and_below_league(tmp_path):
+    ma = MatchAnalysis(_store(tmp_path))
+    base = {"home_name": "Alpha", "away_name": "Beta"}
+    sopra = ma.narrative({**base, "referee": {"name": "A", "matches": 30, "yellows": 6.0,
+                                              "pens": 1, "league_yellows": 5.0}})
+    sotto = ma.narrative({**base, "referee": {"name": "B", "matches": 30, "yellows": 3.0,
+                                              "league_yellows": 4.0}})
+    assert any("sopra la media del campionato" in f for f in sopra)
+    assert any("sotto la media del campionato" in f for f in sotto)
+    # nessun giudizio assoluto residuo
+    assert not any("molto severo" in f or "permissivo" in f for f in sopra + sotto)
+
+
+def test_referee_narrative_small_sample_numbers_only(tmp_path):
+    """Campione ridotto (minimo 6, mediana 33): il numero sì, l'aggettivo mai."""
+    ma = MatchAnalysis(_store(tmp_path))
+    base = {"home_name": "Alpha", "away_name": "Beta"}
+    frasi = ma.narrative({**base, "referee": {"name": "C", "matches": 6, "yellows": 6.4,
+                                              "league_yellows": 4.0}})
+    assert any("campione ridotto, nessuna valutazione" in f for f in frasi)
+    assert not any("molto severo" in f for f in frasi)
+
+
+def test_referee_narrative_without_league_mean_no_judgment(tmp_path):
+    """Senza media di lega si pubblicano i numeri, non un giudizio non verificabile."""
+    ma = MatchAnalysis(_store(tmp_path))
+    base = {"home_name": "Alpha", "away_name": "Beta"}
+    frasi = ma.narrative({**base, "referee": {"name": "D", "matches": 30, "yellows": 5.9,
+                                              "league_yellows": None}})
+    ref = [f for f in frasi if f.startswith("Arbitro D")]
+    assert len(ref) == 1
+    assert "media del campionato" not in ref[0] and "molto severo" not in ref[0]
+    assert "30 gare designate" in ref[0]
 
 
 # ---- post-partita: assist, tempi, portieri, fisiche, statistiche di dettaglio --------------
