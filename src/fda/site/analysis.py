@@ -24,6 +24,13 @@ from ..models.predict import wilson_interval
 from ..sources.news import keyword_score
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
+from .rates import (
+    MIN_DEN_FOR_RATE,
+    Pool,
+    group_label,
+    lookup as pool_lookup,
+    player_pools,
+)
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
 # 616 formazioni: il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in
@@ -38,10 +45,9 @@ GOAL_KIND_IT = {"Header": "di testa", "Penalty": "rigore", "Own goal": "autogol"
 
 POSITION_NAMES = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
 
-# Prior bayesiano per stabilizzare xG+xA/90 su campioni piccoli (audit 2026-09-14 §1.3)
-# Media di ruolo su 7.456 schede, peso 180′ ≈ 2 partite: evita 12′+1 gol → 3,75/90
-ROLE_PRIOR_P90 = {0: 0.02, 1: 0.12, 2: 0.28, 3: 0.42}
-PRIOR_MINUTES = 180
+# Le medie dei pari per stabilizzare le rate su campioni piccoli non sono costanti qui:
+# si misurano dal run in ``fda.site.rates`` (docs/19 §1.10), perché una costante scritta a
+# mano non conosce né la stagione né la statistica a cui viene applicata.
 # ``positionId`` tattico di FotMob (11, 34, 64, 115…) → ruolo. Tenuti solo gli id che su
 # almeno 20 titolari concordano col ruolo nel 90% dei casi (misurato sull'archivio):
 # 11 portiere (632/632), 33-38 difensori, 64-77 centrocampisti, 105/106/115 attaccanti.
@@ -602,6 +608,7 @@ class MatchAnalysis:
         self.cup_fixtures = store.read("cup_fixtures")
         self.news_df = store.read("news")
         self.transfers = store.read("transfers")
+        self._pools_cache: dict[tuple[int | None, int | None], dict[str, Pool]] | None = None
 
     # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
     def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1868,6 +1875,63 @@ class MatchAnalysis:
                 "venue": venue,
                 "last": rows[0]["utc"], "first": rows[-1]["utc"]}
 
+    # ---- gruppi di pari per le rate su campioni piccoli (docs/19 §1.10) ----------------------
+    def _league_of(self, team_id: int) -> int | None:
+        """Id della lega di una squadra dal calendario (``None`` se la squadra non c'è)."""
+        if self.fixtures.empty or "league_id" not in self.fixtures.columns:
+            return None
+        sub = self.fixtures[(self.fixtures.home_id == team_id) | (self.fixtures.away_id == team_id)]
+        if sub.empty or pd.isna(sub.iloc[-1]["league_id"]):
+            return None
+        return int(sub.iloc[-1]["league_id"])
+
+    def _contrib_pools(self) -> dict[tuple[int | None, int | None], dict[str, Pool]]:
+        """Medie dei pari di «xG+xA per 90» per (lega, ruolo), misurate sui dati del run.
+
+        La scheda partita pubblica due rate su campioni piccoli — il contributo offensivo per 90
+        di ``key_players_deep`` e il peso dell'infermeria di ``absences_weight`` — e prima del
+        2026-09-16 la contrazione usava la costante di ruolo dell'xG+xA con peso fisso 180′
+        (docs/19 §1.10): un numero scelto a mano, sbagliato di unità e applicato anche dove la
+        statistica non c'entrava. Qui media e peso si misurano dal run, come nelle schede
+        giocatore: stessa funzione, stesso contratto.
+        """
+        if self._pools_cache is not None:
+            return self._pools_cache
+        pools: dict[tuple[int | None, int | None], dict[str, Pool]] = {}
+        ps, fx, lu = self.player_stats, self.fixtures, self.lineup
+        if not ps.empty and not fx.empty and not lu.empty:
+            chiavi = ["expected_goals", "expected_assists", "minutes_played"]
+            q = ps[ps.key.isin(chiavi) & ps.value.notna()].copy()
+            q["num"] = pd.to_numeric(q.value, errors="coerce")
+            wide = q.groupby(["player_id", "key"]).num.sum().unstack("key")
+            if "minutes_played" in wide.columns:
+                wide = wide.rename(columns={"minutes_played": "minutes"})
+                teams = pd.concat([
+                    fx[["home_id", "league_id"]].rename(columns={"home_id": "team_id"}),
+                    fx[["away_id", "league_id"]].rename(columns={"away_id": "team_id"}),
+                ]).dropna().drop_duplicates("team_id", keep="last").set_index("team_id")["league_id"]
+                lu2 = lu[lu.role != "coach"].dropna(subset=["player_id"]).sort_values("match_id")
+                ident = lu2.groupby("player_id").last()[["team_id", "usual_position_id"]]
+                groups = pd.DataFrame({
+                    "league_id": ident["team_id"].map(teams),
+                    "position": ident["usual_position_id"],
+                }).reindex(wide.index)
+                pools = player_pools(wide, groups,
+                                     {"contrib": ["expected_goals", "expected_assists"]},
+                                     minutes_col="minutes")
+        self._pools_cache = pools
+        return pools
+
+    def _contrib_pool(self, player_id: int, team_id: int | None) -> tuple[Pool, str] | None:
+        """Gruppo dei pari per un giocatore della scheda partita, con l'etichetta leggibile."""
+        role = self._role_hist().get(int(player_id))
+        league = self._league_of(int(team_id)) if team_id is not None else None
+        trovato = pool_lookup(self._contrib_pools(), league, role, "contrib")
+        if trovato is None:
+            return None
+        pool, (lg, rl) = trovato
+        return pool, group_label(lg, rl)
+
     def key_players_deep(self, team_id: int, n: int = 3) -> dict[str, Any] | None:
         """Giocatori decisivi di stagione: contributo offensivo atteso per 90 minuti.
 
@@ -1908,10 +1972,9 @@ class MatchAnalysis:
             gx, ax = d.get("expected_goals"), d.get("expected_assists")
             mins = float(self._num(d, "minutes_played"))
             contrib = float(r.contrib)
-            # shrinkage verso media di ruolo (audit 1.3): su 12′ il 3,75/90 diventa ~0,42
-            role = self._role_hist().get(int(r.player_id))
-            mu = ROLE_PRIOR_P90.get(int(role), 0.28) if role is not None else 0.28
-            contrib_shrunk = (contrib + PRIOR_MINUTES/90.0 * mu) / ((mins + PRIOR_MINUTES)/90.0) if mins else None
+            # stima stabilizzata (docs/19 §1.10): media dei pari e peso misurati dal run
+            gruppo = self._contrib_pool(int(r.player_id), team_id)
+            contrib_shrunk = gruppo[0].per90(contrib, mins) if gruppo and mins else None
             out.append({
                 "id": int(r.player_id), "name": r.player_name,
                 "pos": self._role_it(r.player_id),
@@ -1920,7 +1983,9 @@ class MatchAnalysis:
                 "xg": None if gx is None or pd.isna(gx) else round(float(gx), 2),
                 "xa": None if ax is None or pd.isna(ax) else round(float(ax), 2),
                 "contrib_p90": float(r.contrib_p90),
+                "pubblicabile": bool(mins >= MIN_DEN_FOR_RATE),
                 "contrib_p90_shrunk": round(float(contrib_shrunk), 2) if contrib_shrunk is not None else None,
+                "est_note": gruppo[0].note(gruppo[1]) if gruppo else None,
                 "chances": int(self._num(d, "chances_created")),
                 "big_chances": int(self._num(d, "big_chance_created_team_title")),
                 "rating": None if pd.isna(r.rating_avg) else round(float(r.rating_avg), 2)})
@@ -1931,6 +1996,10 @@ class MatchAnalysis:
 
         Ogni assente è pesato sui suoi numeri reali di stagione. «Titolare abituale» =
         almeno metà dei minuti medi per giocatore della squadra (minuti totali / 11).
+
+        La rata pubblicata è **stabilizzata** (docs/19 §1.10): con il valore grezzo un assente
+        con un minuto giocato pubblicava «15,30 xG+xA a partita», e quel numero entrava nella
+        somma dell'infermeria. Sotto i 90′ si pubblica solo la stima, dichiarata come tale.
         """
         unav = self.unavailable(match_id, team_id)
         if not unav:
@@ -1955,16 +2024,28 @@ class MatchAnalysis:
         for u in unav:
             pid = by_name.get(str(u["name"]))
             s = stats.get(pid, {}) if pid is not None else {}
-            mins, p90 = s.get("minutes", 0.0), s.get("minutes", 0.0) / 90.0
-            contrib = s.get("contrib", 0.0) / p90 if p90 and s.get("contrib") else None
+            mins = float(s.get("minutes", 0.0))
+            gruppi = self._contrib_pool(pid, team_id) if pid is not None else None
+            grezzo = (s.get("contrib", 0.0) / (mins / 90.0)) if mins else None
+            stima = gruppi[0].per90(s.get("contrib", 0.0), mins) if gruppi and mins else None
+            pubblicabile = bool(mins >= MIN_DEN_FOR_RATE)
+            if stima is None:
+                # nessun gruppo di pari utilizzabile (stagione appena iniziata, dati scarni):
+                # si pubblica il grezzo senza inventare una stima che non sapremmo calcolare
+                pubblicabile = True
             is_starter = bool(per_player and mins >= 0.5 * per_player)
             starters_out += int(is_starter)
-            contrib_lost += contrib or 0.0
+            contrib_lost += stima if stima is not None else (grezzo or 0.0)
             players.append({**u, "minutes": int(mins) or None, "games": None,
                             "goals": int(s.get("goals", 0.0)), "assists": int(s.get("assists", 0.0)),
-                            "contrib_p90": contrib, "starter": is_starter})
+                            "contrib_p90": grezzo if pubblicabile else stima,
+                            "contrib_raw": grezzo, "contrib_est": stima,
+                            "pubblicabile": pubblicabile,
+                            "est_note": gruppi[0].note(gruppi[1]) if gruppi else None,
+                            "starter": is_starter})
         players.sort(key=lambda p: (-(p["contrib_p90"] or 0.0), -(p["minutes"] or 0)))
         return {"players": players, "n": len(players), "starters_out": starters_out,
+                # somma delle stime stabilizzate: dichiarata come stima nel template
                 "contrib_lost_p90": contrib_lost or None, "has_stats": bool(stats)}
 
     def referee_profile(self, match_id: int) -> dict[str, Any] | None:

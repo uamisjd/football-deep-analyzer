@@ -48,7 +48,7 @@ e la verifica va fatta in GitHub Actions.
 | 1.7 | Griglia di calibrazione 1,02 < produzione 1,0401 | P1 | il valore attivo è fuori dalla griglia esplorata |
 | 1.8 | Proiezioni: precisione falsa, TOP_N fisso, tie-break, `neutral` | P1 | SE 0,5 pp pubblicata a 0,1 pp (**5×**) |
 | 1.9 | Doppia chance incoerente con l'1X2 | P1 | **60 righe** |
-| 1.10 | Shrinkage per-90 con prior nell'unità sbagliata | P1 | ~**6×** troppo debole sui tiri |
+| 1.10 | Shrinkage per-90 con prior nell'unità sbagliata — ✅ **FATTO** 2026-09-16 (`docs/23`) | P1 | ~**6×** troppo debole sui tiri → media e peso **misurati** dal run |
 | 1.11 | Verificato e corretto (9 controlli) | — | xGOT 99,6%, parità post-gara 100% |
 
 ### Area 2 — qualitativa
@@ -768,7 +768,7 @@ le righe **già** in archivio senza bloccare la build.
 
 ---
 
-## 1.10 [P1] Shrinkage dei per-90 dei giocatori: prior applicato con l'unità sbagliata (6× sui tiri)
+## 1.10 [P1] ✅ **FATTO** 2026-09-16 (`docs/23`) — Shrinkage dei per-90 dei giocatori: prior applicato con l'unità sbagliata (6× sui tiri)
 
 **Osservato** (`src/fda/site/players.py`). La contrazione verso la media dei pari usa un prior
 espresso in **minuti** (`SHRINK_PRIOR = 8` nel modello; qui una costante analoga) ma applicato a
@@ -2449,7 +2449,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P1.11 | Griglia pre-registrata nel laboratorio (`Candidate.grid`, `n_tentativi`) | `lab.py`, `docs/00 §D` | basso |
 | P1.12 | Griglia di calibrazione allineata ai bounds (o claim ridotto in `info.html`) | `calibration.py` | **alto** se si rifa il fit → preferire il claim ridotto |
 | P1.13 | ✅ **FATTO** (2026-09-16, `docs/21` §19.6) — skip-link + footer h3→h2; scope e main già coperti (P2-8a); test strutturale | | `base.html` + ~15 template | medio (esteso) |
-| P1.14 | Shrinkage per-90 con `shrink_rate()` unitario + eliminare `p90_shrunk()` morto | `players.py` | medio (cambia le classifiche) |
+| P1.14 | ✅ **FATTO** (2026-09-16, `docs/23`) — `shrink_rate()` unitario in `src/fda/site/rates.py` (media dei pari e peso `k` = 0,25 × mediana del denominatore, **misurati dal run**), regola di pubblicazione (≥270′ grezzo · 90-270′ grezzo + ◎ stima · <90′ solo ◇ stima), percentili sulla stima, `p90_shrunk()` morto eliminato. Il turno ha anche chiuso **due difetti nuovi**: le **quote** (passaggi %, duelli %) pubblicate come rate per 90 con il tooltip «89,2%/90′» e il `◇` che poteva restare vuoto in `match.html`. Invariante nuova **`[32]`** (schede giocatore + schede partita) | `rates.py` (nuovo), `players.py`, `verify_site.py`, template | chiuso |
 | P1.15 | `prossime.html`: debounce filtro + `content-visibility` sulle card | `index.html`/JS, `base.html` | basso |
 
 ## P2 — quando capita (pulizia e debito)

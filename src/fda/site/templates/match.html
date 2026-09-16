@@ -233,14 +233,14 @@
           <td class="r">{{ p.assists }}</td>
           <td class="r small">{{ p.xg|dec if p.xg is not none else '—' }}</td>
           <td class="r small">{{ p.xa|dec if p.xa is not none else '—' }}</td>
-          <td class="r" title="{{ p.xg|dec if p.xg is not none else '—' }}+{{ p.xa|dec if p.xa is not none else '—' }} su {{ p.minutes }}′ ×90 = {{ p.contrib_p90|dec }}{% if p.minutes < 270 and p.contrib_p90_shrunk is not none %} · stabilizzato {{ p.contrib_p90_shrunk|dec }} (prior {{ 180 }}′ verso media ruolo){% endif %}"><b style="color:var(--accent);font-weight:800">{{ p.contrib_p90|dec }}</b>{% if p.minutes < 270 and p.contrib_p90_shrunk is not none %} <span class="mut small" title="Valore stabilizzato con prior bayesiano (180′ verso media di ruolo) per campioni sotto 270′">◎ {{ p.contrib_p90_shrunk|dec }}</span>{% endif %}</td>
+          <td class="r" title="{{ p.xg|dec if p.xg is not none else '—' }}+{{ p.xa|dec if p.xa is not none else '—' }} su {{ p.minutes }}′ ×90 = {{ p.contrib_p90|dec }}{% if p.minutes < 270 and p.contrib_p90_shrunk is not none %} · stima stabilizzata {{ p.contrib_p90_shrunk|dec }} — {{ p.est_note }}{% elif not p.pubblicabile %} · campione sotto i 90′ e gruppo di pari insufficiente: la rata grezza non si pubblica{% endif %}">{% if p.pubblicabile %}<b style="color:var(--accent);font-weight:800">{{ p.contrib_p90|dec }}</b>{% elif p.contrib_p90_shrunk is not none %}<b style="color:var(--accent);font-weight:800">◇ {{ p.contrib_p90_shrunk|dec }}</b>{% else %}<span class="mut" title="Campione di {{ p.minutes }}′ (sotto i 90′): la rata grezza non si pubblica ({{ p.contrib_p90|dec }}/90 sarebbe rumore) e il gruppo dei pari non basta per una stima stabilizzata">—</span>{% endif %}{% if p.minutes < 270 and p.contrib_p90_shrunk is not none %} <span class="mut small" title="Stima stabilizzata (media dei pari e peso misurati dai dati del run) per campioni sotto 270′: con pochi minuti il valore per 90 è rumore">◎ {{ p.contrib_p90_shrunk|dec }}</span>{% endif %}</td>
           <td class="r small">{{ p.rating|dec(2) if p.rating is not none else '—' }}</td>
         </tr>
         {% endfor %}
       </table>
       {% if kp.rows %}{% set k0 = (c[side ~ '_key_status'] or {}).get(kp.rows[0].id) %}{% if k0 and k0.status == 'unavailable' %}<p class="small warn" style="margin:6px 0 0">Il contributo offensivo più alto della lista, {{ kp.rows[0].name }}, è indisponibile ({{ k0.note }}): il valore per 90 è stagionale e non vale per questa gara.</p>{% endif %}{% endif %}
       {% else %}<p class="mut small">Nessun giocatore sopra la soglia di minutaggio con dati xG.</p>{% endif %}
-      {% if kp %}<p class="small mut">Soglia di minutaggio: {{ kp.floor }} minuti · {{ kp.eligible }} {{ 'giocatore in classifica' if kp.eligible == 1 else 'giocatori in classifica' }}. ◎ valore stabilizzato con prior bayesiano (180′ verso la media di ruolo) per campioni sotto 270′: con pochi minuti il valore per 90 è rumore.</p>{% endif %}
+      {% if kp %}<p class="small mut">Soglia di minutaggio: {{ kp.floor }} minuti · {{ kp.eligible }} {{ 'giocatore in classifica' if kp.eligible == 1 else 'giocatori in classifica' }}. ◎ stima stabilizzata della rata per 90 (media dei pari per lega e ruolo e peso misurati dai dati del run, non costanti) per campioni sotto 270′: con pochi minuti il valore grezzo è rumore. ◇ = sotto i 90′ la rata grezza non si pubblica, si pubblica la stima.</p>{% endif %}
       {% if rated %}<p class="small" style="margin-top:8px"><b>Per media voto di stagione</b>: {% for p in rated %}{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %} {{ p.season_rating|dec(2)}}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
     </div>
   {% endfor %}
@@ -279,14 +279,14 @@
     </div>
     {% endif %}
     {% set ab = c[side ~ '_absences'] %}{% set stt = c[side ~ '_starters'] %}{% if ab and ab.players %}
-    <p><b>Indisponibili ({{ ab.n }})</b>{% if ab.starters_out %} <span class="mut small">· {{ ab.starters_out }} {{ 'titolare abituale' if ab.starters_out == 1 else 'titolari abituali' }} fuori</span>{% endif %}{% if ab.contrib_lost_p90 %} <span class="mut small">· {{ ab.contrib_lost_p90|dec }} xG+xA a partita in meno</span>{% endif %}</p>
+    <p><b>Indisponibili ({{ ab.n }})</b>{% if ab.starters_out %} <span class="mut small">· {{ ab.starters_out }} {{ 'titolare abituale' if ab.starters_out == 1 else 'titolari abituali' }} fuori</span>{% endif %}{% if ab.contrib_lost_p90 %} <span class="mut small">· {{ ab.contrib_lost_p90|dec }} xG+xA a partita in meno (stima stabilizzata)</span>{% endif %}</p>
     <table>
       <tr><th scope="col" class="mut small">giocatore</th><th scope="col" class="mut small">motivo · rientro</th><th scope="col" class="r" style="width:46%">impatto</th></tr>
       {% for u in ab.players %}
       <tr {% if not u.minutes %}style="opacity:.62"{% endif %}>
         <td><b>{{ u.name }}</b>{% if u.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ u.pos }}</span>{% endif %}{% if u.starter %} <span class="small" title="almeno metà dei minuti medi per giocatore">· titolare</span>{% endif %}</td>
         <td class="mut small">{{ u.type }}{% if u.ret %} · {{ u.ret }}{% endif %}</td>
-        <td class="r small">{% if u.minutes %}{{ u.minutes }}′ · {{ u.goals }}+{{ u.assists }} · <b style="color:var(--accent)">{{ u.contrib_p90|dec }}/90</b>{% else %}<span class="mut" title="il giocatore non ha ancora minuti nelle statistiche di stagione raccolte (es. nuovo acquisto): l'impatto si saprà quando gioca">senza minuti in stagione · n.d.</span>{% endif %}</td>
+        <td class="r small">{% if u.minutes %}{{ u.minutes }}′ · {{ u.goals }}+{{ u.assists }} · {% if u.pubblicabile %}<span title="xG+xA grezzo {{ u.contrib_raw|dec }}/90{{ ' · stima stabilizzata ' ~ u.contrib_est|dec ~ '/90 — ' ~ u.est_note if u.contrib_est is not none else '' }}"><b style="color:var(--accent)">{{ u.contrib_p90|dec }}</b></span>{% else %}<span title="Campione di {{ u.minutes }}′ (sotto i 90′): la rata grezza non si pubblica, sarebbe {{ u.contrib_raw|dec }}/90 di rumore. Stima stabilizzata {{ u.contrib_est|dec }}/90 — {{ u.est_note }}"><b style="color:var(--accent)">◇ {{ u.contrib_p90|dec }}</b></span>{% endif %}/90{% else %}<span class="mut" title="il giocatore non ha ancora minuti nelle statistiche di stagione raccolte (es. nuovo acquisto): l'impatto si saprà quando gioca">senza minuti in stagione · n.d.</span>{% endif %}</td>
       </tr>
       {% endfor %}
     </table>

@@ -1727,6 +1727,87 @@ def check_assets(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_stime(site: Path) -> tuple[list[str], int]:
+    """[32] stime stabilizzate dei per-90 e delle quote nelle schede giocatore (docs/19 §1.10, docs/23 §2).
+
+    Quattro regole misurate sulle pagine:
+
+    1. ogni cella marcata ◇ o ◎ dichiara **media dei pari, peso k e numerosità** nel tooltip:
+       una stima senza il gruppo che l'ha prodotta non è verificabile;
+    2. sotto i 90′ giocati nessuna cella pubblica un valore grezzo (il caso «90,00 tiri/90» su un
+       minuto di gioco, o una percentuale su tre duelli): o il grezzo non c'è, o è la stima, o è
+       marcato ◇;
+    3. nessuna **rata per 90** pubblicata supera 25 per 90 sotto i 270′ di campione: sopra quella
+       soglia il numero è di fatto impossibile e va pubblicato come stima, non come fatto;
+    4. una cella **percentuale** non è una rata per 90: il suo tooltip non deve dire «/90′», perché
+       una quota (passaggi riusciti, duelli vinti) non si normalizza sui minuti.
+    """
+    fails: list[str] = []
+    checks = 0
+    n_righe = n_stime = n_quote = 0
+    riga = re.compile(r"<tr><td>([^<]+?)(?: <span class=\"mut small\" title=\"([^\"]*)\">([◎◇])</span>)? ?</td>"
+                      r"<td class=\"r\">([^<]*)</td><td class=\"r\">(.*?)</td></tr>")
+    minuti_rx = re.compile(r'<th scope="row">Minuti</th><td class="r">([\d.]+)</td>')
+    for page in sorted((site / "giocatori").glob("*.html")):
+        if page.name == "index.html":
+            continue
+        h = page.read_text(encoding="utf-8", errors="replace")
+        m_min = minuti_rx.search(h)
+        if not m_min:
+            continue
+        minuti = int(m_min.group(1).replace(".", ""))
+        for match in riga.finditer(h):
+            lab, nota, mark, _tot, cella = match.groups()
+            n_righe += 1
+            checks += 1
+            testo = re.sub(r"<[^>]+>", "", cella).strip()
+            if testo in ("", "—"):
+                continue
+            titolo_m = re.search(r'title="([^"]*)"', cella)
+            titolo = titolo_m.group(1) if titolo_m else ""
+            percentuale = testo.endswith("%") or lab.rstrip().endswith("%")
+            if percentuale:
+                n_quote += 1
+                if "/90′" in titolo:
+                    fails.append(f"{page.name}: {lab}: quota dichiarata come rata per 90 («/90′» nel tooltip)")
+            numeri = re.findall(r"\b\d+,\d+\b", testo)
+            valore = float(numeri[0].replace(",", ".")) if numeri else None
+            stima = "◇" in cella or mark == "◇"
+            marcata = stima or "◎" in cella or mark == "◎"
+            if marcata:
+                n_stime += 1
+                nota_full = " ".join([nota or "", titolo])
+                for token in ("media dei pari", "peso k=", "n="):
+                    if token not in nota_full:
+                        fails.append(f"{page.name}: {lab}: stima senza «{token}» nel tooltip")
+            elif valore is not None and minuti < 90:
+                fails.append(f"{page.name}: {lab}: valore {testo} pubblicato con {minuti}′ giocati")
+            elif (not percentuale and valore is not None and valore > 25 and minuti < 270):
+                fails.append(f"{page.name}: {lab}: rata {valore}/90 con {minuti}′ di campione")
+    print(f"[32] righe per-90 delle schede giocatore verificate: {n_righe} "
+          f"(stime ◇/◎: {n_stime}, quote: {n_quote})")
+
+    # Regola 5 sulle schede partita: le celle dei giocatori decisivi e dell'infermeria usano gli
+    # stessi marcatori ◇/◎, ma il valore arriva da `analysis.py` e un campo non emesso verrebbe
+    # reso da Jinja come stringa vuota («◇ » senza numero, difetto già visto in questo progetto).
+    rx_marcata = re.compile(r"[◎◇]\s*([^<]{0,60}?)(?:</b>|</span>)")
+    righe_partita = 0
+    for page in sorted((site / "partite").glob("*.html")):
+        h = page.read_text(encoding="utf-8", errors="replace")
+        for m in rx_marcata.finditer(h):
+            righe_partita += 1
+            checks += 1
+            coda = m.group(1).strip()
+            if not coda or coda in ("—", "-"):
+                fails.append(f"{page.name}: cella ◇/◎ senza numero pubblicato")
+        for m in re.finditer(r'title="([^"]*)"[^>]*>[^<]{0,40}◇', h):
+            checks += 1
+            if "media dei pari" not in m.group(1) and "gruppo dei pari" not in m.group(1):
+                fails.append(f"{page.name}: stima ◇ senza la media dei pari nel tooltip")
+    print(f"[32] celle ◇/◎ delle schede partita verificate: {righe_partita}")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -1752,6 +1833,9 @@ def main() -> int:
     stato, stato_checks = check_status(site)
     fails += stato
     checks += stato_checks
+    stime, stime_checks = check_stime(site)
+    fails += stime
+    checks += stime_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric

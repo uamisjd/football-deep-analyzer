@@ -256,3 +256,76 @@ def test_verify_site_sospensione_deve_dire_motivo_e_non_chiamare(tmp_path):
     (site / "stato.html").write_text(f"<table>{chiama}</table>", encoding="utf-8")
     fails, _ = vs.check_status(site)
     assert fails and "richieste" in fails[0]
+
+
+def test_verify_site_stime_stabilizzate_dichiarano_gruppo_e_peso(tmp_path):
+    """[32] (docs/19 §1.10): una stima ◇/◎ senza media dei pari, peso e n non è verificabile.
+
+    Il difetto che il controllo previene è quello misurato nelle schede: 8.705 celle per-90
+    marcate con un valore «stabilizzato» che però non diceva verso cosa (e con l'unità del
+    prior sbagliata: peso 180′ fisso, media dei tiri presa dalla costante dell'xG+xA).
+    """
+    vs = _site_module()
+    site = tmp_path / "site"
+    (site / "giocatori").mkdir(parents=True)
+    testa = ('<th scope="row">Minuti</th><td class="r">95</td>'
+             '<tr><td>Tiri<x> <span class="mut small" title="media dei pari (attaccanti di Serie A) 3,00/90 '
+             '· peso k=225′ · n=42">◎</span></td><td class="r">6</td>'
+             '<td class="r"><span title="grezzo 5,68/90 · stima stabilizzata 4,62/90">5,68 '
+             '<span class="mut small">◎ 4,62</span></span></td></tr>')
+    (site / "giocatori" / "1.html").write_text(testa.replace("<x>", ""), encoding="utf-8")
+    fails, checks = vs.check_stime(site)
+    assert fails == [] and checks == 1
+
+    # stima senza gruppo né peso → problema
+    (site / "giocatori" / "1.html").write_text(
+        testa.replace('title="media dei pari (attaccanti di Serie A) 3,00/90 · peso k=225′ · n=42"',
+                      'title="valore stimato"').replace("<x>", ""), encoding="utf-8")
+    fails, _ = vs.check_stime(site)
+    assert fails and "media dei pari" in fails[0]
+
+    # 1′ di gioco con una rata grezza pubblicata → il difetto originale
+    (site / "giocatori" / "1.html").write_text(
+        '<th scope="row">Minuti</th><td class="r">1</td>'
+        '<tr><td>Tiri</td><td class="r">1</td><td class="r">90,00</td></tr>', encoding="utf-8")
+    fails, _ = vs.check_stime(site)
+    assert fails and "con 1′ giocati" in fails[0]
+
+
+def test_verify_site_quote_non_dichiarate_come_rate_per_90(tmp_path):
+    """[32] regola 4 (docs/23 §2): una percentuale non è una rata per 90 e il tooltip non deve dirlo.
+
+    Difetto misurato sulla build del 2026-09-16: le celle «Passaggi riusciti %» e «Duelli vinti %»
+    pubblicavano il grezzo già sotto i 90′ e lo dichiaravano «89,2%/90′» — un numero su tre duelli
+    presentato come una rata per 90 minuti. Il controllo ora rifiuta «/90′» nei tooltip delle quote
+    e la pubblicazione del grezzo sotto i 90′.
+    """
+    vs = _site_module()
+    site = tmp_path / "site"
+    (site / "giocatori").mkdir(parents=True)
+    ok = ('<th scope="row">Minuti</th><td class="r">900</td>'
+          '<tr><td>Passaggi riusciti %</td><td class="r">85%</td>'
+          '<td class="r"><span title="765 passaggi riusciti su 900 tentati (totale stagionale): '
+          'la percentuale non è una rata per 90 minuti">85,0%</span></td></tr>'
+          '<tr><td>Duelli vinti %</td><td class="r">50%</td>'
+          '<td class="r"><span title="grezzo 50,0% · media dei pari (difensori di Serie A) 50,0% · '
+          'peso k=30 duelli · n=9">50,0% <span class="mut small">◎ 50,1%</span></span></td></tr>')
+    (site / "giocatori" / "1.html").write_text(ok, encoding="utf-8")
+    fails, checks = vs.check_stime(site)
+    assert fails == [] and checks == 2
+
+    # quota dichiarata come rata per 90 → problema
+    (site / "giocatori" / "1.html").write_text(
+        '<th scope="row">Minuti</th><td class="r">900</td>'
+        '<tr><td>Passaggi riusciti %</td><td class="r">85%</td>'
+        '<td class="r"><span title="85,0%/90′">85,0%</span></td></tr>', encoding="utf-8")
+    fails, _ = vs.check_stime(site)
+    assert fails and "/90′" in fails[0]
+
+    # quota grezza pubblicata sotto i 90′ → problema (stesso caso della build)
+    (site / "giocatori" / "1.html").write_text(
+        '<th scope="row">Minuti</th><td class="r">37</td>'
+        '<tr><td>Duelli vinti %</td><td class="r">33%</td>'
+        '<td class="r"><span title="33,3%/90′">33,3%</span></td></tr>', encoding="utf-8")
+    fails, _ = vs.check_stime(site)
+    assert fails and any("37′ giocati" in f for f in fails)

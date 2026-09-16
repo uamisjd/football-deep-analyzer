@@ -109,9 +109,9 @@ def main() -> int:
         k("coda_matrice_vaga", "Coda 6+ gol" in txt)
         k("coda_matrice_esplicita", "Almeno una delle due squadre segna 6+ gol" in txt)
         k("precedenti_per_campo", "di cui con" in txt and "gol a gara" in txt)
-        # #12 — marcatore del valore stabilizzato
-        k("shrunk_senza_marcatore", "valore stabilizzato" not in txt and "<br><span class=\"mut small\" title=\"Valore stabilizzato" in txt)
-        k("shrunk_marcatore", "◎" in txt)
+        # #12 — marcatore della stima stabilizzata (docs/19 §1.10: ◇ sotto i 90′, ◎ fra 90′ e 270′)
+        k("stima_senza_marcatore", "stima stabilizzata" in txt and "◎" not in txt and "◇" not in txt)
+        k("stima_marcatore", "◎" in txt or "◇" in txt)
         # nuovo (2026-09-15): fascia storica del pronostico da backtest fuori campione
         k("fascia_storica", 'id="fascia-storica"' in txt)
         k("posizione_lega", 'id="posizione-lega"' in txt)
