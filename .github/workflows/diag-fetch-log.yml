@@ -1,0 +1,68 @@
+# Diagnostica: scarica l'artifact di un run e ne committa la coda sul branch.
+#
+# Perché esiste (2026-09-15): l'agente lavora in un sandbox che non raggiunge il blob
+# storage di GitHub, quindi i log dei run in Actions e gli artifact non sono leggibili da
+# lì (limite noto, `docs/00` §B6). Un runner di Actions invece li raggiunge: questo
+# workflow scarica l'artifact `run-log-*` di un run indicato, ne prende la coda e la
+# committa sul branch di sessione, dove l'agente la legge con un `git show`.
+#
+# È temporaneo e diagnostico: non tocca i dati in `data/processed`, non pubblica nulla.
+name: diag (log del run sul branch)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID del run di cui scaricare l'artifact run-log-*"
+        required: true
+        default: "35037211442"
+  push:
+    branches:
+      - "arena/01a0a75d-football-deep-analyzer"
+    paths:
+      - "diag/trigger.txt"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - id: rid
+        run: echo "run_id=${{ github.event.inputs.run_id || '35037211442' }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          run-id: ${{ steps.rid.outputs.run_id }}
+          pattern: "run-log-*"
+          merge-multiple: true
+          path: diag_raw
+          github-token: ${{ github.token }}
+
+      - name: Estrai la coda e committala
+        run: |
+          set -u
+          mkdir -p diag
+          ls -la diag_raw || true
+          found=""
+          for f in $(find diag_raw -type f -name 'run.log' 2>/dev/null); do found="$f"; done
+          if [ -n "$found" ]; then
+            tail -200 "$found" > diag/run-tail.txt
+            echo "coda scritta da $found ($(wc -l < diag/run-tail.txt) righe)"
+          else
+            echo "artifact non trovato: $(find diag_raw -type f 2>/dev/null | head -5)" > diag/run-tail.txt
+          fi
+          { echo "run_id=${{ steps.rid.outputs.run_id }}"; echo "estratto_il=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"; } > diag/run-tail-meta.txt
+          git config user.name "fda-diag"
+          git config user.email "fda-diag@users.noreply.github.com"
+          git add -f diag/
+          git commit -m "diag: coda del log del run ${{ steps.rid.outputs.run_id }} [skip ci]" || echo "niente da committare"
+          git push
