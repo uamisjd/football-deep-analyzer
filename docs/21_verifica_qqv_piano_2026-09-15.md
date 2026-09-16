@@ -1049,3 +1049,82 @@ Stato effettivo: **[9]** (distribuzioni dei gol, 3 invarianti), **[10]** (scompo
 questo giro ha aggiunto **[3b]** (Δ e composizione in Accuratezza) e **[29]** (CSS esterno).
 I test di tema/contrasto (14) proteggono il CSS a livello di sorgente. Nessun ulteriore
 controllo richiesto: la copertura è completa e ogni fix P0 ha la sua invariante o il suo test.
+
+---
+
+## 19. P1.2–P1.6 contenuti + P1.13 a11y + verify_site in CI (2026-09-16, diciassettesimo giro — sessione `arena/01a0aa56`)
+
+### 19.1 Stato di partenza (verificato, non presunto)
+
+- PR #38 **fusa** (merge commit `6459952`), daily post-merge `35098123287` **verde** (run 11m12s, deploy ok).
+- Dati del run 12:52–12:55 UTC: `transfers` **4.231 righe** (parser §17 confermato al vivo), `news` 5.354,
+  **nessuna riga nuova** `understat:NED1/POR1` (fix P0.9 operativo); le ultime righe storiche (10:59)
+  restano in pagina per la finestra 48h prevista, poi escono (transizione onesta, come da §18.6).
+- Pages non raggiungibile dal sandbox (regola B.6): «CSS esterno servito da Pages» resta l'unica
+  voce **da confermare dal vivo**; il deploy è verde e l'artifact contiene `assets/site.css`.
+
+### 19.2 P1.2+P1.3 — arbitro: etichetta relativa alla lega, un solo profilo
+
+- **Un solo profilo**: `build()` e `list_context()` usano `referee_profile()`; eliminata la chiave
+  duplicata «referee_profile» e il dict scritto a mano (senza confronto di lega). Template aggiornato.
+- **Etichetta relativa** (`MIN_REFEREE_MATCHES = 15`): sopra la soglia il tono è
+  «sopra/sotto/nella media del campionato» con la media di lega tra parentesi; sotto la soglia solo
+  numeri («campione ridotto, nessuna valutazione»); senza media di lega **nessun giudizio** (più
+  onesto della bozza dell'audit, che cadeva su «nella media» non verificabile).
+- **Morso reale**: la prima build al vivo mostrava «su 12 **12** gare designate» — `it_plural` include
+  già il numero; fix + test anti-doppio. Scheda 5749650 ora: «Arbitro Gianluca Manganiello: 4,6
+  ammonizioni a partita su 12 gare designate (campione ridotto, nessuna valutazione).»
+- Sul sito reale: **0 pagine** con «molto severo»/«permissivo» (assoluto); es. Marcenaro 4,9 →
+  «sopra la media del campionato (4,1 la media di lega)» (prima: «severo» assoluto).
+
+### 19.3 P1.4 — curiosità: recupero 5 template + osservabilità
+
+- Tradotti i 5 template oggettivi più scartati (+ ranking trasferta trovato nei dati): **66,0% →
+  74,3%** di fatti tradotti (1.329 → 1.497 su 2.014; audit prevedeva ≥ 72,8%).
+- `INSIGHT_DROP_LOG` per **forma canonica** (numeri → N) + contatori di consumo; pubblicati in
+  `stato.html` («Fatti FotMob: X tradotti · Y scartati · scarto più frequente (N×)») — se FotMob
+  cambia un template, si vede prima che il blocco si svuoti.
+
+### 19.4 P1.5 — `DETAIL_WINDOW_DAYS` unica fonte del «7 giorni»
+
+- Costante in `config.py`; default di `collect_league`, opzione CLI, chiamata `daily`, finestre e
+  testi di `prossime.html` letti da lì. Test di unicità col criterio dell'audit (zero «7» letterali
+  futuri in `src/`); la finestra **passata** dei risultati resta un concetto distinto (documentato).
+
+### 19.5 P1.6 — 404 + sitemap onesta
+
+- `404.html` col design del sito: GitHub Pages lo serve a **qualsiasi profondità** → `root`
+  assoluta sul base (`SITE_BASE_URL`, costante unica), meta `noindex`, canonical soppresso.
+- Sitemap: home una sola (via `/index.html` duplicato), 7 pagine di lega incluse, **lastmod reale**
+  (data di gara per le schede — misurate 39 date distinte contro 1 prima —, aggiornamento
+  `player_stats` per i giocatori), tetto `MAX_SITEMAP_URLS = 50.000`.
+- `verify_site [29]` esteso: il 404 deve linkare il CSS **assoluto** (test dedicato).
+
+### 19.6 P1.13 — a11y strutturale: solo lo skip-link mancava
+
+- Stato misurato all'avvio: `scope` sui `<th>` già completo (P2-8a, docs/21 §11), `<main>` presente,
+  **0 pagine** con salti di heading (l'audit era antecedente a quelle correzioni).
+- Fatto: skip-link «Salta al contenuto» → `#main` (visibile solo al focus da tastiera, colore
+  `--on-accent` per i due temi) e footer `h3 → h2` (nelle pagine senza h2 di contenuto l'outline
+  saltava da h1 a h3 — sul fixture empty era ancora così; il reale era già corretto). Test
+  strutturale su tutte le pagine del build (criterio §3.6).
+
+### 19.7 `verify_site` diventa gate in CI
+
+- `daily.yml`: passo nuovo dopo il build, **prima del commit dei dati e del deploy** (≈1 min su
+  32.868 invarianti): un numero che non torna fallisce il run e blocca la pubblicazione. Chiude la
+  voce «verify_site 0 anche in CI» di §18.5, che era rimasta aperta perché il workflow non lo
+  eseguiva mai.
+
+### 19.8 Verifiche finali (misurate)
+
+- Suite **286 passed** (+10 su 276); `ruff --select F,E` src+tests: **601 → 600** (−1; nessun
+  rilievo nuovo; i ~130 in `scripts/` sono preesistenti e fuori dal baseline documentato).
+- `fda build` reale: **376 / 2.364 / 7.490** pagine; `verify_site` **0 problemi · 32.868 controlli**;
+  sito 114 MB; preview HTTP servita e controllata (200 su index/404, CSS giusto a ogni profondità,
+  skip-link presente).
+
+**Prossimo passo**: merge utente della PR; poi i P1 residui (P1.7 proiezioni, P1.8 coerenza doppia
+chance, P1.9 backoff ESPN, P1.10 motivo Open-Meteo, P1.11 griglia pre-registrata, P1.14 shrinkage,
+P1.15 debounce prossime) e i P2. Da confermare al prossimo daily: verify_site verde **in Actions**,
+404 e sitemap su Pages, `benchmark-quote` al primo giorno del mese.
