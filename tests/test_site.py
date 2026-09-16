@@ -1032,3 +1032,54 @@ def test_doppia_chance_e_totale_chiudono_con_i_numeri_stampati(tmp_path):
     assert any("doppia chance" in f for f in fails), fails
     rotto.write_text(originale, encoding="utf-8")
     st.close()
+
+
+def test_stato_fonti_mostra_sospensione_e_sonda_fallback(tmp_path):
+    """*Stato fonti* distingue una fonte sospesa da un guasto nuovo e cita la sonda settimanale.
+
+    Due fatti misurati il 2026-09-16: ESPN rispondeva 403 su 20 run consecutivi (14 righe di
+    avviso identiche a ogni run, in cui un guasto nuovo non si vedeva) e la fonte di fallback
+    Open-Meteo non veniva mai esercitata (docs/19 P1.9-P1.10, docs/22 §3).
+    """
+    from datetime import UTC
+
+    st = _seed(tmp_path)
+    ora = datetime.now(UTC)
+    st.upsert("source_status", [
+        {"run_at": ora, "source": "espn:ITA1", "requests": 0, "ok": False, "warn": True,
+         "error": "espn standings: sospeso dopo 20 run falliti consecutivi (espn standings); "
+                  "nuovo tentativo fra 4 run", "rows": 0, "detail": "", "digest": ""},
+        {"run_at": ora, "source": "fotmob:ITA1", "requests": 18, "ok": True, "warn": False,
+         "error": None, "rows": 380, "detail": "calendario 380 · partite 10", "digest": ""},
+    ])
+    st.upsert("source_probe", [
+        {"run_at": ora, "probe": "openmeteo", "ok": True,
+         "detail": "previsione per 45.48,9.12 alle 18:00 UTC: 21 °C, pioggia debole · pioggia 60%"},
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_status()
+    h = (out / "stato.html").read_text(encoding="utf-8")
+    assert 'class="pill S"' in h and "SOSPESO" in h
+    assert "fallito gli ultimi run" in h          # il motivo dello stato è nel tooltip
+    assert "sospeso dopo 20 run falliti consecutivi" in h and "nuovo tentativo fra 4 run" in h
+    assert "Sonda delle fonti di <b>fallback</b>" in h
+    assert "21 °C, pioggia debole" in h
+    assert "sonda ferma da" not in h            # prova di oggi: nessun avviso di sonda vecchia
+
+    # una sonda vecchia di tre settimane deve dichiararsi non verificata, non sparire
+    st.write("source_probe", st.read("source_probe").assign(
+        run_at=ora - timedelta(days=21)))
+    SiteBuilder(store=st, out_dir=out).build_status()
+    h = (out / "stato.html").read_text(encoding="utf-8")
+    assert "sonda ferma da 21 giorni" in h
+    st.close()
+
+
+def test_stato_fonti_senza_sonda_dichiara_che_non_e_verificata(tmp_path):
+    """Nessun dato inventato: senza sonda registrata la pagina dice che il fallback non è provato."""
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_status()
+    h = (out / "stato.html").read_text(encoding="utf-8")
+    assert "nessuna registrazione" in h and "non verificato" in h
+    st.close()

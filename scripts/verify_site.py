@@ -164,18 +164,29 @@ STATUS_ROW = re.compile(
 
 
 def check_status(site: Path) -> tuple[list[str], int]:
-    """[28] Stato fonti: una fonte «OK» con 0 righe deve dichiarare il motivo."""
+    """[28] Stato fonti: una fonte «OK» con 0 righe deve dichiarare il motivo.
+
+    Nella stessa passata si verifica la **sospensione** (docs/19 P1.9): una riga «SOSPESO»
+    deve dire quanti run sono falliti di fila e fra quanti run si ritenta, e non può avere
+    richieste — se una fonte sospesa interrogasse comunque la rete, il backoff non esisterebbe.
+    """
     page = site / "stato.html"
     if not page.exists():
         return [], 0
     fails: list[str] = []
     checks = 0
     for match in STATUS_ROW.finditer(page.read_text(encoding="utf-8")):
-        fonte, _run, _req, righe, esito = match.groups()
+        fonte, _run, richieste, righe, esito = match.groups()
         checks += 1
+        cell = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", esito)).strip()
+        if "SOSPESO" in cell:
+            if "run falliti consecutivi" not in cell or "nuovo tentativo fra" not in cell:
+                fails.append(f"stato.html: {fonte} sospesa senza motivo o senza piano di ritentativo")
+            elif richieste.strip() not in ("0", "—"):
+                fails.append(f"stato.html: {fonte} sospesa ma con {richieste} richieste nel run")
+            continue
         if righe.strip() != "0":
             continue
-        cell = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", esito)).strip()
         if "OK" not in cell:
             continue                      # errore/avviso: il motivo è già il testo dell'errore
         if "0 righe ·" not in cell or len(cell.split("0 righe ·", 1)[1].strip()) < 3:

@@ -221,3 +221,38 @@ def test_notizia_in_finestra_duplicati_stesso_url():
     # righe senza data: ignorate, non valide per default
     senza_data = pd.DataFrame({"published_at": [pd.NaT], "title": ["t"]})
     assert vs.notizia_in_finestra(senza_data, kickoff) is False
+
+
+def test_verify_site_sospensione_deve_dire_motivo_e_non_chiamare(tmp_path):
+    """[28] esteso (docs/19 P1.9): una fonte SOSPESA deve dichiarare N run e il ritentativo.
+
+    Il difetto che il controllo previene non è estetico: se una riga dicesse «sospeso» senza
+    dire perché, la pagina *Stato fonti* tornerebbe a nascondere il guasto — e se una fonte
+    sospesa continuasse a fare richieste, il backoff non risparmierebbe nulla.
+    """
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+    ok = ("<tr><td>openmeteo:ITA1</td><td class=\"mut\">16/09 15:05</td><td class=\"r\">0</td>"
+          "<td class=\"r\">0</td><td><span class=\"pill V\">OK</span> <span class=\"small mut\">"
+          "0 righe · nessuna previsione utile su 10 gare future (meteo FotMob 10)</span></td></tr>")
+    sospeso = ("<tr><td>espn:ITA1</td><td class=\"mut\">16/09 15:05</td><td class=\"r\">0</td>"
+               "<td class=\"r\">0</td><td><span class=\"pill S\">SOSPESO</span> <span class=\"small mut\">"
+               "espn standings: sospeso dopo 20 run falliti consecutivi (espn standings); "
+               "nuovo tentativo fra 4 run</span></td></tr>")
+    (site / "stato.html").write_text(f"<table>{ok}{sospeso}</table>", encoding="utf-8")
+    fails, checks = vs.check_status(site)
+    assert fails == [] and checks == 2
+
+    # sospeso senza piano di ritentativo → problema
+    muto = sospeso.replace("nuovo tentativo fra 4 run", "")
+    (site / "stato.html").write_text(f"<table>{muto}</table>", encoding="utf-8")
+    fails, _ = vs.check_status(site)
+    assert fails and "piano di ritentativo" in fails[0]
+
+    # sospeso ma con richieste fatte → il backoff non sta funzionando
+    chiama = sospeso.replace('<td class="r">0</td><td class="r">0</td>',
+                             '<td class="r">2</td><td class="r">0</td>')
+    (site / "stato.html").write_text(f"<table>{chiama}</table>", encoding="utf-8")
+    fails, _ = vs.check_status(site)
+    assert fails and "richieste" in fails[0]

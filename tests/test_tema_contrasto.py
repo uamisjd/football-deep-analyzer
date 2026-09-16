@@ -40,6 +40,7 @@ COPPIE = {
     "on-accent": "accent",          # nav corrente, posizione attiva
     "accent-strong": "accent-dim",  # pill versione, tag, filtro attivo, segnale concorde
     "v-fg": "v-bg", "n-fg": "n-bg", "p-fg": "p-bg",   # chip risultato V/N/P
+    "s-fg": "s-bg",                 # chip «sospeso» dello stato fonti (docs/19 P1.9)
     "sel-fg": None,                 # sfondo = velatura rgba: verificata a parte
 }
 
@@ -159,6 +160,7 @@ def test_token_di_foreground_presenti(temi: dict) -> None:
     """I token nati per togliere gli hard-coded esistono in entrambi i temi."""
     richiesti = {"accent-hover", "accent-strong", "on-accent", "sel-bg", "sel-fg", "lose-soft",
                  "v-bg", "v-fg", "v-line", "n-bg", "n-fg", "n-line", "p-bg", "p-fg", "p-line",
+                 "s-bg", "s-fg",
                  *CAMPIONI}
     for tema in ("dark", "light"):
         mancanze = richiesti - set(temi[tema])

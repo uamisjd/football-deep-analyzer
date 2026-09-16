@@ -7,8 +7,17 @@
 <div class="card"><h2>Ultimi run per fonte</h2>
 <p class="small mut">«Righe» sono le righe di dati salvate dalla fonte in quell'ultimo run: una fonte che risponde ma non salva nulla scrive qui il motivo (feed vuoto, forma cambiata, niente in finestra) — così un run «andato bene» non nasconde più un contenuto mancante.</p>
 <div class="tablewrap"><table><tr><th scope="col">Fonte</th><th scope="col">Ultimo run</th><th scope="col" class="r">Richieste</th><th scope="col" class="r">Righe</th><th scope="col">Esito</th></tr>
-{% for r in sources %}<tr><td>{{ r.source }}</td><td class="mut">{{ r.run_at }}</td><td class="r">{{ r.requests|it_num }}</td><td class="r">{{ r.rows|it_num if r.rows is not none else "—" }}</td><td>{% if not r.ok %}{% if r.warn %}<span class="pill N">AVVISO</span>{% else %}<span class="pill P">ERRORE</span>{% endif %} <span class="small mut">{{ r.error }}</span>{% elif r.rows == 0 %}<span class="pill V">OK</span> <span class="small mut">0 righe · {{ r.detail }}</span>{% else %}<span class="pill V">OK</span> <span class="small mut">{{ r.detail }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="mut">Nessun run registrato.</td></tr>{% endfor %}
-</table></div></div>
+{% for r in sources %}<tr><td>{{ r.source }}</td><td class="mut">{{ r.run_at }}</td><td class="r">{{ r.requests|it_num }}</td><td class="r">{{ r.rows|it_num if r.rows is not none else "—" }}</td><td>{% if not r.ok %}{% if r.suspended %}<span class="pill S" title="La fonte ha fallito gli ultimi run: il run non la interroga più, ma riprova periodicamente da sola">SOSPESO</span> <span class="small mut">{{ r.error }}</span>{% elif r.warn %}<span class="pill N">AVVISO</span> <span class="small mut">{{ r.error }}</span>{% else %}<span class="pill P">ERRORE</span> <span class="small mut">{{ r.error }}</span>{% endif %}{% elif r.rows == 0 %}<span class="pill V">OK</span> <span class="small mut">0 righe · {{ r.detail }}</span>{% else %}<span class="pill V">OK</span> <span class="small mut">{{ r.detail }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="mut">Nessun run registrato.</td></tr>{% endfor %}
+</table></div>
+{% if probe %}{% for p in probe %}<p class="small mut" style="margin:8px 0 0">
+  Sonda delle fonti di <b>fallback</b> (una richiesta vera a settimana, workflow «lab»): <b>{{ p.probe }}</b>
+  {% if p.ok %}<span class="pill V">OK</span>{% else %}<span class="pill P">FALLITA</span>{% endif %}
+  ultima prova {{ p.when }} ({{ p.days }} {{ 'giorno' if p.days == 1 else 'giorni' }} fa) · {{ p.detail }}
+  {%- if p.days > 14 %} <span class="bad">— sonda ferma da {{ p.days }} giorni: il fallback non è verificato</span>{% endif %}
+</p>{% endfor %}{% else %}<p class="small mut" style="margin:8px 0 0">
+  Sonda delle fonti di <b>fallback</b>: nessuna registrazione. Il workflow «lab» la esegue il lunedì;
+  finché non gira, il fallback meteo è dichiarato ma non verificato.</p>{% endif %}
+</div>
 <div class="card"><h2>Tabelle</h2>
 <div class="tablewrap"><table><tr><th scope="col">Tabella</th><th scope="col" class="r">Righe</th><th scope="col" class="r">KB</th></tr>
 {% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows|it_num }}</td><td class="r">{{ t.kb|dec(1) }}</td></tr>{% endfor %}

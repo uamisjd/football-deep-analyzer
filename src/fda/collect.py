@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 import pandas as pd
 
+from .backoff import sospensione
 from .config import DETAIL_WINDOW_DAYS, League, cups, leagues, season_start_year
 from .diagnostics import MAX_DETAIL, MAX_DIGEST, bump, detail, digest, shape_of
 from .sources.espn import EspnClient, to_dicts as espn_dicts
@@ -238,7 +239,15 @@ def collect_league(
             store.upsert("espn_team_stats", espn_dicts(stats))
         return total
 
-    espn_standings_rows = _safe("espn standings", _standings, report) or 0
+    # Backoff (docs/19 P1.9): se la classifica ESPN ha fallito negli ultimi BACKOFF_FAILS run
+    # la richiesta non parte — il 403 cronico costava 7 richieste a run e 7 righe di avviso
+    # identiche nella pagina *Stato fonti*. Lo scoreboard, che risponde, resta sempre attivo.
+    sospesa = sospensione(store, f"espn:{lg.key}", "espn standings")
+    espn_standings_rows = 0
+    if sospesa:
+        report.errors.append(f"espn standings: {sospesa}")
+    else:
+        espn_standings_rows = _safe("espn standings", _standings, report) or 0
     report.espn_events = _safe("espn scoreboard", _scoreboards, report) or 0
 
     # 5) meteo previsionale Open-Meteo (fallback: riempie il vuoto FotMob sui futuri) ------
@@ -402,17 +411,24 @@ def collect_news(store: Store, keys: list[str] | None = None,
     # ESPN news di lega: passa dal client ESPN (contabilità separata) e attribuisce ogni
     # articolo alla squadra che cita, mai a tutte
     espn_shape = ""
-    for lg in leagues(keys):
-        payload = _safe(f"espn news {lg.key}",
-                        lambda c=lg.espn_code: nc.league_news_raw(c, http=ec.http), report)
-        if not payload:
-            continue
-        if not espn_shape:
-            espn_shape = shape_of(payload)   # firma: solo nomi di campo (docs/21 §15)
-        ids = {}
-        for r in fx[fx.league_id == lg.fotmob_id][["home_id", "home_name"]].drop_duplicates().itertuples(index=False):
-            ids[canonical(str(r.home_name))] = int(r.home_id)
-        rows.extend(parse_espn_news(payload, ids, diag))
+    # Backoff (docs/19 P1.9): le notizie ESPN sono 403 su tutte le 7 leghe da 20+ run; la
+    # fonte primaria della card è Google News. Sospesa, torna a essere sondata ogni
+    # BACKOFF_PROBE_RUNS run senza perdere il rientro quando ESPN riapre.
+    sospesa_news = sospensione(store, "espn:NEWS", "espn news")
+    if sospesa_news:
+        report.errors.append(f"espn news: {sospesa_news}")
+    else:
+        for lg in leagues(keys):
+            payload = _safe(f"espn news {lg.key}",
+                            lambda c=lg.espn_code: nc.league_news_raw(c, http=ec.http), report)
+            if not payload:
+                continue
+            if not espn_shape:
+                espn_shape = shape_of(payload)   # firma: solo nomi di campo (docs/21 §15)
+            ids = {}
+            for r in fx[fx.league_id == lg.fotmob_id][["home_id", "home_name"]].drop_duplicates().itertuples(index=False):
+                ids[canonical(str(r.home_name))] = int(r.home_id)
+            rows.extend(parse_espn_news(payload, ids, diag))
     cut = now - timedelta(days=window_days)
     fresh: list[dict[str, Any]] = []
     senza_data = fuori_finestra = 0
