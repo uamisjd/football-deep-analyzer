@@ -51,6 +51,42 @@ jobs:
           path: diag_raw
           github-token: ${{ github.token }}
 
+      - name: Scarica il log dei job falliti (dai runner il blob storage è raggiungibile)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.rid.outputs.run_id }}
+        run: |
+          set -u
+          mkdir -p diag_jobs
+          # Perché serve: l'artifact `run-log-*` contiene solo l'output di `fda daily`, non quello
+          # dei passi successivi. Quando il gate `verify_site` morde (run 35129006426, 2026-09-16)
+          # l'elenco dei problemi resta nel log del *job*, che il sandbox dell'agente non può
+          # scaricare (EOF sul blob storage): qui invece la rete funziona, quindi lo portiamo nel
+          # repository. Nessun dato di fonte, nessuna richiesta esterna: solo API GitHub.
+          gh api "repos/$REPO/actions/runs/$RUN_ID/jobs?per_page=100" > /tmp/jobs.json || echo '{}' > /tmp/jobs.json
+          python3 - <<'PYJSON'
+          import json, pathlib, subprocess, os
+          repo = os.environ["REPO"]
+          data = json.loads(pathlib.Path("/tmp/jobs.json").read_text() or "{}")
+          out = pathlib.Path("diag_jobs")
+          righe = []
+          for job in data.get("jobs", []):
+              jid, nome, concl = job.get("id"), job.get("name", "?"), job.get("conclusion")
+              if concl != "failure":
+                  continue
+              testo = subprocess.run(["gh", "api", f"repos/{repo}/actions/jobs/{jid}/logs"],
+                                     capture_output=True, text=True).stdout
+              (out / f"job-{jid}.log").write_text(testo)
+              righe.append(f"job {jid} «{nome}»: {len(testo.splitlines())} righe di log")
+              falliti = [s for s in job.get("steps", []) if s.get("conclusion") == "failure"]
+              for s in falliti:
+                  righe.append(f"  passo fallito: {s.get('name')}")
+          (out / "sommario.txt").write_text("\n".join(righe) + "\n" if righe else "nessun job fallito\n")
+          print("\n".join(righe) if righe else "nessun job fallito")
+          PYJSON
+          ls -la diag_jobs | head
+
       - name: Pubblica la coda sul branch diag-logs
         env:
           TOKEN: ${{ github.token }}
@@ -66,6 +102,15 @@ jobs:
             echo "coda scritta da $log ($(wc -l < "$out/run-tail.txt") righe)"
           else
             echo "artifact run-log-* non trovato per il run $RUN_ID" > "$out/run-tail.txt"
+          fi
+          # i log dei job falliti (gate verify_site in testa: è l'elenco dei problemi)
+          if [ -d diag_jobs ]; then
+            for f in diag_jobs/*.log; do
+              [ -f "$f" ] || continue
+              tail -400 "$f" > "$out/job-tail-$(basename "$f")"
+              echo "coda di $f → job-tail-$(basename "$f")"
+            done
+            [ -f diag_jobs/sommario.txt ] && cp diag_jobs/sommario.txt "$out/sommario.txt"
           fi
           {
             echo "run_id=$RUN_ID"

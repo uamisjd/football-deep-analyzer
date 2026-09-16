@@ -1,3 +1,5 @@
+run_id=35129006426   # run daily rosso del 2026-09-16 17:34 UTC (gate verify_site)
+
 Interruttore per il workflow `.github/workflows/diag-fetch-log.yml`.
 
 A cosa serve: i log dei run in Actions e i loro artifact stanno su blob storage che dal
