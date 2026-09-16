@@ -21,7 +21,7 @@ from ..models.season_sim import mc_percent, mc_se
 from ..store import Store
 from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
 from .audit import audit_match
-from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, it_plural, pct_triple
+from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, dec_sum, displayed_sum, it_plural, pct_triple
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -169,6 +169,8 @@ class SiteBuilder:
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
+        # somma di due valori già stampati: «1,40 + 0,99» deve dare «2,39», non «2,38»
+        self.env.filters["dec_sum"] = dec_sum
         self.env.filters["it_plural"] = it_plural
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.env.filters["it_dt_short"] = lambda ts: it_date_short(ts, self.tz)
@@ -342,7 +344,8 @@ class SiteBuilder:
             if p is not None:
                 pct = pct_triple((float(p.p_home), float(p.p_draw), float(p.p_away)))
                 fav_i = max(range(3), key=lambda i: pct[i])
-                tot = float(p.lambda_home) + float(p.lambda_away)
+                # totale coerente con le due λ stampate nella card della stessa partita (docs/22)
+                tot = displayed_sum(float(p.lambda_home), float(p.lambda_away))
                 prev = {"pct": pct, "fav": ("h", "d", "a")[fav_i], "fav_i": fav_i,
                         "gol": it_dec(tot, 1) if np.isfinite(tot) else None,
                         "over": int(round(float(p.p_over25) * 100)) if np.isfinite(p.p_over25) else None}
@@ -470,9 +473,11 @@ class SiteBuilder:
             if p and p.get("p_home") is not None:
                 _lh, _la = float(p.get("lambda_home", 0.0)), float(p.get("lambda_away", 0.0))
                 _gc = lambda v: f"{v:.2f}".replace(".", ",")
+                # il totale è la somma delle due cifre stampate: la description finisce su Google,
+                # dove il lettore non ha contesto per accorgersi di un «2,38» che non chiude (docs/22)
                 page_desc = (f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name}: '
                              f'1 {int(round(p["p_home"]*100))}% X {int(round(p["p_draw"]*100))}% 2 {int(round(p["p_away"]*100))}% '
-                             f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(_lh + _la)} totali) · '
+                             f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(displayed_sum(_lh, _la))} totali) · '
                              f'Over 2,5 {int(round(p.get("p_over25",0)*100))}%')
             else:
                 page_desc = f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name} — analisi pre-partita, forma e precedenti.'

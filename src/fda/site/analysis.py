@@ -23,7 +23,7 @@ from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
 from ..sources.news import keyword_score
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
-from .fmt import dec, it_day_time, it_plural, pct_triple
+from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
 # 616 formazioni: il valore 0 compare 632 volte (1,03 a formazione) ed è il portiere in
@@ -667,7 +667,7 @@ class MatchAnalysis:
         n = int(len(tot))
         if n < 30:
             return None
-        here = float(lam[0] + lam[1])
+        here = displayed_sum(lam[0], lam[1])   # la somma dei due λ stampati, non dei grezzi
         below = float((tot < here).mean())
         if below >= 0.75:
             label = "fra le partite che promettono più gol"

@@ -367,6 +367,109 @@ def check_bars(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# ---- numeri derivati stampati: devono chiudere con i numeri stampati accanto -----------------
+#: doppia chance pubblicata nella card «Previsione» (tre valori interi).
+DC_ROW = re.compile(r"Doppia chance 1X / 12 / X2</th><td[^>]*>(\d+)% / (\d+)% / (\d+)%</td>")
+#: le tre forme in cui il sito pubblica «λ + λ (totale)»: hero della scheda, card delle
+#: liste (riga visibile) e tooltip della stessa riga, description SEO, riga del calendario.
+HERO_LAM = re.compile(r"<b>(\d+,\d+) \+ (\d+,\d+)</b><span>gol attesi · <b>(\d+,\d+) totali</b></span>")
+CARD_LAM = re.compile(r"Gol attesi <b>(\d+,\d+) \+ (\d+,\d+)</b> <span class=\"mut\">\((\d+,\d+) totali\)</span>")
+TIP_LAM = re.compile(r"(\d+,\d+) casa \+ (\d+,\d+) trasferta = (\d+,\d+) totali")
+META_LAM = re.compile(r"gol attesi (\d+,\d+) \+ (\d+,\d+) \((\d+,\d+) totali\)")
+POS_LAM = re.compile(r"I (\d+,\d+) gol attesi totali in testa alla scheda")
+MATCH_LINK = re.compile(r"partite/(\d+)\.html")
+
+
+def _stamp_it(v: float, nd: int = 2) -> str:
+    """2.39 → '2,39': la stessa forma che il sito deve pubblicare (virgola, nd cifre)."""
+    return f"{v:.{nd}f}".replace(".", ",")
+
+
+def check_derived(site: Path) -> tuple[list[str], int]:
+    """[30] e [31] i numeri derivati pubblicati devono chiudere con i numeri pubblicati accanto.
+
+    [30] **doppia chance**: 1X/12/X2 sono per costruzione la somma di due dei tre esiti 1X2, quindi
+    i tre valori pubblicati devono essere la somma dei tre numeri interi stampati nella barra della
+    stessa card. Prima del 2026-09-16 ogni valore era arrotondato da solo: 48 schede su 165 (29,1%)
+    pubblicavano una doppia chance che contraddiceva l'1X2 (docs/22 §1) — la derivazione nei modelli
+    era già corretta (docs/19 §1.9), era la formattazione a non esserlo.
+
+    [31] **somme stampate**: «1,40 + 0,99 (2,39 totali)» deve avere il totale uguale alla somma dei
+    due numeri **stampati**. 88 occorrenze su 330 (26,7%) pubblicavano il totale calcolato sui valori
+    grezzi (2,3829 → «2,38»). Lo stesso totale compare in più pagine della stessa partita: qui si
+    verifica anche che sia lo stesso numero ovunque (docs/22 §2).
+    """
+    fails: list[str] = []
+    checks = 0
+    n_dc = 0
+    n_somme = 0
+    hero_per_match: dict[int, tuple[str, str]] = {}
+    card_per_match: dict[int, list[tuple[str, str]]] = {}
+    for page in sorted(site.rglob("*.html")):
+        rel = str(page.relative_to(site))
+        h = page.read_text(encoding="utf-8", errors="replace")
+
+        # --- [30] doppia chance vs barra 1X2 pubblicata nella stessa card
+        blocco = h.split('id="previsione"', 1)
+        if len(blocco) > 1:
+            blocco = blocco[1].split('id="scomposizione"', 1)[0]
+            segs = None
+            for attrs, corpo in BAR_BLOCK.findall(blocco):
+                s = BAR_SEG.findall(corpo)
+                if len(s) == 3 and all(t.strip() and "," not in t for _, _, t in s):
+                    segs = [int(_num_it(m.group(1))) for _, _, t in s
+                            if (m := re.search(r"(\d+(?:,\d+)?)\s*%", t))]
+                    break
+            m_dc = DC_ROW.search(blocco) or DC_ROW.search(h)
+            if segs is not None and len(segs) == 3:
+                n_dc += 1
+                checks += 1
+                if m_dc is None:
+                    fails.append(f"{rel}: card «Previsione» con barra 1X2 ma doppia chance assente")
+                else:
+                    dc = [int(v) for v in m_dc.groups()]
+                    atteso = [segs[0] + segs[1], segs[0] + segs[2], segs[1] + segs[2]]
+                    if dc != atteso:
+                        fails.append(f"{rel}: doppia chance {dc} ≠ somma delle 1X2 stampate "
+                                     f"{segs} (attesa {atteso})")
+                    if sum(dc) != 200:
+                        fails.append(f"{rel}: doppia chance {dc} somma {sum(dc)} (attesa 200)")
+
+        # --- [31] somme stampate
+        for etichetta, rx in (("hero", HERO_LAM), ("card", CARD_LAM),
+                              ("tooltip", TIP_LAM), ("description", META_LAM)):
+            for m in rx.finditer(h):
+                a, b, tot = m.group(1), m.group(2), m.group(3)
+                n_somme += 1
+                checks += 1
+                atteso = _stamp_it(_num_it(a) + _num_it(b))
+                if tot != atteso:
+                    fails.append(f"{rel}: {etichetta}: totale {tot} ≠ {a} + {b} = {atteso}")
+        m_hero = HERO_LAM.search(h)
+        if m_hero and page.parent.name == "partite":
+            hero_per_match[int(page.stem)] = (m_hero.group(3), rel)
+        for m in CARD_LAM.finditer(h):
+            links = MATCH_LINK.findall(h[:m.start()])
+            if links:
+                card_per_match.setdefault(int(links[-1]), []).append((m.group(3), rel))
+        m_pos = POS_LAM.search(h)
+        if m_pos and m_hero:
+            checks += 1
+            if m_pos.group(1) != m_hero.group(3):
+                fails.append(f"{rel}: «{m_pos.group(1)} gol attesi totali» in «Dove si colloca» "
+                             f"≠ {m_hero.group(3)} in testa alla scheda")
+    # stesso numero su pagine diverse per la stessa partita
+    for mid, (tot_hero, rel_hero) in hero_per_match.items():
+        for tot_card, rel_card in card_per_match.get(mid, []):
+            checks += 1
+            if tot_card != tot_hero:
+                fails.append(f"partita {mid}: gol attesi totali {tot_hero} in {rel_hero} "
+                             f"ma {tot_card} in {rel_card}")
+    print(f"[30] doppie chance coerenti con l'1X2 stampato: {n_dc}")
+    print(f"[31] somme stampate verificate: {n_somme}")
+    return fails, checks
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -1089,15 +1192,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if row.empty or m is None:
                 fails.append(f"{pg.name}: posizione-lega senza previsione o con testo atteso assente")
                 continue
-            lam_here = float(row.lam.iloc[0])
+            # il valore pubblicato in «Dove si colloca» è la somma dei due λ **stampati** in testa
+            # alla scheda: qui si confronta quel numero, non la somma grezza (docs/22 §2)
+            from fda.site.fmt import displayed_sum as _disp_sum
+
+            lam_here = _disp_sum(float(row.lambda_home.iloc[0]), float(row.lambda_away.iloc[0]))
             dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
             dist = dist[np.isfinite(dist)]
             n_exp = int(len(dist))
             checks += 1
             n_pos += 1
             here_t, pct_t, n_t, lg_t, mean_t, med_t = m.groups()
-            if abs(float(here_t.replace(",", ".")) - lam_here) > 0.006:
-                fails.append(f"{pg.name}: gol attesi {here_t} vs λ modello {lam_here:.3f}")
+            if here_t != _stamp_it(lam_here):
+                fails.append(f"{pg.name}: gol attesi {here_t} vs somma delle λ stampate "
+                             f"{_stamp_it(lam_here)}")
             below = float((dist < lam_here).mean())
             if int(pct_t) != int(round(below * 100)):
                 fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
@@ -1627,6 +1735,9 @@ def main() -> int:
     barre, bar_checks = check_bars(site)
     fails += barre
     checks += bar_checks
+    derivati, derivati_checks = check_derived(site)
+    fails += derivati
+    checks += derivati_checks
     stato, stato_checks = check_status(site)
     fails += stato
     checks += stato_checks

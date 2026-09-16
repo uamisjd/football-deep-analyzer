@@ -973,3 +973,62 @@ def test_a11y_strutturale(tmp_path):
         th = re.findall(r"<th\b[^>]*>", h)
         senza = [t for t in th if "scope=" not in t]
         assert not senza, f"{pg.name}: {len(senza)}/{len(th)} <th> senza scope"
+
+
+def _vs_module():
+    """Modulo `scripts/verify_site.py` importato per i controlli di pubblicazione."""
+    import importlib.util
+    p = Path(__file__).parent.parent / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site_fmt", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_doppia_chance_e_totale_chiudono_con_i_numeri_stampati(tmp_path):
+    """[30]/[31] (docs/22): i numeri derivati pubblicati sono la somma dei numeri pubblicati.
+
+    Due casi reali, entrambi sui dati di produzione del 2026-09-16:
+
+    * 1X2 = 0,51158 / 0,23416 / 0,25426 → barra 51/23/26; la doppia chance arrotondata da sola
+      pubblicava «1X 75%» mentre 51 + 23 = 74 (48 schede su 165 avevano questo difetto);
+    * λ 1,39777 + 0,98512 → stampate «1,40 + 0,99», ma il totale sui grezzi era 2,3829 → «2,38»
+      invece di «2,39» (88 occorrenze su 330).
+    """
+    st = _seed(tmp_path)
+    pr = st.read("predictions")
+    riga = pr.index[pr.match_id == 5749669][0]
+    pr.loc[riga, ["p_home", "p_draw", "p_away"]] = [0.5115830597891498, 0.23415843384090768,
+                                                    0.2542585063699425]
+    pr.loc[riga, ["p_1x", "p_12", "p_x2"]] = [0.74574, 0.76584, 0.48842]
+    pr.loc[riga, ["lambda_home", "lambda_away"]] = [1.3977650142126163, 0.9851191700388995]
+    st.write("predictions", pr)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    # 1X2 pubblicato e doppia chance: le tre cifre sono somme di due dei tre numeri della barra
+    assert '<div class="bar" role="img" aria-label="Probabilità: vittoria' in h
+    assert "1 · 51%" in h and "X · 23%" in h and "2 · 26%" in h
+    dc = re.search(r"Doppia chance 1X / 12 / X2</th><td[^>]*>(\d+)% / (\d+)% / (\d+)%</td>", h)
+    assert dc, "riga della doppia chance assente nella scheda"
+    assert [int(v) for v in dc.groups()] == [51 + 23, 51 + 26, 23 + 26] == [74, 77, 49]
+    # totale dei gol attesi = somma delle due λ stampate (non 2,38 calcolato sui grezzi)
+    assert "gol attesi · <b>2,39 totali</b>" in h
+    assert "2,38 totali" not in h
+
+    # il controllo di pubblicazione accetta la pagina corretta...
+    vs = _vs_module()
+    fails, checks = vs.check_derived(out)
+    assert fails == [], fails
+    assert checks >= 2
+    # ...e morde se un numero derivato viene rotto (prova di morso, sul testo pubblicato)
+    rotto = out / "partite" / "5749669.html"
+    originale = rotto.read_text(encoding="utf-8")
+    rotto.write_text(originale.replace("<b>2,39 totali</b>", "<b>2,38 totali</b>")
+                     .replace(">74% / 77% / 49%<", ">75% / 77% / 49%<"), encoding="utf-8")
+    fails, _ = vs.check_derived(out)
+    assert any("2,38" in f for f in fails), fails
+    assert any("doppia chance" in f for f in fails), fails
+    rotto.write_text(originale, encoding="utf-8")
+    st.close()
