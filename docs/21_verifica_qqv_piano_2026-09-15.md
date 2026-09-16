@@ -754,7 +754,9 @@ storage non raggiungibile dal sandbox (`docs/00` §B6): verificato di nuovo sul 
 e `gh run rerun` / `workflow_dispatch` rispondono **403** per il token dell'agente. Soluzione:
 nuovo workflow **`.github/workflows/diag-fetch-log.yml`** che da un *runner* — che il blob lo
 raggiunge — scarica l'artifact `run-log-*` del run indicato (`actions/download-artifact` con
-`run-id`) e ne committa la coda in `diag/run-tail.txt`, dove l'agente la legge con un `git show`.
+`run-id`) e ne pubblica la coda sul branch **dedicato `diag-logs`**, dove l'agente la legge con
+`git show origin/diag-logs:run-tail.txt` (branch riscritto a ogni estrazione: interessa solo
+l'ultimo log). Il branch di lavoro e `main` restano così **puliti dai log**.
 Si attiva con il dispatch (utente) o modificando `diag/trigger.txt` e pushando su un branch
 `arena/**` (agente). Costo: un run di ~10 secondi, **zero richieste alle fonti**.
 
