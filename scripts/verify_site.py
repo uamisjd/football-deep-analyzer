@@ -1545,6 +1545,37 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_assets(site: Path) -> tuple[list[str], int]:
+    """[29] CSS esterno (docs/19 P0.5): link giusto in ogni pagina, zero <style> inline.
+
+    Il design system (~39 kB) era inline in ogni pagina: l'estrazione vale ~-38 kB × pagine
+    e mette il CSS in cache una volta sola. L'invariante protegge il risultato: se una
+    pagina torna a portarsi il CSS dietro (o linka il file con la profondità sbagliata,
+    che romperebbe il tema nelle sottocartelle), qui si vede prima che a schermo.
+    """
+    fails: list[str] = []
+    checks = 0
+    css = site / "assets" / "site.css"
+    if not css.exists() or css.stat().st_size < 1000:
+        fails.append("assets/site.css: file mancante o troppo piccolo")
+        return fails, 0
+    for pg in sorted(site.rglob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        # index.html → 0; partite/123.html → 1; giocatori/123.html → 1
+        depth = len(pg.parent.relative_to(site).parts)
+        atteso = "../" * depth + "assets/site.css?v="
+        links = re.findall(r'<link rel="stylesheet" href="([^"]+)">', html)
+        checks += 1
+        if not any(h.startswith(atteso) for h in links):
+            fails.append(f"{pg.relative_to(site)}: link CSS esterno mancante o percorso "
+                         f"sbagliato (atteso {atteso}…)")
+        if "<style" in html:
+            fails.append(f"{pg.relative_to(site)}: blocco <style> inline (il CSS vive in assets/site.css)")
+    if not checks:
+        fails.append("nessuna pagina .html trovata per il controllo [29]")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -1571,6 +1602,9 @@ def main() -> int:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks
+        assets, asset_checks = check_assets(site)
+        fails += assets
+        checks += asset_checks
 
     by_kind: Counter[str] = Counter(f.split(": ", 1)[1].split(" ")[0] for f in fails)
     print()

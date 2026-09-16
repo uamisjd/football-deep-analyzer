@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import shutil
 from collections import defaultdict
@@ -172,6 +173,26 @@ class SiteBuilder:
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
         self.analysis = MatchAnalysis(self.store)
         self.audit_rows: list[dict[str, Any]] = []
+        self._assets_done = False
+
+    # ---- assets -------------------------------------------------------------------------------
+    def _write_assets(self) -> None:
+        """Scrive il CSS esterno con cache-busting (docs/19 P0.5).
+
+        Il design system (≈39 kB) era inline in ``base.html`` e veniva duplicato in ogni
+        pagina del sito (≈10.000 file): estraendolo si risparmia la copia per pagina e il
+        browser lo mette in cache una volta sola. Il version query ``?v=<sha256[:10]>``
+        cambia solo quando cambia il CSS, quindi l'aggiornamento è immediato senza
+        perdere la cache. Lazy: chiamato dal primo ``_render``, così anche le entry
+        point parziali (``build_match_pages``, ``build_indexes``) lo garantiscono.
+        """
+        src = Path(__file__).parent / "assets" / "site.css"
+        css = src.read_text(encoding="utf-8")
+        self.env.globals["css_v"] = hashlib.sha256(css.encode("utf-8")).hexdigest()[:10]
+        out = self.out / "assets" / "site.css"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(css, encoding="utf-8")
+        self._assets_done = True
 
     # ---- helpers ------------------------------------------------------------------------------
     # mappa pagina → voce di nav attiva (aria-current)
@@ -183,6 +204,8 @@ class SiteBuilder:
     NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori")]
 
     def _render(self, template: str, rel_path: str, **ctx: Any) -> None:
+        if not self._assets_done:
+            self._write_assets()
         depth = rel_path.count("/")
         root = "../" * depth
         section = self.NAV_SECTIONS.get(rel_path, "")
