@@ -686,6 +686,12 @@ class SiteBuilder:
         rows = []
         if not st.empty:
             last = st.sort_values("run_at").groupby("source").tail(1).sort_values("source")
+            # Una fonte che ha smesso di essere raccolta (es. understat:NED1 dal 2026-09-16,
+            # docs/19 §2.1: la riga «0 richieste» era falsa) non deve restare per sempre in
+            # pagina col run_at congelato: il daily aggiorna tutto 5×/giorno, quindi una fonte
+            # non aggiornata da 48h non fa più parte del run. Le righe restano nel Parquet.
+            cutoff = pd.Timestamp(self.now) - pd.Timedelta(hours=48)
+            last = last[pd.to_datetime(last["run_at"], utc=True) >= cutoff]
             rows = []
             for r in last.itertuples(index=False):
                 err = (r.error or "") if isinstance(r.error, str) else ""
