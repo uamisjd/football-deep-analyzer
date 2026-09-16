@@ -2,8 +2,11 @@
 
 Due feed pubblici, già verificati nel catalogo fonti (`docs/02`):
 
-- **Google News RSS** per squadra (``hl=it&gl=IT``): titoli, link, testata e data in
-  italiano; consentito l'uso personale non commerciale, che è il perimetro del progetto;
+- **Google News RSS** per squadra, in **due edizioni**: quella italiana (``hl=it&gl=IT``),
+  che segue tutti i campionati, e quella **locale** del campionato della squadra (es.
+  ``hl=es&gl=ES`` per la Liga), che porta il materiale di vita del club che la stampa
+  italiana non raccoglie (docs/24 §3.5). Consentito l'uso personale non commerciale, che è
+  il perimetro del progetto;
 - **ESPN news** per campionato (JSON pubblico), come riserva e controllo incrociato.
 
 Nessuna chiave a pagamento, nessuna pagina protetta: solo feed pubblici, con rate limit e
@@ -33,7 +36,38 @@ ESPN_NEWS = "https://site.api.espn.com/apis/site/v2/sports/soccer/{code}/news"
 RSS_ACCEPT = "application/rss+xml, application/xml;q=0.9, */*;q=0.8"
 
 
-def google_news_params(team_name: str) -> dict[str, str]:
+#: Edizioni Google News per campionato: ``country`` di ``config/leagues.yaml`` →
+#: (lingua ``hl``, edizione ``ceid``, parola per «calcio» in quella lingua). La selezione
+#: della card parte da qui: con la sola edizione italiana il materiale «succoso» di club
+#: stranieri non arrivava mai (misurato il 2026-09-16: Feyenoord, Marsiglia, Betis — titoli
+#: che il feed locale porta e quello italiano ignora). Aggiungere un campionato =
+#: aggiungere una voce qui; se il paese non c'è si usa solo l'edizione italiana.
+GOOGLE_EDITIONS: dict[str, tuple[str, str, str]] = {
+    "ITA": ("it", "IT:it", "calcio"),
+    "ENG": ("en", "GB:en", "football"),
+    "ESP": ("es", "ES:es", "fútbol"),
+    "GER": ("de", "DE:de", "Fußball"),
+    "FRA": ("fr", "FR:fr", "football"),
+    "NED": ("nl", "NL:nl", "voetbal"),
+    "POR": ("pt", "PT:pt", "futebol"),
+}
+EDIZIONE_IT: tuple[str, str, str] = GOOGLE_EDITIONS["ITA"]
+
+
+def editions_for(country: str | None) -> list[tuple[str, str, str]]:
+    """Edizioni da interrogare per una squadra: quella italiana più quella locale.
+
+    Per i campionati italiani una richiesta sola (le due edizioni coinciderebbero);
+    per gli altri due. L'edizione italiana resta la prima: il suo feed è quello su cui la
+    card è stata misurata (docs/24 §2) e serve a non cambiare la copertura esistente.
+    """
+    locale = GOOGLE_EDITIONS.get((country or "").upper())
+    if locale is None or locale == EDIZIONE_IT:
+        return [EDIZIONE_IT]
+    return [EDIZIONE_IT, locale]
+
+
+def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_IT) -> dict[str, str]:
     """Parametri della ricerca RSS per squadra (**non** pre-codificati).
 
     Difetto misurato il 2026-09-15 (docs/21 §15): la query veniva codificata con
@@ -43,7 +77,8 @@ def google_news_params(team_name: str) -> dict[str, str]:
     sintomo «139 richieste, ok=True, zero righe». La codifica la fa il client HTTP, una
     volta sola.
     """
-    return {"q": f'"{team_name}" calcio', "hl": "it", "gl": "IT", "ceid": "IT:it"}
+    hl, ceid, sport = edition
+    return {"q": f'"{team_name}" {sport}', "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
 
 
 # Parole chiave di contesto «interno» usate per ordinare le notizie di una squadra:
@@ -166,15 +201,29 @@ class NewsClient:
             max_requests=cfg.get("max_requests_per_run"))
         self.ttl_h = ttl_h if ttl_h is not None else float(cfg.get("cache_ttl_h", 12.0))
 
-    def team_rss_raw(self, team_name: str) -> bytes:
+    def team_rss_raw(self, team_name: str,
+                     edition: tuple[str, str, str] = EDIZIONE_IT) -> bytes:
         return self.http.get_bytes(
-            GOOGLE_RSS, params=google_news_params(team_name), ttl_h=self.ttl_h,
+            GOOGLE_RSS, params=google_news_params(team_name, edition), ttl_h=self.ttl_h,
             extra_headers={"Accept": RSS_ACCEPT})
 
     def team_news(self, team_id: int, team_name: str,
-                  diag: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        raw = self.team_rss_raw(team_name)
-        return parse_rss(raw, team_id, diag)
+                  diag: dict[str, Any] | None = None,
+                  country: str | None = None) -> list[dict[str, Any]]:
+        """Titoli della squadra: edizione italiana + edizione locale del campionato.
+
+        ``country`` è il campo ``country`` della lega (``ITA``, ``ESP``, …). Per i
+        campionati italiani una richiesta sola; per gli altri due, e la seconda porta il
+        materiale di vita del club che la stampa italiana non raccoglie (docs/24 §3.5).
+        Ogni richiesta è contata in ``diag["ricerche"]``: il numero sul report deve
+        corrispondere alle richieste vere, non alle squadre.
+        """
+        out: list[dict[str, Any]] = []
+        for edition in editions_for(country):
+            bump(diag, "ricerche", 1)
+            raw = self.team_rss_raw(team_name, edition)
+            out.extend(parse_rss(raw, team_id, diag))
+        return out
 
     def league_news_raw(self, espn_code: str, http: HttpClient | None = None) -> Any:
         """Notizie di lega ESPN. ``http`` permette di farle contare al client ESPN.
@@ -239,57 +288,224 @@ JUNK_NEWS = re.compile(
     r"bigliett|abbonament|prevendita|figurin|magliett|merchandis|souvenir|"
     r"come acquistare|come ottenere|informazioni sulla partita|parcheggi|"
     r"store ufficiale|shop ufficiale|album ufficial|"
+    # formazioni e squadre non prime: «così in campo», l'Under 23, la Primavera, il
+    # femminile. Sono pagine vere, ma non riguardano la prima squadra di questa partita:
+    # misurate il 2026-09-17 (Sambenedettese-Atalanta U23 pubblicata come «Società»).
+    r"così in campo|ecco le formazioni|le scelte di|\bU\d\d\b|primavera|giovanili|"
+    r"\bserie c\b|"
+    r"\bunder \d\d\b|femminile|women'?s|"
+    # stessa famiglia in lingua locale (docs/24 §3.5): con la seconda query il feed porta
+    # titoli spagnoli, inglesi, tedeschi, francesi, olandesi e portoghesi; senza queste voci
+    # le pagine di servizio straniere entrerebbero in card come se fossero notizie.
+    r"cómo ver|como ver|dónde ver|donde ver|a qué hora|en directo|directo:|previa y|"
+    r"posibles alineaciones|alineaci[oó]n(?:es)? probable|once probable|posible once|"
+    r"pron[oó]stico|cuotas|apuestas|resultado final|resumen|cr[oó]nica|highlights|"
+    r"how to watch|where to watch|live (?:stream|blog|updates)|team news|"
+    r"predicted (?:line-?up|xi)|line-?ups|odds|betting|match (?:preview|pack)|"
+    r"wo (?:sehen|läuft)|übertragung|live-?ticker|voraussichtliche aufstellung|"
+    r"aufstellungen|quoten|wett-?tipps|spielvorschau|anpfiff|"
+    r"où voir|quelle chaîne|en direct|compositions? probables?|pronostics?|cotes|avant-?match|"
+    r"waar te zien|opstelling|voorspelling|voorbeschouwing|"
+    r"onde assistir|escala[cç][aã]o|prov[aá]vel|palpites|pr[eé]via|"
     # cronaca di una gara già giocata: il titolo porta il risultato («2-1», «3-0»). Il
     # portale pubblica forma, risultati e lettura post-partita dai propri dati: la
     # cronaca di una testata aggiunge rumore, non informazione (docs/24 §3.2).
     r"\b\d{1,2}\s*[-–]\s*\d{1,2}\b", re.IGNORECASE)
 
+# Annuncio o logistica: fresco, pertinente, spesso pieno di nomi propri — e inutile. La
+# conferenza stampa della vigilia, il nuovo sponsor, i lavori allo stadio, gli orari e i
+# parcheggi non cambiano nulla di questa partita: la card li **conta** e li lascia fuori,
+# così il numero stampato è riconciliabile (docs/24 §3.5).
+ANNUNCIO_NEWS = re.compile(
+    r"rueda de prensa|conferencia de prensa|comparecencia|press conference|"
+    r"pressekonferenz|conf[eé]rence de presse|persconferentie|coletiva de imprensa|"
+    r"conferenza stampa|presentaci[oó]n|presentazione|acto oficial|watch party|"
+    r"patrocinad|patrocinio|sponsor|nuevo patrocinador|obras|lavori allo stadio|"
+    r"remodelaci[oó]n|climatiz|accesos|aparcamiento|precios|entradas|abonos|tickets|"
+    r"horario|a qué hora|new balance arena|"
+    r"premio|galard[oó]n|homenaje|cumplea[ñn]os|aniversario|"
+    r"fichaje estrella|camiseta|maglia celebrativa|"
+    r"^\s*(?:comunicato del club|nota del club|comunicato ufficiale)\s*$", re.IGNORECASE)
+
+# Il gate della card: un fatto entra solo se può **spostare qualcosa** — una frizione, una
+# decisione, un vincolo, una protesta, un numero che dice quanto la società può spendere.
+# È la correzione chiesta dall'utente il 2026-09-16 («con queste notizie non ci faccio
+# nulla»): freschezza e pertinenza sono necessarie ma non sufficienti (docs/24 §3.5).
+CONSEGUENZA_NEWS = re.compile(
+    # frizione, crisi, decisione (spagnolo: la lingua della seconda query per la Liga)
+    r"queja|lamenta|malestar|tensi[oó]n|enfado|mosqueo|crisis|dimisi|destituci|despido|"
+    r"ultim[aá]tum|presiona|protesta|manifestaci[oó]n|concentraci[oó]n|huelga|"
+    r"amenaza|insulto|abucheo|pol[eé]mica|arremete|critica|estalla|se revuelve|"
+    r"carga contra|plantilla corta|plantilla muy corta|rosa corta|sin extremos|"
+    r"no tiene extremos|se queda cort[ao]|peligra su puesto|en la cuerda floja|"
+    r"se le acaba el cr[eé]dito|desmiente|denuncia|renuncia|se planta|"
+    r"sanci[oó]n|multa|expediente|deuda|concurso|insolvencia|bloqueo|veto|"
+    r"l[ií]mite salarial|tope salarial|presupuesto|balance|d[eé]ficit|super[aá]vit|"
+    r"rechaza|rechaz|exige|recurso|sentencia|licencia|comunicado|defiende|defensa|"
+    r"respalda|renueva|renovaci[oó]n|acuerdo|firma|ampliaci[oó]n|recorte|"
+    r"congelaci[oó]n|limitaci[oó]n|reducci[oó]n|"
+    # italiano (il feed italiano resta quello di partenza)
+    r"esonero|esonerat\w*|dimissioni|crisi|protesta|contestazion|striscione|multa|debit|ricorso|"
+    r"sfuriata|sgridat\w*|daspo|saluti romani|multipropriet\w*|sfogo|ammonizion\w*|"
+    r"sentenza|rinnovo|accordo|firma|limite|tetto|bilancio|comunicato|difende|"
+    r"minacce|insulti|braccio di ferro|attacca|smentisce|nega|inchiesta|indagine|"
+    r"vendita|acquisizione|accusa|polemica|rischia la panchina|in bilico|ultimatum|"
+    r"panchina a rischio|diffida|tribunale|esposto|bacchetta|scarica|"
+    # inglese (parole intere: «row» non deve pescare «grow»)
+    r"\b(?:complaint|slams?|blasts?|fury|feud|ultimatum|sack(?:ed)?|resign(?:ed|s|ing)?|"
+    r"threat|abuse|protest|strike|ban(?:ned|s)?|fine[sd]?|debt|sanction(?:ed|s)?|"
+    r"demand(?:s|ed)?|reject(?:s|ed)?|accuse(?:s|d)?|criticis\w*|anger|outburst|"
+    r"budget|salary cap|short squad|short of players|backlash|blast)\b|"
+    # tedesco, francese, olandese, portoghese
+    r"beschwerde|kritik|vertrag|verl[aä]ngerung|streik|schulden|"
+    r"plainte|critique|gr[eè]ve|protestation|dette|"
+    r"beklag|kritiek|schuld|"
+    r"queixa|cr[ií]tica|protesto|greve|d[ií]vida|"
+    # fuori dal campo: la grana personale di un tesserato pesa su chi scende in campo, e la
+    # stampa locale ne parla per giorni (voce «Fuori dal campo» di TOPIC_RULES)
+    r"incidente|alcoltest|tasso alcolemico|stupefacenti|tossicolog\w*|patente ritirata|"
+    r"arresto|arrestat\w*|"
+    r"querela|denunciat\w*|"
+    r"detenido|imputado|juicio|accidente de tr[aá]fico|"
+    r"\b(?:arrested|charged with|drink-?driving)\b", re.IGNORECASE)
+
 # (chiave, etichetta, peso, espressione). L'ordine è l'ordine di priorità: vince la prima
-# che trova, così «squalificato per infortunio» non diventa due categorie. Pesi: le tre
-# voci che cambiano la formazione o la panchina valgono 5, la società 4, il mercato 3
-# (spesso è già nella card «Mercato»), il resto 2.
+# che trova, così «squalificato per infortunio» non diventa due categorie. Pesi: panchina,
+# spogliatoio e società valgono 5 (sono le voci che cambiano qualcosa), stadio/tifo/mercato
+# 3, il resto 2 o 1. Con la seconda query il testo può essere in lingua locale: ogni regola
+# porta le alternative spagnole, inglesi, tedesche, francesi, olandesi e portoghesi
+# (docs/24 §3.5).
 TOPIC_RULES: tuple[tuple[str, str, int, re.Pattern[str]], ...] = (
     ("squalifiche", "Squalifiche", 5, re.compile(
         r"squalific\w*|diffidat\w*|turno di stop|stop di \d+ (?:giornat|turn)|"
         r"giudice sportivo|salta(?:r[àa])? (?:la|il|le|i) (?:prossim|gara|partita|turno)|"
-        r"espulsion\w*|cartellin\w* ross|non sarà della partita", re.IGNORECASE)),
+        r"espulsion\w*|cartellin\w* ross|non sarà della partita|"
+        r"sancionad\w*|sanci[oó]n de partidos|suspensi[oó]n de partidos|tarjeta roja|"
+        r"expulsi[oó]n|no jugar[aá]|baja por sanci[oó]n|apercibid\w*|"
+        r"suspension|suspended|red card|misses the|banned|"
+        r"sperre|rotes karte|carton rouge|schorsing|suspens[aã]o|cart[aã]o vermelho",
+        re.IGNORECASE)),
     ("infortuni", "Infortuni", 5, re.compile(
         r"infortun\w*|indisponibil\w*|lesion\w*|distorsion\w*|distrazion\w*|"
-        r"elongazion\w*|stirament\w*|trauma|frattur\w*|operat(?:o|a|i|e) (?:al|alla|a)|"
-        r"problema (?:muscolare|fisico|al)|risentimento|affaticament\w*|"
-        r"si ferma|out \d+|fuori \d+ (?:settiman|mes)|stop di (?:circa )?\d+|"
+        r"elongazion\w*|stirament\w*|trauma|frattur\w*|lussazion\w*|ricadut\w*|"
+        r"rottura (?:del|di) (?:legament|crociat)|legamento crociato|frattura composta|"
+        r"operat(?:o|a|i|e)\b|si è operato|intervento (?:chirurgico|riuscito)|"
+        r"sala operatoria|problema (?:muscolare|fisico|al|alla)|risentimento|affaticament\w*|"
+        r"si ferma|out \d+|fuori \d+ (?:settiman|mes|giorn)|stop di (?:circa )?\d+|"
         r"non ci sarà|salta (?:la|il|le|i) |a parte|differenziat\w*|"
         r"condizioni (?:da valutare|non ottimali)|in dubbio|ballottaggio|"
         r"recupero lampo|rientro|rientra|tornerà|torna in gruppo|a disposizione|"
+        r"lesi[oó]n|lesionad\w*|bajas?|duda|parte m[eé]dico|enfermer[ií]a|"
+        r"se pierde|tocado|molestias|isquio|rotura|esguince|recuperaci[oó]n|"
+        r"injury|injured|out for|hamstring|fitness|"
+        r"verletzt|verletzung|ausfall|f[aä]llt aus|"
+        r"blessure|bless[eé]|forfait|incertain|geblesseerd|desfalque|"
         r"leave the|infermeria", re.IGNORECASE)),
-    ("allenatore", "Allenatore", 5, re.compile(
+    # Panchina: non solo l'esonero consumato, anche il ciclo che finisce e il contratto che
+    # pesa. È la voce che l'utente ha chiesto per prima («allenatore a rischio esonero»).
+    ("allenatore", "Panchina", 5, re.compile(
         r"esonero|esonerat\w*|nuovo allenatore|nuovo tecnico|nuovo mister|"
-        r"dimissioni|si è dimesso|si dimette|panchina (?:a|di|in bilico)|"
-        r"rischia la panchina|accordo (?:con|per) il (?:nuovo )?tecnic|"
+        r"dimissioni|si è dimesso|si dimette|panchina (?:a|di|in bilico|a rischio)|"
+        r"rischia la panchina|panchina (?:traballante|in discussione|in soffitta)|"
+        r"accordo (?:con|per) il (?:nuovo )?tecnic|"
         r"sostitu(?:ire|to) (?:il|sul) (?:tecnico|allenatore|mister)|"
-        r"vice allenatore|traghettatore|contratto (?:fino al|al 20\d\d)", re.IGNORECASE)),
-    ("societa", "Società", 4, re.compile(
+        r"vice allenatore|traghettatore|contratto (?:fino al|al 20\d\d|in scadenza)|"
+        r"ultimo anno di contratto|cambio (?:di )?panchina|fine (?:annunciata|del ciclo)|"
+        r"ciclo (?:finito|chiuso)|addio (?:al|del) (?:club|tecnico|mister)|"
+        r"separazione|rescissione|futuro (?:di|del) (?:mister|tecnico|allenatore)|"
+        r"crisi (?:nera|tecnica|di risultati)|"
+        r"entrenador|t[eé]cnico|banquillo|destituci|despido|cese|"
+        r"renueva|renovaci[oó]n|contrato hasta|futuro de|presi[oó]n|"
+        r"manager|head coach|sacked|renewal|vertrag|entlassung|"
+        r"entra[iî]neur|\bcontrat\b|treinador|renova[cç][aã]o|trainer", re.IGNORECASE)),
+    # Spogliatoio: il gruppo che scricchiola — o che si compatta. Qui l'evidenza sono le
+    # parole del malessere, non il nome del club.
+    ("spogliatoio", "Spogliatoio", 5, re.compile(
+        r"vestuario|spogliatoio|dressing room|kabine|vestiaire|vesti[aá]rio|"
+        r"malestar|tensi[oó]n|enfado|rega[ñn]ina|rifa|pique|lite|litigi\w*|\bclima\b|"
+        r"gruppo (?:squadra|spaccato|diviso|unit[oa])|team spirit|friction|dressing|"
+        r"ammutinamento|malumore|malcontento|insoddisfazion\w*|incomprension\w*|"
+        r"frizion\w*|rottura (?:dei rapporti|con (?:il|la|lo) )|faccia a faccia|chiarimento|"
+        r"discussione (?:accesa|nello spogliatoio)|rapporti? (?:tesi|difficili)|"
+        r"clima (?:teso|pesante|non sereno)|"
+        r"critica la plantilla|se vuelve a quejar|se queja de la plantilla|"
+        r"no tiene extremos|sin extremos|\b[uú]nico equipo\b|plantilla corta|"
+        r"plantilla muy corta|se queda cort|sin refuerzos|sin fichajes|"
+        r"berlusconi|ammutinamento", re.IGNORECASE)),
+    # Società: proprietà, giustizia sportiva e ordinaria, soldi, organizzazione. Qui entra
+    # anche il vocabolario italiano che nella prima stesura mancava («indagine», «minacce»,
+    # «sentenza», «perquisizioni»): era il motivo per cui le voci più succose del feed
+    # italiano restavano fuori categoria e finivano contate come «servizio» (misurato il
+    # 2026-09-17 su 1467 titoli: 587 senza categoria, fra cui l'inchiesta su Lotito/Lazio,
+    # la sentenza Udinese e il caso Maldini).
+    ("societa", "Società", 5, re.compile(
         r"propriet\w*|president\w*|amministratore|debit\w*|penalizzazion\w*|"
-        r"deferiment\w*|inchiesta|plusvalenz\w*|bilancio|assemblea|cda|falliment\w*|"
+        r"deferiment\w*|inchiesta|indagine|indagat\w*|plusvalenz\w*|assemblea|cda|"
+        r"bilancio (?:d'esercizio|consolidato|societario|economico|finanziario)|"
+        r"falliment\w*|commissariament\w*|tribunale|processo|sentenza|udienza|"
+        r"perquisizion\w*|sequestr\w*|procura|avviso di garanzia|condann\w*|assoluzion\w*|"
+        r"truffa|riciclaggio|falso in bilancio|evasion\w*|pignorament\w*|risarciment\w*|"
+        r"minacce|minacciat\w*|pressioni|intimidazion\w*|ricatt\w*|estorsion\w*|esposto|"
         r"contestazion\w*|protesta dei tifosi|crisi (?:societaria|di risultati|interna)|"
-        r"commissario|congedo", re.IGNORECASE)),
+        r"commissario|congedo|vendita (?:del|della|dello) (?:club|società|pacchetto)|"
+        r"cessione (?:del|della) (?:club|società)|nuovi (?:soci|proprietari|investitori)|"
+        r"azionist\w*|quote|cedere|trattativa per la (?:vendita|cessione)|organigramma|"
+        r"direttore sportivo|fair play finanziario|vertenz\w*|"
+        r"directiva|consejo de administraci[oó]n|junta|accionistas|propiedad|"
+        r"propietario|l[ií]mite salarial|limite salariale|tetto ingaggi|monte ingaggi|tope salarial|licencia|urbanismo|"
+        r"sentencia|recurso|multa|san[cç][aã]o|deuda|presupuesto|fundaci[oó]n|"
+        r"board|ownership|salary cap|takeover|investigation|lawsuit|"
+        r"vorstand|schulden|gehaltsobergrenze|conseil|direction|dette|licence|"
+        r"bestuur|schuld|diretoria|d[ií]vida", re.IGNORECASE)),
+    # Fuori dal campo: la grana personale di un tesserato (incidenti, guai giudiziari). Non
+    # è la partita, ma pesa su chi la gioca — e la stampa locale ne parla per giorni.
+    ("fuoricampo", "Fuori dal campo", 4, re.compile(
+        r"incidente\b|etilometro|alcoltest|positivo (?:ad|al|a) (?:alcol|alcool|stupefacenti|drog)|"
+        r"tossicolog\w*|"
+        r"alcoltest|tasso alcolemico|stupefacenti|patente ritirata|arrestat\w*|arresto|denunciat\w*|querela|"
+        r"indagato|colluttazione|rissa|"
+        r"detenido|imputado|juicio|condena|accidente de tr[aá]fico|"
+        r"arrested|charged with|drink-?driving|court date", re.IGNORECASE)),
+    ("tifo", "Tifoseria", 3, re.compile(
+        r"afici[oó]n|aficionad\w*|abonados|socios|pe[ñn]a|ultras|supporters|tifosi|"
+        r"fans|grada|protesta|manifestaci[oó]n|corteo|banderas|ambientazo|"
+        r"hinchas|seguidores|tifo|curva|striscion\w*|contestazione dei tifosi|"
+        r"fischi|fischiato|delusione dei tifosi|assemblea dei tifosi|sostenitori|"
+        r"divieto di trasferta|daspo|questura|ordine pubblico|tessera del tifoso|"
+        r"anh[aä]nger|claque|aanhang", re.IGNORECASE)),
+    ("stadio", "Stadio e città", 3, re.compile(
+        r"estadio|stadium|stadion|stadio|stade|est[aá]dio|obras|remodelaci[oó]n|"
+        r"vecinos|barrio|aparcamiento|accesos|climatiz|ruido|c[eé]sped|"
+        r"manto erboso|campo (?:pesante|inagibile)|stadio (?:chiuso|inagibile|nuovo)|"
+        r"impianto (?:sportivo|chiuso)|centro sportivo|sede (?:nuova|della società)|"
+        r"pitch|terreno di gioco|city council|ayuntamiento", re.IGNORECASE)),
     ("mercato", "Mercato", 3, re.compile(
         r"ufficial\w*|ha firmato|firma(?:to)? (?:con|per|un)|colpo|acquist\w*|"
         r"cedut\w*|cessione|prestito|rinnov\w*|trattativa|offerta|addio|saluta|"
-        r"biennale|triennale|fino al 20\d\d|mercato|svincol\w*|parametro zero", re.IGNORECASE)),
+        r"biennale|triennale|fino al 20\d\d|mercato|svincol\w*|parametro zero|"
+        r"fichaje|traspaso|cesi[oó]n|mercado|signing|transfer|deal|"
+        r"verpflichtung|transfert|contrata[cç][aã]o", re.IGNORECASE)),
     ("squadra", "Squadra", 2, re.compile(
         r"convocat\w*|nazionale|esordio|record|primato|imbattibilit\w*|"
         r"serie (?:utile|positiva|negativa)|capitano|ritiro|"
-        r"infortunio (?:in|con la) nazionale", re.IGNORECASE)),
+        r"infortunio (?:in|con la) nazionale|"
+        r"convocatoria|selecci[oó]n|internacional|r[eé]cord|racha|capit[aá]n|"
+        r"squad|national team|unbeaten|kader|nationalmannschaft|"
+        r"s[eé]lection|selectie|sele[cç][aã]o", re.IGNORECASE)),
     ("dichiarazioni", "Dichiarazioni", 2, re.compile(
         r"dichiarazion\w*|conferenza stampa|intervista|a microfoni|parla il|ha detto|"
-        r"le parole di|frasi|il messaggio di|social", re.IGNORECASE)),
-    # coda leggera: colore di società. Pesa 1, quindi si vede solo quando non c'è nulla di
-    # meglio (l'ordinamento della card è per peso) — evita la card vuota senza riempirla di
-    # comunicati su maglie e sponsor quando c'è un infortunio da leggere.
+        r"le parole di|frasi|il messaggio di|social|«|»|"
+        r"declaracion\w*|dijo|asegur[oó]|se[ñn]al[oó]|explic[oó]|afirm[oó]|palabras|"
+        r"quotes|said|spoke|says|erkl[aä]rt|d[eé]clare|aldus|disse", re.IGNORECASE)),
+    # coda leggera: colore di società, settore giovanile e iniziative. Pesa 1, quindi si vede
+    # solo quando non c'è nulla di meglio (l'ordinamento della card è per punteggio) — evita
+    # la card vuota senza riempirla di comunicati quando c'è un fatto che sposta qualcosa.
     ("club", "Club", 1, re.compile(
         r"premio|festa|celebr\w*|anniversario|iniziativa|solidariet\w*|maglia|sponsor|"
-        r"stadio|tifosi|academy|settore giovanile|prim\w* squadra|museo", re.IGNORECASE)),
+        r"tifosi|academy|settore giovanile|prim\w* squadra|museo|cantera|filial|"
+        r"primavera|under \d+|u\d\d|"
+        r"academia|celebraci[oó]n|camiseta|solidaridad|"
+        r"trophy|anniversary|jubil[aä]um|troph[eé]e|jubileu", re.IGNORECASE)),
 )
 
 TOPIC_LABELS: dict[str, str] = {key: label for key, label, _, _ in TOPIC_RULES}
@@ -338,3 +554,27 @@ def meaningful_news(title: str | None, description: str | None = "",
                     source: str | None = None) -> bool:
     """La notizia è pubblicabile nella card «Ultime dalle società»?"""
     return classify_news(title, description, source)[0] is not None
+
+
+def news_value(title: str | None, description: str | None = "",
+               source: str | None = None) -> str | None:
+    """Il fatto può **spostare qualcosa**? ``None`` se sì, altrimenti il motivo.
+
+    Gate editoriale della card (docs/24 §3.5). Ritorna:
+
+    - ``"annuncio"`` — conferenza stampa, presentazione, sponsor, lavori, orari, biglietti:
+      fresco e pertinente, ma non cambia nulla di questa partita;
+    - ``"piatto"`` — nessuna frizione, nessuna decisione, nessun vincolo: la cronaca della
+      giornata;
+    - ``None`` — il titolo può entrare in card.
+
+    Il testo esaminato è titolo + brano senza la testata (vedi :func:`strip_credit`).
+    """
+    text = f"{title or ''} {strip_credit(description, source)}"
+    if not text.strip():
+        return "piatto"
+    if ANNUNCIO_NEWS.search(text):
+        return "annuncio"
+    if not CONSEGUENZA_NEWS.search(text):
+        return "piatto"
+    return None

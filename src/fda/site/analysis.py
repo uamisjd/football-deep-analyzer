@@ -22,7 +22,7 @@ from ..store import Store
 from ..teams import canonical, soft_key
 from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
-from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news
+from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, news_value
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
 from .rates import (
@@ -221,9 +221,51 @@ _UNAVAIL_IT = {"injury": "infortunio", "suspension": "squalifica", "suspended": 
 
 def _no_news() -> dict[str, Any]:
     """Bollettino vuoto per le partite finite (la card non si stampa, il contesto resta tipato)."""
-    return {"notizie": [], "esaminate": 0, "scartate": 0, "pertinenti": 0, "argomenti": [],
-            "finestra": 0, "finestra_recupero": 0, "esaminate_recupero": 0,
-            "pertinenti_recupero": 0, "recupero_usato": False}
+    return {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
+            "oltre": 0, "annunci": 0, "piatti": 0, "vecchie": 0, "pertinenti": 0,
+            "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
+
+
+def news_freshness(hours: float) -> float:
+    """Punteggio di freschezza di una notizia (docs/24 §3.5).
+
+    Non basta «dentro la settimana»: dentro la settimana conta **quanto** è vicina al
+    calcio d'inizio. Una voce di ieri sera pesa più di una di lunedì, e una di tre giorni
+    fa più di una di sei. Le soglie sono le stesse misurate sul prototipo approvato.
+    """
+    if hours <= 12:
+        return 6.0
+    if hours <= 24:
+        return 5.0
+    if hours <= 36:
+        return 4.0
+    if hours <= 48:
+        return 3.0
+    if hours <= 72:
+        return 1.5
+    return 0.0
+
+
+def news_substance(text: str) -> float:
+    """Fatti sopra dichiarazioni: +2 con un numero o una decisione, −2 con una frase.
+
+    Serve all'ordinamento della card (docs/24 §3.5): a parità di freschezza e rilevanza,
+    «il tetto di spesa è 142,8 M€» viene prima di «il tecnico ha parlato della rosa».
+    """
+    p = 0.0
+    if re.search(r"\d", text or "") or re.search(
+            r"ricorso|respinge|respinto|limita|rinnovo|firmato|cantiere|lavori|sanzione|"
+            r"indagine|esclusi|tetto|limite|divario|priorit[aà]|"
+            r"rechaza|rechaz|aprueba|desestima|denuncia|multa|deuda|l[ií]mite|"
+            r"protesta|amenaza|insulto|comunicado|renueva|acuerdo|recurso|sentencia|"
+            r"reject|sanction|fine|debt|cap|protest|abuse|threat|"
+            r"ablehnt|kritik|streik|rejette|afwijst|rejeita", text or "", re.IGNORECASE):
+        p += 2
+    if re.search(r"dichiarazion|conferenza stampa|intervista|ha detto|le parole di|"
+                 r"declaracion|dijo|asegur|se[ñn]al[oó]|explic[oó]|palabras|"
+                 r"quotes|said|says|erkl[aä]rt|d[eé]clar|zegt|disse", text or "", re.IGNORECASE):
+        p -= 2
+    return p
 
 
 def unavailability_it(value: Any) -> str:
@@ -1217,11 +1259,18 @@ class MatchAnalysis:
                                     f"{self.MOOD_CONGEST_DAYS} giorni"})
         return out
 
-    # ---- notizie per partita (docs/21 P1-5, rifatte in docs/24 §3) --------------------------
-    NEWS_WINDOW_DAYS: ClassVar[int] = 12
-    NEWS_RECOVERY_DAYS: ClassVar[int] = 45
-    NEWS_LIMIT: ClassVar[int] = 3
-    NEWS_RECOVERY_LIMIT: ClassVar[int] = 2
+    # ---- notizie per partita (docs/21 P1-5, rifatte in docs/24 §3 e §3.5) -------------------
+    # Card «Vita del club»: le regole approvate il 2026-09-17 valgono per **ogni** partita in
+    # programma, non per l'esempio su cui sono nate. Finestra di 7 giorni pesata sulle ore al
+    # fischio d'inizio, rilevanza per questa partita, gate «il fatto deve poter spostare
+    # qualcosa», diversità e trasparenza sui conteggi.
+    NEWS_WINDOW_DAYS: ClassVar[int] = 7          # finestra vera: una settimana
+    NEWS_OLD_HORIZON_DAYS: ClassVar[int] = 45    # quanto indietro si contano i «troppo vecchi»
+    NEWS_LIMIT: ClassVar[int] = 3                # fatti pubblicati per squadra
+    NEWS_CATEGORY_LIMIT: ClassVar[int] = 2       # non più di due fatti della stessa categoria
+    NEWS_RESERVE_LIMIT: ClassVar[int] = 2        # «in riserva»: i primi che non entrano nei tre
+    # temi che la scheda copre già altrove: ripeterli nella card non aggiunge nulla
+    NEWS_ALTROVE: ClassVar[frozenset[str]] = frozenset({"infortuni", "squalifiche", "mercato"})
 
     def team_tokens(self, team_name: str) -> set[str]:
         """Token distintivi del nome squadra (per capire di chi parla un titolo)."""
@@ -1234,66 +1283,71 @@ class MatchAnalysis:
                   days: int | None = None, limit: int | None = None,
                   squad: list[dict[str, Any]] | None = None,
                   seen: set[str] | None = None,
-                  recovery_days: int | None = None) -> dict[str, Any]:
-        """Bollettino stampa della squadra: solo notizie che dicono qualcosa di utile.
+                  opponent: str | None = None,
+                  coach: str | None = None) -> dict[str, Any]:
+        """Bollettino stampa della squadra: solo i fatti che possono spostare qualcosa.
 
-        Rifatto in ``docs/24`` §3 dopo aver misurato la card precedente sul sito pubblicato:
-        ordinava per parole chiave ma a parità di punteggio per data **crescente** (la voce
-        «più recente» dichiarata era in realtà la più vecchia), pubblicava per il 38% dirette,
-        pronostici e «dove vederla», e ripeteva lo stesso articolo nelle due colonne della
-        stessa partita (58 duplicati su 535 voci in 70 schede).
+        Rifatto in ``docs/24`` §3 e poi in §3.5 dopo il confronto con l'utente del
+        2026-09-16/17. Difetti misurati nella versione precedente, tutti corretti qui:
+        pubblicava per il 38% dirette, pronostici e «dove vederla»; non aveva un limite per
+        categoria; non distingueva un fatto da un annuncio; e quando non c'era nulla non lo
+        diceva con i numeri.
 
-        Regole della nuova versione, tutte verificabili:
+        Regole (deterministiche e verificabili):
 
-        1. **finestra vera**: ``kickoff − 12 giorni ≤ data ≤ kickoff``. Il limite superiore
-           mancava: la card poteva pescare notizie pubblicate dopo la gara;
-        2. **filtro e categoria** da :func:`fda.sources.news.classify_news` (scarta dirette,
-           pronostici, pagelle, video) — ogni voce pubblicata ha una categoria dichiarata;
-        3. **gate di soggetto**: il titolo deve parlare della squadra (token del nome) o
-           citare un suo giocatore/allenatore. Ferma i pezzi di giornata che il feed di una
-           squadra restituisce perché citano un avversario;
-        4. **ordine**: categoria più importante prima, poi la più recente (il difetto era
-           l'inverso);
-        5. **dedup**: per titolo normalizzato, con un insieme condiviso fra le due squadre
-           della stessa partita, così lo stesso pezzo non compare due volte in pagina;
-        6. **perché conta**: se il titolo nomina un indisponibile o un titolare di questa
-           partita, la voce lo dice — è il punto in cui la stampa e i nostri dati si
-           incontrano;
-        7. **recupero**: se nella finestra non c'è nulla di utile, la card non resta vuota:
-           cerca fino a :data:`NEWS_RECOVERY_DAYS` indietro e pubblica le notizie più
-           recenti che *contano*, con la data vera e l'etichetta «fuori finestra». Un
-           esonero di tre settimane prima è informazione; una diretta di ieri no.
-        8. **un soggetto per volta**: nella stessa colonna due voci della stessa categoria
-           sullo stesso nome proprio (persona, città, ente — i club esclusi) sono lo stesso
-           fatto raccontato due volte: resta la prima, che è la più importante o la più
-           recente. Misurato il 2026-09-16: 13 coppie su 162 voci pubblicate (Calhanoglu,
-           Tedesco, Idzes, Stones, Adams).
+        1. **finestra vera**: ``kickoff − 7 giorni ≤ data ≤ kickoff``, senza recupero. Una
+           notizia di tre settimane prima non entra: l'utente l'ha rifiutata due volte. Le
+           righe più vecchie della finestra si **contano** (``vecchie``), così la card può
+           dichiararle invece di far credere di non averle viste;
+        2. **filtro e categoria** da :func:`fda.sources.news.classify_news` (dirette,
+           pronostici, pagelle, biglietti e cronaca fuori), nelle lingue delle due edizioni;
+        3. **già altrove**: infortuni, squalifiche e mercato hanno la loro card in questa
+           pagina e qui non si ripetono (``NEWS_ALTROVE``);
+        4. **gate del valore** da :func:`fda.sources.news.news_value`: annunci e logistica
+           (``annunci``) e fatti senza frizione né decisione (``piatti``) restano fuori e
+           vengono contati — è la correzione chiesta dall'utente («info non recentissime o
+           non inerenti», «con queste notizie non ci faccio nulla»);
+        5. **gate di soggetto**: il titolo deve parlare della squadra o citare un suo
+           giocatore/allenatore;
+        6. **punteggio**: categoria + sostanza (numeri e decisioni sopra le dichiarazioni) +
+           freschezza (ore al calcio d'inizio) + rilevanza per questa partita (avversario,
+           allenatore, giocatori della distinta di oggi; penalità se il titolo parla di
+           un'altra squadra). Si ordina per punteggio, poi per data — la versione vecchia
+           ordinava a parità di peso per data **crescente**;
+        7. **diversità**: al massimo 3 fatti per squadra, 2 per categoria, 1 per soggetto;
+           chi resta fuori per il limite dei tre non si perde: i primi due restano «in
+           riserva» e la card li mostra come tali;
+        8. **dedup**: per titolo normalizzato, con l'insieme condiviso fra le due squadre
+           della stessa partita, così lo stesso pezzo non compare due volte in pagina.
 
-        Ritorna un dizionario con le voci e i conteggi dell'imbuto (esaminate, scartate,
-        pertinenti), così la card può dichiarare il lavoro fatto invece di far finta che
-        ogni feed sia oro.
+        Ritorna le voci e i conteggi dell'imbuto (esaminate, pubblicate, annunci, servizio o
+        cronaca, non spostano nulla, troppo vecchi, oltre il limite, in riserva).
         """
         days = self.NEWS_WINDOW_DAYS if days is None else days
         limit = self.NEWS_LIMIT if limit is None else limit
-        out: dict[str, Any] = {"notizie": [], "esaminate": 0, "scartate": 0, "pertinenti": 0,
-                               "argomenti": [], "finestra": days, "finestra_recupero": 0,
-                               "esaminate_recupero": 0, "pertinenti_recupero": 0,
-                               "recupero_usato": False}
+        out: dict[str, Any] = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0,
+                               "scartate": 0, "oltre": 0, "annunci": 0, "piatti": 0,
+                               "vecchie": 0, "pertinenti": 0, "finestra": days, "limite": limit,
+                               "categoria_limite": self.NEWS_CATEGORY_LIMIT,
+                               "riserva_limite": self.NEWS_RESERVE_LIMIT}
         if self.news_df.empty:
             return out
         ko = pd.Timestamp(kickoff)
         pa = pd.to_datetime(self.news_df.published_at, utc=True)
-        df = self.news_df[(self.news_df.team_id == team_id) & (pa >= ko - pd.Timedelta(days=days))
-                          & (pa <= ko)]
+        miei = self.news_df.team_id == team_id
+        df = self.news_df[miei & (pa >= ko - pd.Timedelta(days=days)) & (pa <= ko)]
         out["esaminate"] = len(df)
-        # nessuna uscita anticipata quando la finestra è vuota: il recupero (§7) vale anche
-        # per il caso «zero titoli negli ultimi 12 giorni», che è il più frequente fra le
-        # squadre olandesi e francesi (misurato: 2 colonne su 140, e il caso limite di una
-        # fonte muta). Prima la card restava vuota senza nemmeno guardare indietro.
+        # le righe più vecchie della finestra non si pubblicano ma si contano (fino a un
+        # orizzonte utile): la card dice quante ne ha lasciate indietro, e il lettore sa che
+        # non è che non le abbiamo viste
+        fuori = self.news_df[miei & (pa >= ko - pd.Timedelta(days=self.NEWS_OLD_HORIZON_DAYS))
+                             & (pa < ko - pd.Timedelta(days=days))]
+        out["vecchie"] = len(fuori)
         tokens = self.team_tokens(team_name)
+        avversario = self.team_tokens(opponent or "")
         # entità della squadra citabili in un titolo: nomi della distinta di questa partita
         # (titolari, panchina, indisponibili, allenatore) più i giocatori con presenze in
-        # stagione: bastano per riconoscere «Busio», «Zirkzee», «Grosso» in un titolo.
+        # stagione: bastano per riconoscere «Zirkzee», «Abde», «Bordalás» in un titolo.
         squad = squad or []
         entities: dict[str, str] = {}
         for r in squad:
@@ -1306,6 +1360,11 @@ class MatchAnalysis:
             last = full.split()[-1]
             if len(last) >= 5:
                 entities.setdefault(last, status)
+        if coach:
+            entities.setdefault(str(coach).lower(), "coach")
+            for part in soft_key(str(coach)).split():
+                if len(part) >= 5:
+                    entities.setdefault(part, "coach")
 
         # nomi propri di club: «Milan» in un titolo di Inter non è un soggetto interessante
         # (il club lo si cita sempre), i nomi di persona sì
@@ -1344,13 +1403,44 @@ class MatchAnalysis:
                     return f"«{nome}» è in distinta come titolare: la notizia può essere più fresca del dato"
                 if status == "sub":
                     return f"«{nome}» è in distinta fra i giocatori a disposizione"
+                if status == "coach":
+                    return f"«{nome}» è l'allenatore di questa squadra"
                 return ""
             return ""
+
+        def rilevanza(title: str) -> float:
+            """Quanto la notizia riguarda **questa** partita (docs/24 §3.5).
+
+            +5 avversario o vigilia, +4 allenatore, +3 un giocatore della distinta, +2 la
+            squadra; **−4** se il titolo nomina un altro club: una dichiarazione su
+            un'altra squadra non è informazione per questa gara.
+            """
+            key = soft_key(title or "")
+            low = (title or "").lower()
+            p = 0.0
+            if avversario and any(t in key for t in avversario):
+                p += 5
+            if re.search(r"previa|ante el |ante la |jornada \d|vigilia|vespera|preview|"
+                         r"vorbericht|avant-?match|voorbeschouwing|pr[eé]via|partidazo",
+                         title or "", re.IGNORECASE):
+                p += 5
+            if coach and (soft_key(str(coach)) in key or str(coach).lower() in low
+                          or any(len(t) >= 5 and t in key
+                                 for t in soft_key(str(coach)).split())):
+                p += 4
+            if any(nm in low for nm in entities if len(nm) >= 5):
+                p += 3
+            if tokens and any(t in key for t in tokens):
+                p += 2
+            altri = {c for c in (self._club_tokens or ())
+                     if len(c) >= 5 and c not in tokens and c not in avversario}
+            if any(c in key for c in altri):
+                p -= 4
+            return p
 
         rows = [r._asdict() for r in df.itertuples(index=False)]
         visti: set[str] = seen if seen is not None else set()
         scelte: list[dict[str, Any]] = []
-        argomenti: dict[str, int] = {}
         for r in rows:
             title = str(r.get("title") or "").strip()
             key = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
@@ -1361,32 +1451,41 @@ class MatchAnalysis:
             if not key or key in visti or not subject_ok(title):
                 out["scartate"] += 1
                 continue
+            if topic in self.NEWS_ALTROVE:
+                # infortuni, squalifiche e mercato hanno già la loro card in questa pagina:
+                # ripeterli qui era una delle cose che l'utente non voleva più leggere
+                out["scartate"] += 1
+                continue
+            motivo = news_value(title, r.get("description"), r.get("source"))
+            if motivo is not None:
+                out["annunci" if motivo == "annuncio" else "piatti"] += 1
+                continue
             # la chiave entra subito nell'insieme condiviso: il feed ripubblica lo stesso
-            # articolo con data aggiornata (misurato: 231 coppie (squadra, url) con più
-            # righe, fino a 6) e senza questo la stessa notizia usciva due volte in pagina
+            # articolo con data aggiornata (misurato: 231 coppie (squadra, url) con più righe)
             visti.add(key)
-            argomenti[topic] = argomenti.get(topic, 0) + 1
             branch = self._news_branch(r)
             # «sintesi» solo se aggiunge qualcosa al titolo: per Google News il brano È il
             # titolo con la testata appiccicata, e ripeterlo era il difetto della vecchia card
             sintesi = branch if len(branch) >= 60 and title[:40].lower() not in branch.lower() else ""
+            published = pd.to_datetime(r.get("published_at"), utc=True)
+            ore = max(0.0, (ko - published).total_seconds() / 3600.0)
+            punteggio = (TOPIC_WEIGHTS.get(topic, 0)
+                         + news_substance(f"{title} {branch}")
+                         + news_freshness(ore)
+                         + rilevanza(title))
             scelte.append({"title": title, "source": str(r.get("source") or ""),
-                           "url": str(r.get("url") or ""),
-                           "published_at": pd.to_datetime(r.get("published_at"), utc=True),
+                           "url": str(r.get("url") or ""), "published_at": published,
                            "topic": topic, "topic_label": TOPIC_LABELS.get(topic, topic),
-                           "sintesi": sintesi, "why": nota(title), "recupero": False,
-                           "_key": key})
-        def chiave_ordine(v: dict[str, Any]) -> tuple[int, int]:
-            """Categoria più importante prima, poi la più recente (il difetto era l'inverso)."""
-            return (-TOPIC_WEIGHTS.get(v["topic"], 0), -v["published_at"].value)
+                           "sintesi": sintesi, "why": nota(title), "ore": ore,
+                           "punteggio": punteggio, "_key": key})
 
         def un_soggetto(voci: list[dict[str, Any]]) -> list[dict[str, Any]]:
             """Una voce per categoria e soggetto, nell'ordine in cui arrivano.
 
             Due voci della stessa categoria sullo stesso nome proprio sono lo stesso fatto
-            raccontato due volte. Il filtro va applicato **dopo** l'ordinamento per (peso,
-            data): le righe del Parquet arrivano in ordine di data crescente e filtrando in
-            lettura restava la voce più vecchia (difetto trovato in prova, 2026-09-16).
+            raccontato due volte. Il filtro va applicato **dopo** l'ordinamento per
+            (punteggio, data): le righe del Parquet arrivano in ordine di data crescente e
+            filtrando in lettura restava la voce più vecchia.
             """
             tenute: list[dict[str, Any]] = []
             visti_sog: dict[str, set[str]] = {}
@@ -1398,61 +1497,89 @@ class MatchAnalysis:
                 tenute.append(v)
             return tenute
 
-        scelte.sort(key=chiave_ordine)
+        scelte.sort(key=lambda v: (-v["punteggio"], -v["published_at"].value))
         tenute = un_soggetto(scelte)
         out["scartate"] += len(scelte) - len(tenute)
-        scelte = tenute
-        out["pertinenti"] = len(scelte)
-        out["finestra_recupero"] = 0
-        out["esaminate_recupero"] = 0
-        out["pertinenti_recupero"] = 0
-        if not scelte:
-            # nessuna notizia utile nella finestra: si guarda più indietro, dichiarandolo.
-            # Il caso è la norma per metà delle squadre (misurato il 2026-09-16: 91 colonne
-            # su 140 senza voci): meglio una notizia di tre settimane prima, con la sua
-            # data, che una colonna vuota.
-            rec = self.NEWS_RECOVERY_DAYS if recovery_days is None else recovery_days
-            out["finestra_recupero"] = rec
-            piu_giu = self.news_df[(self.news_df.team_id == team_id)
-                                   & (pa >= ko - pd.Timedelta(days=rec))
-                                   & (pa < ko - pd.Timedelta(days=days))]
-            out["esaminate_recupero"] = len(piu_giu)
-            candidate: list[dict[str, Any]] = []
-            for r in piu_giu.sort_values("published_at", ascending=False).to_dict("records"):
-                title = str(r.get("title") or "").strip()
-                key = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
-                topic, _evidence = classify_news(title, r.get("description"), r.get("source"))
-                if topic is None or not key or key in visti or not subject_ok(title):
-                    continue
-                candidate.append({"title": title, "source": str(r.get("source") or ""),
-                                  "url": str(r.get("url") or ""),
-                                  "published_at": pd.to_datetime(r.get("published_at"), utc=True),
-                                  "topic": topic, "topic_label": TOPIC_LABELS.get(topic, topic),
-                                  "sintesi": "", "why": nota(title), "recupero": True,
-                                  "_key": key})
-            # in recupero l'ordine è: categoria più importante prima, poi la più recente, e le
-            # voci di mercato/dichiarazioni/colore entrano solo se non c'è altro — il mercato
-            # è già nella card «Mercato: arrivi e partenze», ripeterlo non aggiunge nulla
-            candidate.sort(key=chiave_ordine)
-            # in recupero entrano le categorie che cambiano qualcosa; il colore (tifosi,
-            # anniversari, magliette) e le dichiarazioni no: «meglio nessuna notizia che una
-            # notizia che non serve» è la promessa scritta nella card. Il mercato è già
-            # nella card qui sopra, quindi è l'ultima risorsa.
-            forti = [c for c in candidate
-                     if c["topic"] in ("squalifiche", "infortuni", "allenatore", "societa", "squadra")]
-            ripiego = [c for c in candidate if c["topic"] == "mercato"]
-            for c in un_soggetto(forti or ripiego)[:min(limit, self.NEWS_RECOVERY_LIMIT)]:
-                visti.add(c.pop("_key"))
-                scelte.append(c)
-            out["pertinenti_recupero"] = len(scelte)
-        out["argomenti"] = [(TOPIC_LABELS.get(k, k), v) for k, v in
-                            sorted(argomenti.items(),
-                                   key=lambda kv: (-TOPIC_WEIGHTS.get(kv[0], 0), kv[0]))]
-        for r in scelte[:limit]:
-            r.pop("_key", None)
-            out["notizie"].append(r)
-        out["recupero_usato"] = any(n["recupero"] for n in out["notizie"])
-        # le voci scartate per limite restano contate come pertinenti (dichiarate, non perse)
+        out["pertinenti"] = len(tenute)
+        # diversità: non più di due fatti della stessa categoria — il punteggio decide quali
+        # due (prima i più freschi e più sostanziosi), e chi resta fuori si conta a parte
+        pubblicabili: list[dict[str, Any]] = []
+        per_categoria: dict[str, int] = {}
+        for v in tenute:
+            if per_categoria.get(v["topic"], 0) >= self.NEWS_CATEGORY_LIMIT:
+                out["oltre"] += 1
+                continue
+            per_categoria[v["topic"]] = per_categoria.get(v["topic"], 0) + 1
+            pubblicabili.append(v)
+        for v in pubblicabili[:limit]:
+            v.pop("_key", None)
+            out["notizie"].append(v)
+        for v in pubblicabili[limit:limit + self.NEWS_RESERVE_LIMIT]:
+            v.pop("_key", None)
+            out["riserva"].append(v)
+        out["pubblicate"] = len(out["notizie"])
+        return out
+
+    def news_sapere(self, match_id: int, home_id: int, home_name: str,
+                    away_id: int, away_name: str, kickoff: datetime) -> list[dict[str, str]]:
+        """Blocco «Da sapere»: fatti di contorno, derivati dai nostri dati (docs/24 §3.5).
+
+        Due regole, entrambe verificabili e senza testo inventato:
+
+        - **dove si gioca**: se lo stadio di questa partita non è quello delle ultime gare
+          interne della squadra di casa, la card lo dice, con le due capienze. È il caso
+          della stagione a La Cartuja: il dato della partita e quello delle gare precedenti
+          raccontano due stadi diversi, e chi legge deve saperlo;
+        - **panchina nuova**: se l'allenatore è in carica da poche gare (≤3), la panchina è
+          appena cambiata — un fatto che pesa sulla lettura della partita.
+
+        Niente da dire = nessun blocco: la card non riempie lo spazio.
+        """
+        out: list[dict[str, str]] = []
+        if self.info.empty or self.fixtures.empty or "stadium_name" not in self.info.columns:
+            return out
+        oggi = self.info[self.info.match_id == match_id]
+        if not oggi.empty:
+            riga = _first(oggi)
+            stadio = str(_val(riga, "stadium_name") or "").strip()
+            capienza = _val(riga, "stadium_capacity")
+            casa = self.fixtures[(self.fixtures.home_id == home_id)
+                                 & (self.fixtures.status == "finished")]
+            ids = {int(x) for x in casa.match_id}
+            if stadio and ids:
+                st = self.info[self.info.match_id.isin(ids) & self.info.stadium_name.notna()]
+                if len(st) >= 2:
+                    conteggio = st.stadium_name.astype(str).value_counts()
+                    abituale = str(conteggio.index[0])
+                    cap_ab = None
+                    righe_ab = st[st.stadium_name.astype(str) == abituale]
+                    if not righe_ab.empty:
+                        cap_ab = _val(_first(righe_ab), "stadium_capacity")
+                    if abituale and abituale != stadio:
+                        def posti(cap: Any) -> str:
+                            try:
+                                return f" ({int(cap):,} posti)".replace(",", ".")
+                            except (TypeError, ValueError):
+                                return ""
+                        out.append({
+                            "titolo": "Dove si gioca",
+                            "testo": (f"il dato di questa partita indica {stadio}{posti(capienza)}; "
+                                      f"le ultime {len(st)} gare interne di {home_name} si sono "
+                                      f"giocate a {abituale}{posti(cap_ab)}.")})
+        for tid, nome in ((home_id, home_name), (away_id, away_name)):
+            co = self.coach(tid, kickoff)
+            if not co:
+                continue
+            gare = co.get("matches")
+            try:
+                gare = int(gare)
+            except (TypeError, ValueError):
+                continue
+            if gare <= 3:
+                testo = f"{nome} ha cambiato allenatore da poco: {co.get('name')} è in carica da {gare} gare"
+                if co.get("prev_name"):
+                    testo += f", ha preso il posto di {co['prev_name']}"
+                out.append({"titolo": "Panchina nuova", "testo": testo + "."})
         return out
 
     def _news_branch(self, row: dict[str, Any]) -> str:
@@ -3216,6 +3343,9 @@ class MatchAnalysis:
         # insieme condiviso dalle due colonne del bollettino stampa (docs/24 §3): lo stesso
         # articolo non deve comparire due volte nella stessa pagina
         news_seen: set[str] = set()
+        # allenatori in panchina (servono alla rilevanza delle notizie e al blocco «Da sapere»)
+        home_coach = (self.coach(home_id, kickoff) or {}).get("name")
+        away_coach = (self.coach(away_id, kickoff) or {}).get("name")
         ctx: dict[str, Any] = {
             "match_id": match_id, "league_id": int(f["league_id"]), "round": _val(f, "round"),
             "utc_kickoff": kickoff, "status": status,
@@ -3268,10 +3398,16 @@ class MatchAnalysis:
             # `visti` è condiviso dalle due squadre, così lo stesso articolo non compare due volte
             "home_news": self.team_news(home_id, f["home_name"], kickoff,
                                         squad=self.match_squad(match_id, home_id),
-                                        seen=news_seen) if status != "finished" else _no_news(),
+                                        seen=news_seen, opponent=f["away_name"],
+                                        coach=home_coach) if status != "finished" else _no_news(),
             "away_news": self.team_news(away_id, f["away_name"], kickoff,
                                         squad=self.match_squad(match_id, away_id),
-                                        seen=news_seen) if status != "finished" else _no_news(),
+                                        seen=news_seen, opponent=f["home_name"],
+                                        coach=away_coach) if status != "finished" else _no_news(),
+            # blocco «Da sapere» della card (docs/24 §3.5): derivato dai nostri dati
+            "news_sapere": (self.news_sapere(match_id, home_id, f["home_name"], away_id,
+                                             f["away_name"], kickoff)
+                            if status != "finished" else []),
             "lineup_type": _val(info, "lineup_type"),
             "home_formation": _val(info, "home_formation"), "away_formation": _val(info, "away_formation"),
             "home_value": _val(info, "home_starters_value_eur"), "away_value": _val(info, "away_starters_value_eur"),

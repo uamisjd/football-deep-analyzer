@@ -1338,8 +1338,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     lu19 = st.read("lineup")
     sim19 = st.read("season_sim")
     from fda.site.analysis import MatchAnalysis as _MA
-    from fda.site.analysis import news_subjects
-    from fda.sources.news import JUNK_NEWS
+    from fda.sources.news import JUNK_NEWS, news_value
     ma19 = _MA(st)
     n_bench = 0
     if not fx19.empty and not lu19.empty and "role" in lu19.columns:
@@ -1430,21 +1429,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 
-    # 20) bollettino stampa (docs/24 §3): la card «Ultime dalle società» pubblica solo
-    # notizie con una categoria dichiarata, dentro la finestra [kickoff−12g, kickoff], che
-    # parlano della squadra; conteggi e voci sono ricalcolati con le stesse funzioni del
-    # build. La versione precedente stampava i titoli grezzi ordinati per parole chiave:
-    # verificava che fossero nella tabella, non che fossero utili.
+    # 20) «Vita del club» (docs/24 §3.5): la card pubblica solo fatti dentro la finestra di
+    # 7 giorni che possono spostare qualcosa. Conteggi, voci pubblicate, «in riserva» e
+    # blocco «Da sapere» sono ricalcolati con le stesse funzioni del build e confrontati col
+    # markup: se una regola cambia nel codice e non nella pagina, il controllo fallisce.
     n_news = 0
-    club_tokens20: set[str] = set()
-    if not fx19.empty:
-        for nm in pd.concat([fx19.home_name, fx19.away_name]).dropna().unique():
-            club_tokens20 |= ma19.team_tokens(str(nm))
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
-        if 'id="notizie"' not in html:
-            continue
-        if fx19.empty:
+        if 'id="notizie"' not in html or fx19.empty:
             continue
         rows20 = fx19[fx19.match_id == int(pg.stem)]
         if rows20.empty:
@@ -1456,86 +1448,106 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         inizio = html.find('id="notizie"')
         fine = html.find('<div class="card"', inizio + 10)
         card = html[inizio:fine if fine != -1 else len(html)]
+        testo_card = html_unescape(card)
+        # blocco «Da sapere»: ogni riga derivata dai dati deve essere sulla pagina
+        for s in ma19.news_sapere(mid, int(fr.home_id), str(fr.home_name),
+                                  int(fr.away_id), str(fr.away_name), kickoff):
+            checks += 1
+            if s["testo"] not in testo_card:
+                fails.append(f"{pg.name}: riga «Da sapere · {s['titolo']}» assente o diversa")
         blocchi = re.split(r'<p style="margin:12px 0 6px"><b>', card)[1:]
         if len(blocchi) != 2:
-            fails.append(f"{pg.name}: bollettino con {len(blocchi)} colonne invece di 2")
+            fails.append(f"{pg.name}: card con {len(blocchi)} colonne invece di 2")
             continue
         visti20: set[str] = set()
         titoli_pagina: list[str] = []
         for blocco in blocchi:
             team_name = html_unescape(blocco.split("</b>", 1)[0])
             if team_name == str(fr.home_name):
-                tid = int(fr.home_id)
+                tid, opp = int(fr.home_id), str(fr.away_name)
             elif team_name == str(fr.away_name):
-                tid = int(fr.away_id)
+                tid, opp = int(fr.away_id), str(fr.home_name)
             else:
-                fails.append(f"{pg.name}: intestazione bollettino di squadra sconosciuta ({team_name[:30]})")
+                fails.append(f"{pg.name}: intestazione card di squadra sconosciuta ({team_name[:30]})")
                 continue
+            co = ma19.coach(tid, kickoff) or {}
             atteso = ma19.team_news(tid, team_name, kickoff,
-                                    squad=ma19.match_squad(mid, tid), seen=visti20)
+                                    squad=ma19.match_squad(mid, tid), seen=visti20,
+                                    opponent=opp, coach=co.get("name"))
             head = blocco.split("<ul", 1)[0]
-            m_es = re.search(r"· (\d+) titol", head)
-            m_pe = re.search(r"· (\d+) notizi", head)
+            # ogni numero stampato nell'intestazione deve essere quello calcolato
+            for etichetta, valore, schema in (
+                    ("titoli esaminati", atteso["esaminate"],
+                     r"· (\d+) titol[oi] (?:esaminato|esaminati)"),
+                    ("pubblicati", atteso["pubblicate"], r"· (\d+) pubblicat[oi]"),
+                    ("annunci o logistica", atteso["annunci"], r"· (\d+) annunc"),
+                    ("servizio o cronaca", atteso["scartate"], r"· (\d+) servizio o cronaca"),
+                    ("non spostano nulla", atteso["piatti"], r"· (\d+) non (?:sposta|spostano) nulla"),
+                    ("oltre il limite", atteso["oltre"], r"· (\d+) oltre il limite"),
+                    ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):
+                checks += 1
+                m = re.search(schema, head)
+                stampato = int(m.group(1)) if m else 0
+                if stampato != valore:
+                    fails.append(f"{pg.name}: «{etichetta}» di {team_name[:20]} stampa "
+                                 f"{stampato}, i dati dicono {valore}")
             checks += 1
-            if not m_es or int(m_es.group(1)) != atteso["esaminate"]:
-                fails.append(f"{pg.name}: «titoli esaminati» di {team_name[:20]} non corrisponde "
-                             f"ai dati ({atteso['esaminate']})")
-            checks += 1
-            if not m_pe or int(m_pe.group(1)) != atteso["pertinenti"]:
-                fails.append(f"{pg.name}: «notizie pertinenti» di {team_name[:20]} non corrisponde "
-                             f"ai dati ({atteso['pertinenti']})")
+            m = re.search(r"<b>(\d+) in riserva</b>", head)
+            if (int(m.group(1)) if m else 0) != len(atteso["riserva"]):
+                fails.append(f"{pg.name}: «in riserva» di {team_name[:20]} non corrisponde "
+                             f"ai dati ({len(atteso['riserva'])})")
             stampati = re.findall(r'<a href="(https?://[^"]+)" rel="noopener noreferrer nofollow">'
-                                  r'(.*?)</a>', blocco)
+                                  r'(.*?)</a>', blocco.split("In riserva", 1)[0])
             attesi = [(str(n["url"]), str(n["title"])) for n in atteso["notizie"]]
             checks += 1
             if [(u, html_unescape(t)) for u, t in stampati] != attesi:
-                fails.append(f"{pg.name}: voci del bollettino di {team_name[:20]} diverse da "
+                fails.append(f"{pg.name}: voci della card di {team_name[:20]} diverse da "
                              f"quelle calcolate ({len(stampati)} stampate, {len(attesi)} attese)")
                 continue
-            etichette = [html_unescape(x) for x in re.findall(r'<span class="topic">(.*?)</span>', blocco)]
+            etichette = [html_unescape(x) for x in
+                         re.findall(r'<span class="topic">(.*?)</span>', blocco.split("In riserva", 1)[0])]
             attese_et = [str(n["topic_label"]) for n in atteso["notizie"]]
             checks += 1
             if etichette != attese_et:
-                fails.append(f"{pg.name}: categorie del bollettino di {team_name[:20]} diverse "
+                fails.append(f"{pg.name}: categorie della card di {team_name[:20]} diverse "
                              f"da quelle calcolate ({etichette} vs {attese_et})")
+            # limite per categoria (max 2): i dati lo garantiscono, la pagina lo rispetta
             checks += 1
-            if len(stampati) > 3:
-                fails.append(f"{pg.name}: {len(stampati)} notizie per {team_name[:20]} (max 3)")
-            # modalità recupero: se la finestra è vuota la card lo dichiara e mostra le voci
-            # più vecchie con la data vera (docs/24 §3.4)
+            if etichette and max(etichette.count(x) for x in etichette) > atteso["categoria_limite"]:
+                fails.append(f"{pg.name}: più di {atteso['categoria_limite']} voci della stessa "
+                             f"categoria per {team_name[:20]}")
+            # «in riserva»: le voci dichiarate devono essere quelle calcolate
+            ris = re.findall(r'In riserva, fuori dai tre per regola: <a href="([^"]+)"',
+                             blocco)
             checks += 1
-            dichiara = f"(fino a {atteso['finestra_recupero']} giorni fa" in head
-            if dichiara != bool(atteso["recupero_usato"]):
-                fails.append(f"{pg.name}: recupero fuori finestra di {team_name[:20]} "
-                             f"{'non dichiarato' if atteso['recupero_usato'] else 'dichiarato a torto'}")
-            if atteso["recupero_usato"]:
-                checks += 1
-                for n in atteso["notizie"]:
-                    if n["recupero"] and "fuori finestra" not in blocco:
-                        fails.append(f"{pg.name}: voce di recupero di {team_name[:20]} senza "
-                                     f"l'etichetta «fuori finestra»")
-            # nessuna pagina di servizio può finire in card (biglietti, merchandising,
-            # prevendite): la card lo dichiara, il controllo lo pretende (docs/24 §3.3)
+            if ris != [str(n["url"]) for n in atteso["riserva"]]:
+                fails.append(f"{pg.name}: riserva di {team_name[:20]} diversa dai dati "
+                             f"({len(ris)} stampate, {len(atteso['riserva'])} attese)")
+            # finestra e sostanza: nessuna voce fuori dai 7 giorni e nessun annuncio
+            checks += 1
+            for n in atteso["notizie"]:
+                if (kickoff - n["published_at"]) > pd.Timedelta(days=atteso["finestra"]):
+                    fails.append(f"{pg.name}: voce di {team_name[:20]} fuori dalla finestra "
+                                 f"di {atteso['finestra']} giorni")
             checks += 1
             for _u, t in stampati:
-                if JUNK_NEWS.search(html_unescape(t)):
-                    fails.append(f"{pg.name}: voce di servizio pubblicata nel bollettino di "
-                                 f"{team_name[:20]} («{html_unescape(t)[:60]}»)")
-            # un soggetto per categoria: due voci sullo stesso nome proprio sono lo stesso
-            # fatto raccontato due volte (docs/24 §3.3)
-            checks += 1
-            soggetti_visti: dict[str, set[str]] = {}
-            for et, (_u, t) in zip(etichette, stampati):
-                sog = news_subjects(html_unescape(t), club_tokens20)
-                if sog and sog & soggetti_visti.get(et, set()):
-                    fails.append(f"{pg.name}: due voci «{et}» sullo stesso soggetto "
-                                 f"({', '.join(sorted(sog & soggetti_visti[et]))})")
-                soggetti_visti.setdefault(et, set()).update(sog)
+                titolo = html_unescape(t)
+                if JUNK_NEWS.search(titolo):
+                    fails.append(f"{pg.name}: voce di servizio pubblicata in card "
+                                 f"(«{titolo[:60]}»)")
+                if news_value(titolo) is not None:
+                    fails.append(f"{pg.name}: voce senza sostanza pubblicata in card "
+                                 f"(«{titolo[:60]}»)")
+            if not atteso["notizie"] and atteso["esaminate"]:
+                checks += 1
+                if "Niente che possa spostare qualcosa" not in testo_card:
+                    fails.append(f"{pg.name}: card vuota di {team_name[:20]} senza riga di "
+                                 f"trasparenza")
             titoli_pagina.extend(t for _u, t in stampati)
         checks += 1
         if len(titoli_pagina) != len(set(titoli_pagina)):
             fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
-    print(f"[20] bollettini stampa riconciliati: {n_news} pagine")
+    print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
     # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
     # con le stesse soglie; se una squadra ha segnali la card deve esserci.

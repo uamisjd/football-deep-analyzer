@@ -1,4 +1,4 @@
-# 24 — «Ultime dalle società» e «Mercato: arrivi e partenze»: due card rifatte (2026-09-16)
+# 24 — «Ultime dalle società» e «Mercato: arrivi e partenze»: due card rifatte (2026-09-16, chiusa il 17/09)
 
 Sessione `arena/01a0ab67-football-deep-analyzer` (poi `arena/01a0abd9-…`). L'utente ha chiesto
 la verifica totale del progetto e del sito pubblicato — «controlla bene il sito, navigaci dentro
@@ -17,7 +17,7 @@ dopo, **stessa misura ripetuta dopo**, invariante permanente nel verificatore. O
 |---|---|---|
 | `fda build` | rigenera il sito da `data/processed` | — |
 | `scripts/verify_site.py` | rilegge le pagine generate e **ricalcola** i numeri pubblicati | — |
-| `python -m pytest -q` | suite completa | 356 test |
+| `python -m pytest -q` | suite completa | 358 test |
 | `audit/extract_cards.py` | estrae le due card dalle pagine di `site/` in CSV | `audit/cards_{mercato,notizie}.csv` |
 | `audit/misura_dopo.py` | misure aggregate sulle due card (colonne vuote, categorie, importi) | `audit/*_dopo.csv` |
 | `audit/crawl.py` | **non usabile**: `requests` verso GitHub Pages muore con `SSLError` dal sandbox | — |
@@ -87,33 +87,59 @@ Misure dopo (70 pagine, `audit/misura_dopo.py`): **1.049 righe**, **0** fuori fi
 **0** importi «—» (176 prestito · 93 gratuito · 87 importo non noto · 693 importi numerici),
 date mostrate 01/06/2026 → 31/08/2026.
 
-## §3 — Il bollettino rifatto (card `id="notizie"`)
+## §3 — La card «Vita del club» (portata in produzione il 2026-09-17)
 
-Sette regole, tutte dichiarate nel testo della card, più una di recupero:
+La card si chiama adesso **«Vita del club»** (`id="notizie"` è rimasto: gli id non si cambiano
+per non rompere i link interni). Riscritta dopo il confronto con l'utente del 16-17/09, che ha
+bocciato due volte la selezione precedente («informazioni non recentissime o inerenti a questa
+partita», «con queste notizie non ci faccio nulla») e ha chiesto di **cercare più a fondo** invece
+di riempire lo spazio. Il prototipo approvato è `audit/vita_club.py`; qui c'è la traduzione in
+produzione, con le stesse regole ma generiche — valgono per **tutte** le partite in programma.
 
-1. **finestra vera** `kickoff − 12 giorni ≤ data ≤ kickoff` (prima il limite superiore mancava:
-   entrava roba pubblicata **dopo** la gara);
-2. **filtro e categoria** (`fda.sources.news.classify_news`): via dirette, «dove vederla»,
-   pronostici, pagelle, video, cronache col risultato nel titolo, **e le pagine di servizio**
-   (biglietti, prevendite, merchandising, figurine) — vedi §3.3;
-3. **gate di soggetto**: il titolo deve parlare della squadra o citare un suo giocatore/allenatore
-   (nomi della distinta di **questa** partita + presenze di stagione); ferma i pezzi di giornata
-   che il feed della squadra restituisce perché citano un avversario;
-4. **ordine**: categoria più importante prima (infortuni/squalifiche/panchina 5, società 4,
-   mercato 3, squadra 2, colore 1), poi la notizia più recente;
-5. **dedup per titolo normalizzato**, con insieme condiviso fra le due colonne della stessa
-   partita: lo stesso articolo non compare due volte in pagina;
-6. **«Perché conta»**: se il titolo nomina un indisponibile o un titolare di questa partita,
-   la card lo dice (««Prati» è in distinta come titolare: la notizia può essere più fresca del dato»);
-7. **un soggetto per categoria** (§3.4);
-8. **recupero** (§3.5).
+Nove regole, tutte dichiarate nel testo della card:
+
+1. **finestra vera di 7 giorni** (`NEWS_WINDOW_DAYS`): `kickoff − 7 giorni ≤ data ≤ kickoff`.
+   Il **recupero fino a 45 giorni è stato rimosso**: l'utente ha rifiutato due volte le voci
+   vecchie. Le righe fra 7 e 45 giorni non si pubblicano ma si **contano** (`vecchie`), così la
+   card può dichiararle invece di far credere di non averle viste;
+2. **due edizioni per squadra** (`GOOGLE_EDITIONS`): quella italiana e quella della lingua del
+   campionato (es. `hl=es&gl=ES` per la Liga). La seconda porta il materiale di vita del club
+   che la stampa italiana non raccoglie (misurato il 16/09 su Feyenoord, OM, Betis). Per i
+   campionati italiani una richiesta sola. Tetto richieste alzato a 320/run: 20 squadre × 1 +
+   112 × 2 = 244;
+3. **filtro e categoria multi-lingua** (`classify_news`): via dirette, «dove vederla», pronostici,
+   pagelle, video, cronache col risultato nel titolo, pagine di servizio — e, dal 17/09,
+   **formazioni e squadre non prime** (`U23`, `Primavera`, `Serie C`, `femminile`), pubblicate
+   per errore come «Società» alla prima misura;
+4. **già altrove** (`NEWS_ALTROVE`): infortuni, squalifiche e mercato hanno la loro card in questa
+   pagina; qui si **contano** come «servizio o cronaca» e non si ripetono. Era la richiesta
+   esplicita dell'utente («gli infortunati sono già nella scheda partita, non ripetere sempre le
+   stesse cose»);
+5. **gate del valore** (`news_value`): un titolo fresco e pertinente entra solo se può spostare
+   qualcosa. Annunci e logistica (conferenza stampa, orari, accessi, lavori, sponsor, premi,
+   compleanni) vanno in `annunci`; i fatti senza frizione né decisione (dichiarazioni di
+   circostanza, cronaca, «un punto più») vanno in `piatti`. Entrambi restano fuori **e si
+   contano**: è la correzione chiesta dall'utente;
+6. **gate di soggetto**: il titolo deve parlare della squadra o citare un suo giocatore/allenatore;
+7. **punteggio**: categoria + sostanza (numeri e decisioni sopra le dichiarazioni) + freschezza
+   (ore al fischio d'inizio: ≤12h +6, ≤24h +5, ≤36h +4, ≤48h +3, ≤72h +1,5, oltre 0) + rilevanza
+   per **questa** partita (avversario o vigilia +5, allenatore +4, un giocatore della distinta
+   +3, la squadra +2, **−4** se il titolo nomina un altro club);
+8. **diversità**: al massimo **3 fatti per squadra**, **2 per categoria**, **1 per soggetto**.
+   Chi resta fuori per il tetto dei tre non si perde: i primi due restano **«in riserva»** e la
+   card li mostra come tali (nella pagina di esempio: Ceballos per il Betis);
+9. **dedup** per titolo normalizzato, con insieme condiviso fra le due colonne della stessa
+   partita; e **«Da sapere»**, due fatti derivati dai nostri dati: stadio di questa partita
+   diverso dall'abituale (con le due capienze) e panchina cambiata da poco (≤3 gare).
 
 ### §3.1 — Il numero dell'imbuto è pubblicato
 
-Ogni colonna dichiara il lavoro fatto: «Racing Santander · 37 titoli esaminati negli ultimi 12
-giorni · 0 notizie pertinenti: nessuna nella finestra, qui le più recenti (fino a 45 giorni fa,
-27 titoli in più guardati)». Se non c'è nulla, la card lo scrive invece di riempire lo spazio:
-«Meglio nessuna notizia che una notizia che non serve».
+Ogni colonna dichiara il lavoro fatto, non solo il risultato: «Real Betis · 20 titoli esaminati
+negli ultimi 7 giorni · 3 pubblicati · 2 annunci o logistica · 9 servizio o cronaca · 3 non
+spostano nulla · 2 troppo vecchi · 1 in riserva». Se non c'è nulla, la card scrive **perché**:
+«**Niente che possa spostare qualcosa** su questa squadra: 19 servizio o cronaca · 2 annunci o
+logistica · 3 non spostano nulla. La card non riempie lo spazio con conferenze stampa, orari,
+lavori allo stadio o frasi di circostanza».
 
 ### §3.2 — La testata non decide più la categoria
 
@@ -125,73 +151,95 @@ sceglieva la fonte (un pezzo di cronaca ripreso da TUTTOmercatoWEB risultava «M
 
 La card dichiarava di escludere le pagine di servizio e non lo faceva: **27 voci su 162 (17%)**
 pubblicate dopo il primo giro di correzioni erano «Come acquistare i biglietti per X-Y: prezzi
-della …, informazioni sulla partita» (una colonna ne aveva due). Aggiunte alle regole di scarto:
-`bigliett|abbonament|prevendita|figurin|magliett|merchandis|souvenir|come acquistare|come
-ottenere|informazioni sulla partita|parcheggi|store ufficiale|shop ufficiale|album ufficial`.
-Misura dopo: **0** voci di servizio su 135 pubblicate (invariante permanente in `verify_site [20]`).
+della …, informazioni sulla partita». Aggiunte alle regole di scarto e, con il port, estese alle
+lingue delle due edizioni (`dónde ver`, `how to watch`, `wo sehen`, `où voir`, `waar te zien`,
+`onde assistir`). Misura dopo: **0** voci di servizio pubblicate (invariante permanente in
+`verify_site [20]`).
 
 ### §3.4 — Un soggetto per categoria
 
 Nella stessa colonna due voci della stessa categoria che citano lo stesso nome proprio sono lo
-stesso fatto raccontato due volte. Misurato: **13 coppie** su 162 voci (Calhanoglu, Tedesco,
-Idzes, Stones, Adams). I club sono esclusi dall'elenco dei soggetti (compaiono in qualunque
-titolo) e il filtro si applica **dopo** l'ordinamento per (peso, data) — verificato: applicandolo
-in lettura restava la voce **più vecchia** del doppione, perché le righe arrivano dal Parquet in
-ordine di data crescente. Misura dopo: **0 coppie**.
+stesso fatto raccontato due volte. I club sono esclusi dall'elenco dei soggetti (compaiono in
+qualunque titolo) e il filtro si applica **dopo** l'ordinamento per (punteggio, data) —
+applicandolo in lettura restava la voce **più vecchia** del doppione, perché le righe arrivano dal
+Parquet in ordine di data crescente.
 
-### §3.5 — Recupero fuori finestra, dichiarato
+### §3.5 — Le due edizioni, il gate del valore, la riserva e «Da sapere»
 
-Se nella finestra non c'è nulla di utile la card guarda indietro fino a `NEWS_RECOVERY_DAYS = 45`
-giorni e pubblica al massimo `NEWS_RECOVERY_LIMIT = 2` voci, **con la data vera** e l'etichetta
-«fuori finestra». In recupero entrano prima le categorie che cambiano qualcosa
-(infortuni, squalifiche, panchina, società, squadra) e il mercato solo come ultima risorsa; il
-colore no — «una notizia di tre settimane prima, con la sua data, è informazione; una diretta di
-ieri no» (e nemmeno i fuochi d'artificio dei tifosi). Il recupero vale **anche** quando la
-finestra è completamente vuota (prima la funzione usciva prima di guardare indietro: 2 colonne
-su 140 restavano mute senza motivo).
+Il port del prototipo approvato ha cambiato tre cose rispetto alla card di settembre:
+
+1. **la seconda query** (`news.py`, `collect.py`): per i campionati stranieri ogni squadra viene
+   interrogata due volte — edizione italiana e edizione locale — e la lingua del titolo non è più
+   un ostacolo, perché regole di servizio, categorie e gate portano le alternative in spagnolo,
+   inglese, tedesco, francese, olandese e portoghese. Il conteggio delle ricerche passa dalle
+   richieste effettive (`diag["ricerche"]`), non da `len(teams)`: era un contatore che mentiva
+   appena le richieste per squadra sono diventate due;
+2. **l'esclusione di ciò che è già in pagina**: infortuni, squalifiche e mercato non si ripetono
+   (§3 regola 4). È il motivo principale per cui la card pubblica **meno** voci di prima: erano
+   la maggioranza di quelle vecchie, e l'utente le ha rifiutate come «cose che non danno nessun
+   vantaggio»;
+3. **il gate del valore e la riserva**: 1.053 righe su 2.582 in finestra (tutte le partite future
+   del 17/09) hanno una categoria e un punteggio, ma 270 sono «piatte» e 9 sono annunci: restano
+   fuori, contate. I **26 fatti pubblicati** su 4.110 colonne-squadra sono: 10 Panchina, 7 Società,
+   5 Tifoseria, 2 Spogliatoio, 1 Fuori dal campo, 1 Club — più **1 in riserva**. Fra questi:
+   «Bologna, esonerato Tedesco: arriva Palladino con contratto fino al 2029», «Le false offerte, i
+   450 milioni e l'indagine: dentro il complotto per spingere Lotito a cedere la Lazio», «Daniel
+   Maldini positivo all'etilometro: ritirata la patente», «Calcio: protesta dei tifosi del Genoa
+   contro il taglio dei posti al Ferraris», «UDINESE SULLE SPINE: RINVIATA LA SENTENZA DEL
+   PROCESSO».
+   Il numero misura l'**archivio attuale**, che contiene la sola edizione italiana: la seconda
+   edizione è il rifornimento previsto e si misurerà al primo run di raccolta in Actions.
+
+Due difetti trovati proprio misurando il port (e corretti): i titoli italiani delle inchieste e
+delle sentenze finivano **fuori categoria** («indagine», «sentenza», «perquisizioni», «minacce»
+non erano nelle regole) e il pattern spagnolo `contrat` pescava il «contratto» italiano di un
+giocatore. Il campione dei titoli resta verificabile: 1.130 scartati come servizio, 32 fuori
+categoria su 2.582.
 
 ## §4 — Prima e dopo, sullo stesso sito
 
-| Misura | Card vecchia (live) | Dopo il primo giro (finestra+gate+dedup) | Dopo il recupero | **Finale** |
-|---|---|---|---|---|
-| voci pubblicate (70 schede) | **535** | 118 | 168 | **135** |
-| voci di servizio/dirette pubblicate | ~38% del corpus, mai filtrate | 27 su 162 (17%) | 27 su 168 (16%) | **0** |
-| duplicati esatti in pagina | **58** | 0 | 0 | **0** |
-| coppie stesso soggetto nella stessa colonna | non misurate (non c'erano categorie) | 13 su 162 | 13 su 168 | **0** |
-| colonne senza alcuna voce | nessuno stato vuoto dichiarato (si riempiva di servizio) | 91/140 (65%) | 56/140 (40%) | **66/140 (47%)** |
-| colonne con voce utile nella finestra | — | — | — | 63/140 (45%) |
-| «Perché conta» presente | assente | — | — | **28 voci (21%)** |
+| Misura | Card vecchia (live) | Dopo il primo giro | Card v4 (port in produzione) |
+|---|---|---|---|
+| voci pubblicate | **535** (70 schede) | 135 | **26** su 2.055 partite future |
+| finestra | nessuna (anche notizie dopo la gara) | 12 giorni + recupero a 45 | **7 giorni, nessun recupero** |
+| voci di servizio/dirette pubblicate | ~38% del corpus | 0 | **0** |
+| duplicati esatti in pagina | **58** | 0 | **0** |
+| stesso soggetto nella stessa categoria | non misurato | 0 | **0** |
+| infortuni/mercato/squalifiche ripetuti | erano la maggioranza | presenti | **0** (contati a parte) |
+| colonne che dichiarano l'imbuto | nessuna | tutte | tutte, con annunci/piatti/vecchi/riserva |
+| «Da sapere» | assente | assente | presente quando i dati lo dicono |
 
-Le colonne vuote **aumentano** rispetto al primo giro perché 27 voci erano biglietti: erano
-riempitivo, non informazione. Il residuo (66 colonne su 140) ha una causa misurata e non
-riparabile per codice: per 53 di quelle colonne il feed Google News della squadra, in 45 giorni,
-contiene **solo** dirette, formazioni, statistiche, video e pronostici (§6).
+Il calo di volume è **voluto**: le voci che escono erano in maggioranza doppioni di altre card o
+riempitivo. Le 4.084 colonne vuote oggi dichiarano l'imbuto; il rifornimento è la seconda
+edizione, non un allargamento dei filtri.
 
 ## §5 — Cosa è cambiato nei file
 
 | File | Modifica |
 |---|---|
-| `src/fda/sources/news.py` | `JUNK_NEWS` esteso alle pagine di servizio; `strip_credit()` |
-| `src/fda/site/analysis.py` | `team_news()` → dizionario con imbuto, categorie, recupero, un soggetto per categoria; `news_subjects()` a livello di modulo; `transfer_window()` con finestra ricavata dai dati, `fee_it`, «già in campo»; rimosso `summer_market()` |
-| `src/fda/site/templates/match.html` | le due card riscritte (testi, etichette, casi vuoti, tabella dei giocatori dentro `tablewrap`) |
-| `src/fda/site/templates/accuracy.html` | tabella «Accuratezza per mercato» dentro `tablewrap` |
-| `src/fda/site/assets/site.css` | `.topic` (badge categoria), `.news-list` |
-| `src/fda/site/build.py` | filtro `fee_it` per i template |
-| `scripts/verify_site.py` | `[20]` e `[26]` riscritti; nuovi controlli: niente voci di servizio, un soggetto per categoria, recupero dichiarato, etichetta «fuori finestra» |
-| `tests/test_panchina_notizie.py`, `tests/test_mercato.py` | 22 + 13 test sull'imbuto, le categorie, il recupero, i servizi, i soggetti, la finestra del mercato |
+| `src/fda/sources/news.py` | `GOOGLE_EDITIONS`/`editions_for()` (due edizioni), `news_value()` (gate annuncio/piatto), `JUNK_NEWS` esteso alle lingue locali, formazioni e squadre non prime; `TOPIC_RULES` riscritte in 12 categorie multi-lingua (con «Spogliatoio», «Tifoseria», «Stadio e città», «Fuori dal campo») |
+| `src/fda/collect.py` | paese della lega → edizione locale; conteggio `ricerche` per richiesta effettiva |
+| `src/fda/site/analysis.py` | `team_news()` riscritto (finestra 7 giorni, gate, punteggio, tetto per categoria, riserva, imbuto), `news_sapere()`, `news_freshness()`, `news_substance()`, `_no_news()` |
+| `src/fda/site/templates/match.html` | card «Vita del club» (testo, «Da sapere», «in riserva», caso vuoto con i conteggi) |
+| `config/sources.yaml` | tetto richieste notizie 200 → 320 (due edizioni per squadra) |
+| `scripts/verify_site.py` | `[20]` riscritto: ricalcola imbuto, conteggi, categorie, riserva, finestra, gate e «Da sapere» per ogni pagina |
+| `tests/test_panchina_notizie.py`, `tests/test_diagnostica_fonti.py` | 24 + nuovi test sul port (gate, edizioni, riserva, categoria, soggetto, rilevanza, tabella vuota) |
+| `src/fda/site/build.py` | filtro `fee_it` per i template (invariato) |
 
 ## §6 — Cosa resta aperto (dichiarato, non nascosto)
 
-1. **47% delle colonne senza notizie utili.** Causa misurata: per 53 colonne su 66 il feed della
-   squadra negli ultimi 45 giorni non contiene **niente** di classificabile — verificato titolo per
-   titolo su Ipswich (31 titoli in banda 12-45 gg: dirette, «testa a testa e formazioni»,
-   biglietti, cronache) e FC Utrecht (11: formazioni, pronostici, live). Non è un difetto del
-   filtro: allargare le regole per farli entrare è esattamente il difetto che l'utente ha chiesto
-   di chiudere. **Esperimento fatto e scartato**: la query Google News con operatori
-   (`"FC Utrecht" calcio (infortunio OR squalifica OR esonero OR indisponibili)`) restituisce
-   articoli **vecchi** (gennaio 2026, luglio 2025), quindi la query semplice resta.
-2. **Rumore residuo**: 2-3 voci fuori tema per la stessa ragione (un titolo di futsal, un
-   «Sestri Levante» attribuito al Levante). Servirebbe un gate per entità più stretto; oggi il
-   costo di sbagliare in senso opposto (buttare notizie vere) è più alto del beneficio.
-3. **Il sito pubblicato mostra ancora le card vecchie** finché la PR non viene fusa: `main` è
+1. **Il volume dipende dalla seconda edizione.** Nell'archivio attuale c'è la sola edizione
+   italiana: 26 fatti pubblicati su 2.055 partite future. Il run di raccolta di Actions
+   interrogherà anche le edizioni locali (244 richieste); Google News **non è raggiungibile dal
+   sandbox** (TLS azzerato, misurato il 17/09), quindi l'effetto della seconda edizione si potrà
+   misurare solo dal primo build successivo alla raccolta. Il codice è coperto dai test con
+   titoli spagnoli.
+2. **Lo stadio della partita di esempio è sbagliato a monte.** Per `5868063` il dato della partita
+   dice «Estadio Benito Villamarín» mentre le due gare interne precedenti del Betis sono a La
+   Cartuja. Invece di inventare, la card lo **dichiara** nel blocco «Da sapere». La correzione a
+   monte (dove nasce il `location` JSON-LD) è aperta.
+3. **Il testo pubblicato resta quello della fonte** (titolo, testata, data, link): la riscrittura
+   in italiano con «Perché conta» era fatta a mano nel prototipo e non è generalizzabile senza
+   inventare. La card lo dice: «Titolo, testata, data e link come pubblicati».
+4. **Il sito pubblicato mostra ancora le card vecchie** finché la PR non viene fusa: `main` è
    l'unico ramo che alimenta GitHub Pages, e il merge lo fa l'utente (regola D).
