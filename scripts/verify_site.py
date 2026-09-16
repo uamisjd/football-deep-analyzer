@@ -24,6 +24,25 @@ from typing import Any
 # ---- residui che non devono mai arrivare a schermo -----------------------------------------
 BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp\()(?![\w.])")
 TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
+
+
+def notizia_in_finestra(righe: Any, kickoff: Any, giorni: int = 12) -> bool:
+    """True se **almeno una** riga raccolta per (url, squadra) cade nella finestra.
+
+    Lo stesso URL può comparire più volte in ``news.parquet`` per la stessa squadra con
+    ``published_at`` diversi: il feed di Google News ripubblica il link con data aggiornata
+    (caso reale 2026-09-16, ``5868080.html``: due righe 07:00 e 01:21). Il build filtra su
+    ``kickoff - giorni`` e stampa la riga dentro finestra; il verificatore non deve guardare
+    solo ``iloc[0]`` (che può essere la riga vecchia) altrimenti segnala un falso positivo.
+    Righe senza data sono ignorate, non considerate valide.
+    """
+    import pandas as pd
+
+    pa = pd.to_datetime(pd.Series(list(righe["published_at"])), utc=True)
+    lo = pd.Timestamp(kickoff) - pd.Timedelta(days=giorni)
+    hi = pd.Timestamp(kickoff) + pd.Timedelta(days=1)
+    return bool(((pa >= lo) & (pa <= hi)).any())
+
 # decimale col punto: esclusi i separatori di migliaia (1-3 cifre . esattamente 3 cifre)
 DECIMAL_POINT = re.compile(r"(?<![\w/,\-:])\d{1,3}\.\d{1,2}(?![\w.])|\d{1,3}\.\d{4,}")
 ENGLISH = re.compile(
@@ -450,8 +469,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     if not p.empty and acc_path.exists():
         outc = np.where(p.home_goals > p.away_goals, 0, np.where(p.home_goals == p.away_goals, 1, 2))
         mine = pb_rps(p[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(), outc.tolist())
-        mrow = re.search(r'Tutti</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>',
-                         acc_path.read_text(encoding="utf-8"))
+        acc_txt = acc_path.read_text(encoding="utf-8")
+        mrow = re.search(r'Tutti</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>', acc_txt)
         if not mrow:
             fails.append("accuratezza.html: riga 'Tutti' non trovata")
         else:
@@ -462,6 +481,37 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if abs(rps_page - mine) > 0.002:
                 fails.append(f"accuratezza: RPS pagina {rps_page} vs ricalcolato {mine:.4f}")
             print(f"[3] accuratezza: {len(p)} gare, RPS pagina {rps_page} = ricalcolato {mine:.4f}")
+        # 3b) invarianti di pubblicazione (docs/19 P0.8): ogni Δ della tabella riepilogo deve
+        # equalare RPS − naive ricalcolati dai numeri stampati, e la composizione dichiarata
+        # del campione deve coincidere con la somma delle gare della tabella.
+        righe_riep = re.findall(
+            r'<td>([^<]+)</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>'
+            r'<td class="r">(\d+,\d+)</td><td class="r">\d+%</td><td class="r">(\d+,\d+)</td>'
+            r'<td class="r">(?:[\d.]+|fisso)</td><td class="r [a-z]+">([+\-−]?[\d,]+)</td></tr>', acc_txt)
+        if not righe_riep:
+            fails.append("accuratezza.html: tabella riepilogo non leggibile per il controllo [3b]")
+        n_leghe, n_tutti = 0, 0
+        for lg, n_r, rps_r, _brier, naive_r, delta_r in righe_riep:
+            checks += 1
+            if lg.strip() == "Tutti":
+                n_tutti = int(n_r)
+            else:
+                n_leghe += int(n_r)
+            ric = float(rps_r.replace(",", ".")) - float(naive_r.replace(",", "."))
+            pub = float(delta_r.replace(",", ".").replace("−", "-"))
+            if abs(pub - ric) > 0.0011:   # rps/naive a 4 decimali + Δ a 3: tolleranza di stampa
+                fails.append(f"accuratezza: Δ {lg} pubblicato {pub:+.4f} ≠ RPS − naive {ric:+.4f}")
+        if n_tutti and n_leghe and n_tutti != n_leghe:
+            fails.append(f"accuratezza: riga Tutti {n_tutti} gare ≠ somma leghe {n_leghe}")
+        m_comp = re.search(r"Composizione del campione: (\d+) gare valutate", acc_txt)
+        if m_comp:
+            checks += 1
+            if int(m_comp.group(1)) != n_tutti:
+                fails.append(f"accuratezza: composizione {m_comp.group(1)} gare ≠ riga Tutti {n_tutti}")
+        elif "Riepilogo" in acc_txt:
+            fails.append("accuratezza.html: composizione del campione assente (docs/19 §1.5)")
+        else:
+            print("[3b] accuratezza: pagina senza riepilogo (nessuna previsione valutabile)")
 
     # 7) accuratezza: intervalli di Wilson pubblicati, ricalcolati con la funzione del progetto
     if acc_path.exists():
@@ -1289,12 +1339,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     fails.append(f"{pg.name}: notizia di squadra estranea alla card di {team_name[:20]} "
                                  f"({title[:40]})")
                     continue
-                r = riga_team.iloc[0]
                 checks += 1
-                if html_unescape(r.title) != html_unescape(title):
+                # lo stesso (url, team_id) può avere più righe con published_at diversi (il feed
+                # ripubblica il link con data aggiornata): la card stampa quella dentro finestra,
+                # quindi il controllo passa se ALMENO una riga raccolta rispetta titolo e finestra
+                if not any(html_unescape(str(r.title)) == html_unescape(title)
+                           for r in riga_team.itertuples(index=False)):
                     fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
-                pa = pd.to_datetime(r.published_at, utc=True)
-                if not pd.isna(pa) and not (kickoff - pd.Timedelta(days=12) <= pa <= kickoff + pd.Timedelta(days=1)):
+                if not notizia_in_finestra(riga_team, kickoff):
                     fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
             if len(stampati) > 4:
                 fails.append(f"{pg.name}: {len(stampati)} notizie per {team_name[:20]} (max 4)")
@@ -1493,6 +1545,37 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_assets(site: Path) -> tuple[list[str], int]:
+    """[29] CSS esterno (docs/19 P0.5): link giusto in ogni pagina, zero <style> inline.
+
+    Il design system (~39 kB) era inline in ogni pagina: l'estrazione vale ~-38 kB × pagine
+    e mette il CSS in cache una volta sola. L'invariante protegge il risultato: se una
+    pagina torna a portarsi il CSS dietro (o linka il file con la profondità sbagliata,
+    che romperebbe il tema nelle sottocartelle), qui si vede prima che a schermo.
+    """
+    fails: list[str] = []
+    checks = 0
+    css = site / "assets" / "site.css"
+    if not css.exists() or css.stat().st_size < 1000:
+        fails.append("assets/site.css: file mancante o troppo piccolo")
+        return fails, 0
+    for pg in sorted(site.rglob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        # index.html → 0; partite/123.html → 1; giocatori/123.html → 1
+        depth = len(pg.parent.relative_to(site).parts)
+        atteso = "../" * depth + "assets/site.css?v="
+        links = re.findall(r'<link rel="stylesheet" href="([^"]+)">', html)
+        checks += 1
+        if not any(h.startswith(atteso) for h in links):
+            fails.append(f"{pg.relative_to(site)}: link CSS esterno mancante o percorso "
+                         f"sbagliato (atteso {atteso}…)")
+        if "<style" in html:
+            fails.append(f"{pg.relative_to(site)}: blocco <style> inline (il CSS vive in assets/site.css)")
+    if not checks:
+        fails.append("nessuna pagina .html trovata per il controllo [29]")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -1519,6 +1602,9 @@ def main() -> int:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks
+        assets, asset_checks = check_assets(site)
+        fails += assets
+        checks += asset_checks
 
     by_kind: Counter[str] = Counter(f.split(": ", 1)[1].split(" ")[0] for f in fails)
     print()

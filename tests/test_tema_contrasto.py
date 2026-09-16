@@ -24,7 +24,8 @@ from pathlib import Path
 
 import pytest
 
-BASE = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates" / "base.html"
+SITE_SRC = Path(__file__).resolve().parents[1] / "src" / "fda" / "site"
+BASE = SITE_SRC / "assets" / "site.css"
 
 #: superfici su cui il tema poggia il contenuto. ``--surface3`` è incluso per prudenza anche se
 #: oggi porta solo ``--txt``/``--txt2``: se domani qualcuno ci mette un accento, il test lo prende.
@@ -79,9 +80,10 @@ def contrasto(fg: str, bg: str) -> float:
 
 
 def _css() -> str:
-    m = re.search(r"<style>(.*?)</style>", BASE.read_text(encoding="utf-8"), re.DOTALL)
-    assert m, "blocco <style> non trovato in base.html"
-    return re.sub(r"/\*.*?\*/", "", m.group(1), flags=re.DOTALL)
+    # il design system vive in assets/site.css (estratto da base.html nel 2026-09-16,
+    # docs/19 P0.5: 39 kB inline duplicati in ~10.000 pagine)
+    assert BASE.exists(), "assets/site.css mancante: il CSS è stato rimesso inline?"
+    return re.sub(r"/\*.*?\*/", "", BASE.read_text(encoding="utf-8"), flags=re.DOTALL)
 
 
 def _blocchi(css: str) -> dict[str, str]:
@@ -292,7 +294,7 @@ def test_legende_dei_grafici_usano_i_token() -> None:
     Il pannello SVG resta scuro in entrambi i temi (contrasto interno 5,0-9,4:1, verificato),
     ma le legende stavano fuori: #28c893 su bianco = 2,15:1, #4c9dd3 = 2,97:1.
     """
-    t = (BASE.parent / "match.html").read_text(encoding="utf-8")
+    t = (SITE_SRC / "templates" / "match.html").read_text(encoding="utf-8")
     legende = [m.group(1) for m in re.finditer(r'<p class="small mut"[^>]*>(.*?)</p>', t, re.DOTALL)
                if "●" in m.group(1) or "◌" in m.group(1)]
     assert legende, "nessuna legenda trovata in match.html: il selettore del test è da aggiornare"
@@ -314,7 +316,7 @@ def test_pannelli_svg_autoconsistenti() -> None:
     #: il colore del canvas ricompare come stroke dei marcatori: è il contorno che separa i
     #: punti sovrapposti dal campo, quindi DEVE essere uguale allo sfondo (contrasto 1:1 voluto).
     contorno = {canvas}
-    t = (BASE.parent / "match.html").read_text(encoding="utf-8")
+    t = (SITE_SRC / "templates" / "match.html").read_text(encoding="utf-8")
     interni = set(re.findall(r'(?:fill|stroke)="(#[0-9a-fA-F]{6})"', t))
     assert interni, "nessun colore interno ai grafici trovato"
     dati = sorted(c for c in interni if c not in tratteggio | contorno)

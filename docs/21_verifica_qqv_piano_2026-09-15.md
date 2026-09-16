@@ -932,3 +932,120 @@ stampa 5»; pagina ripristinata → 0 problemi.
   (`campi data`, `campi voce`) dirà esattamente cosa cambia, senza aprire i log.
 - Da quel run si attiva anche l'invariante **[26]** della card mercato (oggi vacua: tabella
   vuota), già compatibile con le colonne del parser.
+
+## 18. Conferme dal primo daily post-blocco 4 + coda P0 svuotata (2026-09-16, sedicesimo turno — sessione `arena/01a0a9eb`)
+
+### 18.1 Le due conferme lasciate in sospeso dal §17: **entrambe verificate**
+
+Letti i Parquet committati dal run verde `35087648951` (post-merge PR #37, dati `e94700b`, 11:06 UTC):
+
+- **`transfers` ha righe vere: 4.230** (prima: 0 su tutti i run precedenti). Imbuto dal `detail`:
+  «payload letti 132 · voci viste 4.231 · salvate 4.231», 132/132 squadre con dati (media 32,
+  min 7, max 73 per squadra). Il parser a disposizioni sovrapposte del §17 funziona **dal vivo**.
+- **Invariante [26] attivata**: «card mercato riconciliate: 72 pagine» — prima vacua (tabella vuota).
+- **Card notizie senza doppi**: il build locale sui dati reali (376/2.364/7.490) e `verify_site`
+  non segnalano più titoli duplicati per sindacazione (il difetto reale del §17 è chiuso).
+- `news` stabile: 5.343 righe (5.341 nel run precedente).
+
+### 18.2 Falso positivo residuo di [20], trovato e corretto
+
+Con `transfers` e `news` piene, il verificatore segnalava **1 problema** su `5868080.html`
+(Villarreal–Levante, futura al 20/09): «notizia fuori finestra 12 giorni». Diagnosi coi dati:
+lo **stesso URL** era presente in `news.parquet` **due volte per la stessa squadra** con
+`published_at` diversi (07:00 e 01:21 del giorno dopo — il feed di Google News ripubblica il
+link con data aggiornata). Il build filtra su `kickoff − 12g` e stampa la riga dentro finestra
+(01:21); il verificatore guardava solo `iloc[0]` (la riga vecchia, fuori di 9,5 ore). Fix:
+helper `notizia_in_finestra()` — la notizia passa se **almeno una** riga raccolta per
+(url, squadra) rispetta la finestra; righe senza data ignorate, non valide. Test di regressione
+con le due righe reali. Verifica: **0 problemi · 28.722 controlli**.
+
+### 18.3 Accuratezza onesta: P1.1 (baseline naive) + P0.6 (composizione del campione)
+
+- **`outcome_freqs()`** in `build.py`: frequenze reali 1·X·2 per `league_key` da
+  `history.parquet` (**7.396 gare**: ITA1 1.180, ENG1 1.180, ESP1 1.194, NED1 972, POR1 971,
+  FRA1 954, GER1 945); sotto le 30 gare di storico la lega resta sul fallback **dichiarato**
+  45/27/28 (colonna nuova «n base» in tabella: «fisso» quando scatta il fallback). Il 45/27/28
+  fisso gonfiava il Δ fino a +0,00205 RPS (§1.6 di `docs/19`); ora la Serie A mostra Δ −0,031
+  su base 0,2200 (frequenza reale di lega) invece di −0,021 su base hard-coded.
+- **`composizione_campione()`**: la pagina dichiara quante gare valutate sono del modello
+  corrente. **Misura reale: 93 gare, solo 12 con `dc-elo-tilt-0.4`**, 21 con calibrazione
+  attiva, 81 di ricette precedenti in archivio — conferma che l'audit di `docs/19` §1.5 era
+  ancora più moderato del vero. Riga di composizione con le versioni in archivio.
+- **`verify_site` [3b]** (spirito P0.8, invarianti di pubblicazione): ogni Δ della tabella
+  deve equalare RPS − naive **ricalcolato dai numeri stampati**; la composizione dichiarata
+  deve coincidere con la riga «Tutti»; Σ leghe = «Tutti». Ha morso subito in sviluppo
+  (raddoppio di conteggio includendo «Tutti» nella somma) → corretto.
+
+### 18.4 P0.5: CSS esterno con cache-busting — **sito 273 MB → 109 MB (−60%)**
+
+Il design system (**39.590 byte**) era inline in `base.html` e duplicato in ogni pagina
+(~10.400 file). Ora vive in `src/fda/site/assets/site.css`, scritto in `site/assets/site.css`
+dal primo `_render` (lazy: copre anche `build_match_pages`/`build_indexes` usati dai test),
+linkato con percorso **relativo alla profondità** (`assets/…`, `../assets/…`) — coerente col
+deploy Pages sotto subpath — e **cache-busting** `?v=<sha256[:10]>` che cambia solo quando
+cambia il CSS. I 14 test di contrasto/tema leggono il CSS dal nuovo percorso. Verificatore:
+nuovo controllo **[29]** (link giusto in ogni pagina, zero `<style>` inline) → **4.136 pagine
+verificate**. Preview servita via HTTP: css 200 (39.666 B), path relativi corretti a ogni
+profondità. `verify_site` finale: **0 problemi · 32.867 controlli**.
+
+### 18.5 Stato della coda P0 dopo questo turno
+
+- ✅ P0.5 (CSS esterno), ✅ P0.6 (composizione), ✅ P1.1 (baseline naive) — questo turno.
+- ✅ **P0.9, P0.7 e P0.8 completati nello stesso giro, PRIMA del merge** (su richiesta
+  esplicita dell'utente «meglio completare il lavoro prima del merge?», in applicazione della
+  regola D: finché la PR è aperta un commit in più è immediato) — vedi §18.6-18.8.
+- **La coda P0 di `docs/19` è vuota.** Restano i P1 (§4, sequenza consigliata) e i P2.
+
+**Prossimo passo**: merge utente della PR → al prossimo daily confermare che `verify_site` in
+CI resta a 0, che il deploy Pages serve il CSS esterno e che le righe `understat:NED1/POR1`
+escono di pagina (transizione 48h).
+
+### 18.6 P0.9 completato: richieste per lega e fonti non usate (`docs/19` §2.1)
+
+Lo stato della questione: §15.6 (giro 13) aveva già reso i contatori **per fase**; restavano
+(a) l'idioma esplicito e (b) le righe per le **fonti non usate**. Fatto:
+- **`HttpClient.mark()`** (nuovo, `http.py`): istantanea del contatore, unico idioma per i
+  delta — usato in `collect_league` (req0 + report), coppe, news, transfers.
+- **Nessuna riga per le fonti non usate**: `collect_league` non registra più `understat` per
+  NED1/POR1 (`has_understat=False`) — una riga «OK, 0 richieste» diceva che la fonte era
+  stata interrogata con successo, il che è falso. Verifica del §2.1: per FotMob i numeri per
+  lega sono già non monotoni (ITA1 18, …) e la somma per lega equalizza il totale del run.
+- **`stato.html` con filtro di recenza**: una fonte non aggiornata da **48h** esce di pagina
+  (il daily aggiorna tutto 5×/giorno) — le righe `understat:NED1/POR1` storiche restano
+  visibili 2 giorni con la loro spiegazione onesta, poi escono; nel Parquet restano tutte.
+- Test nuovo: due leghe in sequenza con client condiviso → ogni report riporta il proprio
+  delta (2, non 4); NED1 senza voce `understat` né riga `understat:NED1`. Fakes dei test
+  allineati al contratto `mark()`. Suite **272 passed** al commit del blocco.
+
+### 18.7 P0.7 completato: il mercato come riferimento misurato (decisione **A**, `docs/19` §1.1)
+
+- **`scripts/benchmark_quote.py`**: scarica i CSV Pinnacle di chiusura dal mirror già in uso
+  (7 leghe × 3 stagioni, cache 30 giorni in `data/cache/odds`, gitignored), aggancia il
+  backtest via `canonical()` e misura RPS modello vs mercato de-vigged con bootstrap appaiato.
+  Le quote **non entrano nel modello** (nessuna modifica a config/leagues.yaml, il test
+  `test_history_uses_datahub_base_override` resta com'è): solo riferimento esterno — coerenza
+  con la direttiva utente sulle quote (non sono contenuto editoriale).
+- **Misura reale riprodotta oggi** (dal sandbox, cache popolata): n agganciate **5.543**
+  (95,3%), n valutate **4.372**, RPS modello **0,19803** vs mercato **0,18843**, **Δ +0,00960**
+  IC95 [+0,00792; +0,01125] interamente positivo, **0 leghe vinte su 7** — **identico** alla
+  misura del §1.1 (stesso seed). La lettura onesta resta: il modello chiude il 77% della
+  distanza naive→mercato; il resto è il margine da chiudere.
+- **`.github/workflows/benchmark.yml`**: mensile (il 3 del mese) + dispatch manuale,
+  artifact JSON. Attivato dal merge (i cron girano solo sul ramo di default).
+- 4 test offline: devig (quota invalida → NaN, mai inventata), rps coerente con quella del
+  progetto, Δ = modello − mercato ricalcolato (stessa regola di [3b]), aggancio via nomi
+  canonici («Man United» → «Manchester United»).
+- **Limite del sandbox e workaround** (per le prossime sessioni): `raw.githubusercontent.com`
+  non è raggiungibile (TLS EOF, regola B.6); i 21 CSV si possono leggere via **API contents**
+  di `api.github.com` (base64) popolando `data/cache/odds/` con i nomi
+  `<dir>-<stagione>.csv` — fatto, e il benchmark gira poi tutto da cache. In CI la rete c'è:
+  il workflow non ha bisogno del workaround.
+
+### 18.8 P0.8: giudicato coperto (senza codice nuovo)
+
+L'obiettivo del P0.8 era «invarianti di pubblicazione» per proteggere le fix P0.1-P0.4.
+Stato effettivo: **[9]** (distribuzioni dei gol, 3 invarianti), **[10]** (scomposizioni),
+**[11]/[11a]** (calendario e barre 1X2) esistono già e girano a ogni verifica; a questi
+questo giro ha aggiunto **[3b]** (Δ e composizione in Accuratezza) e **[29]** (CSS esterno).
+I test di tema/contrasto (14) proteggono il CSS a livello di sorgente. Nessun ulteriore
+controllo richiesto: la copertura è completa e ogni fix P0 ha la sua invariante o il suo test.

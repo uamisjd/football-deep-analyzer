@@ -126,6 +126,10 @@ class _FakeHttp:
         self.payload = payload
         self.calls: list[dict] = []
 
+    def mark(self) -> int:
+        # stesso contratto di HttpClient.mark(): istantanea per i delta per lega/fase
+        return self.stats.requests
+
     def get_bytes(self, url, params=None, ttl_h=None, extra_headers=None):
         self.stats.requests += 1
         self.calls.append({"url": url, "params": params, "headers": extra_headers})
@@ -197,7 +201,7 @@ class _FakeFotMobMercato:
 
     def __init__(self, start: int = 90) -> None:
         self.requests = start
-        self.http = type("H", (), {"stats": self})()
+        self.http = type("H", (), {"stats": self, "mark": lambda s: self.requests})()
 
     def team_raw(self, team_id: int) -> dict:
         self.requests += 1

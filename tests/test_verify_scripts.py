@@ -192,3 +192,32 @@ def test_verify_site_barre_1x2(tmp_path):
     assert any("rotta.html: aria-label [41.0, 40.0, 19.0] != larghezze [42.0, 40.0, 19.0]" in f for f in fails)
     assert any("rotta.html: favorito evidenziato ma non è il massimo" in f for f in fails)
     assert not [f for f in fails if f.startswith("scheda.html")]
+
+
+def test_notizia_in_finestra_duplicati_stesso_url():
+    """[20] Lo stesso (url, team_id) raccolto due volte con published_at diversi.
+
+    Caso reale 2026-09-16 (5868080.html, Villarreal): il feed ripubblica lo stesso link
+    prima a 07:00 poi a 01:21 del giorno dopo; per una gara al 20/09 la finestra inizia
+    alle 16:30 dell'8/9 — la riga vecchia è fuori, quella stampata dal build dentro.
+    Il verificatore non deve guardare solo ``iloc[0]``.
+    """
+    vs = _site_module()
+    kickoff = pd.Timestamp("2026-09-20 16:30:00+00:00")
+    righe = pd.DataFrame({
+        "published_at": ["2026-09-08 07:00:00+00:00",   # fuori finestra, era il falso positivo
+                         "2026-09-09 01:21:44+00:00"],  # dentro finestra, quella stampata
+        "title": ["t", "t"],
+    })
+    assert vs.notizia_in_finestra(righe, kickoff) is True
+
+    # tutte fuori → resta un difetto vero e deve fallire
+    solo_vecchie = pd.DataFrame({
+        "published_at": ["2026-08-29 19:03:25+00:00", "2026-09-08 07:00:00+00:00"],
+        "title": ["t", "t"],
+    })
+    assert vs.notizia_in_finestra(solo_vecchie, kickoff) is False
+
+    # righe senza data: ignorate, non valide per default
+    senza_data = pd.DataFrame({"published_at": [pd.NaT], "title": ["t"]})
+    assert vs.notizia_in_finestra(senza_data, kickoff) is False

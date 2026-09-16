@@ -86,7 +86,8 @@ class FakeOpenMeteo:
 
     def __init__(self):
         self.requests = 0
-        self.http = type("S", (), {"stats": self})()
+        # mark() come il client reale: il delta per lega/fase è il contratto di HttpClient
+        self.http = type("S", (), {"stats": self, "mark": lambda s: self.requests})()
 
     def forecast(self, lat, lon, when):
         self.requests += 1
@@ -357,4 +358,43 @@ def test_predictions_una_riga_per_partita(tmp_path):
     assert len(lette) == 2                                        # una riga per partita
     assert lette.loc[lette.match_id == 7, "p_home"].iloc[0] == 0.45   # vince l'ultimo run
     assert lette.loc[lette.match_id == 7, "made_at"].iloc[0] == pd.Timestamp("2026-09-13T16:00:00+00:00")
+    st.close()
+
+
+class CountingFotMob(FakeFotMob):
+    """FakeFotMob con un contatore richieste che si muove davvero (per i delta per lega)."""
+
+    def __init__(self, **kw):
+        super().__init__(**kw)
+        self.http = type("H", (), {"stats": type("S", (), {"requests": 0})(), "mark": lambda s: s.stats.requests})()
+
+    def fixtures_raw(self, league_id, season_str=None):
+        self.http.stats.requests += 2          # due richieste per ogni lega raccolta
+        return super().fixtures_raw(league_id, season_str)
+
+
+def test_richieste_per_lega_non_cumulative_e_fonti_non_usate(tmp_path):
+    """[P0.9, docs/19 §2.1] Ogni lega riporta le PROPRIE richieste, non il totale del run.
+
+    Il client è condiviso fra le leghe: col contatore cumulativo `stato.html` attribuiva
+    all'ultima lega il totale (ITA1 19 → … → POR1 138). E per le leghe non coperte da
+    Understat (NED1/POR1) nessuna riga: una «OK, 0 richieste» sarebbe falsa.
+    """
+    st = Store(tmp_path / "processed")
+    shared = CountingFotMob()
+    common = {"past_days": 30, "future_days": 30, "understat": FakeUnderstat(),
+              "espn": FakeEspn(), "today": date(2026, 9, 6)}
+    r1 = collect_league(league("ITA1"), st, fotmob=shared, **common)
+    segno = shared.http.stats.requests
+    r2 = collect_league(league("ENG1"), st, fotmob=shared, **common)
+    assert r1.requests["fotmob"] == 2
+    assert r2.requests["fotmob"] == shared.http.stats.requests - segno   # solo le proprie
+    assert r2.requests["fotmob"] == 2                                    # non cumulativo
+
+    # NED1 non è coperta da Understat: nessuna voce e nessuna riga di stato understat:NED1
+    rep = collect_league(league("NED1"), st, fotmob=CountingFotMob(), **common)
+    assert "understat" not in rep.requests
+    fonti = {r["source"] for r in rep.as_status_rows()}
+    assert "understat:NED1" not in fonti
+    assert {"fotmob:NED1", "espn:NED1"} <= fonti
     st.close()

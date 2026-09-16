@@ -178,7 +178,7 @@ def test_collect_transfers_imbuto_reale(tmp_path):
     class _RealFotMob:
         def __init__(self):
             self.requests = 0
-            self.http = type("H", (), {"stats": self})()
+            self.http = type("H", (), {"stats": self, "mark": lambda s: self.requests})()
 
         def team_raw(self, team_id: int) -> dict:
             self.requests += 1
@@ -218,7 +218,7 @@ class _StubFotMob:
         # quando `source_status` registra le richieste **della fase** (non il cumulativo
         # del client condiviso), uno stub fermo a un numero fisso farebbe leggere 0.
         self.requests = 0
-        self.http = type("H", (), {"stats": self})()
+        self.http = type("H", (), {"stats": self, "mark": lambda s: self.requests})()
 
     def team_raw(self, team_id: int) -> dict:
         self.requests += 1

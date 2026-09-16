@@ -79,6 +79,16 @@ class HttpClient:
             return None
         return path.read_bytes()
 
+    def mark(self) -> int:
+        """Istantanea del contatore richieste: serve a misurare il consumo di UNA lega/fase.
+
+        `collect_all()` condivide un client fra tutte le leghe, quindi `stats.requests` è
+        cumulativo: senza il delta fra due `mark()`, `stato.html` attribuisce all'ultima
+        lega il totale del run e accredita a NED1/POR1 richieste Understat mai fatte
+        (docs/19 §2.1).
+        """
+        return self.stats.requests
+
     # ---- richiesta -------------------------------------------------------------------------
     def _throttle(self) -> None:
         wait = self.rate_limit_s - (time.monotonic() - self._last_call)
