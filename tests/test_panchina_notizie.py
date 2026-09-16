@@ -155,6 +155,29 @@ def test_notizie_con_indisponibili_regressione_run_35037211442(tmp_path):
     st.close()
 
 
+def test_notizie_dedup_stesso_titolo_url_diversi(tmp_path):
+    """Regressione del primo run con notizie vere (2026-09-16, verify_site): lo stesso
+    articolo torna dal feed con URL diversi (misurato: 116 righe con stesso team_id+titolo
+    nel Parquet del 16/09, es. «SC Cambuur - NEC Altre partite…» due volte) e la card
+    mostrava due copie dello stesso pezzo sprecando gli slot del limite — ora il limite
+    si riempie di notizie DISTINTE."""
+    news_dup = pd.concat([NEWS, pd.DataFrame([
+        # stessa notizia dell'infermeria Inter, URL e testata diversi (sindacazione)
+        {"team_id": 2, "published_at": KO("2026-09-14 12:00"),
+         "title": "Inter, infermeria: torna il titolare",
+         "url": "https://esempio.it/1-bis", "source": "Roma Today", "description": "copia sindacata"},
+    ])], ignore_index=True)
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", FX)
+    st.write("news", news_dup)
+    a = MatchAnalysis(st)
+    items = a.team_news(2, "Inter", KO("2026-09-15 12:00"))
+    titles = [i["title"] for i in items]
+    assert titles.count("Inter, infermeria: torna il titolare") == 1   # una sola copia in card
+    assert items[0]["url"] == "https://esempio.it/1"      # resta la copia più rilevante (parole chiave)
+    st.close()
+
+
 def test_notizie_tabella_vuota_degrada(tmp_path):
     st = Store(tmp_path / "empty")
     a = MatchAnalysis(st)

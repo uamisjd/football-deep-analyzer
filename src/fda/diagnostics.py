@@ -25,9 +25,17 @@ from __future__ import annotations
 import re
 from typing import Any
 
-# Un nome di campo è pubblicabile solo se sta in questa forma: niente valori, niente testo
-# libero, niente identificatori lunghi (che sarebbero dati travestiti da chiave).
-FIELD_NAME = re.compile(r"^[A-Za-z0-9_]{1,40}$")
+# Un nome di campo è pubblicabile solo se sta in questa forma: parole di sole lettere,
+# cifre o «_», separate da spazi singoli, tetto di lunghezza incluso. Niente valori,
+# niente testo libero, niente identificatori lunghi (che sarebbero dati travestiti da
+# chiave). Gli spazi fra parole sono ammessi dal 2026-09-16 (docs/21 §17) perché la
+# sezione `transfers` di FotMob usa chiavi come «Players in»/«Players out»/«Contract
+# extension»: senza spazi la firma di quella sezione risultava vuota. Rischio residuo
+# accettato e documentato: una chiave che È un dato (es. un nome di squadra) passa la
+# whitelist se è fatta di sole parole breve — i contenitori su cui si calcola la firma
+# non sono mai chiavati per valore nelle fonti in uso.
+FIELD_NAME = re.compile(r"^[A-Za-z0-9_]+(?: [A-Za-z0-9_]+)*$")
+FIELD_MAX_LEN = 40
 
 MAX_DETAIL = 200      # sta in una cella di tabella senza rompere la pagina
 MAX_DIGEST = 240      # sta in una cella di Parquet e in una riga di log
@@ -55,7 +63,7 @@ def key_names(obj: Any, limit: int = MAX_KEYS) -> list[str]:
             if isinstance(element, dict):
                 names = [str(k) for k in element.keys()]
                 break
-    return [n for n in names if FIELD_NAME.match(n)][:limit]
+    return [n for n in names if FIELD_NAME.match(n) and len(n) <= FIELD_MAX_LEN][:limit]
 
 
 def shape_of(obj: Any, limit: int = MAX_KEYS) -> str:

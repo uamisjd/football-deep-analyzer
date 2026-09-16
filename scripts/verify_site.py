@@ -40,7 +40,13 @@ LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
 
 
 class Text(HTMLParser):
-    """Testo leggibile di una pagina (senza style/script/head/svg) + href locali."""
+    """Testo leggibile di una pagina (senza style/script/head/svg) + href locali.
+
+    La card «Ultime dalle società» (``id="notizie"``) viene esclusa dal testo: titoli e
+    brani sono della stampa, pubblicati **verbatim** per scelta documentata (docs/21 P1-5
+    e footer della card stessa) — i controlli su decimali/inglese/concordanza valgono per
+    il testo NOSTRO, non per le citazioni delle testate. I link della card li verifica [20].
+    """
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -48,10 +54,16 @@ class Text(HTMLParser):
         self.hrefs: list[str] = []
         self.ids: set[str] = set()
         self.skip = 0
+        self.news_tag: str | None = None
+        self.news_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
         if tag in ("style", "script", "head", "svg"):
             self.skip += 1
+        if self.news_depth == 0 and any(k == "id" and v == "notizie" for k, v in attrs):
+            self.news_tag, self.news_depth = tag, 1
+        elif self.news_tag == tag:
+            self.news_depth += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
         for k, v in attrs:
@@ -63,9 +75,13 @@ class Text(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag in ("style", "script", "head", "svg") and self.skip:
             self.skip -= 1
+        if self.news_tag == tag:
+            self.news_depth -= 1
+            if self.news_depth <= 0:
+                self.news_tag, self.news_depth = None, 0
 
     def handle_data(self, data: str) -> None:
-        if not self.skip:
+        if not self.skip and self.news_depth == 0:
             self.parts.append(data)
 
 
@@ -1216,9 +1232,15 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 
-    # 20) notizie (docs/21 P1-5): ogni titolo/link stampato esiste in news.parquet per una
-    # delle due squadre della pagina, dentro la finestra 12 giorni, max 4 per squadra.
+    # 20) notizie (docs/21 P1-5): ogni titolo/link stampato esiste in news.parquet per la
+    # squadra della card che lo pubblica, dentro la finestra 12 giorni, max 4 per squadra.
+    # Attribuzione per BLOCCO (header «<p><b>Squadra</b> · N notizie…</p><ul>…</ul>»), non
+    # per URL: lo stesso articolo viene raccolto per entrambe le squadre della partita
+    # (misurato il 2026-09-16: 885 url su 4.419 presenti in news.parquet per più team_id),
+    # quindi dalla sola URL non si può dire di chi sia la notizia stampata.
     news20 = st.read("news")
+    if not news20.empty:
+        news20 = news20.assign(team_id=news20.team_id.astype(int))
     n_news = 0
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
@@ -1238,26 +1260,47 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         mid = int(pg.stem)
         fr = fx19[fx19.match_id == mid].iloc[0] if not fx19.empty else None
         kickoff = pd.Timestamp(fr.utc_kickoff) if fr is not None else pd.Timestamp.now(tz="UTC")
-        conti: dict[int, int] = {}
-        for url, title in re.findall(r'<a href="(https?://[^"]+)" rel="noopener[^"]*">([^<]+)</a>', html):
-            riga = news20[news20.url == url]
-            if riga.empty:
-                fails.append(f"{pg.name}: notizia senza riscontro in news.parquet ({title[:40]})")
+        inizio = html.find('id="notizie"')
+        fine = html.find('<div class="card"', inizio + 10)
+        card = html[inizio:fine if fine != -1 else len(html)]
+        blocchi = re.split(r'<p style="margin:0 0 6px"><b>', card)[1:]
+        for blocco in blocchi:
+            team_name = html_unescape(blocco.split("</b>", 1)[0])
+            if fr is None:
                 continue
-            r = riga.iloc[0]
-            checks += 1
-            if html_unescape(r.title) != html_unescape(title):
-                fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
-            tid = int(r.team_id)
-            if fr is not None and tid not in {int(fr.home_id), int(fr.away_id)}:
-                fails.append(f"{pg.name}: notizia di squadra estranea alla partita")
-            pa = pd.to_datetime(r.published_at, utc=True)
-            if not pd.isna(pa) and not (kickoff - pd.Timedelta(days=12) <= pa <= kickoff + pd.Timedelta(days=1)):
-                fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
-            conti[tid] = conti.get(tid, 0) + 1
-        for tid, n in conti.items():
-            if n > 4:
-                fails.append(f"{pg.name}: {n} notizie per la squadra {tid} (max 4)")
+            if team_name == str(fr.home_name):
+                tid = int(fr.home_id)
+            elif team_name == str(fr.away_name):
+                tid = int(fr.away_id)
+            else:
+                fails.append(f"{pg.name}: intestazione notizie di squadra sconosciuta ({team_name[:30]})")
+                continue
+            head = blocco.split("<ul", 1)[0]
+            m_decl = re.search(r"· (\d+) notiz", head)
+            dichiarato = int(m_decl.group(1)) if m_decl else 0
+            stampati = re.findall(r'<a href="(https?://[^"]+)" rel="noopener[^"]*">([^<]+)</a>', blocco)
+            for url, title in stampati:
+                riga = news20[news20.url == url]
+                if riga.empty:
+                    fails.append(f"{pg.name}: notizia senza riscontro in news.parquet ({title[:40]})")
+                    continue
+                riga_team = riga[riga.team_id == tid]
+                if riga_team.empty:
+                    fails.append(f"{pg.name}: notizia di squadra estranea alla card di {team_name[:20]} "
+                                 f"({title[:40]})")
+                    continue
+                r = riga_team.iloc[0]
+                checks += 1
+                if html_unescape(r.title) != html_unescape(title):
+                    fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
+                pa = pd.to_datetime(r.published_at, utc=True)
+                if not pd.isna(pa) and not (kickoff - pd.Timedelta(days=12) <= pa <= kickoff + pd.Timedelta(days=1)):
+                    fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
+            if len(stampati) > 4:
+                fails.append(f"{pg.name}: {len(stampati)} notizie per {team_name[:20]} (max 4)")
+            if dichiarato != len(stampati):
+                fails.append(f"{pg.name}: card di {team_name[:20]} dichiara {dichiarato} notizie "
+                             f"ma ne stampa {len(stampati)}")
     print(f"[20] pagine con notizie riconciliate: {n_news}")
 
     # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood

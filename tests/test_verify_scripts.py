@@ -121,6 +121,34 @@ def test_verify_site_accepts_existing_fragment_and_decimal_plural(tmp_path):
     assert any("ancora interna mancante #missing" in f for f in fails)
 
 
+def test_verify_site_notizie_verbatim_escluse_dai_controlli(tmp_path):
+    """La card «Ultime dalle società» pubblica titoli e brani delle testate verbatim
+    (docs/21 P1-5, scelto anche nel footer della card): «Sofascore 8.9», «13.09.2026»
+    o un «Monday» nel titolo sono parole della stampa, non numeri nostri — i controlli
+    su decimali/inglese/residui valgono per il testo del sito, fuori dalla card."""
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+    (site / "match.html").write_text(
+        '<div class="card" id="notizie"><h2>Ultime dalle società</h2>'
+        '<p style="margin:0 0 6px"><b>Milan</b> <span class="small mut">· 1 notizia verificata</span></p>'
+        '<ul class="news-list"><li>'
+        '<a href="https://news.google.com/x" rel="noopener noreferrer nofollow">'
+        "Valutazione Sofascore 8.9 e Monday Night</a>"
+        '<br><span class="small mut">quote 13.09.2026</span></li></ul></div>'
+        "<p>xG 1,69 · 2 gare</p>", encoding="utf-8")
+    fails, pages = vs.check_pages(site)
+    assert pages == 1 and fails == []          # dentro la card: citazione, non si tocca
+
+    (site / "fuori.html").write_text(
+        '<div class="card" id="notizie"></div><p>1.69 · nan · Monday</p>', encoding="utf-8")
+    fails, _ = vs.check_pages(site)
+    kinds = {f.split(": ", 1)[1] for f in fails if f.startswith("fuori.html")}
+    assert any("decimale col punto" in k for k in kinds)     # fuori dalla card si continua a mordere
+    assert any("residuo" in k for k in kinds)
+    assert any("inglese" in k for k in kinds)
+
+
 def test_verify_site_barre_1x2(tmp_path):
     """[11a] Il verificatore prende le barre che non chiudono 100 o contraddicono le etichette."""
     vs = _site_module()

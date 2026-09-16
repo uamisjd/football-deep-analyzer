@@ -472,6 +472,8 @@ def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> Colle
     rows: list[dict[str, Any]] = []
     n_teams = 0
     voci = 0
+    rinnovi = 0
+    voci_mercato = 0
     sezioni: dict[str, int] = {}
     firma = ""
     for r in st[["league_code", "team_id", "team_name"]].drop_duplicates("team_id").itertuples(index=False):
@@ -483,21 +485,30 @@ def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> Colle
         rows.extend(FotMobClient.parse_transfers(raw, int(r.team_id), str(r.team_name),
                                                  str(r.league_code), diag))
         voci += int(diag.get("voci", 0))
+        rinnovi += int(diag.get("rinnovi", 0))
+        voci_mercato += int(diag.get("voci_mercato", 0))
         sez = str(diag.get("sezione", "?"))
         sezioni[sez] = sezioni.get(sez, 0) + 1
         if not firma:
-            # firma dello schema del primo payload: solo nomi di campo, mai valori
+            # firma dello schema del primo payload: solo nomi di campo, mai valori.
+            # Da docs/21 §17 include anche i campi di `data` e della prima voce, così
+            # un'eventuale nuova forma si legge dal Parquet senza aspettare i log.
             firma = digest(f"top {diag.get('top', '?')}",
-                           f"sezione {sez} campi {diag.get('campi_sezione') or '—'}")
+                           f"sezione {sez} campi {diag.get('campi_sezione') or '—'}",
+                           f"campi data {diag.get('campi_data')}" if diag.get("campi_data") else "",
+                           f"campi voce {diag.get('campi_voce')}" if diag.get("campi_voce") else "")
     stored = store.upsert("transfers", rows) if rows else 0
-    log.info("transfers: %d righe da %d squadre (voci viste %d; sezioni %s)", stored, n_teams, voci, sezioni)
+    log.info("transfers: %d righe da %d squadre (voci viste %d; rinnovi %d; voci di mercato %d; sezioni %s)",
+             stored, n_teams, voci, rinnovi, voci_mercato, sezioni)
     report.requests = {"transfers": fm.http.stats.requests - fm0}
     report.note("transfers", rows=stored,
                 detail_text=detail(f"payload letti {n_teams}", f"voci viste {voci}",
                                    f"salvate {stored}",
+                                   f"rinnovi {rinnovi}" if rinnovi else "",
+                                   f"voci di mercato {voci_mercato}" if voci_mercato else "",
                                    "sezione " + ", ".join(f"{k} in {v}" for k, v in
                                                           sorted(sezioni.items(), key=lambda kv: -kv[1])[:3])
-                                   if stored == 0 and sezioni else ""),
+                                   if sezioni else ""),
                 digest_text=firma)
     store.upsert("source_status", report.as_status_rows())
     return report
