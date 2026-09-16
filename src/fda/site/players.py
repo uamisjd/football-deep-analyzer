@@ -20,26 +20,19 @@ from ..config import load_leagues_config
 from ..store import Store
 from .analysis import _return_it, unavailability_it
 from .fmt import dec, int_it, pct_str
+from .rates import (
+    MIN_DEN_FOR_RATE,
+    SMALL_SAMPLE_MINUTES,
+    Pool,
+    group_label,
+    lookup,
+    player_pools,
+)
 
 MIN_MINUTES = 90          # soglia per avere/entrare nei percentili (docs/07 §2.3)
 MIN_PEERS = 8             # minimo pari-ruolo con dato per calcolare il percentile
-SMALL_SAMPLE_MINUTES = 270  # sotto: avviso «campione ridotto»
 
 POSITION_LABELS = {0: "Portiere", 1: "Difensore", 2: "Centrocampista", 3: "Attaccante"}
-
-# Prior per stabilizzare per90 su campioni piccoli (audit 2026-09-14 §1.3)
-# media di ruolo per xG+xA/90 su 7.456 schede, peso 180′ ≈ 2 partite
-ROLE_PRIOR_P90 = {0: 0.02, 1: 0.12, 2: 0.28, 3: 0.42}
-PRIOR_MINUTES = 180
-
-def p90_shrunk(xg, xa, minutes, role):
-    mu = ROLE_PRIOR_P90.get(int(role), 0.28) if role is not None else 0.28
-    if minutes is None or minutes <= 0 or (xg is None and xa is None):
-        return None
-    try:
-        return ((float(xg or 0) + float(xa or 0) + PRIOR_MINUTES/90*mu) / (float(minutes) + PRIOR_MINUTES) * 90)
-    except Exception:
-        return None
 
 
 def _label_or_none(v: Any) -> str | None:
@@ -67,6 +60,10 @@ class StatDef:
     ``count=True`` per le statistiche che sono conteggi interi (gol, tiri, passaggi…):
     il totale viene mostrato senza decimali («4», non «4,00»); il per-90 resta a due
     decimali perché è una media.
+
+    Per le quote (``ratio``/``ratio2``) ``num_label``/``den_label``/``unita_den`` descrivono la
+    frazione pubblicata («58 passaggi riusciti su 65 tentati») e l'unità del peso della stima
+    (in eventi, non in minuti: docs/23 §2).
     """
 
     id: str
@@ -76,6 +73,9 @@ class StatDef:
     key2: str = ""
     lower: bool = False
     count: bool = False
+    num_label: str = ""
+    den_label: str = ""
+    unita_den: str = ""
 
 
 STATS: dict[str, StatDef] = {
@@ -92,14 +92,16 @@ STATS: dict[str, StatDef] = {
         StatDef("dribbles", "Dribbling riusciti", "per90", "dribbles_succeeded", count=True),
         StatDef("box_touches", "Tocchi in area avversaria", "per90", "touches_opp_box", count=True),
         StatDef("passes", "Passaggi riusciti", "per90", "accurate_passes", count=True),
-        StatDef("pass_pct", "Passaggi riusciti %", "ratio", "accurate_passes"),
+        StatDef("pass_pct", "Passaggi riusciti %", "ratio", "accurate_passes",
+                num_label="passaggi riusciti", den_label="tentati", unita_den="tentativi"),
         StatDef("pft", "Passaggi ultimo terzo", "per90", "passes_into_final_third", count=True),
         StatDef("touches", "Tocchi palla", "per90", "touches", count=True),
         StatDef("interceptions", "Intercessioni", "per90", "interceptions", count=True),
         StatDef("recoveries", "Palloni recuperati", "per90", "recoveries", count=True),
         StatDef("clearances", "Respingimenti", "per90", "clearances", count=True),
         StatDef("aerials", "Duelli aerei vinti", "per90", "aerials_won", count=True),
-        StatDef("duels_pct", "Duelli vinti %", "ratio2", "duel_won", "duel_lost"),
+        StatDef("duels_pct", "Duelli vinti %", "ratio2", "duel_won", "duel_lost",
+                num_label="duelli vinti", den_label="disputati", unita_den="duelli"),
         StatDef("fouls", "Falli commessi", "per90", "fouls", count=True),
         StatDef("fouled", "Falli subiti", "per90", "was_fouled", count=True),
         StatDef("saves", "Parate", "per90", "saves", count=True),
@@ -111,6 +113,9 @@ STATS: dict[str, StatDef] = {
         StatDef("punches", "Pugni", "per90", "punches", count=True),
     )
 }
+
+#: Tipi di statistica che pubblicano una **quota** (percentuale) e non una rata per 90.
+KIND_QUOTA = ("ratio", "ratio2")
 
 # Radar: 6 assi per ruolo (percentili). Etichette corte per la grafica.
 RADAR: dict[int, list[tuple[str, str]]] = {
@@ -158,6 +163,42 @@ def _fmt_pair(stat: StatDef, total: Any, per90: Any) -> tuple[str, str]:
     # conteggi interi senza decimali nel totale («4», non «4,00»); il per-90 resta decimale
     tot = (int_it(total) if stat.count else dec(total, 2)) if _ok(total) else "—"
     return tot, (dec(per90, 2) if _ok(per90) else "—")
+
+
+def _titolo_cella(stat: StatDef, *, quota: bool, minuti: int, per90: str,
+                  grezzo: str | None, stima: str | None, nota: str | None,
+                  insufficient: bool, est_visibile: bool, num: int | None,
+                  den: int | None) -> str:
+    """Testo del tooltip della cella «Per 90′»: dichiara sempre **cos'è** il numero mostrato.
+
+    Una cella senza il suo significato è un numero che il lettore deve indovinare. Qui la quota
+    dice la frazione esatta («58 passaggi riusciti su 65 tentati»), la rata per 90 dice il calcolo
+    e la stima dice da quale gruppo arriva (docs/19 §1.10, docs/23 §2). Il testo sta qui e non nel
+    template perché è una frase verificabile: i test la interrogano come dato, non come HTML.
+    """
+    unita = "" if quota else "/90"
+    cosa = "la percentuale grezza" if quota else "la rata per 90"
+    if stima is not None and insufficient:
+        return (f"Campione di {minuti}′ (sotto i 90′): {cosa} non si pubblica, sarebbe rumore. "
+                f"Stima stabilizzata {stima}{unita} — {nota}")
+    if stima is not None and est_visibile:
+        return f"grezzo {grezzo or per90}{unita} · stima stabilizzata {stima}{unita} — {nota}"
+    if quota:
+        if num is not None and den is not None:
+            return (f"{num} {stat.num_label} su {den} {stat.den_label} (totale stagionale): "
+                    f"la percentuale non è una rata per 90 minuti")
+        return "percentuale di stagione: non è una rata per 90 minuti"
+    # qui non c'è né una stima né una quota: la cella porta la rata grezza, oppure niente
+    if per90 in ("", "—"):
+        if stima is None and minuti < SMALL_SAMPLE_MINUTES:
+            return (f"campione di {minuti}′ (sotto i 90′): la rata per 90 non si pubblica, "
+                    "sarebbe rumore; stima non disponibile (gruppo di pari insufficiente)")
+        return ""
+    testo = f"{per90}/90′"
+    if stima is None and minuti < SMALL_SAMPLE_MINUTES:
+        testo += (f" — campione di {minuti}′: stima non disponibile "
+                  "(gruppo di pari insufficiente)")
+    return testo
 
 
 class PlayerCatalog:
@@ -274,6 +315,50 @@ class PlayerCatalog:
         self._vals = pd.DataFrame(vals)
         self._per90 = pd.DataFrame(per90)
 
+        # Stime stabilizzate (docs/19 §1.10, docs/23 §2): gruppi dei pari e peso misurati dal run,
+        # non costanti nel codice. `_est` contiene la rata stabilizzata dove la rata ha un
+        # denominatore: per-90 (denominatore = minuti) e quote (denominatore = eventi). Per il voto
+        # resta la rata grezza: una media di voti non è un conteggio da contrarre.
+        # Per le quote servono i **tentativi** (colonna `total` della chiave), non i riusciti: il
+        # numeratore resta `value`. Si passa un solo frame ai pool, quindi i tentativi entrano con
+        # un nome esplicito (es. ``accurate_passes__tentati``).
+        pool_frame = wide.copy()
+        for s2 in STATS.values():
+            if s2.kind == "ratio" and not totals.empty and s2.key in totals.columns:
+                pool_frame[f"{s2.key}__tentati"] = (
+                    pd.to_numeric(totals[s2.key], errors="coerce")
+                    .reindex(pool_frame.index).fillna(0.0))
+        chiavi = {s2.id: [s2.key] for s2 in STATS.values() if s2.kind == "per90"}
+        denominatori: dict[str, list[str]] = {}
+        num_quota: dict[str, pd.Series] = {}
+        den_quota: dict[str, pd.Series] = {}
+        for s2 in STATS.values():
+            if s2.kind not in KIND_QUOTA:
+                continue
+            chiavi[s2.id] = [s2.key]
+            num_quota[s2.id] = pd.to_numeric(wide.get(s2.key, zeros), errors="coerce").fillna(0.0)
+            if s2.kind == "ratio":
+                denominatori[s2.id] = [f"{s2.key}__tentati"]
+                den_quota[s2.id] = pd.to_numeric(totals.get(s2.key, zeros),
+                                                 errors="coerce").fillna(0.0)
+            else:
+                denominatori[s2.id] = [s2.key, s2.key2]
+                den_quota[s2.id] = (num_quota[s2.id]
+                                    + pd.to_numeric(wide.get(s2.key2, zeros),
+                                                    errors="coerce").fillna(0.0))
+        self._num_pct = pd.DataFrame(num_quota)
+        self._den_pct = pd.DataFrame(den_quota)
+        self._pools = player_pools(pool_frame.reindex(idx),
+                                   ident[["league_id", "position", "minutes"]],
+                                   chiavi, dens=denominatori)
+        est = dict(per90)
+        for s2 in STATS.values():
+            if s2.kind == "per90":
+                est[s2.id] = self._stime(s2.id, vals[s2.id], ident["minutes"])
+            elif s2.kind in KIND_QUOTA:
+                est[s2.id] = self._stime_quota(s2.id, num_quota[s2.id], den_quota[s2.id])
+        self._est = pd.DataFrame(est)
+
         # percentili entro lega+ruolo (solo chi ha ≥ MIN_MINUTES e ruolo noto)
         elig = ident[(ident["minutes"] >= MIN_MINUTES) & ident["position"].notna()
                      & ident["league_id"].notna()]
@@ -284,7 +369,9 @@ class PlayerCatalog:
         pct_cols: dict[str, pd.Series] = {}
         peers: dict[str, dict[tuple[int, int], int]] = {}
         for sid in self._per90.columns:
-            col = self._per90.loc[elig.index, sid]
+            # percentili sulle rate stabilizzate: un 100° percentile su 96 minuti non è una
+            # classifica, è rumore (docs/19 §1.10). Per le percentuali e il voto: rata grezza.
+            col = (self._est[sid] if sid in self._est.columns else self._per90[sid]).loc[elig.index]
             n_peers = col.groupby(grp).transform("count")
             r = col.groupby(grp).rank(pct=True) * 100
             if STATS[sid].lower:
@@ -294,6 +381,58 @@ class PlayerCatalog:
         self._pct = pd.DataFrame(pct_cols)
         self._peers = peers
         self.empty = ident.empty
+
+    # ---- stime stabilizzate (docs/19 §1.10) ----------------------------------------------
+    def _chiave_gruppo(self, player_id: int) -> tuple[int | None, int | None]:
+        """(lega, ruolo) del giocatore, o ``None`` dove il dato manca (il pool ripiega)."""
+        if player_id not in self.players.index:
+            return None, None
+        r = self.players.loc[player_id]
+        lega = int(r["league_id"]) if pd.notna(r["league_id"]) else None
+        ruolo = int(r["position"]) if pd.notna(r["position"]) else None
+        return lega, ruolo
+
+    def _pool(self, sid: str, player_id: int) -> tuple[Pool, str] | None:
+        """Media dei pari per la statistica e il gruppo d'origine, o ``None`` se non c'è."""
+        lega, ruolo = self._chiave_gruppo(player_id)
+        trovato = lookup(self._pools, lega, ruolo, sid)
+        if trovato is None:
+            return None
+        pool, (lg, rl) = trovato
+        return pool, group_label(lg, rl)
+
+    def _stime(self, sid: str, num: pd.Series, mins: pd.Series) -> pd.Series:
+        """Valore stabilizzato per giocatore (una serie allineata a ``num``)."""
+        out = pd.Series(np.nan, index=num.index, dtype=float)
+        for pid in num.index:
+            trovato = self._pool(sid, int(pid))
+            if trovato is None:
+                continue
+            pool, _gruppo = trovato
+            den = float(mins.get(pid, 0.0) or 0.0)
+            if den <= 0:
+                continue
+            out[pid] = pool.per90(float(num.get(pid, 0.0) or 0.0), den)
+        return out
+
+    def _stime_quota(self, sid: str, num: pd.Series, den: pd.Series) -> pd.Series:
+        """Quota stabilizzata (0-1) di una statistica percentuale, ``NaN`` dove il gruppo manca.
+
+        Il denominatore è il numero di **eventi** (tentativi di passaggio, duelli): è quello a
+        rendere piccola una quota, non il minuto giocato — un difensore con 300′ e 4 duelli non ha
+        una «quota dei duelli», ha quattro duelli (docs/23 §2).
+        """
+        out = pd.Series(np.nan, index=num.index, dtype=float)
+        for pid in num.index:
+            trovato = self._pool(sid, int(pid))
+            if trovato is None:
+                continue
+            pool, _gruppo = trovato
+            d = float(den.get(pid, 0.0) or 0.0)
+            if d <= 0:
+                continue
+            out[pid] = pool.shrink(float(num.get(pid, 0.0) or 0.0), d)
+        return out
 
     # ---- accesso -----------------------------------------------------------------------
     def player_ids(self) -> list[int]:
@@ -308,30 +447,56 @@ class PlayerCatalog:
         return int(r["league_id"]), int(r["position"])
 
     def _stat_row(self, sid: str, player_id: int) -> dict[str, Any]:
+        """Una riga della tabella «Stagione», con la regola di pubblicazione delle rate.
+
+        - campione pieno (≥ 270′ di gioco): si pubblica il valore grezzo;
+        - campione ridotto (90′ ≤ minuti < 270′): valore grezzo **con** la stima stabilizzata
+          accanto (marcatore ◎);
+        - minuti < 90′: il grezzo **non si pubblica** (sarebbe «90,00 tiri/90» su un minuto di
+          gioco, o una percentuale su tre duelli): si pubblica la stima, dichiarata come stima (◇).
+
+        Vale per le rate per 90 **e** per le quote (docs/23 §2): la differenza è il denominatore
+        della stima — minuti per le prime, eventi (tentativi, duelli) per le seconde — e il fatto
+        che una quota non è mai una rata per 90, quindi il suo tooltip dice la frazione esatta.
+        """
         s = STATS[sid]
+        quota = s.kind in KIND_QUOTA
+        mins = float(self.players.loc[player_id, "minutes"]) if player_id in self.players.index else 0.0
         v = self._vals[sid].get(player_id)
         p90 = self._per90[sid].get(player_id)
         pct = self._pct[sid].get(player_id) if sid in self._pct.columns else None
         peers = self._peers.get(sid, {}).get(self._peer_key(player_id))
-        tot_s, p90_s = _fmt_pair(s, v, p90)
-        # shrunk per xG / xA / gol su minuti <270′ (audit 1.3): mostrato in tooltip
-        per90_shrunk = None
-        per90_shrunk_s = None
-        if s.kind == "per90" and sid in ("xg", "xa", "goals", "assists", "shots"):
-            try:
-                mins = float(self.players.loc[player_id, "minutes"]) if player_id in self.players.index else None
-                pos = self.players.loc[player_id, "position"] if player_id in self.players.index else None
-                role = int(pos) if pos is not None and not pd.isna(pos) else None
-                raw_total = float(v) if v is not None and not pd.isna(v) else 0.0
-                if mins and mins > 0 and mins < 270:
-                    mu = ROLE_PRIOR_P90.get(role, 0.28) if role is not None else 0.28
-                    shrunk = (raw_total + PRIOR_MINUTES/90*mu) / (mins + PRIOR_MINUTES) * 90
-                    per90_shrunk = shrunk
-                    per90_shrunk_s = dec(shrunk, 2)
-            except Exception:
-                pass
+        est = self._est[sid].get(player_id) if sid in self._est.columns else None
+        num = den = None
+        if quota and sid in self._den_pct.columns:
+            n_q, d_q = self._num_pct[sid].get(player_id), self._den_pct[sid].get(player_id)
+            if None not in (n_q, d_q) and not pd.isna(n_q) and not pd.isna(d_q) and float(d_q) > 0:
+                num, den = int(n_q), int(d_q)
+        grezzo_s = (pct_str(p90, 1) if quota else dec(p90, 2)) if p90 is not None and not pd.isna(p90) else None
+        est_s, est_note = None, None
+        insufficient = est_visibile = False
+        ha_stima = est is not None and not pd.isna(est) and s.kind != "rating"
+        if ha_stima:
+            trovato = self._pool(sid, player_id)
+            est_s = pct_str(est, 1) if quota else dec(est, 2)
+            if trovato is not None:
+                est_note = (trovato[0].note_pct(trovato[1], unit=s.unita_den) if quota
+                            else trovato[0].note(trovato[1]))
+            insufficient = mins < MIN_DEN_FOR_RATE
+            # sopra i 270′ la stima è a un soffio dalla rata: mostrarla confonderebbe senza dire nulla
+            est_visibile = mins < SMALL_SAMPLE_MINUTES
+        pubblicata = None if insufficient else p90
+        tot_s, p90_s = _fmt_pair(s, v, pubblicata)
         return {"id": sid, "label": s.label, "total": tot_s, "per90": p90_s,
-                "per90_shrunk": per90_shrunk, "per90_shrunk_s": per90_shrunk_s,
+                "per90_raw": grezzo_s,
+                "per90_titolo": _titolo_cella(s, quota=quota, minuti=int(mins), per90=p90_s,
+                                              grezzo=grezzo_s, stima=est_s, nota=est_note,
+                                              insufficient=insufficient,
+                                              est_visibile=est_visibile, num=num, den=den),
+                "quota": quota, "num": num, "den": den, "minutes": int(mins),
+                "est": None if est is None or pd.isna(est) else float(est), "est_s": est_s,
+                "est_note": est_note, "insufficient": insufficient,
+                "est_visibile": bool(est_s and est_visibile),
                 "pct": None if pct is None or pd.isna(pct) else round(float(pct)),
                 "peers": peers, "lower": s.lower}
 

@@ -724,3 +724,47 @@ PR ma in un difetto latente della card notizie di PR #34, che è stato possibile
 proprio grazie a un fix di questa PR (la query Google News corretta ha popolato `news.parquet`,
 attivando il percorso che conteneva il difetto). Diagnosi, fix e strumento di lettura dei log:
 `docs/21` §16; fix in PR #36.
+
+### 9.11 Merge PR #38 — conferme dal vivo del blocco 4 + coda P0 vuota (2026-09-16, deroga esplicita)
+
+**Perché questa sezione ha il numero 9.11 e non 9.10.** La registrazione della deroga di PR #38 era
+stata scritta nel branch `arena/01a0a9eb` (PR #39) come **§9.10**, ma nel frattempo `main` aveva già
+assegnato **§9.10** alla deroga di PR #35: unire PR #39 così com'era avrebbe prodotto **due sezioni
+§9.10** nello stesso documento (verificato con `git merge-tree`). La PR #39 è infatti rimasta
+**CONFLICTING** su `docs/STATO.md` dal 2026-09-16 13:07 e mai mergiata (il merge è di competenza
+dell'utente, regola D); il suo contenuto è stato ripreso qui, rinumerato e verificato, dalla sessione
+`arena/01a0aad1` (PR #42), così il debito documentale si chiude senza toccare il branch di un'altra
+sessione. Contenuto e misure restano quelli della sessione che ha fatto il lavoro (`docs/21` §18).
+
+**Contenuto PR #38** (9 commit, testa `arena/01a0a9eb`; misura completa in `docs/21` §18):
+
+- **conferme dal vivo** del primo daily post-PR #37: `transfers` **4.230 righe vere** (132/132
+  squadre), invariante **[26]** attiva su 72 pagine, card notizie senza doppi;
+- **[20]** falso positivo corretto (lo stesso URL raccolto due volte con date diverse →
+  `notizia_in_finestra`, «almeno una riga nella finestra», + test sulle righe reali);
+- **P1.1** baseline naive sostituita dalle **frequenze reali per lega** (`outcome_freqs`, 7.396 gare,
+  colonna «n base», fallback dichiarato sotto le 30) e **P0.6** composizione del campione
+  (`composizione_campione`: 93 gare valutate, 12 col modello corrente) con invariante **[3b]**;
+- **P0.5** CSS esterno con cache-busting (**sito 273 → 109 MB, −60%**), controllo **[29]**;
+- coda P0 chiusa prima del merge su richiesta esplicita dell'utente: **P0.9** (`HttpClient.mark()`,
+  fonti non usate, recenza 48h in `stato.html`), **P0.7** decisione A (`scripts/benchmark_quote.py`
+  + workflow mensile `benchmark.yml`; misura reale identica a `docs/19` §1.1: n=4.372, Δ +0,00960,
+  0/7 leghe), **P0.8** giudicato coperto.
+
+**Verifiche prima del merge (misurate, non presunte):** suite **276 passed**; build completa
+376/2.364/7.490 + `verify_site` **0 problemi · 32.867 controlli**; ruff invariato sul baseline;
+check `test` **pass** (1m20s); PR **MERGEABLE · CLEAN**; `git status --porcelain` vuoto.
+
+**Deroga merge PR #38**: l'utente ha scritto esplicitamente «Please merge the pull request»
+(2026-09-16). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 38 --merge` **dopo aver verificato** check verdi, PR mergeable e assenza di lavoro
+residuo; merge commit **`6459952`** in `main` (2026-09-16T12:49:56Z). Catena delle deroghe:
+PR #23 (2026-09-12), #27 e #28 (2026-09-13), #29 (2026-09-14), #34 (2026-09-15), #35 (2026-09-15),
+**#38 (2026-09-16)**.
+
+**Verifica post-merge.** Il daily partito col merge (push `6459952`) è **success**; i due merge
+successivi (**#40** `7e23e4d` e **#41** `950acd4`) e i rispettivi daily sono verdi. Da **#40**
+`verify_site` è **gate in CI** (prima del commit dati e del deploy): la voce «verify_site 0 anche in
+CI» di `docs/21` §18.5 è quindi coperta da un controllo, non da una speranza. Restano da guardare
+nel prossimo daily, come per ogni giro: righe `understat:NED1/POR1` in transizione d'uscita (48h) e
+disponibilità del workflow `benchmark-quote` per il dispatch.

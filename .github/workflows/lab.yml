@@ -97,6 +97,15 @@ jobs:
           fda lab-xi --history "$HIST" --step-days "$STEP" --min-train "$MIN" --save \
             2>&1 | tee lab-xi.log | tail -60
 
+      # Sonda delle fonti di FALLBACK (docs/19 P1.10): una richiesta vera a settimana.
+      # Open-Meteo entra in gioco solo se FotMob non ha ancora il meteo, quindi può restare
+      # settimane senza essere esercitato: senza questa sonda un fallback rotto resterebbe
+      # «dichiarato e funzionante» sulla carta fino al primo giorno di pioggia.
+      - name: Sonda delle fonti di fallback (richiesta vera)
+        env:
+          PYTHONUNBUFFERED: "1"
+        run: python scripts/probe_fonti.py 2>&1 | tee probe.log | tail -20
+
       - name: Salva log e riepilogo come artifact
         if: always()
         uses: actions/upload-artifact@v7
@@ -105,20 +114,24 @@ jobs:
           path: |
             lab.log
             lab-xi.log
+            probe.log
             data/processed/model_lab.parquet
             data/processed/xi_league.parquet
+            data/processed/source_probe.parquet
           retention-days: 30
           if-no-files-found: ignore
 
       - name: Commit del riepilogo del laboratorio
         run: |
-          if [ ! -f data/processed/model_lab.parquet ] && [ ! -f data/processed/xi_league.parquet ]; then
+          if [ ! -f data/processed/model_lab.parquet ] && [ ! -f data/processed/xi_league.parquet ] \
+             && [ ! -f data/processed/source_probe.parquet ]; then
             echo "nessun riepilogo da pubblicare"
             exit 0
           fi
           git config user.name "fda-bot"
           git config user.email "fda-bot@users.noreply.github.com"
-          git add --ignore-missing data/processed/model_lab.parquet data/processed/xi_league.parquet
+          git add --ignore-missing data/processed/model_lab.parquet data/processed/xi_league.parquet \
+            data/processed/source_probe.parquet
           if git diff --cached --quiet; then
             echo "riepilogo invariato"
             exit 0

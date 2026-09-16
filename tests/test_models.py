@@ -13,6 +13,7 @@ from fda.models.predict import (
     LAMBDA_TOTAL_MAX_REL,
     DixonColesModel,
     EloModel,
+    _assert_dc_coerente,
     _clamp_lambda,
     calibrated_prediction,
     ensemble,
@@ -207,6 +208,25 @@ def test_ensemble_double_chance_matches_1x2():
     assert abs(out["p_12"] - (out["p_home"] + out["p_away"])) < 1e-12
     assert abs(out["p_x2"] - (out["p_draw"] + out["p_away"])) < 1e-12
     assert abs(out["p_1x"] - (1.0 - out["p_away"])) < 1e-12
+
+
+def test_assert_dc_coerente_morde_una_derivazione_rotta():
+    """L'invariante di derivazione (docs/22 §1): blocca una doppia chance che non è una somma.
+
+    Non è un test di comodo: la stessa regressione (mercati da un percorso, 1X2 da un altro)
+    è già arrivata nella produzione del 2026-09-14 senza far fallire nulla (docs/19 §1.9),
+    e la formattazione indipendente l'ha resa **visibile** su 48 schede su 165.
+    """
+    buono = {"p_home": 0.5116, "p_draw": 0.2342, "p_away": 0.2543,
+             "p_1x": 0.5116 + 0.2342, "p_12": 0.5116 + 0.2543, "p_x2": 0.2342 + 0.2543}
+    _assert_dc_coerente(buono, dove="test")           # derivazione corretta: nessuna eccezione
+    _assert_dc_coerente({"p_home": 0.5, "p_draw": 0.3, "p_away": 0.2}, dove="test")  # senza mercati
+    for chiave, rotto in (("p_1x", 0.750), ("p_12", 0.770), ("p_x2", 0.490)):
+        with pytest.raises(ValueError, match=chiave):
+            _assert_dc_coerente({**buono, chiave: rotto}, dove="test")
+    # il caso reale: la barra stampa 51/23/26 e la doppia chance 1X veniva pubblicata a 75
+    with pytest.raises(ValueError):
+        _assert_dc_coerente({**buono, "p_1x": 0.750}, dove="scheda")
 
 
 def test_lambda_estreme_rientrano_nei_limiti_di_sicurezza():

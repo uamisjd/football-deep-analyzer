@@ -28,11 +28,18 @@
 <div class="grid">
   <div class="card">
     <h2>Stagione <span class="tag">FotMob · {{ p.matches|it_plural('gara') }}</span></h2>
+    <p class="small mut" style="margin:0 0 8px">Le rate per 90′ e le percentuali sono pubblicate sopra i 90′ giocati; fra 90′ e 270′
+      accanto al valore grezzo c'è la <b>stima stabilizzata</b> (◎, mostrata anche in piccolo). Sotto i 90′ il valore grezzo
+      non si pubblica: si pubblica solo la stima (◇), dichiarata come tale. La stima contrae il valore verso la media dei
+      pari — stesso campionato e ruolo — con un peso pari a un quarto del campione mediano del gruppo: i <b>minuti</b> per
+      le rate per 90, gli <b>eventi</b> (tentativi di passaggio, duelli) per le percentuali. Media, peso e numerosità del
+      gruppo sono nel tooltip di ogni riga; per una percentuale il tooltip dice anche la frazione esatta
+      (es. «58 passaggi riusciti su 65 tentati»), perché una quota non è una rata per 90 minuti.</p>
     <table>
       <tr><th scope="col">Statistica</th><th scope="col" class="r">Totale</th><th scope="col" class="r">Per 90′</th></tr>
       {% for row in p.stats_table %}
         {% if row.header %}<tr><th scope="colgroup" colspan="3" style="padding-top:10px">{{ row.group }}</th></tr>
-        {% else %}<tr><td>{{ row.label }}{% if row.per90_shrunk_s %} <span class="mut small" title="Valore stabilizzato con prior bayesiano (180′ verso media di ruolo) per campioni &lt;270′">◎</span>{% endif %}</td><td class="r">{{ row.total }}</td><td class="r">{% if row.per90 %}<span title="{% if row.per90_shrunk_s %}grezzo {{ row.per90 }}/90 · shrunk {{ row.per90_shrunk_s }}/90 (prior 180′){% else %}{{ row.per90 }}/90′{% endif %}">{{ row.per90 }}{% if row.per90_shrunk_s %} <span class="mut small" style="font-size:10.5px">{{ row.per90_shrunk_s }}</span>{% endif %}</span>{% else %}—{% endif %}</td></tr>{% endif %}
+        {% else %}<tr><td>{{ row.label }}{% if row.est_visibile %} <span class="mut small" title="{{ row.est_note }}">{% if row.insufficient %}◇{% else %}◎{% endif %}</span>{% endif %}</td><td class="r">{{ row.total }}</td><td class="r">{% if row.insufficient %}<span class="mut" title="{{ row.per90_titolo }}">◇ {{ row.est_s }}</span>{% elif row.per90 %}<span title="{{ row.per90_titolo }}">{{ row.per90 }}{% if row.est_visibile %} <span class="mut small" style="font-size:10.5px">◎ {{ row.est_s }}</span>{% endif %}</span>{% else %}—{% endif %}</td></tr>{% endif %}
       {% endfor %}
     </table>
   </div>
@@ -51,14 +58,18 @@
       {% endfor %}
     </svg>
     <p class="small mut" style="margin:8px 0 0">Percentili 0–100 rispetto ai {{ p.n_peers }} giocatori del campionato
-      con lo stesso ruolo e almeno {{ p.min_minutes }} minuti (statistiche per 90 minuti).{% if p.has_lower_axis %} Le statistiche contrassegnate con «↓» sono capovolte: meno se ne fanno, più alto è il percentile.{% endif %}</p>
+      con lo stesso ruolo e almeno {{ p.min_minutes }} minuti. Il percentile è calcolato sulla <b>stima stabilizzata</b>
+      della rata (media dei pari e peso misurati dal run), non sul valore grezzo: su pochi minuti il grezzo ordinerebbe
+      i giocatori per rumore.{% if p.has_lower_axis %} Le statistiche contrassegnate con «↓» sono capovolte: meno se ne fanno, più alto è il percentile.{% endif %}</p>
     {% else %}
     <p class="mut">Percentili non ancora calcolabili: servono almeno {{ p.min_minutes }} minuti giocati
       e un numero sufficiente di pari-ruolo con dato (minimo 8). Nessuna stima inventata.</p>
     {% endif %}
     {% if p.small_sample %}
     <p class="small mut" style="margin-top:8px">⚠ Campione ridotto: {{ p.matches|it_plural('gara') }} e {{ p.minutes|it_plural('minuto') }}.
-      A inizio stagione i percentili sono molto sensibili a una singola prestazione. Il valore per 90 mostra anche lo <b>shrunk</b> (stabilizzato con prior 180′ verso media di ruolo) per evitare picchi su pochi minuti.</p>
+      A inizio stagione i percentili sono molto sensibili a una singola prestazione: qui sono calcolati sulle stime
+      stabilizzate (◇ e ◎ nelle tabelle) e la rata grezza oltre i 270′ è comunque un dato di fatto, non una previsione.
+      Media dei pari e peso della contrazione di ogni statistica sono nel tooltip della riga.</p>
     {% endif %}
   </div>
 </div>
@@ -71,13 +82,13 @@
     <div style="min-width:0">
       <div class="small" style="display:flex;justify-content:space-between;gap:8px">
         <span>{{ row.label }}{% if row.lower %} <span class="mut" title="meno è meglio">↓</span>{% endif %}{% if row.in_radar %} <span class="mut" title="asse del radar">◎</span>{% endif %}</span>
-        <span class="mut">{{ row.total }}{% if row.per90 %} · {{ row.per90 }}/90′{% endif %}</span>
+        <span class="mut" title="{% if row.est_s %}grezzo {{ row.per90_raw }}{{ '' if row.quota else '/90' }} · {{ row.est_note }}{% endif %}">{% if row.quota %}{{ row.per90 }}{% else %}{{ row.total }}{% endif %}{% if row.est_s %} · ◎ {{ row.est_s }}{{ '' if row.quota else '/90′' }}{% elif not row.quota and row.per90 %} · {{ row.per90 }}/90′{% endif %}</span>
       </div>
       {% if row.pct is not none %}
       <div style="background:#1b2938;border-radius:6px;height:9px;margin-top:3px">
         <div style="width:{{ row.pct }}%;height:9px;border-radius:6px;background:#28c893;opacity:{{ (0.45 + 0.55 * row.pct / 100)|round(2) }}"></div>
       </div>
-      <div class="small mut" style="margin-top:2px">{{ row.pct }}° percentile · su {{ row.peers }} pari-ruolo con dato</div>
+      <div class="small mut" style="margin-top:2px">{{ row.pct }}° percentile · su {{ row.peers }} pari-ruolo con dato · valore stabilizzato</div>
       {% else %}
       <div class="small mut" style="margin-top:3px">percentile n.d. — troppi pochi pari-ruolo con questo dato</div>
       {% endif %}

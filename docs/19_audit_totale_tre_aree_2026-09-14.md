@@ -48,7 +48,7 @@ e la verifica va fatta in GitHub Actions.
 | 1.7 | Griglia di calibrazione 1,02 < produzione 1,0401 | P1 | il valore attivo è fuori dalla griglia esplorata |
 | 1.8 | Proiezioni: precisione falsa, TOP_N fisso, tie-break, `neutral` | P1 | SE 0,5 pp pubblicata a 0,1 pp (**5×**) |
 | 1.9 | Doppia chance incoerente con l'1X2 | P1 | **60 righe** |
-| 1.10 | Shrinkage per-90 con prior nell'unità sbagliata | P1 | ~**6×** troppo debole sui tiri |
+| 1.10 | Shrinkage per-90 con prior nell'unità sbagliata — ✅ **FATTO** 2026-09-16 (`docs/23`) | P1 | ~**6×** troppo debole sui tiri → media e peso **misurati** dal run |
 | 1.11 | Verificato e corretto (9 controlli) | — | xGOT 99,6%, parità post-gara 100% |
 
 ### Area 2 — qualitativa
@@ -768,7 +768,7 @@ le righe **già** in archivio senza bloccare la build.
 
 ---
 
-## 1.10 [P1] Shrinkage dei per-90 dei giocatori: prior applicato con l'unità sbagliata (6× sui tiri)
+## 1.10 [P1] ✅ **FATTO** 2026-09-16 (`docs/23`) — Shrinkage dei per-90 dei giocatori: prior applicato con l'unità sbagliata (6× sui tiri)
 
 **Osservato** (`src/fda/site/players.py`). La contrazione verso la media dei pari usa un prior
 espresso in **minuti** (`SHRINK_PRIOR = 8` nel modello; qui una costante analoga) ma applicato a
@@ -2443,13 +2443,13 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P1.5 | ✅ **FATTO** (2026-09-16, `docs/21` §19.4) — `DETAIL_WINDOW_DAYS` in config.py, test di unicità col criterio del §2.4 | | `config.py`, `collect.py`, `cli.py`, `build.py`, 2 template | basso |
 | P1.6 | ✅ **FATTO** (2026-09-16, `docs/21` §19.5) — 404.html assoluto/noindex + sitemap onesta (lastmod reali, 7 leghe, home unica) | | nuovo template, `build.py:_write_seo_files` | medio (percorsi assoluti nel 404) |
 | P1.7 | ✅ **FATTO 2026-09-16** — Proiezioni: arrotondamento all'unità + `mc_se()`, `ucl_spots` da config, tie-break dichiarato, `neutral` limitato; dettagli `docs/21` §20 | `season_sim.py`, `stagione.html`, `leagues.yaml` | medio |
-| P1.8 | Assert di coerenza 1X2/doppia chance | `predict.py` | basso |
-| P1.9 | Backoff ESPN standings + stato "SOSPESO" in *Stato fonti* | `collect.py`, `status.html` | basso |
-| P1.10 | Open-Meteo: pubblicare il motivo delle 0 chiamate + test settimanale del fallback | `collect.py`, `status.html`, `daily.yml` | basso |
+| P1.8 | ✅ **FATTO** (2026-09-16, `docs/22` §1) — il difetto era di **formattazione**, non di calcolo: 48/165 schede pubblicavano una doppia chance che contraddice l'1X2 stampato. Ora i tre valori sono la somma di due dei tre numeri della barra + `_assert_dc_coerente()` in `ensemble()`/`calibrated_prediction()` + invariante `verify_site [30]` | `predict.py`, `match.html`, `verify_site.py` | basso |
+| P1.9 | ✅ **FATTO** (2026-09-16, `docs/22` §3) — ESPN 403 da **76 run consecutivi** (14 richieste/run): `src/fda/backoff.py` con stato derivato da `source_status`, pausa e sonda ogni 4 run, pill **SOSPESO** in *Stato fonti*, invariante `[28]` estesa | `backoff.py`, `collect.py`, `status.html` | basso |
+| P1.10 | ✅ **FATTO** (2026-09-16, `docs/22` §4) — motivo delle 0 chiamate già pubblicato nel giro 16; aggiunta la **sonda settimanale reale** (`scripts/probe_fonti.py` + passo nel workflow `lab`, esito in `source_probe.parquet` e in *Stato fonti* con la data; oltre 14 giorni la pagina dichiara «sonda ferma») | `probe_fonti.py`, `lab.yml`, `status.html` | basso |
 | P1.11 | Griglia pre-registrata nel laboratorio (`Candidate.grid`, `n_tentativi`) | `lab.py`, `docs/00 §D` | basso |
 | P1.12 | Griglia di calibrazione allineata ai bounds (o claim ridotto in `info.html`) | `calibration.py` | **alto** se si rifa il fit → preferire il claim ridotto |
 | P1.13 | ✅ **FATTO** (2026-09-16, `docs/21` §19.6) — skip-link + footer h3→h2; scope e main già coperti (P2-8a); test strutturale | | `base.html` + ~15 template | medio (esteso) |
-| P1.14 | Shrinkage per-90 con `shrink_rate()` unitario + eliminare `p90_shrunk()` morto | `players.py` | medio (cambia le classifiche) |
+| P1.14 | ✅ **FATTO** (2026-09-16, `docs/23`) — `shrink_rate()` unitario in `src/fda/site/rates.py` (media dei pari e peso `k` = 0,25 × mediana del denominatore, **misurati dal run**), regola di pubblicazione (≥270′ grezzo · 90-270′ grezzo + ◎ stima · <90′ solo ◇ stima), percentili sulla stima, `p90_shrunk()` morto eliminato. Il turno ha anche chiuso **due difetti nuovi**: le **quote** (passaggi %, duelli %) pubblicate come rate per 90 con il tooltip «89,2%/90′» e il `◇` che poteva restare vuoto in `match.html`. Invariante nuova **`[32]`** (schede giocatore + schede partita) | `rates.py` (nuovo), `players.py`, `verify_site.py`, template | chiuso |
 | P1.15 | `prossime.html`: debounce filtro + `content-visibility` sulle card | `index.html`/JS, `base.html` | basso |
 
 ## P2 — quando capita (pulizia e debito)

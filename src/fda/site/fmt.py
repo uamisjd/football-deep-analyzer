@@ -43,6 +43,45 @@ def int_it(v) -> str:
     return f"{int(float(v)):,}".replace(",", ".")
 
 
+def displayed(v, nd: int = 2) -> float:
+    """Il numero **esattamente come lo stampa** :func:`dec` (arrotondato a ``nd`` cifre).
+
+    Serve a chi deve sommare due valori che sono già a schermo: la somma va fatta su
+    ciò che il lettore legge, non sui valori grezzi (vedi :func:`displayed_sum`).
+    """
+    return float(f"{float(v):.{nd}f}")
+
+
+def displayed_sum(a, b, nd: int = 2) -> float:
+    """Somma di due valori **come il lettore li somma**: prima arrotondati a ``nd``, poi addizionati.
+
+    Perché serve (misurato 2026-09-16 su 165 schede pre-partita): la riga in testa alla
+    scheda stampa i due gol attesi arrotondati («1,40 + 0,99») e il totale calcolato sui
+    valori **grezzi** (2,3829 → «2,38»): 44 schede su 165 (26,7%) mostravano un totale che
+    non è la somma delle due cifre stampate, e lo stesso nelle card di *Oggi*/«Prossime»
+    (88 occorrenze su 330). Il numero pubblicato deve chiudere con se stesso: la somma si
+    calcola su ciò che è stampato.
+    """
+    return round(displayed(a, nd) + displayed(b, nd), nd)
+
+
+def dec_sum(a, b, nd: int = 2) -> str:
+    """«1,40 + 0,99» → ``'2,39'``: il totale coerente con le due cifre stampate.
+
+    Filtro Jinja (``|dec_sum``): è l'unico modo ammesso per pubblicare una somma di valori
+    già formattati — una somma calcolata sui grezzi produce un totale che non chiude.
+    """
+    if a is None or b is None:
+        return ""
+    try:
+        fa, fb = float(a), float(b)
+    except (TypeError, ValueError):
+        return ""
+    if pd.isna(fa) or pd.isna(fb):
+        return ""
+    return dec(displayed_sum(fa, fb, nd), nd)
+
+
 def pct_str(v, nd: int = 0) -> str:
     """Frazione 0–1 → percentuale italiana: 0.842 → '84%' (nd=1 → '84,2%')."""
     if v is None or (isinstance(v, float) and pd.isna(v)):

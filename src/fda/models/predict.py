@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -431,7 +432,37 @@ def ensemble(dc: dict[str, Any], elo: dict[str, float] | None, w_dc: float = 0.7
     out["dc_p_home"] = float(dc["p_home"])
     out["dc_p_draw"] = float(dc["p_draw"])
     out["dc_p_away"] = float(dc["p_away"])
+    _assert_dc_coerente(out, dove="ensemble")   # fuori dal try: una regressione fa fallire il run
     return out
+
+
+def _assert_dc_coerente(p: Mapping[str, Any], *, dove: str) -> None:
+    """Invariante di **derivazione**: la doppia chance è la somma degli esiti 1X2 pubblicati.
+
+    Un lettore che vede «1 al 51%, X al 23%» e «doppia chance 1X: no» ha davanti due
+    affermazioni incompatibili per costruzione matematica (1X = 1 + X). In archivio c'erano
+    righe con questa incoerenza (docs/19 §1.9) nate da percorsi di calcolo diversi; qui la
+    derivazione è controllata nel punto in cui i mercati vengono pubblicati, così una
+    regressione futura fa fallire il run invece di pubblicare numeri impossibili.
+
+    Non solleva eccezioni sui campi assenti: alcune ricette (fallback «solo 1X2») pubblicano
+    legittimamente solo p_home/p_draw/p_away, e in quel caso non c'è nulla da confrontare.
+    """
+    if p.get("p_home") is None or p.get("p_draw") is None or p.get("p_away") is None:
+        return
+    tol = 1e-9
+    for chiave, parti in (("p_1x", ("p_home", "p_draw")),
+                          ("p_12", ("p_home", "p_away")),
+                          ("p_x2", ("p_draw", "p_away"))):
+        val = p.get(chiave)
+        if val is None:
+            continue
+        atteso = float(p[parti[0]]) + float(p[parti[1]])
+        if abs(float(val) - atteso) > tol:
+            raise ValueError(
+                f"{chiave}={float(val):.6f} incoerente con l'1X2 pubblicato "
+                f"({float(p['p_home']):.6f}/{float(p['p_draw']):.6f}/{float(p['p_away']):.6f}) "
+                f"in {dove}: atteso {atteso:.6f}")
 
 
 def calibrated_prediction(out: dict[str, Any], cal: Calibration | None) -> dict[str, Any]:
@@ -470,6 +501,7 @@ def calibrated_prediction(out: dict[str, Any], cal: Calibration | None) -> dict[
     res["blend_p_away"] = float(out.get("p_away", 0.0))
     res.update(markets)
     res.update({"lambda_home": lh, "lambda_away": la, "dc_rho": rho})
+    _assert_dc_coerente(res, dove="calibrazione")
     return res
 
 

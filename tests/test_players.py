@@ -186,3 +186,115 @@ def test_player_page_segnaposto_onesto(tmp_path):
 
 def test_minimi_dichiarati_nei_docs():
     assert MIN_MINUTES == 90 and MIN_PEERS == 8
+
+
+def _store_con_pari(tmp_path):
+    """Store con 8 attaccanti "pari" da 900′ (così il gruppo dei pari esiste) e due estremi:
+
+    - ``A`` (player 900): 95′ e 6 tiri → rata grezza 5,68/90, campione piccolo (chiave ``total_shots``);
+    - ``B`` (player 901): 900′ e 55 tiri → rata grezza 5,50/90, campione pieno.
+    La stima li **ribalta**: A scende a ~4,6/90, B resta a ~5,2/90 (docs/19 §1.10).
+    """
+    lineup, ps = [], []
+    for i in range(8):
+        pid = 800 + i
+        lineup.append(_lineup_row(1, 10, pid, f"Pari {i}", 3))
+        ps += [_ps_row(1, 10, pid, "minutes_played", 900),
+               _ps_row(1, 10, pid, "total_shots", 40),
+               _ps_row(1, 10, pid, "goals", 8)]
+    lineup.append(_lineup_row(1, 10, 900, "Piccolo campione", 3))
+    ps += [_ps_row(1, 10, 900, "minutes_played", 95), _ps_row(1, 10, 900, "total_shots", 6)]
+    lineup.append(_lineup_row(1, 10, 901, "Campione pieno", 3))
+    ps += [_ps_row(1, 10, 901, "minutes_played", 900), _ps_row(1, 10, 901, "total_shots", 55)]
+    return _store(tmp_path, lineup, ps, FX)
+
+
+def test_stima_stabilizzata_ribalta_il_rumore_e_regge_il_campione_pieno(tmp_path):
+    """La stima non è un abbellimento: cambia l'ordine dove il grezzo è rumore (docs/19 §1.10)."""
+    cat = PlayerCatalog(_store_con_pari(tmp_path))
+    grezzo_a = cat._per90.loc[900, "shots"]   # 5,68/90 grezzo
+    grezzo_b = cat._per90.loc[901, "shots"]
+    stima_a = cat._est.loc[900, "shots"]
+    stima_b = cat._est.loc[901, "shots"]
+    assert grezzo_a > grezzo_b                       # 6 tiri in 95′ battono 55 in 900′ grezzi
+    assert stima_a < stima_b                         # la stima ribalta: il campione piccolo scende
+    assert abs(grezzo_a - 90 * 6 / 95) < 1e-9 and abs(grezzo_b - 90 * 55 / 900) < 1e-9
+    # il percentile pubblicato segue la stima, non il grezzo
+    assert cat._pct.loc[900, "shots"] < cat._pct.loc[901, "shots"]
+
+
+def test_scheda_giocatore_non_pubblica_rate_grezze_sotto_i_90_minuti(tmp_path):
+    """«1′ e un tiro → 90,00 tiri/90» non deve più comparire in pagina (docs/19 §1.10)."""
+    cat = PlayerCatalog(_store_con_pari(tmp_path))
+    riga = cat._stat_row("shots", 900)                # 95′: rata pubblicata + stima accanto
+    assert riga["insufficient"] is False and riga["est_visibile"] is True
+    assert riga["per90"] == "5,68" and riga["est_s"] == "4,62"
+    assert "media dei pari" in riga["est_note"] and "peso k=" in riga["est_note"]
+    riga_piccola = cat._stat_row("shots", 800)        # 900′: nessuna stima accanto (non serve)
+    assert riga_piccola["est_visibile"] is False and riga_piccola["per90"] == "4,00"
+
+
+def _store_con_quote(tmp_path):
+    """Store con 8 difensori da 900′ (80,0% di passaggi, 50,0% di duelli) e due estremi:
+
+    - ``Spezzone`` (910): 45′, 22 passaggi riusciti su 25 tentativi (88,0% grezzo) e 2 duelli vinti su 3;
+    - ``Pieno`` (911): 900′, 765 passaggi riusciti su 900 tentativi (85,0% grezzo) e 330 duelli vinti
+      su 600 (55,0% grezzo).
+
+    Per le quote il campione è il numero di **eventi**: ``k`` = 0,25 × 100 tentativi = 25 (passaggi)
+    e 0,25 × 120 duelli = 30 (duelli), non un numero di minuti (docs/23 §2). La media del gruppo
+    include chi la usa (è la media del gruppo, non "degli altri"): con 9 pari il peso è al più 1/10,
+    ed è dichiarato nei docs.
+    """
+    lineup, ps = [], []
+    for i in range(8):
+        pid = 850 + i
+        lineup.append(_lineup_row(1, 10, pid, f"Pari {i}", 1))
+        ps += [_ps_row(1, 10, pid, "minutes_played", 900),
+               _ps_row(1, 10, pid, "accurate_passes", 80, 100),
+               _ps_row(1, 10, pid, "duel_won", 60), _ps_row(1, 10, pid, "duel_lost", 60)]
+    lineup.append(_lineup_row(1, 10, 910, "Spezzone", 1))
+    ps += [_ps_row(1, 10, 910, "minutes_played", 45),
+           _ps_row(1, 10, 910, "accurate_passes", 22, 25),
+           _ps_row(1, 10, 910, "duel_won", 2), _ps_row(1, 10, 910, "duel_lost", 1)]
+    lineup.append(_lineup_row(1, 10, 911, "Pieno", 1))
+    ps += [_ps_row(1, 10, 911, "minutes_played", 900),
+           _ps_row(1, 10, 911, "accurate_passes", 765, 900),
+           _ps_row(1, 10, 911, "duel_won", 330), _ps_row(1, 10, 911, "duel_lost", 270)]
+    return _store(tmp_path, lineup, ps, FX)
+
+
+def test_quota_stimata_sugli_eventi_e_dichiarata_nella_cella(tmp_path):
+    """Sotto i 90′ il grezzo di una percentuale non si pubblica: si pubblica la stima (docs/23 §2)."""
+    cat = PlayerCatalog(_store_con_quote(tmp_path))
+    riga = cat._stat_row("pass_pct", 910)              # 45′: 22 su 25 tentativi
+    assert riga["quota"] is True and (riga["num"], riga["den"]) == (22, 25)
+    assert riga["insufficient"] is True and riga["per90"] == "—"
+    # media della lega × ruolo sui soli 9 pari sopra i 90′: 1.405 riusciti su 1.700 tentativi
+    assert riga["est_s"] == "85,3%"                    # (22 + 25 × 0,8265) / (25 + 25)
+    assert riga["est_visibile"] is True
+    assert riga["per90_titolo"].startswith("Campione di 45′")
+    assert "Stima stabilizzata 85,3%" in riga["per90_titolo"]
+    assert "media dei pari (difensori di Serie A) 82,6%" in riga["est_note"]
+    assert "peso k=25 tentativi" in riga["est_note"] and "/90" not in riga["est_note"]
+
+
+def test_quota_piena_pubblicata_come_frazione_e_mai_come_rata_per_90(tmp_path):
+    """Con il campione pieno si pubblica il grezzo, ma la cella dice la frazione esatta."""
+    cat = PlayerCatalog(_store_con_quote(tmp_path))
+    piena = cat._stat_row("pass_pct", 911)             # 900′: 765 su 900
+    assert piena["insufficient"] is False and piena["per90"] == "85,0%"
+    assert piena["est_s"] == "84,9%"                   # (765 + 25 × 0,8265) / (900 + 25)
+    assert "/90" not in piena["per90_titolo"]
+    assert "765 passaggi riusciti su 900 tentati" in piena["per90_titolo"]
+
+
+def test_stima_delle_quote_entra_nei_percentili(tmp_path):
+    """Il percentile di una quota segue la stima stabilizzata, non il valore grezzo."""
+    cat = PlayerCatalog(_store_con_quote(tmp_path))
+    assert abs(cat._est.loc[911, "pass_pct"] - 785.6617647 / 925) < 1e-6
+    grezzo, stima = cat._per90.loc[911, "duels_pct"], cat._est.loc[911, "duels_pct"]
+    assert stima < grezzo and 0.5 < stima < 0.55      # 55,0% grezzo trascinato verso il 50,0% dei pari
+    assert cat._pct.loc[911, "pass_pct"] == 100.0      # il grezzo 85,0% supera la media dei pari
+    # lo spezzone da 45′ resta fuori dai percentili (soglia MIN_MINUTES), come prima
+    assert 910 not in cat._pct.index

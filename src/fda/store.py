@@ -69,6 +69,8 @@ TABLE_KEYS: dict[str, list[str]] = {
     "calibration": ["version", "fitted_at"],
     # risultati del laboratorio modelli (solo riepilogo: le righe per gara si rigenerano)
     "model_lab": ["candidate", "league_key"],
+    # sonda settimanale delle fonti di fallback (docs/19 P1.10): una riga per sonda per prova
+    "source_probe": ["run_at", "probe"],
 }
 
 

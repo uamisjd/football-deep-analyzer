@@ -15,13 +15,14 @@ import numpy as np
 import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
+from ..backoff import is_suspended_row
 from ..config import DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..models.season_sim import mc_percent, mc_se
 from ..store import Store
 from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
 from .audit import audit_match
-from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, it_plural, pct_triple
+from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, dec_sum, displayed_sum, it_plural, pct_triple
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -169,6 +170,8 @@ class SiteBuilder:
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
+        # somma di due valori già stampati: «1,40 + 0,99» deve dare «2,39», non «2,38»
+        self.env.filters["dec_sum"] = dec_sum
         self.env.filters["it_plural"] = it_plural
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.env.filters["it_dt_short"] = lambda ts: it_date_short(ts, self.tz)
@@ -342,7 +345,8 @@ class SiteBuilder:
             if p is not None:
                 pct = pct_triple((float(p.p_home), float(p.p_draw), float(p.p_away)))
                 fav_i = max(range(3), key=lambda i: pct[i])
-                tot = float(p.lambda_home) + float(p.lambda_away)
+                # totale coerente con le due λ stampate nella card della stessa partita (docs/22)
+                tot = displayed_sum(float(p.lambda_home), float(p.lambda_away))
                 prev = {"pct": pct, "fav": ("h", "d", "a")[fav_i], "fav_i": fav_i,
                         "gol": it_dec(tot, 1) if np.isfinite(tot) else None,
                         "over": int(round(float(p.p_over25) * 100)) if np.isfinite(p.p_over25) else None}
@@ -470,9 +474,11 @@ class SiteBuilder:
             if p and p.get("p_home") is not None:
                 _lh, _la = float(p.get("lambda_home", 0.0)), float(p.get("lambda_away", 0.0))
                 _gc = lambda v: f"{v:.2f}".replace(".", ",")
+                # il totale è la somma delle due cifre stampate: la description finisce su Google,
+                # dove il lettore non ha contesto per accorgersi di un «2,38» che non chiude (docs/22)
                 page_desc = (f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name}: '
                              f'1 {int(round(p["p_home"]*100))}% X {int(round(p["p_draw"]*100))}% 2 {int(round(p["p_away"]*100))}% '
-                             f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(_lh + _la)} totali) · '
+                             f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(displayed_sum(_lh, _la))} totali) · '
                              f'Over 2,5 {int(round(p.get("p_over25",0)*100))}%')
             else:
                 page_desc = f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name} — analisi pre-partita, forma e precedenti.'
@@ -753,13 +759,31 @@ class SiteBuilder:
                              "ok": bool(r.ok),
                              "warn": bool(getattr(r, "warn", False)) or "espn standings" in err
                                      or "espn news" in err,
+                             # pausa programmata (docs/19 P1.9): si distingue da un guasto
+                             # nuovo, così 14 righe identiche non nascondono più un errore
+                             "suspended": is_suspended_row(err),
                              "error": err[:120]})
+        # Sonda settimanale delle fonti di fallback (docs/19 P1.10): la pagina deve dire
+        # quando è stata provata l'ultima volta. Un fallback non esercitato non è un
+        # fallback funzionante — e la data è parte dell'affermazione, non un dettaglio.
+        probe = []
+        sp = self.store.read("source_probe")
+        if not sp.empty and {"probe", "ok", "run_at"}.issubset(sp.columns):
+            sp = sp.sort_values("run_at")
+            for nome, grp in sp.groupby("probe"):
+                r = grp.iloc[-1]
+                quando = pd.Timestamp(r["run_at"])
+                giorni = max(0, int((pd.Timestamp(self.now) - quando).days))
+                probe.append({"probe": nome, "ok": bool(r["ok"]),
+                              "detail": str(r.get("detail", "")),
+                              "when": quando.tz_convert(self.tz).strftime("%d/%m %H:%M"),
+                              "days": giorni})
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []
         by_state = {s: sum(1 for a in self.audit_rows for i in a["items"] if i["state"] == s)
                     for s in ("presente", "atteso", "mancante")}
         # Osservabilità dei fatti FotMob (P1.4, docs/19 §2.5): il blocco «Curiosità» scartava
         # il 34% dei fatti in silenzio. Se FotMob cambia un template, qui si vede subito.
-        self._render("status.html", "stato.html", sources=rows, tables=tables,
+        self._render("status.html", "stato.html", sources=rows, tables=tables, probe=probe,
                      audit=self.audit_rows, audit_counts=by_state,
                      insight_stats=insight_drop_stats())
 

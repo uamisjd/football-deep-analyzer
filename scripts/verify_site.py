@@ -164,18 +164,29 @@ STATUS_ROW = re.compile(
 
 
 def check_status(site: Path) -> tuple[list[str], int]:
-    """[28] Stato fonti: una fonte «OK» con 0 righe deve dichiarare il motivo."""
+    """[28] Stato fonti: una fonte «OK» con 0 righe deve dichiarare il motivo.
+
+    Nella stessa passata si verifica la **sospensione** (docs/19 P1.9): una riga «SOSPESO»
+    deve dire quanti run sono falliti di fila e fra quanti run si ritenta, e non può avere
+    richieste — se una fonte sospesa interrogasse comunque la rete, il backoff non esisterebbe.
+    """
     page = site / "stato.html"
     if not page.exists():
         return [], 0
     fails: list[str] = []
     checks = 0
     for match in STATUS_ROW.finditer(page.read_text(encoding="utf-8")):
-        fonte, _run, _req, righe, esito = match.groups()
+        fonte, _run, richieste, righe, esito = match.groups()
         checks += 1
+        cell = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", esito)).strip()
+        if "SOSPESO" in cell:
+            if "run falliti consecutivi" not in cell or "nuovo tentativo fra" not in cell:
+                fails.append(f"stato.html: {fonte} sospesa senza motivo o senza piano di ritentativo")
+            elif richieste.strip() not in ("0", "—"):
+                fails.append(f"stato.html: {fonte} sospesa ma con {richieste} richieste nel run")
+            continue
         if righe.strip() != "0":
             continue
-        cell = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", esito)).strip()
         if "OK" not in cell:
             continue                      # errore/avviso: il motivo è già il testo dell'errore
         if "0 righe ·" not in cell or len(cell.split("0 righe ·", 1)[1].strip()) < 3:
@@ -364,6 +375,109 @@ def check_bars(site: Path) -> tuple[list[str], int]:
             elif not favoriti:
                 fails.append(f"{rel}: favorito evidenziato ma non è il massimo {valori}")
     print(f"[11a] barre 1X2 verificate: {barre}")
+    return fails, checks
+
+
+# ---- numeri derivati stampati: devono chiudere con i numeri stampati accanto -----------------
+#: doppia chance pubblicata nella card «Previsione» (tre valori interi).
+DC_ROW = re.compile(r"Doppia chance 1X / 12 / X2</th><td[^>]*>(\d+)% / (\d+)% / (\d+)%</td>")
+#: le tre forme in cui il sito pubblica «λ + λ (totale)»: hero della scheda, card delle
+#: liste (riga visibile) e tooltip della stessa riga, description SEO, riga del calendario.
+HERO_LAM = re.compile(r"<b>(\d+,\d+) \+ (\d+,\d+)</b><span>gol attesi · <b>(\d+,\d+) totali</b></span>")
+CARD_LAM = re.compile(r"Gol attesi <b>(\d+,\d+) \+ (\d+,\d+)</b> <span class=\"mut\">\((\d+,\d+) totali\)</span>")
+TIP_LAM = re.compile(r"(\d+,\d+) casa \+ (\d+,\d+) trasferta = (\d+,\d+) totali")
+META_LAM = re.compile(r"gol attesi (\d+,\d+) \+ (\d+,\d+) \((\d+,\d+) totali\)")
+POS_LAM = re.compile(r"I (\d+,\d+) gol attesi totali in testa alla scheda")
+MATCH_LINK = re.compile(r"partite/(\d+)\.html")
+
+
+def _stamp_it(v: float, nd: int = 2) -> str:
+    """2.39 → '2,39': la stessa forma che il sito deve pubblicare (virgola, nd cifre)."""
+    return f"{v:.{nd}f}".replace(".", ",")
+
+
+def check_derived(site: Path) -> tuple[list[str], int]:
+    """[30] e [31] i numeri derivati pubblicati devono chiudere con i numeri pubblicati accanto.
+
+    [30] **doppia chance**: 1X/12/X2 sono per costruzione la somma di due dei tre esiti 1X2, quindi
+    i tre valori pubblicati devono essere la somma dei tre numeri interi stampati nella barra della
+    stessa card. Prima del 2026-09-16 ogni valore era arrotondato da solo: 48 schede su 165 (29,1%)
+    pubblicavano una doppia chance che contraddiceva l'1X2 (docs/22 §1) — la derivazione nei modelli
+    era già corretta (docs/19 §1.9), era la formattazione a non esserlo.
+
+    [31] **somme stampate**: «1,40 + 0,99 (2,39 totali)» deve avere il totale uguale alla somma dei
+    due numeri **stampati**. 88 occorrenze su 330 (26,7%) pubblicavano il totale calcolato sui valori
+    grezzi (2,3829 → «2,38»). Lo stesso totale compare in più pagine della stessa partita: qui si
+    verifica anche che sia lo stesso numero ovunque (docs/22 §2).
+    """
+    fails: list[str] = []
+    checks = 0
+    n_dc = 0
+    n_somme = 0
+    hero_per_match: dict[int, tuple[str, str]] = {}
+    card_per_match: dict[int, list[tuple[str, str]]] = {}
+    for page in sorted(site.rglob("*.html")):
+        rel = str(page.relative_to(site))
+        h = page.read_text(encoding="utf-8", errors="replace")
+
+        # --- [30] doppia chance vs barra 1X2 pubblicata nella stessa card
+        blocco = h.split('id="previsione"', 1)
+        if len(blocco) > 1:
+            blocco = blocco[1].split('id="scomposizione"', 1)[0]
+            segs = None
+            for attrs, corpo in BAR_BLOCK.findall(blocco):
+                s = BAR_SEG.findall(corpo)
+                if len(s) == 3 and all(t.strip() and "," not in t for _, _, t in s):
+                    segs = [int(_num_it(m.group(1))) for _, _, t in s
+                            if (m := re.search(r"(\d+(?:,\d+)?)\s*%", t))]
+                    break
+            m_dc = DC_ROW.search(blocco) or DC_ROW.search(h)
+            if segs is not None and len(segs) == 3:
+                n_dc += 1
+                checks += 1
+                if m_dc is None:
+                    fails.append(f"{rel}: card «Previsione» con barra 1X2 ma doppia chance assente")
+                else:
+                    dc = [int(v) for v in m_dc.groups()]
+                    atteso = [segs[0] + segs[1], segs[0] + segs[2], segs[1] + segs[2]]
+                    if dc != atteso:
+                        fails.append(f"{rel}: doppia chance {dc} ≠ somma delle 1X2 stampate "
+                                     f"{segs} (attesa {atteso})")
+                    if sum(dc) != 200:
+                        fails.append(f"{rel}: doppia chance {dc} somma {sum(dc)} (attesa 200)")
+
+        # --- [31] somme stampate
+        for etichetta, rx in (("hero", HERO_LAM), ("card", CARD_LAM),
+                              ("tooltip", TIP_LAM), ("description", META_LAM)):
+            for m in rx.finditer(h):
+                a, b, tot = m.group(1), m.group(2), m.group(3)
+                n_somme += 1
+                checks += 1
+                atteso = _stamp_it(_num_it(a) + _num_it(b))
+                if tot != atteso:
+                    fails.append(f"{rel}: {etichetta}: totale {tot} ≠ {a} + {b} = {atteso}")
+        m_hero = HERO_LAM.search(h)
+        if m_hero and page.parent.name == "partite":
+            hero_per_match[int(page.stem)] = (m_hero.group(3), rel)
+        for m in CARD_LAM.finditer(h):
+            links = MATCH_LINK.findall(h[:m.start()])
+            if links:
+                card_per_match.setdefault(int(links[-1]), []).append((m.group(3), rel))
+        m_pos = POS_LAM.search(h)
+        if m_pos and m_hero:
+            checks += 1
+            if m_pos.group(1) != m_hero.group(3):
+                fails.append(f"{rel}: «{m_pos.group(1)} gol attesi totali» in «Dove si colloca» "
+                             f"≠ {m_hero.group(3)} in testa alla scheda")
+    # stesso numero su pagine diverse per la stessa partita
+    for mid, (tot_hero, rel_hero) in hero_per_match.items():
+        for tot_card, rel_card in card_per_match.get(mid, []):
+            checks += 1
+            if tot_card != tot_hero:
+                fails.append(f"partita {mid}: gol attesi totali {tot_hero} in {rel_hero} "
+                             f"ma {tot_card} in {rel_card}")
+    print(f"[30] doppie chance coerenti con l'1X2 stampato: {n_dc}")
+    print(f"[31] somme stampate verificate: {n_somme}")
     return fails, checks
 
 
@@ -1089,15 +1203,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if row.empty or m is None:
                 fails.append(f"{pg.name}: posizione-lega senza previsione o con testo atteso assente")
                 continue
-            lam_here = float(row.lam.iloc[0])
+            # il valore pubblicato in «Dove si colloca» è la somma dei due λ **stampati** in testa
+            # alla scheda: qui si confronta quel numero, non la somma grezza (docs/22 §2)
+            from fda.site.fmt import displayed_sum as _disp_sum
+
+            lam_here = _disp_sum(float(row.lambda_home.iloc[0]), float(row.lambda_away.iloc[0]))
             dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
             dist = dist[np.isfinite(dist)]
             n_exp = int(len(dist))
             checks += 1
             n_pos += 1
             here_t, pct_t, n_t, lg_t, mean_t, med_t = m.groups()
-            if abs(float(here_t.replace(",", ".")) - lam_here) > 0.006:
-                fails.append(f"{pg.name}: gol attesi {here_t} vs λ modello {lam_here:.3f}")
+            if here_t != _stamp_it(lam_here):
+                fails.append(f"{pg.name}: gol attesi {here_t} vs somma delle λ stampate "
+                             f"{_stamp_it(lam_here)}")
             below = float((dist < lam_here).mean())
             if int(pct_t) != int(round(below * 100)):
                 fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
@@ -1608,6 +1727,87 @@ def check_assets(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_stime(site: Path) -> tuple[list[str], int]:
+    """[32] stime stabilizzate dei per-90 e delle quote nelle schede giocatore (docs/19 §1.10, docs/23 §2).
+
+    Quattro regole misurate sulle pagine:
+
+    1. ogni cella marcata ◇ o ◎ dichiara **media dei pari, peso k e numerosità** nel tooltip:
+       una stima senza il gruppo che l'ha prodotta non è verificabile;
+    2. sotto i 90′ giocati nessuna cella pubblica un valore grezzo (il caso «90,00 tiri/90» su un
+       minuto di gioco, o una percentuale su tre duelli): o il grezzo non c'è, o è la stima, o è
+       marcato ◇;
+    3. nessuna **rata per 90** pubblicata supera 25 per 90 sotto i 270′ di campione: sopra quella
+       soglia il numero è di fatto impossibile e va pubblicato come stima, non come fatto;
+    4. una cella **percentuale** non è una rata per 90: il suo tooltip non deve dire «/90′», perché
+       una quota (passaggi riusciti, duelli vinti) non si normalizza sui minuti.
+    """
+    fails: list[str] = []
+    checks = 0
+    n_righe = n_stime = n_quote = 0
+    riga = re.compile(r"<tr><td>([^<]+?)(?: <span class=\"mut small\" title=\"([^\"]*)\">([◎◇])</span>)? ?</td>"
+                      r"<td class=\"r\">([^<]*)</td><td class=\"r\">(.*?)</td></tr>")
+    minuti_rx = re.compile(r'<th scope="row">Minuti</th><td class="r">([\d.]+)</td>')
+    for page in sorted((site / "giocatori").glob("*.html")):
+        if page.name == "index.html":
+            continue
+        h = page.read_text(encoding="utf-8", errors="replace")
+        m_min = minuti_rx.search(h)
+        if not m_min:
+            continue
+        minuti = int(m_min.group(1).replace(".", ""))
+        for match in riga.finditer(h):
+            lab, nota, mark, _tot, cella = match.groups()
+            n_righe += 1
+            checks += 1
+            testo = re.sub(r"<[^>]+>", "", cella).strip()
+            if testo in ("", "—"):
+                continue
+            titolo_m = re.search(r'title="([^"]*)"', cella)
+            titolo = titolo_m.group(1) if titolo_m else ""
+            percentuale = testo.endswith("%") or lab.rstrip().endswith("%")
+            if percentuale:
+                n_quote += 1
+                if "/90′" in titolo:
+                    fails.append(f"{page.name}: {lab}: quota dichiarata come rata per 90 («/90′» nel tooltip)")
+            numeri = re.findall(r"\b\d+,\d+\b", testo)
+            valore = float(numeri[0].replace(",", ".")) if numeri else None
+            stima = "◇" in cella or mark == "◇"
+            marcata = stima or "◎" in cella or mark == "◎"
+            if marcata:
+                n_stime += 1
+                nota_full = " ".join([nota or "", titolo])
+                for token in ("media dei pari", "peso k=", "n="):
+                    if token not in nota_full:
+                        fails.append(f"{page.name}: {lab}: stima senza «{token}» nel tooltip")
+            elif valore is not None and minuti < 90:
+                fails.append(f"{page.name}: {lab}: valore {testo} pubblicato con {minuti}′ giocati")
+            elif (not percentuale and valore is not None and valore > 25 and minuti < 270):
+                fails.append(f"{page.name}: {lab}: rata {valore}/90 con {minuti}′ di campione")
+    print(f"[32] righe per-90 delle schede giocatore verificate: {n_righe} "
+          f"(stime ◇/◎: {n_stime}, quote: {n_quote})")
+
+    # Regola 5 sulle schede partita: le celle dei giocatori decisivi e dell'infermeria usano gli
+    # stessi marcatori ◇/◎, ma il valore arriva da `analysis.py` e un campo non emesso verrebbe
+    # reso da Jinja come stringa vuota («◇ » senza numero, difetto già visto in questo progetto).
+    rx_marcata = re.compile(r"[◎◇]\s*([^<]{0,60}?)(?:</b>|</span>)")
+    righe_partita = 0
+    for page in sorted((site / "partite").glob("*.html")):
+        h = page.read_text(encoding="utf-8", errors="replace")
+        for m in rx_marcata.finditer(h):
+            righe_partita += 1
+            checks += 1
+            coda = m.group(1).strip()
+            if not coda or coda in ("—", "-"):
+                fails.append(f"{page.name}: cella ◇/◎ senza numero pubblicato")
+        for m in re.finditer(r'title="([^"]*)"[^>]*>[^<]{0,40}◇', h):
+            checks += 1
+            if "media dei pari" not in m.group(1) and "gruppo dei pari" not in m.group(1):
+                fails.append(f"{page.name}: stima ◇ senza la media dei pari nel tooltip")
+    print(f"[32] celle ◇/◎ delle schede partita verificate: {righe_partita}")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -1627,9 +1827,15 @@ def main() -> int:
     barre, bar_checks = check_bars(site)
     fails += barre
     checks += bar_checks
+    derivati, derivati_checks = check_derived(site)
+    fails += derivati
+    checks += derivati_checks
     stato, stato_checks = check_status(site)
     fails += stato
     checks += stato_checks
+    stime, stime_checks = check_stime(site)
+    fails += stime
+    checks += stime_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric

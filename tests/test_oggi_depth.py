@@ -671,3 +671,39 @@ def test_detail_stats_only_shared_keys(tmp_path):
     assert all(r["home"] and r["away"] for r in rows)
     # stesse chiavi anche per periodo (1T/2T) e nessuna chiave fantasma
     assert ma.key_stats(1, 10, 20)[0]["label"] == "Possesso palla"
+
+
+def test_peso_infermeria_con_stima_stabilizzata(tmp_path):
+    """Un assente con 1′ giocato entra come stima, non con la rata grezza (docs/19 §1.10).
+
+    Con un minuto e 0,17 xG la rata grezza è 15,30 xG+xA a partita: prima del 2026-09-16 quel
+    numero finiva in pagina e nella somma dell'infermeria (docs/22 §5).
+    """
+    st = _store(tmp_path)
+    pari = [{"match_id": 2, "team_id": 20, "player_id": 300 + i, "player_name": f"Pari {i}",
+             "key": k, "value": v}
+            for i in range(10)
+            for k, v in (("minutes_played", 900.0), ("expected_goals", 5.0), ("expected_assists", 0.0))]
+    nuovo = pd.DataFrame([{"match_id": 1, "team_id": 10, "player_id": 105, "player_name": "Esordiente A",
+                           "key": "minutes_played", "value": 1.0},
+                          {"match_id": 1, "team_id": 10, "player_id": 105, "player_name": "Esordiente A",
+                           "key": "expected_goals", "value": 0.17}])
+    st.write("player_stats", pd.concat([st.read("player_stats"), pd.DataFrame(pari), nuovo]))
+    vuoto = {"shirt_number": None, "position_id": None, "age": 25, "country": "ITA",
+             "market_value_eur": None, "rating": None, "season_rating": None, "is_captain": False,
+             "unavailability_type": None, "expected_return": None}
+    st.write("lineup", pd.concat([st.read("lineup"), pd.DataFrame(
+        [{"match_id": 2, "team_id": 20, "player_id": 300 + i, "player_name": f"Pari {i}",
+          "role": "starter", "usual_position_id": 3, **vuoto} for i in range(10)])]))
+    ma = MatchAnalysis(st)
+    ab = ma.absences_weight(100, 10)
+    riga = next(p for p in ab["players"] if p["name"] == "Esordiente A")
+    assert riga["contrib_raw"] == pytest.approx(15.3)          # la rata grezza: 0,17 su 1′
+    assert riga["pubblicabile"] is False
+    assert riga["contrib_p90"] == riga["contrib_est"]          # si pubblica la stima
+    assert riga["contrib_p90"] < 1.5                           # non 15,30
+    assert "media dei pari" in riga["est_note"] and "peso k=" in riga["est_note"]
+    # Ala A (135′, 0,30/90 grezzo): il campione è pubblicabile, resta il grezzo
+    ala = next(p for p in ab["players"] if p["name"] == "Ala A")
+    assert ala["pubblicabile"] is True and ala["contrib_p90"] == pytest.approx(0.3)
+    assert ab["contrib_lost_p90"] == pytest.approx(riga["contrib_est"] + ala["contrib_est"])
