@@ -695,3 +695,32 @@ deploy Pages verdi; sul sito pubblicato `mercati_monitor` **9 righe** e `xi_leag
 verdetto di Actions coincide col locale (0/9 «strutturale»). Punto aperto: **`news` e `transfers` a
 zero righe utilizzabili** nonostante le fonti a registro OK (news 139 richieste, transfers 263) —
 tabelle assenti e card buie come previsto dal dark launch onesto (consuntivo in `docs/21` §14).
+
+### 9.10 Merge PR #35 — diagnostica delle fonti a zero righe (2026-09-15, deroga esplicita)
+
+**Contenuto PR #35** (4 commit, testa `arena/01a0a75d`, 13 file): constatazione della deroga di
+PR #34 in `docs/13` §9.9; recupero del commit orfano `07fac55` (consuntivo post-merge in `docs/21`
+§14); piano `docs/21` §15 e sua attuazione (blocchi 1+2+3): modulo `fda/diagnostics.py`
+(`bump`/`key_names`/`shape_of`/`detail`/`digest`, soli nomi di campo, mai valori), `source_status`
+con `rows`/`detail`/`digest` e imbuto dei conteggi in tutte e quattro le fasi, colonna «Righe» in
+`stato.html` con l'invariante **[28]** di `verify_site`, correzione della query Google News
+(doppia codifica), contatori **per fase** (chiude il riscontro di `docs/19` §1.6), `espn news` 403
+come AVVISO, firma dello schema in `parse_transfers`.
+
+**Verifiche pre-merge**: suite **262 passed**, check GitHub `test` verde, `verify_site` **0
+problemi · 26.951 controlli**, ruff pulito sul toccato.
+
+**Deroga merge PR #35**: l'utente ha chiesto esplicitamente all'agente di eseguire il merge
+(«Please merge the pull request», 2026-09-15). Secondo la regola D (eccezione con deroga
+esplicita) l'agente ha eseguito `gh pr merge 35 --merge` dopo aver verificato check verdi
+(`test` 1m14s), PR `MERGEABLE`/`CLEAN`, `git status --porcelain` vuoto e `git log
+origin/main..HEAD` limitato al lavoro della PR. Merge commit **`1594170`** (2026-09-15T23:47:17Z).
+Documentata qui e in `STATO.md` quattordicesimo giro. Catena delle deroghe: #23 (2026-09-12),
+#27/#28 (2026-09-13), #29 (2026-09-14), #34 (2026-09-15), #35 (2026-09-15).
+
+**Esito immediato (per onestà documentale)**: il primo daily su `main` col nuovo codice — run
+`35037211442`, trigger push — è andato **rosso** in build. La causa **non** è nel contenuto della
+PR ma in un difetto latente della card notizie di PR #34, che è stato possibile diagnosticare
+proprio grazie a un fix di questa PR (la query Google News corretta ha popolato `news.parquet`,
+attivando il percorso che conteneva il difetto). Diagnosi, fix e strumento di lettura dei log:
+`docs/21` §16; fix in PR #36.

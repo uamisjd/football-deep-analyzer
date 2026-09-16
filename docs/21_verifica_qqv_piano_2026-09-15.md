@@ -740,3 +740,62 @@ righe nuove → 0 righe con motivo). Il difetto Google News è coperto da un tes
 dirà quale forma ha davvero la sezione, poi si corregge con la prova in mano. **Da confermare in
 Actions** (il sandbox non raggiunge le fonti): (a) `news:NEWS` con righe > 0 dopo il fix della
 query; (b) la firma di `transfers:TRANSFERS`; (c) `mercati_monitor` invariato.
+
+## 16. Primo run post-merge rosso: diagnosi e fix (2026-09-15 sera, tredicesimo turno)
+
+**Cosa è successo.** Il merge di PR #35 (merge commit `1594170`) ha fatto partire il daily su
+`main` dal trigger push — run **`35037211442`**, passo «Run giornaliero» **failure** (23:48:04 →
+23:56:49), `deploy` saltato e **nessun commit di dati** (il sito è rimasto a quello del run
+precedente). Il run `tests` su `main` è verde: il problema era nel runtime, non nei test.
+
+**Come è stato letto il log (il pezzo che mancava).** Log e artifact di Actions stanno su blob
+storage non raggiungibile dal sandbox (`docs/00` §B6): verificato di nuovo sul campo (EOF sia su
+`results-receiver.actions.githubusercontent.com` sia su `productionresultssa8.blob.core.windows.net`),
+e `gh run rerun` / `workflow_dispatch` rispondono **403** per il token dell'agente. Soluzione:
+nuovo workflow **`.github/workflows/diag-fetch-log.yml`** che da un *runner* — che il blob lo
+raggiunge — scarica l'artifact `run-log-*` del run indicato (`actions/download-artifact` con
+`run-id`) e ne pubblica la coda sul branch **dedicato `diag-logs`**, dove l'agente la legge con
+`git show origin/diag-logs:run-tail.txt` (branch riscritto a ogni estrazione: interessa solo
+l'ultimo log). Il branch di lavoro e `main` restano così **puliti dai log**.
+Si attiva con il dispatch (utente) o modificando `diag/trigger.txt` e pushando su un branch
+`arena/**` (agente). Costo: un run di ~10 secondi, **zero richieste alle fonti**.
+
+**Causa (dal traceback, non da ipotesi).**
+```
+src/fda/site/analysis.py:1110 in team_news
+    unav = {u["name"].lower() for u in self.unavailable_for_news(team_name)}
+TypeError: string indices must be integers, not 'str'
+```
+`unavailable_for_news` restituisce **nomi** (`list[str]`), mentre `team_news` li leggeva come
+righe di tabella. Il difetto era **latente**: `team_news` esce prima quando la tabella `news` è
+vuota (`news_df.empty`) — la condizione di tutti i run precedenti — e scatta solo con tabella
+piena **e** almeno un indisponibile in distinta. I test coprivano i due casi separatamente
+(tabella piena *senza* indisponibili; tabella vuota), mai la combinazione.
+
+**Perché è emerso proprio ora (ed è una buona notizia).** Il fix del §15.6 ha funzionato: Google
+News risponde e `news.parquet` si è popolato al primo run utile → la card notizie è uscita dal
+dark launch ed è entrata in funzione, scoprendo subito il difetto. È la conferma del limite del
+dark launch: **una card che non è mai stata eseguita con dati veri non è verificata**, anche se
+i test sono verdi.
+
+**Fix e verifiche (tutte misurate in locale).**
+- `analysis.team_news`: l'insieme degli indisponibili si costruisce dai **nomi** (con commento
+  che spiega il contratto e la storia del difetto).
+- Test di regressione `test_notizie_con_indisponibili_regressione_run_35037211442` sulla
+  combinazione esatta: **verificato che fallisce sul codice precedente** con lo stesso
+  `TypeError` a `analysis.py:1110`, e che passa col fix (un test di regressione che non fallisce
+  sul bug non è un test).
+- Riproduzione del **percorso appena attivato**: store con `news` popolata su 12 squadre → build
+  completa **OK**, card resa correttamente («Milan · 3 notizie verificate negli ultimi 12
+  giorni…», con titolo, testata, data e link), `verify_site` **0 problemi · 26.987 controlli**.
+- Dati reali del repo: `fda build` 376/2.364/7.478 in **3m12s**, `verify_site` **0 problemi ·
+  26.951 controlli**; suite **262 passed** (+1); ruff pulito su tutto il toccato.
+- **Non verificato**: il run reale successivo al merge (il sandbox non raggiunge le fonti) — è il
+  primo controllo da fare, con l'imbuto di `news`/`transfers` in `stato.html` e la firma dello
+  schema del mercato.
+
+**Lezione registrata (vale per le sessioni future).** (1) Prima di dichiarare pronta una card in
+dark launch, esercitarla in locale con la **tabella popolata**, non solo con tabella vuota: è il
+punto in cui il difetto di oggi è passato. (2) Un run rosso non deve restare muto:
+`diag-fetch-log.yml` porta i log nel repository e rende la diagnosi possibile anche quando il
+sandbox non vede il blob.

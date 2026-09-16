@@ -130,6 +130,31 @@ def test_notizie_selezione_specifiche_e_finestra(analysis):
     assert items[0]["source"] == "Gazzetta"
 
 
+def test_notizie_con_indisponibili_regressione_run_35037211442(tmp_path):
+    """Regressione del run `35037211442` (2026-09-15): notizie piene **e** indisponibili.
+
+    Il primo run con notizie reali è morto in build con `TypeError: string indices must be
+    integers` perché `unavailable_for_news` restituisce **nomi** (stringhe) mentre
+    `team_news` li leggeva come righe di tabella (`u["name"]`). Il difetto era latente:
+    scattava solo con la tabella `news` **non vuota** *e* almeno un indisponibile in
+    distinta — condizione che nessun test copriva, perché la card notizie era in dark
+    launch (tabella sempre vuota → uscita anticipata).
+    """
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", FX)
+    st.write("news", NEWS)
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 4, "team_id": 2, "player_id": None, "player_name": "Marco Indisponibile",
+         "role": "unavailable", "unavailability_type": "injury", "return_info": "Day to day"},
+        {"match_id": 4, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    ]))
+    a = MatchAnalysis(st)
+    assert a.unavailable_for_news("Inter") == ["Marco Indisponibile"]   # il contratto: nomi, non righe
+    items = a.team_news(2, "Inter", KO("2026-09-15 12:00"))
+    assert items and items[0]["title"].startswith("Inter, infermeria")
+    st.close()
+
+
 def test_notizie_tabella_vuota_degrada(tmp_path):
     st = Store(tmp_path / "empty")
     a = MatchAnalysis(st)

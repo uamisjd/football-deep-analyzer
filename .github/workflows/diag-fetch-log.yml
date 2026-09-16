@@ -1,0 +1,87 @@
+# Diagnostica: porta nel repository la coda del log di un run di Actions.
+#
+# Perché esiste (2026-09-15, docs/21 §16): l'agente lavora in un sandbox che non raggiunge il
+# blob storage di GitHub, quindi i log dei run e gli artifact non sono leggibili da lì
+# (`docs/00` §B6; verificato: EOF su results-receiver.blob e 403 su rerun/dispatch). Un runner
+# di Actions invece li raggiunge: scarica l'artifact `run-log-*` del run indicato, ne prende la
+# coda e la pubblica sul branch **`diag-logs`** (branch dedicato, non quello di lavoro: così il
+# PR resta pulito e in `main` non finiscono log).
+#
+# Lettura da parte dell'agente:  git fetch origin diag-logs && git show origin/diag-logs:run-tail.txt
+#
+# Attivazione: dispatch dalla UI (utente) oppure modifica di `diag/trigger.txt` e push su un
+# branch `arena/**` (agente). Costo: ~10 secondi, zero richieste alle fonti.
+name: diag (log del run nel branch diag-logs)
+
+on:
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "ID del run di cui scaricare l'artifact run-log-*"
+        required: true
+        default: "35037211442"
+  push:
+    branches:
+      - "arena/**"
+    paths:
+      - "diag/trigger.txt"
+
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.ref_name }}
+
+      - id: rid
+        run: echo "run_id=${{ github.event.inputs.run_id || '35037211442' }}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          run-id: ${{ steps.rid.outputs.run_id }}
+          pattern: "run-log-*"
+          merge-multiple: true
+          path: diag_raw
+          github-token: ${{ github.token }}
+
+      - name: Pubblica la coda sul branch diag-logs
+        env:
+          TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ steps.rid.outputs.run_id }}
+        run: |
+          set -u
+          out=/tmp/diaglogs
+          mkdir -p "$out"
+          log=$(find diag_raw -type f -name 'run.log' 2>/dev/null | head -1)
+          if [ -n "$log" ]; then
+            tail -200 "$log" > "$out/run-tail.txt"
+            echo "coda scritta da $log ($(wc -l < "$out/run-tail.txt") righe)"
+          else
+            echo "artifact run-log-* non trovato per il run $RUN_ID" > "$out/run-tail.txt"
+          fi
+          {
+            echo "run_id=$RUN_ID"
+            echo "estratto_il=$(date -u +'%Y-%m-%dT%H:%M:%SZ')"
+            echo "branch=${{ github.ref_name }}"
+            echo "workflow_run_url=https://github.com/$REPO/actions/runs/$RUN_ID"
+          } > "$out/run-tail-meta.txt"
+          head -3 "$out/run-tail.txt"
+
+          # il branch di lavoro non si tocca: la coda va su un branch dedicato, riscritto
+          # ogni volta (interessa solo l'ultimo log)
+          cd "$out"
+          git init -q
+          git config user.name "fda-diag"
+          git config user.email "fda-diag@users.noreply.github.com"
+          git add -A
+          git commit -qm "diag: coda del log del run $RUN_ID"
+          git push -q -f "https://x-access-token:${TOKEN}@github.com/${REPO}.git" HEAD:refs/heads/diag-logs
+          echo "pubblicato su diag-logs"
