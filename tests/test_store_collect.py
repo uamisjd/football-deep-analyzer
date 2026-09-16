@@ -382,8 +382,8 @@ def test_richieste_per_lega_non_cumulative_e_fonti_non_usate(tmp_path):
     """
     st = Store(tmp_path / "processed")
     shared = CountingFotMob()
-    common = dict(past_days=30, future_days=30, understat=FakeUnderstat(), espn=FakeEspn(),
-                  today=date(2026, 9, 6))
+    common = {"past_days": 30, "future_days": 30, "understat": FakeUnderstat(),
+              "espn": FakeEspn(), "today": date(2026, 9, 6)}
     r1 = collect_league(league("ITA1"), st, fotmob=shared, **common)
     segno = shared.http.stats.requests
     r2 = collect_league(league("ENG1"), st, fotmob=shared, **common)
