@@ -2426,8 +2426,8 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P0.2 | ✅ **FATTO** — palette chiara ≥4,5:1 su **4** superfici, gradienti della barra 1X2 corretti, override della cella modale eliminato, `--lose`/`--draw` scuri corretti | `base.html` §3.5 | **basso** | `test_contrasto_token_di_testo_aa[dark\|light]`, `test_barra_1x2_stop_gradiente`, `test_cella_punteggio_piu_probabile` |
 | P0.3 | ✅ **FATTO** — `pct_triple(p, nd)` generalizzato, filtro Jinja `pct3`, tre barre collegate, wrapper duplicato di `build.py` eliminato, controllo `[10]` allineato alla regola di pubblicazione | `fmt.py`, `build.py`, `match.html`, `_matchlist.html`, `verify_site.py` §3.3 | **basso** | `verify_site.py [11a]`: **565 barre, 0 problemi**; 14.108 controlli totali |
 | P0.4 | ✅ **FATTO** — scala dell'istogramma inclusa la coda (nessun clamp), copertura reale pubblicata al posto del «90%» dichiarato, `q90_label` per l'estremo aperto, 3 invarianti nuove in `verify_site.py` e regex della didascalia rese indipendenti dagli a capo | `advanced.py`, `match.html`, `verify_site.py` §3.4 | **basso** | `grep height:[0-9]*%` → **0**; 15.548 controlli OK |
-| P0.5 | CSS esterno con cache-busting (−144 MB, −58% del sito) | `build.py`, `base.html` | **medio** (percorsi relativi + flash) | `du -sb site` ≈ 110 MB; controllo visivo in preview |
-| P0.6 | Composizione del campione in *Accuratezza* (3 su 84 con il modello corrente) | `build.py:479+`, `accuracy.html` | **basso** | la frase compare; `n` coerente con la tabella |
+| P0.5 | ✅ **FATTO** (2026-09-16, `docs/21` §18.4) — CSS esterno con cache-busting, **sito 273 → 109 MB (−60%)**, invariante [29] (4.136 pagine) | `build.py`, `base.html`, `assets/site.css` | — | verify_site 0 problemi · 32.867 controlli |
+| P0.6 | ✅ **FATTO** (2026-09-16, `docs/21` §18.3) — composizione dichiarata: 12 su 93 col modello corrente | `build.py`, `accuracy.html` | — | invariante [3b]: composizione = riga «Tutti» |
 | P0.7 | `benchmark_quote.py` + job mensile: il mercato come riferimento misurato | nuovo script, nuovo workflow | **nessuno** (non tocca il modello) | n≈4.372, Δ≈+0,0096 |
 | P0.8 | `verify_site.py [11]` invarianti di pubblicazione | `scripts/verify_site.py` | **basso** | deve fallire prima delle fix, passare dopo |
 | P0.9 | Contatore richieste per lega (delta) + nessuna riga per fonti non usate | `collect.py:246`, `http.py` | **basso** | `stato.html`: numeri non monotoni, somma = totale run |
@@ -2436,7 +2436,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 
 | # | Intervento | File | Rischio |
 |---|---|---|---|
-| P1.1 | Baseline naive = frequenze reali per lega | `build.py:500` + helper | basso |
+| P1.1 | ✅ **FATTO** (2026-09-16, `docs/21` §18.3) — `outcome_freqs()` su history (7.396 gare), fallback dichiarato, colonna «n base» | `build.py` | — | test + invariante [3b] sul Δ |
 | P1.2 | Etichette arbitro relative alla lega + campione minimo 15 | `analysis.py:1806`, `build()` | basso |
 | P1.3 | Un solo profilo arbitro (`referee_profile`) usato anche dalla narrazione | `analysis.py:1894` | basso |
 | P1.4 | 5 template di curiosità recuperabili + contatore degli scarti | `analysis.py:262+` | basso |
