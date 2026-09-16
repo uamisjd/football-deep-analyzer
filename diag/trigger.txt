@@ -1,1 +1,15 @@
-trigger 00:00:57 secondo tentativo
+Interruttore per il workflow `.github/workflows/diag-fetch-log.yml`.
+
+A cosa serve: i log dei run in Actions e i loro artifact stanno su blob storage che dal
+sandbox dell'agente non è raggiungibile; un runner invece li raggiunge. Quel workflow
+scarica l'artifact `run-log-*` di un run indicato e ne committa la coda in
+`diag/run-tail.txt`, così la diagnosi di un run rosso si legge dal repository.
+
+Come si usa (agente o utente):
+- dispatch manuale dalla UI: Actions → «diag (log del run sul branch)» → Run workflow,
+  inserendo l'id del run;
+- oppure modifica una riga qui sotto e pusha su un branch `arena/**`: la modifica del
+  file fa partire lo stesso workflow con il run predefinito (DEFAULT_RUN_ID).
+- l'artifact è scaricabile come proprietario del repo anche dalla UI del run.
+
+DEFAULT_RUN_ID=35037211442   # run daily del 2026-09-15 23:47 UTC (primo rosso post-merge)

@@ -18,7 +18,7 @@ on:
         default: "35037211442"
   push:
     branches:
-      - "arena/01a0a75d-football-deep-analyzer"
+      - "arena/**"
     paths:
       - "diag/trigger.txt"
 

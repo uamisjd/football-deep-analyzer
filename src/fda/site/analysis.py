@@ -1107,7 +1107,12 @@ class MatchAnalysis:
             return []
         coach = self.coach(team_id)
         own = {str(coach["name"]).lower()} if coach else set()
-        unav = {u["name"].lower() for u in self.unavailable_for_news(team_name)}
+        # `unavailable_for_news` restituisce **nomi** (lista di stringhe), non righe di
+        # tabella: il contratto era disallineato e il difetto è rimasto latente finché la
+        # tabella `news` era vuota (la card usciva prima, con `news_df.empty`). Primo run
+        # con notizie reali (2026-09-15, run 35037211442): `u["name"]` su una stringa →
+        # TypeError che ha fatto fallire la build. Coperto da test con tabella piena.
+        unav = {name.lower() for name in self.unavailable_for_news(team_name) if name}
         own |= {team_name.lower()}
 
         def score(row: dict[str, Any]) -> tuple[int, str]:
