@@ -196,3 +196,81 @@ run** (non ~11 come con la semantica precedente); una sonda fallita porta lo sta
 **Perché è urgente**: finché la correzione non è in `main`, **ogni run del daily fallisce al gate**
 e il sito resta all'ultimo build buono (nessun aggiornamento dati né deploy).
 
+
+## §5 — Lo scoreboard ESPN era l'unica fase fuori dal backoff, e il 403 era il suo (2026-09-16, ventitreesimo giro)
+
+> **Nota sulla numerazione di questo documento.** Esistono **due §3**: il primo (§3 «Verifiche
+> eseguite in questo turno», prima del merge di PR #42) e il secondo (§3 «Il gate in CI ha morso»,
+> aggiunto dopo). I riferimenti esterni («`docs/23` §3») intendono **il secondo**, quello sui
+> difetti del backoff. Non si rinumera per non rompere i riferimenti già scritti in `docs/19` §4,
+> `docs/22` §3, `STATO.md` e nei messaggi di commit di PR #43.
+
+**Come è emerso.** Il §3 ha dato allo scoreboard una **riga propria** in `source_status`
+(`espn scoreboard:<lega>`): fino ad allora le sue richieste erano nascoste dentro la riga della
+classifica. Il primo run con quella contabilità separata (**`35131980208`**, raccolta 18:09-18:11
+UTC, dati committati in `c969b6b`) ha misurato la fase per la prima volta: **HTTP 403 su 7 leghe
+su 7**, 1 richiesta ciascuna, **0 righe di dati**.
+
+**La frase da correggere.** `docs/22` §3 e il docstring di `backoff.py` dichiaravano «lo
+scoreboard ESPN, **che risponde**, resta attivo»: era un'**assunzione**, non una misura, e non
+poteva essere misurata prima che la fase avesse una riga propria. Due fatti la smentiscono:
+
+| Fatto | Misura |
+|---|---|
+| lo scoreboard risponde 403 | 7 righe `espn scoreboard:*` con `ok=False` ed errore `HTTP 403 .../scoreboard`, run 18:09-18:11 UTC |
+| non ha **mai** portato un dato | in `data/processed/` non è mai esistito `espn_events.parquet`, né `espn_team_stats.parquet`, né `espn_standings.parquet` (`git ls-tree origin/main data/processed/`) |
+
+**Il costo è lo stesso già giudicato inaccettabile in P1.9.** Lo scoreboard era l'unica fase ESPN
+**senza** `sospensione()` (classifica e notizie ce l'avevano): 7 richieste a run × 5 run al giorno
+= **35 richieste al giorno (~1.050 al mese) per zero righe**, più **7 righe rosse «ERRORE»** a
+ogni run in *Stato fonti* (`ok=False, warn=False`: il 403 dello scoreboard non era in
+`_WARN_NON_BLOCCANTE`) — lo stesso rumore identico che P1.9 aveva tolto alla classifica perché
+«rendeva invisibile ogni guasto nuovo».
+
+**Nessun impatto sui contenuti pubblicati** (verificato, non presunto): nessuna sezione del sito
+legge `espn_events`/`espn_team_stats`; l'unico riferimento a una tabella ESPN nel codice del sito
+è `analysis.py:601` (`store.read("espn_standings")`), riserva della classifica il cui primario è
+FotMob — `Store.read` su tabella assente restituisce un DataFrame vuoto e le **132** righe di
+classifica pubblicate vengono da `fotmob_standings`. Gli eventi del giorno sono di FotMob
+(`events.parquet` 6.083 righe, +5 nel run).
+
+**Correzione** (nello stile già usato per le due fasi, chiave = fonte + fase):
+
+- `collect.py`: `sospensione(store, f"espn scoreboard:{lg.key}", "espn scoreboard")` **prima**
+  della chiamata, come per classifica e notizie. La chiave è quella della riga introdotta dal §3,
+  quindi la serie dei fallimenti parte dal run `35131980208`: la sospensione scatta dopo
+  `BACKOFF_FAILS = 5` run (≈ un giorno con 5 run al giorno) e la sonda ogni `BACKOFF_PROBE_RUNS = 4`
+  pause, quindi un rientro di ESPN viene visto da solo entro un giorno;
+- `_WARN_NON_BLOCCANTE` += `"espn scoreboard"`: il degrado è coperto da FotMob → **AVVISO**, non
+  ERRORE rosso, come per le altre due fasi;
+- `note("espn scoreboard", …)`: il testo pubblicato in *Stato fonti* non dice più «sempre attivo:
+  non è governato dal backoff della classifica», che era diventato falso;
+- `backoff.py` (docstring) e `docs/22` §3: la frase «che risponde» è annotata come smentita dalla
+  misura, con rimando qui.
+
+**Nessuna modifica a `scripts/verify_site.py`**: l'invariante **[28]** è già generica su qualunque
+riga «SOSPESO» (motivo + piano di ritentativo + **0 richieste**), quindi copre la fase nuova senza
+toccare il verificatore — il fatto che basti cambiare la raccolta è la prova che l'invariante era
+scritta nel punto giusto.
+
+**Prova end-to-end sul caso reale** (stesso metodo del §3: righe vere + righe sintetiche nello
+store, poi `fda build` + `verify_site`; il Parquet originale è stato ripristinato, `git status`
+pulito):
+
+| Passo | Esito |
+|---|---|
+| righe vere del run 18:22 nello store | 7 righe `espn scoreboard:*`, **7 richieste**, **0 righe di dati** |
+| + 4 run falliti per lega fino alla soglia, + la riga di pausa che `collect_league` scriverebbe | `sospensione()` risponde per **7/7** leghe |
+| `fda build` | exit **0** · 376/2.364/7.478 |
+| `scripts/verify_site.py` | exit **0** · **nessun problema · 89.455 controlli** (+7: le righe nuove passano da [28]) |
+| pagina *Stato fonti* | **15 righe ESPN tutte SOSPESO con 0 richieste · 0 righe in ERRORE** (prima: 7 rosse) |
+| suite | **347 passed** (343 → **+4**: serie propria, indipendenza delle due fasi, integrazione con contatore delle richieste, costo a regime ora parametrizzato su **entrambe** le fasi) |
+| ruff | **173** = baseline, 0 nuove |
+
+**Da guardare nel primo daily che porta la serie a 5 run** (dal 2026-09-17): le righe
+`espn scoreboard:*` devono passare da ERRORE a **SOSPESO con 0 richieste** e le richieste ESPN del
+run devono scendere da **7 a 0** (tutte e tre le fasi ESPN in pausa: classifica, notizie, eventi).
+
+**Prossimo passo.** La coda resta quella di `docs/19` §4: **P1.11** (griglia pre-registrata nel
+laboratorio), poi P1.12 come *claim ridotto* in `info.html` e P1.15; P2.5 (indice completo di
+`docs/`) è chiuso in questo giro nel briefing.

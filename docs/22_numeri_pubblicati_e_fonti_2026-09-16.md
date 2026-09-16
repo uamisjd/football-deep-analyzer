@@ -122,7 +122,12 @@ Dopo `BACKOFF_FAILS = 5` fallimenti consecutivi della stessa fase la fonte non v
 interrogata; ogni `BACKOFF_PROBE_RUNS = 4` pause si fa comunque una **sonda**, così una fonte
 che riapre rientra da sola. Costo di una fonte rotta: da 14 richieste a run a **una ogni cinque
 run** (≈1 al giorno). Lo scoreboard ESPN, che risponde, resta attivo: la chiave è la coppia
-(fonte, fase), non il client. *(La frase «una ogni cinque run» è diventata vera solo con la
+(fonte, fase), non il client. *(Correzione del 2026-09-16, stesso giorno: «che risponde» era
+un'**assunzione**, non una misura — non poteva esserlo, perché le richieste dello scoreboard erano
+contate dentro la riga della classifica. Dal run `35131980208`, il primo con la riga separata di
+`docs/23` §3, lo scoreboard risponde **403 su 7/7 leghe** e nel repository non è mai esistita una
+tabella `espn_events`: quindi anche questa fase ha il suo backoff. Diagnosi, misure e prova
+end-to-end in `docs/23` §5. Resta vero il principio: la chiave è la coppia (fonte, fase).)* *(La frase «una ogni cinque run» è diventata vera solo con la
 correzione del 2026-09-16: la prima versione faceva ripartire la serie a ogni sonda fallita e
 contava le richieste dello scoreboard dentro la riga della classifica sospesa — due difetti
 trovati dal gate in CI, diagnosi e misure in `docs/23` §3.)*

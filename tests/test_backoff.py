@@ -23,6 +23,10 @@ from tests.test_store_collect import FakeEspn, FakeEspnContato, FakeFotMob, Fake
 
 SORGENTE = "espn:ITA1"
 FASE = "espn standings"
+# la seconda fase ESPN: chiave e serie proprie (docs/23 §5), perché il 403 dello scoreboard è
+# stato misurato solo quando PR #43 gli ha dato una riga separata in `source_status`
+SORGENTE_SCOREBOARD = "espn scoreboard:ITA1"
+FASE_SCOREBOARD = "espn scoreboard"
 # storico seminato nel passato: l'esecuzione del test è il run più recente
 BASE = datetime(2026, 9, 15, 8, 0, tzinfo=UTC)
 
@@ -39,6 +43,12 @@ def _riga(n: int, *, ok=False, errore="espn standings: SourceError: HTTP 403 htt
     return {"run_at": BASE + timedelta(hours=2 * n), "source": source, "requests": richieste,
             "ok": ok, "warn": not ok, "error": None if ok else errore,
             "rows": 0, "detail": "", "digest": ""}
+
+
+def _riga_scoreboard(n: int, *, ok=False, richieste=1) -> dict:
+    """Una riga della fase scoreboard: stesso 403, chiave e prefisso d'errore propri."""
+    return _riga(n, ok=ok, errore="espn scoreboard: SourceError: HTTP 403 https://x",
+                 richieste=richieste, source=SORGENTE_SCOREBOARD)
 
 
 def _sospesa(n: int, fallimenti: int) -> dict:
@@ -149,7 +159,9 @@ def test_la_raccolta_non_interroga_espn_quando_e_sospeso(tmp_path):
                          fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
                          espn=EspnTracciato(), today=date(2026, 9, 6))
     assert "standings" not in chiamate, "la classifica ESPN non doveva essere interrogata"
-    assert chiamate.count("scoreboard") >= 1, "lo scoreboard non è in backoff e deve restare attivo"
+    assert chiamate.count("scoreboard") >= 1, (
+        "lo scoreboard ha una serie propria, qui pulita: la sospensione della classifica "
+        "non deve fermarlo")
     riga = st.read("source_status")
     riga = riga[(riga.source == "espn:ITA1") & (pd.to_datetime(riga.run_at, utc=True) > pd.Timestamp(BASE))]
     ultima = riga.sort_values("run_at").iloc[-1]
@@ -185,22 +197,26 @@ def test_una_sonda_che_fallisce_non_riapre_la_fonte(tmp_path):
     assert stop is not None and f"nuovo tentativo fra {BACKOFF_PROBE_RUNS} run" in stop
 
 
-def test_il_costo_di_una_fonte_rotta_e_una_richiesta_ogni_cinque_run(tmp_path):
-    """Il numero che giustifica il meccanismo, misurato a regime.
+@pytest.mark.parametrize("sorgente,fase",
+                         [(SORGENTE, FASE), (SORGENTE_SCOREBOARD, FASE_SCOREBOARD)])
+def test_il_costo_di_una_fonte_rotta_e_una_richiesta_ogni_cinque_run(tmp_path, sorgente, fase):
+    """Il numero che giustifica il meccanismo, misurato a regime — su **entrambe** le fasi ESPN.
 
     Fase di apprendimento: i primi ``BACKOFF_FAILS`` run falliscono (il backoff non esiste ancora,
     quindi ogni run tenta). Poi la fonte è sospesa e il ciclo diventa «``BACKOFF_PROBE_RUNS`` pause
     + 1 tentativo» = 5 run: in 20 run di regime, **4** richieste invece di 20 — che con la semantica
-    precedente (la sonda che riapriva la fonte) diventavano ~11.
+    precedente (la sonda che riapriva la fonte) diventavano ~11. Per lo scoreboard il numero è lo
+    stesso misurato in produzione: 7 richieste a run (35 al giorno) per 0 righe, prima del fix.
     """
     st = Store(tmp_path / "processed")
 
     def _esegui(i: int) -> bool:
         """Un run: True se ha tentato la fonte (nessuna sospensione attiva)."""
-        stop = sospensione(st, SORGENTE, FASE)
-        err = ("espn standings: SourceError: HTTP 403 https://x" if stop is None else
-               f"espn standings: sospeso dopo 5 run falliti consecutivi ({FASE}); nuovo tentativo fra 1 run")
-        st.upsert("source_status", [{"run_at": BASE + timedelta(hours=2 * i), "source": SORGENTE,
+        stop = sospensione(st, sorgente, fase)
+        err = (f"{fase}: SourceError: HTTP 403 https://x" if stop is None else
+               f"{fase}: sospeso dopo 5 run falliti consecutivi ({fase}); "
+               f"nuovo tentativo fra 1 run")
+        st.upsert("source_status", [{"run_at": BASE + timedelta(hours=2 * i), "source": sorgente,
                                      "requests": 0 if stop else 1, "ok": False, "warn": True,
                                      "error": err, "rows": 0, "detail": "", "digest": ""}])
         return stop is None
@@ -239,7 +255,84 @@ def test_riga_sospesa_senza_richieste_e_scoreboard_a_parte(tmp_path):
     scoreboard = righe[righe.source == "espn scoreboard:ITA1"].sort_values("run_at").iloc[-1]
     assert sospesa["requests"] == 0, "una fase sospesa non tocca la rete: il backoff deve esistere"
     assert "sospeso" in str(sospesa["error"])
-    assert scoreboard["requests"] >= 1, "lo scoreboard non è governato dal backoff: resta attivo"
+    assert scoreboard["requests"] >= 1, (
+        "le due fasi hanno serie indipendenti: quella dello scoreboard qui è pulita, "
+        "quindi resta attiva")
     assert bool(scoreboard["ok"]) and scoreboard["rows"] > 0
     assert rep.requests["espn"] == 0 and rep.requests["espn scoreboard"] >= 1
+    st.close()
+
+
+# ---- la seconda fase ESPN: lo scoreboard (docs/23 §5) -----------------------------------------
+def test_lo_scoreboard_ha_la_sua_serie_e_si_sospende(tmp_path):
+    """Misurato nel run `35131980208` (2026-09-16 18:09 UTC): 403 su **7/7 leghe**.
+
+    Prima del fix lo scoreboard era l'unica fase ESPN fuori dal backoff, perché lo si dichiarava
+    «attivo, risponde»: 7 richieste a run (35 al giorno) per **0 righe**, e nel repository non è
+    mai esistita una tabella `espn_events`/`espn_team_stats`. Stesso costo senza dato che P1.9
+    aveva tolto alla classifica, quindi stessa regola e stessa chiave (fonte, fase).
+    """
+    st = _store(tmp_path, [_riga_scoreboard(i) for i in range(BACKOFF_FAILS)])
+    msg = sospensione(st, SORGENTE_SCOREBOARD, FASE_SCOREBOARD)
+    assert msg and f"{BACKOFF_FAILS} run falliti consecutivi" in msg
+    assert f"nuovo tentativo fra {BACKOFF_PROBE_RUNS} run" in msg
+    # sotto la soglia non si sospende: un guasto saltuario non deve spegnere la fase
+    st2 = _store(tmp_path / "sotto", [_riga_scoreboard(i) for i in range(BACKOFF_FAILS - 1)])
+    assert sospensione(st2, SORGENTE_SCOREBOARD, FASE_SCOREBOARD) is None
+
+
+def test_le_due_fasi_espn_hanno_serie_indipendenti(tmp_path):
+    """La classifica sospesa non ferma lo scoreboard, e viceversa: la chiave è (fonte, fase)."""
+    solo_classifica = _store(tmp_path / "a", [_riga(i) for i in range(BACKOFF_FAILS)])
+    assert sospensione(solo_classifica, SORGENTE, FASE) is not None
+    assert sospensione(solo_classifica, SORGENTE_SCOREBOARD, FASE_SCOREBOARD) is None
+
+    solo_scoreboard = _store(tmp_path / "b", [_riga_scoreboard(i) for i in range(BACKOFF_FAILS)])
+    assert sospensione(solo_scoreboard, SORGENTE_SCOREBOARD, FASE_SCOREBOARD) is not None
+    assert sospensione(solo_scoreboard, SORGENTE, FASE) is None
+
+
+def test_la_raccolta_non_interroga_lo_scoreboard_quando_e_sospeso(tmp_path):
+    """Integrazione: `scoreboard_raw` non viene chiamato e il contatore della fase resta a 0.
+
+    È lo stesso contratto già provato per la classifica, ed è ciò che l'invariante [28] verifica
+    sulla pagina pubblicata («una fonte sospesa non può avere richieste»): senza questo test il
+    backoff dello scoreboard sarebbe una riga di codice non esercitata.
+    """
+    from datetime import date
+
+    from fda.collect import collect_league
+    from fda.config import league
+
+    st = _store(tmp_path, [_riga_scoreboard(i) for i in range(BACKOFF_FAILS)])
+
+    class EspnContatoTracciato(FakeEspnContato):
+        def __init__(self):
+            super().__init__()
+            self.chiamate: list[str] = []
+
+        def standings_raw(self, code):
+            self.chiamate.append("standings")
+            return super().standings_raw(code)
+
+        def scoreboard_raw(self, code, day=None):
+            self.chiamate.append("scoreboard")
+            return super().scoreboard_raw(code, day)
+
+    espn = EspnContatoTracciato()
+    rep = collect_league(league("ITA1"), st, past_days=30, future_days=30,
+                         fotmob=FakeFotMob(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+                         espn=espn, today=date(2026, 9, 6))
+    assert "scoreboard" not in espn.chiamate, "lo scoreboard sospeso non doveva essere interrogato"
+    assert espn.chiamate.count("standings") >= 1, "la classifica ha una serie pulita: resta attiva"
+    assert rep.requests["espn scoreboard"] == 0, "una fase sospesa non accende richieste"
+    assert rep.espn_events == 0
+    assert any(e.startswith("espn scoreboard: sospeso") for e in rep.errors)
+
+    righe = st.read("source_status")
+    righe = righe[pd.to_datetime(righe.run_at, utc=True) > pd.Timestamp(BASE)]
+    ultima = righe[righe.source == SORGENTE_SCOREBOARD].sort_values("run_at").iloc[-1]
+    assert ultima["requests"] == 0
+    assert is_suspended_row(ultima["error"]), "la build deve riconoscere la riga come pausa"
+    assert bool(ultima["warn"]), "degrado coperto da FotMob: AVVISO, non ERRORE rosso"
     st.close()
