@@ -972,3 +972,33 @@ fixture, 7.488 giocatori); `verify_site` **0 problemi · 93.233 controlli numeri
 baseline. La pagina di esempio `5868063` (Betis–Getafe) ora **pubblica**: 1 fatto per il Betis
 (Pellegrini/Ezzalzouli, con «Perché conta: «Ezzalzouli» è in distinta come titolare»), 2 per il
 Getafe (Bordalás, bilancio record), più il blocco «Da sapere» sullo stadio.
+
+### §9.15 — PR #48: ripristino 100% lingua italiana e risoluzione metodologica delle card vuote (2026-09-17)
+
+**Merge eseguito dall'agente su autorizzazione esplicita dell'utente** («Please merge the pull request», 2026-09-17; eccezione documentata alla policy di `00_regole_di_lavoro.md` sez. D): **PR #48 fusa in `main`** nel merge commit **`336eaacc259a05833e481720d05dd2c52fcfb30f`** alle **14:01:06Z**.
+
+Controlli pre-merge eseguiti con successo:
+- check CI `test` **pass in 1m35s** (run `35229575135`);
+- PR **MERGEABLE · CLEAN**;
+- `git status --porcelain` vuoto;
+- nessun file di dati/Parquet presente nella PR (10 file di codice, template, config, test, doc);
+- suite completa locale: **365 passed**;
+- `scripts/verify_site.py`: **0 problemi su 93.232 controlli numerici e testuali**.
+
+**Sintesi dell'intervento:**
+1. **Ripristino lingua italiana (regola E, docs/01 §6)**:
+   - Rimozione delle edizioni estere di Google News che inquinavano le schede con titoli in spagnolo, inglese, francese;
+   - `editions_for()` interroga solo l'edizione italiana (`hl=it&gl=IT`);
+   - Introdotto gate lessicale deterministico `is_italian_news()` in `news.py` e `analysis.py`: nessun titolo straniero può essere pubblicato.
+2. **Query Expansion con denominazioni italiane (`ITALIAN_SEARCH_NAMES`)**:
+   - Oltre 40 club esteri mappati sui nomi reali usati dalla stampa sportiva italiana (*Bayern Monaco*, *Betis Siviglia*, *Sporting Lisbona*, *Athletic Bilbao*, *Marsiglia*, *Lione*, *Nizza*, *Colonia*, *Stoccarda*, *PSG*), per intercettare gli articoli che i giornalisti italiani pubblicano davvero.
+3. **Feed RSS diretti della stampa sportiva italiana (`ITALIAN_DIRECT_FEEDS`)**:
+   - Integrati ANSA Calcio, Sky Sport e Sportmediaset con `parse_direct_sports_rss()` per rifornire continuamente il database di rassegna di prima mano in italiano a costo zero.
+4. **Risoluzione metodologica delle card vuote**:
+   - `news_value()` riformulato: eliminato il collo di bottiglia che scartava come "piatto" il 95% delle notizie prive di parole di tribunale/scandalo; preservati tutti i fatti di sostanza su scelte del mister, spogliatoio, società e tifo;
+   - `news_sapere()` espanso con l'intelligence interna dai dati storici: *Ex di turno* tra gli allenatori (`COACH_FORMER_CLUBS`, es. Gasperini contro l'Inter in Roma–Inter `5749681`), *Momento delicato* (3+ sconfitte consecutive), *Digiuno di vittorie* (5+ gare a secco), *Striscia positiva* (5+ gare imbattuti).
+5. **Risultati misurati (sulle 68 schede in programma)**:
+   - Schede con articoli di rassegna pubblicati: da 12 a **50 (73,5%)**;
+   - Schede con fatti «Da sapere»: da 1 a **32 (47,1%)**;
+   - **Copertura complessiva (articoli o «Da sapere»): da 12 a 62 su 68 (91,2%)**;
+   - Articoli pubblicati: da 27 a **169**, tutti al 100% in italiano verificato.
