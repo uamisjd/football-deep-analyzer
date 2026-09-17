@@ -874,3 +874,62 @@ verde in CI (dopo il fix di PR #43, che era la causa del rosso di `35129006426`)
 **sospensione** scatta solo quando la serie arriva a `BACKOFF_FAILS = 5` run e la serie è partita dal
 run `35131980208`, quindi è attesa dal **2026-09-17** (righe SOSPESO con 0 richieste e richieste
 ESPN del run da 7 a 0).
+
+### 9.14 Merge PR #46 — card «Vita del club» in produzione (2026-09-17, deroga esplicita)
+
+**Contenuto PR #46** (5 commit, testa `arena/01a0abd9`, **15 file, +1.939/−299**: il port del 17/09 più
+il debito documentale del giro precedente — `c70bdf1`, il commit delle due card del 16/09 — mai
+entrato in `main`):
+
+- **il port del prototipo approvato dall'utente** (`docs/24` §3): `sources/news.py` (12 categorie
+  multi-lingua, `GOOGLE_EDITIONS`/`editions_for()` per la seconda edizione, `news_value()` come gate
+  annuncio/piatto, filtro esteso a formazioni e squadre non prime), `collect.py` (paese della lega →
+  edizione locale; `ricerche` contate per richiesta effettiva), `site/analysis.py` (`team_news()`
+  riscritto: finestra 7 giorni senza recupero, gate del valore, punteggio freschezza/sostanza/
+  rilevanza, tetto 3 per squadra · 2 per categoria · 1 per soggetto, riserva, imbuto dichiarato;
+  `news_sapere()`), `templates/match.html` (card «Vita del club»), `scripts/verify_site.py`
+  (`[20]` riscritto su 67 pagine), `config/sources.yaml` (200 → 320 richieste);
+- **due difetti trovati misurando gli esempi reali e corretti** (commit `c25a5e6`): i titoli di
+  agenzia **in maiuscolo** sfuggivano al dedup dei soggetti (il Bologna pubblicava due volte lo
+  stesso esonero) → nuova lista `_MAIUSCOLE_NON_NOMI`; la **voce di un'altra squadra** entrava perché
+  il nome della città è anche il nome del club («Indagine a Roma: pressioni su Lotito a cedere la
+  Lazio» nella colonna della Roma) → nuova regola `altra_squadra()` e contatore `altre`, stampato in
+  card e ricalcolato dal verificatore;
+- **ripristino di `data/processed/source_status.parquet`** (commit `8f0adb7`): una prova locale di
+  raccolta, fatta quando il sandbox ancora raggiungeva la rete, aveva lasciato nel file due righe di
+  errore (`news rss` + sospensione ESPN) che non venivano da un run vero e sarebbero comparse nella
+  pagina *Stato fonti* del sito pubblicato. Il file è tornato al contenuto di `31fe448`.
+
+**Verifiche pre-merge (misurate, non presunte):** suite **360 passed**; `fda build` exit 0
+(374 pagine partita, 2.364 fixture, 7.478 giocatori); `verify_site` **exit 0 con 0 problemi ·
+92.892 controlli numerici** (`[20]` su 67 pagine, ricalcola imbuto, conteggi, categorie, riserva,
+finestra, gate e «Da sapere»); ruff **173 = baseline** (0 rilievi nuovi: le tre segnalazioni introdotte
+dal port sono state corrette, non silenziate); check `test` **pass** (1m4s, run `35163094351`);
+PR **MERGEABLE · CLEAN**; `git status --porcelain` vuoto; HEAD locale = HEAD remoto (`b1f5bf3`).
+
+**Nota di metodo — repository shallow.** Il riavvio del sandbox ha riconsegnato il repository
+**shallow** (`git rev-parse --is-shallow-repository` → `true`, `main` con **1** commit locale): un
+`git diff origin/main...HEAD` non ha merge-base, quindi le verifiche pre-merge sono state fatte sulle
+API di GitHub (`gh pr view`, `gh pr diff --name-only`, `gh pr checks`) e sul working tree della
+branch, non sul confronto locale con `main`. Il controllo che conta — **nessun file di dati nella
+PR** — è stato fatto sull'elenco dei file (`config/` + `docs/` + `scripts/` + `src/` + `tests/`, zero
+Parquet). Da rifare `git fetch --unshallow` prima dei prossimi confronti storici.
+
+**Deroga merge PR #46**: l'utente ha scritto esplicitamente «Please merge the pull request»
+(2026-09-17). In applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 46 --merge` **dopo aver verificato** check verdi, PR mergeable/CLEAN e assenza di
+lavoro residuo non committato; merge commit **`6f2bf98`** in `main` (2026-09-17T08:44:27Z), senza
+cancellare la branch (`--delete-branch` non usato: la branch è quella della sessione). Catena delle
+deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35 (2026-09-15),
+#38, #42, #44 (2026-09-16), **#46 (2026-09-17)**. *(PR #43 e #45: fuse dall'utente.)*
+
+**Run partiti col merge** (2026-09-17T08:44:31Z): `tests` **`35201313366`** e `daily`
+**`35201313177`**. Il daily è la **prima esecuzione reale della seconda edizione** in raccolta
+(244 richieste previste) ed è anche il primo build in `main` con la card nuova.
+
+**Da verificare al primo daily post-merge:** (a) gate `verify_site` verde e deploy Pages con la card
+«Vita del club» (la pagina di esempio è `partite/5868063.html`); (b) in `news.parquet` l'**arrivo
+della seconda edizione**: righe per squadra più che doppie e titoli in lingua locale — è la misura
+che l'archivio italiano non poteva dare; (c) in *Stato fonti* la riga `news:NEWS` con **≈244
+richieste** (una per campionato italiano, due per gli altri) e non più 132; (d) le colonne vuote
+della card, attese in calo rispetto alle 4.086 misurate sull'archivio italiano.
