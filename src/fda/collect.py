@@ -14,6 +14,7 @@ Ogni fonte è isolata: se una fallisce, le altre continuano e l'esito finisce in
 from __future__ import annotations
 
 import logging
+import re
 import traceback
 from dataclasses import dataclass, field, asdict
 from datetime import date, datetime, timedelta, timezone
@@ -26,7 +27,13 @@ from .config import DETAIL_WINDOW_DAYS, League, cups, leagues, season_start_year
 from .diagnostics import MAX_DETAIL, MAX_DIGEST, detail, digest, shape_of
 from .sources.espn import EspnClient, to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
-from .sources.news import NewsClient, parse_espn_news
+from .sources.news import (
+    ITALIAN_DIRECT_FEEDS,
+    ITALIAN_SEARCH_NAMES,
+    NewsClient,
+    parse_direct_sports_rss,
+    parse_espn_news,
+)
 from .sources.openmeteo import OpenMeteoClient
 from .sources.understat import UnderstatClient, to_dicts as us_dicts
 from .store import Store
@@ -472,6 +479,21 @@ def collect_news(store: Store, keys: list[str] | None = None,
             for r in fx[fx.league_id == lg.fotmob_id][["home_id", "home_name"]].drop_duplicates().itertuples(index=False):
                 ids[canonical(str(r.home_name))] = int(r.home_id)
             rows.extend(parse_espn_news(payload, ids, diag))
+    # Feed RSS diretti della stampa sportiva italiana (ANSA, Sky Sport, Sportmediaset)
+    # Aggiungono rassegna di prima mano in lingua italiana (100% gratuita e verificata)
+    name_map: dict[str, int] = {}
+    for tid, name, _lid in teams.itertuples(index=False):
+        name_map[str(name).lower()] = int(tid)
+        if str(name) in ITALIAN_SEARCH_NAMES:
+            for part in re.findall(r'"([^"]+)"', ITALIAN_SEARCH_NAMES[str(name)]):
+                name_map[part.lower()] = int(tid)
+    for source_name, feed_url in ITALIAN_DIRECT_FEEDS:
+        feed_xml = _safe(f"news direct {source_name}",
+                         lambda u=feed_url: nc.direct_feed_raw(u), report)
+        if feed_xml:
+            direct_items = parse_direct_sports_rss(feed_xml, name_map, source_name, diag)
+            if direct_items:
+                rows.extend(direct_items)
     cut = now - timedelta(days=window_days)
     fresh: list[dict[str, Any]] = []
     senza_data = fuori_finestra = 0

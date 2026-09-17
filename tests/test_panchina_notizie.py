@@ -399,6 +399,28 @@ def test_da_sapere_stadio_diverso_e_panchina_nuova(tmp_path):
     st.close()
 
 
+def test_da_sapere_ex_di_turno(tmp_path):
+    """Il blocco «Da sapere» rileva quando un tecnico affronta una sua ex squadra."""
+    st = Store(tmp_path / "ex_turno")
+    st.write("fixtures", _fixtures([
+        (10, 55, "2026", "5", KO("2026-09-20 18:00"), 1, "Roma", 2, "Inter", None, None, "scheduled", "fotmob"),
+    ]))
+    st.write("match_info", pd.DataFrame([
+        {"match_id": 10, "stadium_name": "Stadio Olimpico", "stadium_capacity": 70000},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 10, "team_id": 1, "player_id": 500, "player_name": "Gian Piero Gasperini", "role": "coach"},
+        {"match_id": 10, "team_id": 2, "player_id": 600, "player_name": "Simone Inzaghi", "role": "coach"},
+    ]))
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(10, 1, "Roma", 2, "Inter", KO("2026-09-20 18:00"))
+    ex_list = [s for s in sapere if s["titolo"] == "Ex di turno"]
+    assert len(ex_list) == 1
+    assert "Gian Piero Gasperini" in ex_list[0]["testo"]
+    assert "Inter" in ex_list[0]["testo"]
+    st.close()
+
+
 def test_bollettino_tabella_vuota_degrada(tmp_path):
     st = Store(tmp_path / "bollettino_vuoto")
     a = MatchAnalysis(st)
@@ -533,3 +555,40 @@ def test_google_news_params_italian_search_names():
     assert "Sporting Lisbona" in google_news_params("Sporting CP")["q"]
     assert "Colonia" in google_news_params("1. FC Köln")["q"]
     assert google_news_params("Inter")["q"] == '"Inter" calcio'
+
+
+def test_parse_direct_sports_rss():
+    """I feed RSS diretti attribuiscono gli articoli italiani solo ai club menzionati."""
+    from fda.sources.news import parse_direct_sports_rss
+
+    xml = """<rss version="2.0"><channel>
+    <item>
+      <title>Bologna, Palladino presenta la sfida di campionato</title>
+      <link>https://sport.sky.it/calcio/bologna</link>
+      <pubDate>Thu, 17 Sep 2026 10:00:00 GMT</pubDate>
+      <description>Il nuovo tecnico rossoblù carica la squadra</description>
+    </item>
+    <item>
+      <title>Bayern Monaco, nuovo stop muscolare per Kane</title>
+      <link>https://www.ansa.it/calcio/bayern</link>
+      <pubDate>Thu, 17 Sep 2026 11:00:00 GMT</pubDate>
+      <description>L'attaccante salta la trasferta di Bundesliga</description>
+    </item>
+    <item>
+      <title>Tennis: trionfo azzurro in Coppa Davis</title>
+      <link>https://example.com/tennis</link>
+      <pubDate>Thu, 17 Sep 2026 12:00:00 GMT</pubDate>
+      <description>Grande vittoria a Bologna nel girone</description>
+    </item>
+    </channel></rss>"""
+
+    team_map = {"bologna": 9857, "bayern monaco": 9823}
+    diag = {}
+    items = parse_direct_sports_rss(xml, team_map, "Sky Sport", diag)
+
+    assert len(items) == 3   # 2 calcio + 1 con Bologna nel desc
+    assert any(it["team_id"] == 9857 and "Palladino" in it["title"] for it in items)
+    assert any(it["team_id"] == 9823 and "Bayern Monaco" in it["title"] for it in items)
+    assert all(it["source"] == "Sky Sport" for it in items)
+    assert diag.get("direct_feed_items") == 3
+    assert diag.get("direct_feed_attribuiti") == 3

@@ -204,6 +204,17 @@ def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_
     return {"q": f"{target} {sport}", "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
 
 
+#: Feed RSS diretti delle principali testate sportive italiane.
+#: Servono a integrare la rassegna di prima mano con articoli verificati in lingua
+#: italiana (ANSA per comunicati e giustizia sportiva, Sky Sport e Sportmediaset per
+#: retroscena, dichiarazioni e spogliatoio).
+ITALIAN_DIRECT_FEEDS: tuple[tuple[str, str], ...] = (
+    ("ANSA", "https://www.ansa.it/sito/notizie/sport/calcio/calcio_rss.xml"),
+    ("Sky Sport", "https://sport.sky.it/rss/sport_calcio.xml"),
+    ("Sportmediaset", "https://www.sportmediaset.mediaset.it/rss/calcio.xml"),
+)
+
+
 # Parole chiave di contesto «interno» usate per ordinare le notizie di una squadra:
 # una notizia che le cita vale più di una cronaca generica (docs/21: niente contenuti
 # uguali per tutte le squadre).
@@ -313,6 +324,62 @@ def parse_espn_news(payload: Any, team_ids: dict[str, int],
     return out
 
 
+def parse_direct_sports_rss(
+    xml_text: str | bytes,
+    team_names: dict[str, int],
+    source_name: str,
+    diag: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse di un feed RSS diretto della stampa sportiva italiana con attribuzione squadra.
+
+    I feed (ANSA, Sky Sport, Sportmediaset) pubblicano il flusso generale del calcio.
+    Ogni articolo viene attribuito solo alla squadra di cui parla espressamente nel
+    titolo o nell'estratto (usando nomi FotMob, denominazioni italiane e alias comuni).
+    """
+    if isinstance(xml_text, bytes):
+        xml_text = xml_text.decode("utf-8", errors="replace")
+    bump(diag, "direct_feed_bytes", len(xml_text))
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        bump(diag, "direct_feed_parse_error")
+        return []
+    out: list[dict[str, Any]] = []
+    sorted_aliases = sorted(
+        ((alias, tid) for alias, tid in team_names.items() if len(alias) >= 4),
+        key=lambda pair: -len(pair[0]),
+    )
+    for item in root.iter("item"):
+        bump(diag, "direct_feed_items")
+        title = clean_text(item.findtext("title"), 200)
+        desc = clean_text(item.findtext("description"), 240)
+        if not title or not is_italian_news(title, desc):
+            continue
+        text_blob = f"{title} {desc}".lower()
+        matched_tid: int | None = None
+        for alias, tid in sorted_aliases:
+            if re.search(r"\b" + re.escape(alias) + r"\b", text_blob):
+                matched_tid = tid
+                break
+        if matched_tid is None:
+            continue
+        pub = item.findtext("pubDate") or ""
+        try:
+            dt = parsedate_to_datetime(pub).astimezone(UTC)
+        except (TypeError, ValueError):
+            dt = None
+        out.append({
+            "team_id": int(matched_tid),
+            "published_at": dt,
+            "title": title,
+            "url": (item.findtext("link") or "").strip(),
+            "source": source_name,
+            "description": desc,
+        })
+        bump(diag, "direct_feed_attribuiti")
+    return out
+
+
 class NewsClient:
     """Client delle fonti notizie (cache 12 h per squadra, rate limit da sources.yaml)."""
 
@@ -323,6 +390,10 @@ class NewsClient:
             rate_limit_s=float(cfg.get("rate_limit_s", 1.0)),
             max_requests=cfg.get("max_requests_per_run"))
         self.ttl_h = ttl_h if ttl_h is not None else float(cfg.get("cache_ttl_h", 12.0))
+
+    def direct_feed_raw(self, url: str) -> bytes:
+        """Scarica un feed RSS diretto della stampa sportiva con cache."""
+        return self.http.get_bytes(url, ttl_h=self.ttl_h, extra_headers={"Accept": RSS_ACCEPT})
 
     def team_rss_raw(self, team_name: str,
                      edition: tuple[str, str, str] = EDIZIONE_IT) -> bytes:

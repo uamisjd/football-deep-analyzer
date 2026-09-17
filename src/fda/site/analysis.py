@@ -674,6 +674,52 @@ def news_subjects(title: str, club_tokens: set[str] | None = None) -> set[str]:
     return out
 
 
+# Mappa storicamente verificata dei club allenati in precedenza dai tecnici attivi nelle 7 leghe:
+# serve a rilevare gli «Ex di turno», un fatto di contorno cruciale nella vita del club.
+COACH_FORMER_CLUBS: dict[str, set[str]] = {
+    "Gian Piero Gasperini": {"inter", "genoa", "palermo", "crotone"},
+    "Massimiliano Allegri": {"milan", "juventus", "cagliari", "sassuolo"},
+    "Antonio Conte": {"juventus", "inter", "chelsea", "tottenham", "atalanta", "bari", "siena"},
+    "Luciano Spalletti": {"roma", "inter", "napoli", "udinese", "empoli", "sampdoria"},
+    "Maurizio Sarri": {"napoli", "juventus", "chelsea", "lazio", "empoli"},
+    "Daniele De Rossi": {"roma", "spal"},
+    "Raffaele Palladino": {"monza"},
+    "Stefano Pioli": {"milan", "fiorentina", "inter", "lazio", "bologna", "chievo", "parma"},
+    "Paulo Fonseca": {"roma", "milan", "lille", "porto", "braga"},
+    "José Mourinho": {"inter", "roma", "real madrid", "chelsea", "tottenham", "manchester united", "porto"},
+    "Manuel Pellegrini": {"real madrid", "villarreal", "malaga", "manchester city", "west ham"},
+    "José Bordalás": {"valencia", "alaves", "elche"},
+    "Marcelino": {"villarreal", "valencia", "athletic club", "sevilla", "marseille"},
+    "Pep Guardiola": {"barcelona", "bayern munchen"},
+    "Luis Enrique": {"roma", "barcelona", "celta vigo"},
+    "Carlo Ancelotti": {"milan", "real madrid", "chelsea", "paris saint germain", "bayern munchen", "juventus", "napoli", "everton", "parma"},
+    "Marco Rose": {"borussia dortmund", "borussia monchengladbach", "rb leipzig"},
+    "Niko Kovac": {"eintracht frankfurt", "bayern munchen", "monaco", "vfl wolfsburg"},
+    "Graham Potter": {"brighton and hove albion", "chelsea"},
+    "Enzo Maresca": {"leicester city", "parma"},
+    "Michael Carrick": {"manchester united"},
+    "Thomas Frank": {"brentford"},
+    "Ruben Amorim": {"sporting cp", "braga", "casa pia"},
+    "Sérgio Conceição": {"porto", "nantes", "braga", "vitoria sc"},
+    "Roger Schmidt": {"benfica", "bayer leverkusen", "psv eindhoven"},
+    "Peter Bosz": {"ajax", "borussia dortmund", "bayer leverkusen", "lyon", "psv eindhoven"},
+    "Francesco Farioli": {"nice", "ajax"},
+    "Roberto De Zerbi": {"brighton and hove albion", "sassuolo"},
+    "Igor Tudor": {"lazio", "marseille", "hellas verona", "udinese"},
+    "Alberto Gilardino": {"genoa"},
+    "Claudio Ranieri": {"roma", "cagliari", "juventus", "inter", "leicester city", "chelsea", "monaco", "valencia", "atletico madrid", "fiorentina", "napoli", "sampdoria"},
+    "Ivan Juric": {"torino", "hellas verona", "genoa", "crotone"},
+    "Thiago Motta": {"bologna", "spezia", "genoa"},
+    "Vincenzo Italiano": {"fiorentina", "spezia", "trapani"},
+    "Paolo Vanoli": {"torino", "venezia"},
+    "Marco Baroni": {"lazio", "hellas verona", "lecce", "frosinone"},
+    "Davide Nicola": {"cagliari", "empoli", "salernitana", "torino", "genoa", "udinese", "crotone"},
+    "Roberto D'Aversa": {"empoli", "lecce", "sampdoria", "parma"},
+    "Fabio Pecchia": {"parma", "cremonese", "hellas verona"},
+    "Patrick Vieira": {"genoa", "crystal palace", "nice", "strasbourg"},
+}
+
+
 class MatchAnalysis:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -1645,10 +1691,20 @@ class MatchAnalysis:
                             "testo": (f"il dato di questa partita indica {stadio}{posti(capienza)}; "
                                       f"le ultime {len(st)} gare interne di {home_name} si sono "
                                       f"giocate a {abituale}{posti(cap_ab)}.")})
-        for tid, nome in ((home_id, home_name), (away_id, away_name)):
+        for tid, nome, opp_name, verbo in (
+            (home_id, home_name, away_name, "allenato"),
+            (away_id, away_name, home_name, "guidato"),
+        ):
             co = self.coach(tid, kickoff)
             if not co:
                 continue
+            cname = str(co.get("name") or "").strip()
+            former = COACH_FORMER_CLUBS.get(cname, set())
+            if former and any(f in soft_key(opp_name) for f in former):
+                out.append({
+                    "titolo": "Ex di turno",
+                    "testo": f"partita speciale per {cname}: affronta {opp_name}, squadra che ha già {verbo} in carriera.",
+                })
             gare = co.get("matches")
             try:
                 gare = int(gare)
