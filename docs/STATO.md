@@ -159,3 +159,9 @@
   «Finale da brividi» sui gol subiti dopo il 75') hanno portato le righe «Da sapere» da 227 a 295
   su 68 partite, sempre con 0 titoli non italiani. Test 371, `verify_site` 94.024 controlli, ruff
   baseline.
+- **Deroga al merge (2026-09-17):** su richiesta esplicita dell'utente («Please merge the pull
+  request»), la PR **#50** (lingua italiana garantita + card «Vita del club»; commit `cab20ec` e
+  `4053e5c`) è stata **fusa dall'agente** su `main`, in deroga alla regola D che riserva il merge
+  all'utente. Condizioni: CI verde (`test pass`), PR `MERGEABLE · CLEAN`. Registrato anche in
+  `docs/13` §«Deroga al flusso di merge». La regola generale resta: senza richiesta esplicita
+  dell'utente, l'agente apre la PR e si ferma.

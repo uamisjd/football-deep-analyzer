@@ -1002,3 +1002,15 @@ Controlli pre-merge eseguiti con successo:
    - Schede con fatti «Da sapere»: da 1 a **32 (47,1%)**;
    - **Copertura complessiva (articoli o «Da sapere»): da 12 a 62 su 68 (91,2%)**;
    - Articoli pubblicati: da 27 a **169**, tutti al 100% in italiano verificato.
+
+## Deroga al flusso di merge (2026-09-17)
+
+La regola D di `docs/00_regole_di_lavoro.md` (e il briefing di sessione) stabilisce che **il merge
+delle pull request lo fa sempre l'utente**, e che l'agente si limita a segnalare «tutto verde, è il
+momento di fare merge». Oggi l'utente ha chiesto esplicitamente «Please merge the pull request»:
+in deroga a quella regola, il merge di **PR #50** (commit `cab20ec` e `4053e5c`, branch
+`arena/01a0afc8-football-deep-analyzer` → `main`) è stato eseguito **dall'agente**, con la CI verde
+(`test pass`) e la PR in stato `MERGEABLE · CLEAN`.
+
+La deroga è registrata qui e in `docs/STATO.md`, come prescritto per le eccezioni alla regola D.
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
