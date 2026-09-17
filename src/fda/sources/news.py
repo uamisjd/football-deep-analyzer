@@ -775,25 +775,33 @@ def meaningful_news(title: str | None, description: str | None = "",
     return classify_news(title, description, source)[0] is not None
 
 
+PIATTO_NEWS = re.compile(
+    r"il punto sulla giornata|il punto sul campionato|il punto di giornata|"
+    r"il quadro della giornata|panoramica della giornata|la rassegna stampa di oggi|"
+    r"un punto m[aá]s|un punto e a capo",
+    re.IGNORECASE,
+)
+
+
 def news_value(title: str | None, description: str | None = "",
                source: str | None = None) -> str | None:
-    """Il fatto può **spostare qualcosa**? ``None`` se sì, altrimenti il motivo.
+    """Il fatto può **spostare qualcosa** o dare sostanza di club? ``None`` se sì, altrimenti il motivo.
 
-    Gate editoriale della card (docs/24 §3.5). Ritorna:
-
-    - ``"annuncio"`` — conferenza stampa, presentazione, sponsor, lavori, orari, biglietti:
-      fresco e pertinente, ma non cambia nulla di questa partita;
-    - ``"piatto"`` — nessuna frizione, nessuna decisione, nessun vincolo: la cronaca della
-      giornata;
-    - ``None`` — il titolo può entrare in card.
+    Gate editoriale della card:
+    - ``"annuncio"`` — conferenza stampa di mera logistica, presentazione sponsor, lavori allo
+      stadio, orari e biglietti;
+    - ``"piatto"`` — rassegna stampa generica, punto sul campionato privo di eventi specifici
+      o testo vuoto;
+    - ``None`` — il titolo ha valore informativo ed entra in card.
 
     Il testo esaminato è titolo + brano senza la testata (vedi :func:`strip_credit`).
     """
     text = f"{title or ''} {strip_credit(description, source)}"
-    if not text.strip():
+    clean = _strip_accents(text.lower()).strip()
+    if not clean:
         return "piatto"
     if ANNUNCIO_NEWS.search(text):
         return "annuncio"
-    if not CONSEGUENZA_NEWS.search(text):
+    if PIATTO_NEWS.search(text) or PIATTO_NEWS.search(clean):
         return "piatto"
     return None

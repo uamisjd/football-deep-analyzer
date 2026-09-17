@@ -1715,6 +1715,72 @@ class MatchAnalysis:
                 if co.get("prev_name"):
                     testo += f", ha preso il posto di {co['prev_name']}"
                 out.append({"titolo": "Panchina nuova", "testo": testo + "."})
+        # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati)
+        if not self.fixtures.empty:
+            fin = self.fixtures[self.fixtures.status == "finished"]
+            for tid, nome in ((home_id, home_name), (away_id, away_name)):
+                matches = fin[(fin.utc_kickoff < kickoff) & ((fin.home_id == tid) | (fin.away_id == tid))]
+                if len(matches) < 3:
+                    continue
+                recent = matches.sort_values("utc_kickoff").tail(8)
+                res = []
+                for _, r in recent.iterrows():
+                    is_h = (r.home_id == tid)
+                    hg, ag = r.home_goals, r.away_goals
+                    if hg is None or ag is None:
+                        continue
+                    w = (hg > ag) if is_h else (ag > hg)
+                    l = (hg < ag) if is_h else (ag < hg)
+                    res.append("W" if w else "L" if l else "D")
+                loss_streak = 0
+                for ch in reversed(res):
+                    if ch == "L":
+                        loss_streak += 1
+                    else:
+                        break
+                if loss_streak >= 3:
+                    out.append({
+                        "titolo": "Momento delicato",
+                        "testo": f"{nome} è reduce da {it_plural(loss_streak, 'sconfitta')} consecutiv{'a' if loss_streak == 1 else 'e'} in campionato.",
+                    })
+                    continue
+                winless = 0
+                d_in = l_in = 0
+                for ch in reversed(res):
+                    if ch in ("L", "D"):
+                        winless += 1
+                        if ch == "L":
+                            l_in += 1
+                        else:
+                            d_in += 1
+                    else:
+                        break
+                if winless >= 5:
+                    p_text = f"{it_plural(d_in, 'pareggio')}"
+                    s_text = f"{it_plural(l_in, 'sconfitta')}"
+                    out.append({
+                        "titolo": "Digiuno di vittorie",
+                        "testo": f"{nome} non vince da {it_plural(winless, 'gara')} di campionato ({p_text}, {s_text}).",
+                    })
+                    continue
+                unbeaten = 0
+                w_un = d_un = 0
+                for ch in reversed(res):
+                    if ch in ("W", "D"):
+                        unbeaten += 1
+                        if ch == "W":
+                            w_un += 1
+                        else:
+                            d_un += 1
+                    else:
+                        break
+                if unbeaten >= 5:
+                    v_text = f"{it_plural(w_un, 'vittoria', 'vittorie')}"
+                    p_text = f"{it_plural(d_un, 'pareggio')}"
+                    out.append({
+                        "titolo": "Striscia positiva",
+                        "testo": f"{nome} è imbattuto da {it_plural(unbeaten, 'partita')} consecutiv{'a' if unbeaten == 1 else 'e'} ({v_text}, {p_text}).",
+                    })
         return out
 
     def _news_branch(self, row: dict[str, Any]) -> str:

@@ -592,3 +592,32 @@ def test_parse_direct_sports_rss():
     assert all(it["source"] == "Sky Sport" for it in items)
     assert diag.get("direct_feed_items") == 3
     assert diag.get("direct_feed_attribuiti") == 3
+
+
+def test_da_sapere_strisce_e_digiuni(tmp_path):
+    """«Da sapere» rileva strisce di imbattibilità, serie di sconfitte e digiuni dai dati."""
+    st = Store(tmp_path / "strisce")
+    # Squadra 1 (Roma): 5 vittorie consecutive
+    # Squadra 2 (Inter): 3 sconfitte consecutive
+    rows = [
+        (1, 55, "2026", "1", KO("2026-09-01 18:00"), 1, "Roma", 3, "Milan", 2, 0, "finished", "fotmob"),
+        (2, 55, "2026", "2", KO("2026-09-04 18:00"), 4, "Lazio", 1, "Roma", 0, 1, "finished", "fotmob"),
+        (3, 55, "2026", "3", KO("2026-09-07 18:00"), 1, "Roma", 5, "Torino", 3, 1, "finished", "fotmob"),
+        (4, 55, "2026", "4", KO("2026-09-10 18:00"), 6, "Genoa", 1, "Roma", 1, 2, "finished", "fotmob"),
+        (5, 55, "2026", "5", KO("2026-09-13 18:00"), 1, "Roma", 7, "Parma", 2, 0, "finished", "fotmob"),
+        # Inter: 3 sconfitte
+        (6, 55, "2026", "3", KO("2026-09-07 18:00"), 2, "Inter", 3, "Milan", 0, 1, "finished", "fotmob"),
+        (7, 55, "2026", "4", KO("2026-09-10 18:00"), 4, "Lazio", 2, "Inter", 2, 1, "finished", "fotmob"),
+        (8, 55, "2026", "5", KO("2026-09-13 18:00"), 2, "Inter", 5, "Torino", 0, 2, "finished", "fotmob"),
+        # Gara futura
+        (9, 55, "2026", "6", KO("2026-09-17 18:00"), 1, "Roma", 2, "Inter", None, None, "scheduled", "fotmob"),
+    ]
+    st.write("fixtures", _fixtures(rows))
+    st.write("match_info", pd.DataFrame([{"match_id": 9, "stadium_name": "Olimpico"}]))
+    st.write("lineup", pd.DataFrame())
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(9, 1, "Roma", 2, "Inter", KO("2026-09-17 18:00"))
+
+    assert any(s["titolo"] == "Striscia positiva" and "Roma" in s["testo"] and "5 partite consecutive" in s["testo"] for s in sapere)
+    assert any(s["titolo"] == "Momento delicato" and "Inter" in s["testo"] and "3 sconfitte consecutive" in s["testo"] for s in sapere)
+    st.close()
