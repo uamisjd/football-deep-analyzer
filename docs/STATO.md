@@ -17,6 +17,8 @@
   - `fda build`: exit code 0 (375 match, 2.364 fixture, 7.488 giocatori);
   - `verify_site.py`: **0 problemi su 93.232 controlli numerici e testuali**.
   - Server preview attivo su porta 8080.
+- **MERGE FATTO (17/09, deroga esplicita):** l'utente ha scritto «Please merge the pull request» e l'agente ha eseguito `gh pr merge 48 --merge` dopo i controlli pre-merge (check `test` **pass** 1m35s run `35229575135`, PR **MERGEABLE · CLEAN**, `git status` vuoto, **nessun file di dati** nella PR): merge commit **`336eaacc259a05833e481720d05dd2c52fcfb30f`** in `main` alle **14:01:06Z**, deroga registrata in `docs/13` **§9.15**. Col merge partono `tests` e `daily` su `main` con il deploy del sito aggiornato e il primo collect reale con i feed diretti e la query expansion italiana.
+- **Prossimo passo:** PR di documentazione post-merge (§9.15 + STATO) e monitoraggio del primo daily su `main`.
 
 **Aggiornamento precedente:** 2026-09-17 (sessione `arena/01a0aebc`, ventiseiesimo giro) — **«Vita del club» potenziata e portata a standard di massima profondità e qualità in rigorosa lingua italiana, spremendo fonti e intelligence interna:** query expansion su Google News (`ITALIAN_SEARCH_NAMES`), feed RSS diretti della stampa sportiva italiana (`ITALIAN_DIRECT_FEEDS`: ANSA, Sky Sport, Sportmediaset) ed Ex di turno (`COACH_FORMER_CLUBS`). PR #48 aperta e verde in CI.
 
