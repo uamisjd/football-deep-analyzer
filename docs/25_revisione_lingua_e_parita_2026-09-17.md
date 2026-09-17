@@ -172,3 +172,58 @@ Trovare un difetto di lingua ha fatto rileggere anche cosa la card dichiara sull
 La regola E di `docs/00_regole_di_lavoro.md` prescriveva l'italiano per «interfaccia, report e
 documenti». Mancava la parte più visibile: **anche i messaggi dell'agente in chat, i titoli di PR e
 i messaggi di commit vanno scritti in italiano**. Aggiornata.
+
+## 9. Secondo giro (stesso giorno): la card era *scarna* e i contatori mentivano
+
+L'utente ha incollato la card «Vita del club» di **Málaga-Villarreal** com'era online: una sola voce
+per squadra, i due titoli spagnoli («Cómo afecta la detención de Rakan Al-Thani…», «Iñigo Pérez:
+"No tengo miedo al cese"») e la riga «131/110 servizio o cronaca». Due problemi distinti.
+
+### 9.1 Quella card è il sito *pubblicato*, non questo lavoro
+
+La pagina su GitHub Pages è l'ultima build **fusa su main**; la PR #50 non lo era ancora. I due
+titoli spagnoli, verificati sul `news.parquet` con il gate nuovo, danno entrambi
+`is_italian_news = False`: nel build locale non escono. Nessuna correzione era necessaria sul
+filtro: serviva dirlo, non «ri-aggiustarlo».
+
+### 9.2 I contatori attribuivano i titoli stranieri a «servizio o cronaca»
+
+Il controllo lingua veniva **dopo** l'argomento e i doppioni, così 116 titoli spagnoli finivano nel
+numero «131 servizio o cronaca»: la card dichiarava un motivo falso e nascondeva il vero. Ora la
+lingua è il **primo** vaglio dell'imbuto e ha il suo contatore (`team_news()["lingua"]`), stampato
+sia nella riga dell'imbuto sia nella frase della card vuota. Confronto sulla stessa partita:
+
+| contatore | prima | dopo |
+|---|---|---|
+| servizio o cronaca | 131 | **11** |
+| in un'altra lingua | (nascosto) | **121** |
+
+Su 132 titoli esaminati per il Málaga, 121 sono in spagnolo: ora la card lo dice.
+
+### 9.3 Due fatti in più dai nostri dati (la card non era vuota, era povera)
+
+Restano derivati dai nostri dati, in italiano, e *dopo* le righe di casa/trasferta, solo se la card
+non ha ancora raggiunto le 8 righe (`SAPERE_MAX`) — così non scalzano mai ciò che già la regge:
+
+- **Porta inviolata** — «X ha chiuso la porta in N gare su M», o «non ha ancora subito gol» quando
+  le gare senza gol subiti sono tutte. Entrano in gioco con almeno 3 gare finite e 2 porte chiuse.
+- **Finale da brividi** — «X ha subito 3 dei 4 gol dopo il 75' (il 75% di quelli presi fin qui)»:
+  gol subiti **dopo il 75'**, calcolati su `events.parquet` (`type == "Goal"`, `minute` sempre
+  presente su 974 righe). Soglia: almeno 4 gol subiti, 3 nel finale, quota ≥ 34%.
+
+L'«uomo gol» ora dice anche gli assist («Adrián Nino (1 gol e 2 assist)»), e la «panchina nuova»
+diceva «è in carica da 1 gare»: corretto in «1 gara» con `it_plural`.
+
+### 9.4 Misura dopo il secondo giro
+
+| | prima del giro | dopo il secondo giro |
+|---|---|---|
+| partite future con qualcosa nella card | 68/68 (100%) | **68/68 (100%)** |
+| notizie di stampa pubblicate | 76 | 76 |
+| righe «Da sapere» | 227 | **295** |
+| titoli non italiani pubblicati | 0 | **0** |
+
+Verifiche: **371 test** superati (2 nuovi su «Porta inviolata», «Finale da brividi» e sul tetto di
+8 righe), `fda build` uscita 0, `verify_site.py` **nessun problema · 94.024 controlli** (con i
+ricalcoli indipendenti dei due fatti nuovi: porte inviolate e gol nel finale ricalcolati su pandas
+senza passare da `analysis.py`), ruff 173 = baseline.

@@ -150,3 +150,12 @@
 - Implementato audit automatico delle schede future in `src/fda/site/audit.py`, visualizzato in `stato.html`; test suite: 49 passed.
 - **Riferimento di mercato come metro esterno** (misurato 2026-09-14, `arena/01a0a1a3`, `docs/19` §1.1): le quote di chiusura Pinnacle di tutte e 7 le leghe sono disponibili sullo **stesso mirror già in uso** per NED1/POR1. Decisione da prendere: **(A, raccomandata)** le quote restano fuori dalla pipeline e diventano solo un benchmark riproducibile in CI (`scripts/benchmark_quote.py` + job mensile) — rischio zero sul modello; **(B)** `datahub_base` esteso alle 5 grandi leghe (5 righe di config) per avere le quote dentro `history.parquet` e nel laboratorio — rompe `tests/test_models.py:79-90` che codifica la decisione opposta e lega il progetto a un repo personale. **Non è in contraddizione con la direttiva utente sulle quote** (non sono un requisito editoriale): qui non si pubblicano quote, si misura la distanza del modello dal livello di mercato.
 - **Candidato γ-sharpening RESPINTO** (2026-09-14, `docs/19` §1.3): da non ritestare con griglia stretta. Se si vuole attaccare la sottostima dei favoriti (§1.2), la strada è la **ricalibrazione del vettore 1X2** (temperatura) come candidato del laboratorio con griglia pre-registrata (§1.4, §1.2).
+- **Giro di revisione lingua, secondo atto** (2026-09-17, branch `arena/01a0afc8`, PR #50,
+  `docs/25` §9): la card «Vita del club» pubblicata su GitHub Pages non è ancora quella della PR
+  (il merge lo fa l'utente). Nel build della PR i due titoli spagnoli di Málaga-Villarreal sono
+  respinti dal gate; il contatore «in un'altra lingua» è stato aggiunto e messo **prima** degli
+  altri vagli (prima i titoli stranieri venivano contati come «servizio o cronaca»: 131 → 11, con
+  121 dichiarati come stranieri); due fatti nuovi dai nostri dati («Porta inviolata»,
+  «Finale da brividi» sui gol subiti dopo il 75') hanno portato le righe «Da sapere» da 227 a 295
+  su 68 partite, sempre con 0 titoli non italiani. Test 371, `verify_site` 94.024 controlli, ruff
+  baseline.

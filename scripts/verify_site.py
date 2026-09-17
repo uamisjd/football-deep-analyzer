@@ -48,6 +48,35 @@ def record_campo(fx: Any, team_id: int, in_casa: bool, kickoff: Any) -> tuple[in
     return vittorie, n - vittorie - sconfitte, sconfitte, n
 
 
+def porta_inviolata(fx: Any, team_id: int, kickoff: Any) -> tuple[int, int] | None:
+    """Gare senza gol subiti (ricalcolo indipendente del «Da sapere · Porta inviolata»)."""
+    fin = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)]
+    g = fin[(fin.home_id == team_id) | (fin.away_id == team_id)]
+    if len(g) < 3:
+        return None
+    subiti = g.apply(lambda r: r.away_goals if r.home_id == team_id else r.home_goals, axis=1)
+    chiuse = int((subiti == 0).sum())
+    return (chiuse, len(g)) if chiuse >= 2 else None
+
+
+def gol_tardi(ev: Any, fx: Any, team_id: int, kickoff: Any) -> tuple[int, int] | None:
+    """Gol subiti dopo il 75' (ricalcolo indipendente del «Da sapere · Finale da brividi»)."""
+    if ev.empty or "is_home" not in ev.columns:
+        return None
+    fin = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)]
+    giocate = {int(x) for x in fin.match_id}
+    e = ev[ev.match_id.isin(giocate) & (ev.type == "Goal") & ev.minute.notna()]
+    if e.empty:
+        return None
+    m = e.merge(fin[["match_id", "home_id", "away_id"]], on="match_id", how="inner")
+    m = m[m.apply(lambda r: (r.away_id if bool(r.is_home) else r.home_id) == team_id, axis=1)]
+    totale = len(m)
+    if totale < 4:
+        return None
+    tardi = int((m.minute.astype(float) >= 75).sum())
+    return (tardi, totale) if tardi >= 3 and tardi / totale >= 0.34 else None
+
+
 def capocannoniere(ps: Any, fx: Any, team_id: int, kickoff: Any) -> tuple[str, int] | None:
     """Miglior marcatore di una squadra nel campionato (ricalcolo indipendente).
 
@@ -1384,6 +1413,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
     ps19 = st.read("player_stats")
+    ev19 = st.read("events")
     # il sito giudica la lingua su titolo + estratto: qui l'estratto si rilegge dal
     # Parquet, altrimenti il controllo darebbe «non italiano» su titoli italiani brevi
     nd19 = st.read("news")
@@ -1534,6 +1564,30 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if bomber and f"{bomber[0]} ({bomber[1]} " not in testo_card:
                     fails.append(f"{pg.name}: uomo gol di {tname[:20]} assente o diverso "
                                  f"({bomber[0]} · {bomber[1]} gol attesi)")
+            # i due fatti «di dettaglio» entrano solo sotto il tetto di 8 righe: se la
+            # card non è piena e il dato c'è, la riga deve esserci
+            if testo_card.count("Da sapere ·") < 8:
+                for tid, tname in ((int(fr.home_id), str(fr.home_name)),
+                                   (int(fr.away_id), str(fr.away_name))):
+                    checks += 1
+                    pi = porta_inviolata(fx19, tid, kickoff)
+                    if pi:
+                        chiuse, n = pi
+                        riga = (f"{tname} non ha ancora subito gol in campionato "
+                                f"({n} gare)." if chiuse >= n else
+                                f"{tname} ha chiuso la porta in {chiuse} gare su {n}.")
+                        if riga not in testo_card:
+                            fails.append(f"{pg.name}: porta inviolata di {tname[:20]} "
+                                         f"assente o diversa ({chiuse}/{n})")
+                    checks += 1
+                    gt = gol_tardi(ev19, fx19, tid, kickoff)
+                    if gt:
+                        tardi, totale = gt
+                        riga = (f"{tname} ha subito {tardi} dei {totale} gol dopo il 75' "
+                                f"(il {round(100 * tardi / totale)}% di quelli presi fin qui).")
+                        if riga not in testo_card:
+                            fails.append(f"{pg.name}: gol nel finale di {tname[:20]} "
+                                         f"assenti o diversi ({tardi}/{totale})")
         blocchi = re.split(r'<p style="margin:12px 0 6px"><b>', card)[1:]
         if len(blocchi) != 2:
             fails.append(f"{pg.name}: card con {len(blocchi)} colonne invece di 2")

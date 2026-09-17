@@ -688,3 +688,59 @@ def test_da_sapere_bilancio_con_poche_gare_non_pubblica(tmp_path):
     sapere = an.news_sapere(3, 1, "Roma", 2, "Inter", KO("2026-09-09 18:00"))
     assert not any(s["titolo"] in ("Dentro le mura", "Lontano da casa") for s in sapere)
     st.close()
+
+
+def test_da_sapere_porta_e_finale(tmp_path):
+    """«Porta inviolata» e «Finale da brividi»: contano solo le gare già giocate."""
+    st = Store(tmp_path / "porta")
+    # Roma (id 1) in casa: 6 gare, 3 senza gol subiti, 4 gol subiti di cui 3 dopo il 75'
+    rows = [
+        (1, 55, "2026", "1", KO("2026-09-01 18:00"), 1, "Roma", 3, "Verona", 2, 0, "finished", "fotmob"),
+        (2, 55, "2026", "2", KO("2026-09-04 18:00"), 1, "Roma", 4, "Genoa", 1, 0, "finished", "fotmob"),
+        (3, 55, "2026", "3", KO("2026-09-07 18:00"), 1, "Roma", 5, "Milan", 3, 2, "finished", "fotmob"),
+        (4, 55, "2026", "4", KO("2026-09-10 18:00"), 1, "Roma", 6, "Inter", 0, 1, "finished", "fotmob"),
+        (5, 55, "2026", "5", KO("2026-09-13 18:00"), 1, "Roma", 7, "Lazio", 1, 1, "finished", "fotmob"),
+        (6, 55, "2026", "6", KO("2026-09-16 18:00"), 1, "Roma", 8, "Parma", 2, 0, "finished", "fotmob"),
+        (7, 55, "2026", "7", KO("2026-09-20 18:00"), 1, "Roma", 2, "Napoli", None, None, "scheduled", "fotmob"),
+    ]
+    st.write("fixtures", _fixtures(rows))
+    st.write("match_info", pd.DataFrame([{"match_id": 7, "stadium_name": "Olimpico"}]))
+    st.write("player_stats", pd.DataFrame())
+    st.write("lineup", pd.DataFrame())
+    st.write("events", pd.DataFrame([
+        # gol subiti dalla Roma: 78' e 85' (Milan), 12' (Inter), 88' (Lazio)
+        {"match_id": 3, "type": "Goal", "minute": 78, "is_home": False, "player_name": "Leao"},
+        {"match_id": 3, "type": "Goal", "minute": 85, "is_home": False, "player_name": "Gimenez"},
+        {"match_id": 4, "type": "Goal", "minute": 12, "is_home": False, "player_name": "Thuram"},
+        {"match_id": 5, "type": "Goal", "minute": 88, "is_home": False, "player_name": "Zaccagni"},
+        # un gol della Roma: non conta fra quelli subiti
+        {"match_id": 3, "type": "Goal", "minute": 8, "is_home": True, "player_name": "Dybala"},
+    ]))
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(7, 1, "Roma", 2, "Napoli", KO("2026-09-20 18:00"))
+    testi = [(s["titolo"], s["testo"]) for s in sapere]
+
+    assert ("Porta inviolata", "Roma ha chiuso la porta in 3 gare su 6.") in testi
+    assert ("Finale da brividi",
+            "Roma ha subito 3 dei 4 gol dopo il 75' (il 75% di quelli presi fin qui).") in testi
+    st.close()
+
+
+def test_da_sapere_tetto_righe(tmp_path):
+    """Oltre 8 righe la card diventa un elenco: i fatti di dettaglio non entrano."""
+    st = Store(tmp_path / "tetto")
+    rows = []
+    for i in range(1, 10):                      # 9 gare finite, Roma sempre in casa
+        rows.append((i, 55, "2026", str(i), KO(f"2026-09-0{i % 9 + 1} 18:00"), 1, "Roma",
+                     3, "Verona", 2, 0 if i % 2 else 1, "finished", "fotmob"))
+    rows.append((99, 55, "2026", "10", KO("2026-09-21 18:00"), 1, "Roma", 2, "Napoli",
+                 None, None, "scheduled", "fotmob"))
+    st.write("fixtures", _fixtures(rows))
+    st.write("match_info", pd.DataFrame([{"match_id": 99, "stadium_name": "Olimpico"}]))
+    st.write("player_stats", pd.DataFrame())
+    st.write("lineup", pd.DataFrame())
+    st.write("events", pd.DataFrame())
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(99, 1, "Roma", 2, "Napoli", KO("2026-09-21 18:00"))
+    assert len(sapere) <= an.SAPERE_MAX
+    st.close()
