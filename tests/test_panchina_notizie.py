@@ -521,3 +521,15 @@ def test_clima_squadra_serenissima_senza_segnali(mood_analysis):
     # Roma invece ha giocato il 13/09: il riposo corto È un segnale, e va pubblicato
     roma = mood_analysis.club_mood(8, 1, "Roma", KO("2026-09-16 18:00"))
     assert [r["text"] for r in roma] == ["riposo corto: 3 giorni"]
+
+
+def test_google_news_params_italian_search_names():
+    """Le query di Google News per club esteri usano i nomi comuni della stampa italiana."""
+    from fda.sources.news import google_news_params
+
+    assert "Bayern Monaco" in google_news_params("Bayern München")["q"]
+    assert "Betis" in google_news_params("Real Betis")["q"]
+    assert "Marsiglia" in google_news_params("Marseille")["q"]
+    assert "Sporting Lisbona" in google_news_params("Sporting CP")["q"]
+    assert "Colonia" in google_news_params("1. FC Köln")["q"]
+    assert google_news_params("Inter")["q"] == '"Inter" calcio'

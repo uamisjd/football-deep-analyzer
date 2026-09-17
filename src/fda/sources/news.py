@@ -130,18 +130,78 @@ def is_italian_news(title: str, description: str = "") -> bool:
     return not bool(words & _NON_ITALIAN_TOKENS)
 
 
+# Mappa di denominazioni e alias usati dalla stampa sportiva italiana per i club esteri.
+# In Italia i giornalisti scrivono "Bayern Monaco" (non "Bayern München"), "Betis Siviglia"
+# (non "Real Betis Balompié"), "Athletic Bilbao" (non "Athletic Club"), "Marsiglia"
+# (non "Marseille"), "Sporting Lisbona" (non "Sporting CP"), "PSG" (non "Paris Saint-Germain").
+ITALIAN_SEARCH_NAMES: dict[str, str] = {
+    # Bundesliga
+    "Bayern München": '("Bayern Monaco" OR "Bayern")',
+    "1. FC Köln": '("Colonia" OR "FC Koln")',
+    "VfB Stuttgart": '("Stoccarda" OR "VfB Stuttgart")',
+    "Eintracht Frankfurt": '("Eintracht Francoforte" OR "Eintracht")',
+    "Werder Bremen": '("Werder Brema" OR "Werder Bremen")',
+    "1. FC Union Berlin": '("Union Berlino" OR "Union Berlin")',
+    "Hertha BSC": '("Hertha Berlino" OR "Hertha")',
+    "Hamburger SV": '("Amburgo" OR "Hamburger SV")',
+    "Mainz 05": '("Magonza" OR "Mainz")',
+    "FC Augsburg": '("Augusta" OR "Augsburg")',
+    "SC Freiburg": '("Friburgo" OR "SC Freiburg")',
+    "Borussia Mönchengladbach": '("Borussia Monchengladbach" OR "Gladbach")',
+    "Bayer Leverkusen": '("Bayer Leverkusen" OR "Leverkusen")',
+    "Borussia Dortmund": '("Borussia Dortmund" OR "BVB")',
+    "Schalke 04": '("Schalke 04" OR "Schalke")',
+    "VfL Wolfsburg": '"Wolfsburg"',
+    "RB Leipzig": '("Lipsia" OR "RB Leipzig")',
+    # LaLiga
+    "Real Betis": '("Betis Siviglia" OR "Betis")',
+    "Athletic Club": '("Athletic Bilbao" OR "Athletic Club")',
+    "Atletico Madrid": '("Atletico Madrid" OR "Colchoneros")',
+    "Celta Vigo": '("Celta Vigo" OR "Celta")',
+    "Deportivo Alaves": '("Alaves" OR "Deportivo Alaves")',
+    "Real Sociedad": '("Real Sociedad" OR "Sociedad")',
+    "Rayo Vallecano": '"Rayo Vallecano"',
+    "Racing Santander": '"Racing Santander"',
+    # Ligue 1
+    "Marseille": '("Marsiglia" OR "Olympique Marsiglia")',
+    "Lyon": '("Lione" OR "Olympique Lione")',
+    "Nice": '("Nizza" OR "OGC Nizza")',
+    "Paris Saint-Germain": '("PSG" OR "Paris Saint-Germain")',
+    "Saint-Étienne": '("Saint-Etienne" OR "St Etienne")',
+    # Premier League
+    "Wolverhampton Wanderers": '("Wolverhampton" OR "Wolves")',
+    "Brighton & Hove Albion": '"Brighton"',
+    "West Ham United": '"West Ham"',
+    "Newcastle United": '"Newcastle"',
+    "Tottenham": '("Tottenham" OR "Spurs")',
+    "Manchester United": '("Manchester United" OR "Man United")',
+    "Manchester City": '("Manchester City" OR "Man City")',
+    "Nottingham Forest": '("Nottingham Forest" OR "Nottingham")',
+    # Eredivisie
+    "PSV Eindhoven": '("PSV Eindhoven" OR "PSV")',
+    "AZ Alkmaar": '("AZ Alkmaar" OR "AZ")',
+    "FC Twente": '"Twente"',
+    "FC Utrecht": '"Utrecht"',
+    "Ajax": '"Ajax"',
+    "Feyenoord": '"Feyenoord"',
+    # Liga Portugal
+    "Sporting CP": '("Sporting Lisbona" OR "Sporting CP")',
+    "SL Benfica": '"Benfica"',
+    "FC Porto": '"Porto"',
+    "SC Braga": '"Braga"',
+    "Vitória SC": '("Vitoria Guimaraes" OR "Vitória SC")',
+}
+
+
 def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_IT) -> dict[str, str]:
     """Parametri della ricerca RSS per squadra (**non** pre-codificati).
 
-    Difetto misurato il 2026-09-15 (docs/21 §15): la query veniva codificata con
-    ``quote()`` e poi passata a ``requests`` in ``params``, che la codificava di nuovo →
-    ``q=%2522Ajax%2522%2520calcio``: Google cercava il testo letterale ``%22Ajax%22
-    calcio`` e rispondeva un feed **valido con 0 articoli**, senza errore. Da qui il
-    sintomo «139 richieste, ok=True, zero righe». La codifica la fa il client HTTP, una
-    volta sola.
+    Usa la denominazione italiana per i club esteri (es. "Bayern Monaco", "Marsiglia",
+    "Betis Siviglia") per intercettare i titoli della stampa sportiva italiana.
     """
     hl, ceid, sport = edition
-    return {"q": f'"{team_name}" {sport}', "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
+    target = ITALIAN_SEARCH_NAMES.get(team_name, f'"{team_name}"')
+    return {"q": f"{target} {sport}", "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
 
 
 # Parole chiave di contesto «interno» usate per ordinare le notizie di una squadra:
