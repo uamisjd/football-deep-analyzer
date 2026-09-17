@@ -271,6 +271,23 @@ def keyword_score(text: str) -> int:
 
 # Ciò che non è informazione per questa card. Le voci sono misurate: ognuna compare nei
 # 6.877 titoli raccolti; la quota dell'insieme è 37,8% (docs/24 §2.1).
+#: Parole di «contratto» che da sole non dicono **chi** firma. In tedesco «Profi-Vertrag für
+#: Tim Binder bis 2030» è un contratto da professionista di un giocatore, non un movimento di
+#: panchina; la stessa ambiguità vale per `contrat`, `renewal`, `renovación`, `renovaçao`,
+#: `manager`. Restano valide quando nel titolo c'è anche una parola di panchina
+#: (`COACH_CONTEXT`): misurato il 2026-09-17 sui titoli della seconda edizione — il primo
+#: classificatore multilingua le prendeva tutte come «Panchina».
+CONTRATTO_GENERICO = frozenset({
+    "vertrag", "contrat", "contrato", "contrato hasta", "renewal", "renovación",
+    "renovacion", "renovação", "renovacao", "renueva", "manager", "contract",
+})
+
+#: Parole che dicono che si parla della panchina (o di chi la occupa).
+COACH_CONTEXT = re.compile(
+    r"trainer|coach|allenatore|mister|entrenador|t[eé]cnico|entra[iî]neur|treinador|"
+    r"tecnico|panchina|banquillo|banqueta|destituci|esonero|esonerat|sacked|entlassung|"
+    r"rescis|dimission|despido|cese", re.IGNORECASE)
+
 JUNK_NEWS = re.compile(
     r"risultati in diretta|in diretta|diretta tv|diretta streaming|live ?stream|streaming|"
     r"su dazn|dove veder|come veder|quando gioca|orario|quando (?:si )?gioca|"
@@ -460,7 +477,13 @@ TOPIC_RULES: tuple[tuple[str, str, int, re.Pattern[str]], ...] = (
     # Fuori dal campo: la grana personale di un tesserato (incidenti, guai giudiziari). Non
     # è la partita, ma pesa su chi la gioca — e la stampa locale ne parla per giorni.
     ("fuoricampo", "Fuori dal campo", 4, re.compile(
-        r"incidente\b|etilometro|alcoltest|positivo (?:ad|al|a) (?:alcol|alcool|stupefacenti|drog)|"
+        # «incidente» da solo non basta: in spagnolo e in italiano è anche l'episodio
+        # qualsiasi. Pescato il 2026-09-17 sui titoli della seconda edizione: «Pellegrini
+        # difende Ez Abde dopo l'incidente della maglia di Ceuta» finiva fra i guai
+        # giudiziari. Ora serve la forma che indica un fatto di strada o di salute.
+        r"incidente (?:stradale|d'?auto|automobilistico|mortale|in (?:auto|moto|scooter|macchina|bici))|"
+        r"incidente[^.:;]{0,40}(?:stradale|auto|moto|macchina|alcol|tossicolog)|"
+        r"etilometro|alcoltest|positivo (?:ad|al|a) (?:alcol|alcool|stupefacenti|drog)|"
         r"tossicolog\w*|"
         r"alcoltest|tasso alcolemico|stupefacenti|patente ritirata|arrestat\w*|arresto|denunciat\w*|querela|"
         r"indagato|colluttazione|rissa|"
@@ -545,8 +568,13 @@ def classify_news(title: str | None, description: str | None = "",
         return None, ""
     for key, _label, _w, rx in TOPIC_RULES:
         m = rx.search(text)
-        if m:
-            return key, m.group(0).lower()
+        if not m:
+            continue
+        prova = m.group(0).lower()
+        if key == "allenatore" and prova in CONTRATTO_GENERICO \
+                and not COACH_CONTEXT.search(text):
+            continue      # un contratto senza panchina nel titolo non è un fatto di panchina
+        return key, prova
     return None, ""
 
 
