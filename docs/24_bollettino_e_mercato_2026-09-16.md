@@ -167,6 +167,27 @@ qualunque titolo) e il filtro si applica **dopo** l'ordinamento per (punteggio, 
 applicandolo in lettura restava la voce **più vecchia** del doppione, perché le righe arrivano dal
 Parquet in ordine di data crescente.
 
+### §3.6 — Tre difetti trovati sui titoli della seconda edizione (2026-09-17)
+
+Misurata la card sull'archivio nuovo (titoli in spagnolo, tedesco, francese) sono usciti tre
+difetti, tutti corretti e coperti:
+
+1. **`incidente` da solo non basta**: «Pellegrini difende Ez Abde dopo l'**incidente della
+   maglia** di Ceuta» finiva in «Fuori dal campo». Ora servono le forme di strada o di salute
+   (`incidente stradale/d'auto/automobilistico/mortale/in auto…`, `incidente … alcol|tossicolog`);
+2. **i «contratti» generici non sono la panchina**: «FC Bayern: **Profi-Vertrag** für Tim Binder
+   bis 2030» è il contratto di un giocatore. `vertrag`, `contrat`, `renewal`, `renovación`,
+   `renovaçao`, `manager` valgono ora solo se nel titolo c'è anche una parola di panchina
+   (`CONTRATTO_GENERICO` + `COACH_CONTEXT`);
+3. **un evento, un fatto, anche fra categorie**: `un_soggetto` guarda dentro la stessa categoria,
+   quindi lo stesso episodio poteva entrare due volte — per il Betis la difesa di Pellegrini su
+   Abde compariva come «Dichiarazioni» e come «Club». Nuovo `un_evento()`: la chiave è la
+   **persona di questa partita** nominata nel titolo; il fatto in più si conta (`doppioni`) e la
+   card lo dichiara («già raccontato da un'altra voce»).
+
+Misura dopo: **58 fatti in 29 partite** con 3 doppioni fermati e 8 voci di altre squadre contate.
+Il totale scende da 65 a 58: sono i duplicati e i falsi positivi che non si vedono più.
+
 ### §3.5 — Le due edizioni, il gate del valore, la riserva e «Da sapere»
 
 Il port del prototipo approvato ha cambiato tre cose rispetto alla card di settembre:
@@ -191,8 +212,12 @@ Il port del prototipo approvato ha cambiato tre cose rispetto alla card di sette
    Maldini positivo all'etilometro: ritirata la patente», «Calcio: protesta dei tifosi del Genoa
    contro il taglio dei posti al Ferraris», «UDINESE SULLE SPINE: RINVIATA LA SENTENZA DEL
    PROCESSO».
-   Il numero misura l'**archivio attuale**, che contiene la sola edizione italiana: la seconda
-   edizione è il rifornimento previsto e si misurerà al primo run di raccolta in Actions.
+   Il numero misurava l'**archivio con la sola edizione italiana**. **Misurato il 2026-09-17**
+   al primo run di raccolta con due edizioni (`35201313177`, `news:NEWS` da 132 a **244
+   richieste**, 21.990 articoli visti, `news.parquet` da 6.877 a **16.623 righe**): la card passa
+   a **65 fatti in 32 partite** (poi **58 in 29** dopo le tre correzioni del §3.6), e per
+   Betis–Getafe pubblica — Pellegrini che difende Ezzalzouli, Bordalás che si lamenta della rosa,
+   il bilancio record del Getafe.
 
 Quattro difetti trovati proprio misurando il port (e corretti, uno con un test):
 
@@ -243,12 +268,10 @@ edizione, non un allargamento dei filtri.
 
 ## §6 — Cosa resta aperto (dichiarato, non nascosto)
 
-1. **Il volume dipende dalla seconda edizione.** Nell'archivio attuale c'è la sola edizione
-   italiana: 24 fatti pubblicati su 2.055 partite future. Il run di raccolta di Actions
-   interrogherà anche le edizioni locali (244 richieste); Google News **non è raggiungibile dal
-   sandbox** (TLS azzerato, misurato il 17/09), quindi l'effetto della seconda edizione si potrà
-   misurare solo dal primo build successivo alla raccolta. Il codice è coperto dai test con
-   titoli spagnoli.
+1. **Il volume dipende dalla seconda edizione — chiuso il 2026-09-17.** Il primo run con due
+   edizioni (`35201313177`) ha portato `news:NEWS` a **244 richieste** e l'archivio a **16.623
+   righe**: la card pubblica **58 fatti in 29 partite** (erano 24 in 12) e le colonne senza nulla
+   scendono di conseguenza. Tre difetti emersi da quei titoli sono stati corretti subito (§3.6).
 2. **Lo stadio della partita di esempio è sbagliato a monte.** Per `5868063` il dato della partita
    dice «Estadio Benito Villamarín» mentre le due gare interne precedenti del Betis sono a La
    Cartuja. Invece di inventare, la card lo **dichiara** nel blocco «Da sapere». La correzione a

@@ -222,7 +222,8 @@ _UNAVAIL_IT = {"injury": "infortunio", "suspension": "squalifica", "suspended": 
 def _no_news() -> dict[str, Any]:
     """Bollettino vuoto per le partite finite (la card non si stampa, il contesto resta tipato)."""
     return {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
-            "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "vecchie": 0, "pertinenti": 0,
+            "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0,
+            "vecchie": 0, "pertinenti": 0,
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
 
 
@@ -1349,7 +1350,7 @@ class MatchAnalysis:
         limit = self.NEWS_LIMIT if limit is None else limit
         out: dict[str, Any] = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0,
                                "scartate": 0, "oltre": 0, "annunci": 0, "piatti": 0,
-                               "altre": 0, "vecchie": 0, "pertinenti": 0,
+                               "altre": 0, "doppioni": 0, "vecchie": 0, "pertinenti": 0,
                                "finestra": days, "limite": limit,
                                "categoria_limite": self.NEWS_CATEGORY_LIMIT,
                                "riserva_limite": self.NEWS_RESERVE_LIMIT}
@@ -1546,9 +1547,33 @@ class MatchAnalysis:
                 tenute.append(v)
             return tenute
 
+        def un_evento(voci: list[dict[str, Any]]) -> list[dict[str, Any]]:
+            """Un fatto per evento, anche fra categorie diverse (docs/24 §3, regola 8).
+
+            `un_soggetto` guarda dentro la stessa categoria; ma lo stesso episodio può
+            arrivare con due categorie diverse — misurato il 2026-09-17 sui titoli della
+            seconda edizione: per il Betis la difesa di Pellegrini su Abde compariva due
+            volte, come «Dichiarazioni» e come «Club». Qui la chiave è la **persona di
+            questa partita** (allenatore o giocatore della distinta) nominata nel titolo:
+            se un fatto la nomina e un altro fatto tenuto la nomina già, è lo stesso
+            evento raccontato due volte e resta solo il primo (i fatti sono in ordine di
+            punteggio). Niente persone nel titolo = nessun vincolo.
+            """
+            tenute: list[dict[str, Any]] = []
+            gia: set[str] = set()
+            for v in voci:
+                low = str(v["title"]).lower()
+                persone = {nm for nm in entities if len(nm) >= 5 and nm in low}
+                if persone & gia:
+                    out["doppioni"] += 1
+                    continue
+                gia |= persone
+                tenute.append(v)
+            return tenute
+
         scelte.sort(key=lambda v: (-v["punteggio"], -v["published_at"].value))
-        tenute = un_soggetto(scelte)
-        out["scartate"] += len(scelte) - len(tenute)
+        tenute = un_evento(un_soggetto(scelte))
+        out["scartate"] += len(scelte) - len(tenute) - out["doppioni"]
         out["pertinenti"] = len(tenute)
         # diversità: non più di due fatti della stessa categoria — il punteggio decide quali
         # due (prima i più freschi e più sostanziosi), e chi resta fuori si conta a parte

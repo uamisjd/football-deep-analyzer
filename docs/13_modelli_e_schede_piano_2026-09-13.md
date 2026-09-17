@@ -933,3 +933,42 @@ della seconda edizione**: righe per squadra più che doppie e titoli in lingua l
 che l'archivio italiano non poteva dare; (c) in *Stato fonti* la riga `news:NEWS` con **≈244
 richieste** (una per campionato italiano, due per gli altri) e non più 132; (d) le colonne vuote
 della card, attese in calo rispetto alle 4.086 misurate sull'archivio italiano.
+
+**Esito del daily post-merge (`35201313177`, commit dati `ea6a099`, 2026-09-17T09:01Z).** Run
+**success**, job `deploy` **success**. Le quattro cose «da verificare» sono state verificate sul
+run, e due di esse hanno **cambiato il lavoro**:
+
+1. **la seconda edizione funziona in produzione.** La riga `news:NEWS` in *Stato fonti* passa da
+   **132 a 244 richieste** (esattamente 20 squadre italiane × 1 + 112 × 2), **21.990 articoli
+   visti** (erano ~10.750), **14.243 righe in finestra**: `news.parquet` passa da **6.877 a 16.623
+   righe** con una mediana di **125 righe per squadra** (min 27, max 313). Il gate `verify_site` è
+   verde e il deploy Pages è passato;
+2. **la card si riempie davvero, e con il materiale giusto**: misurata sulle 2.055 partite future
+   con l'archivio nuovo, pubblica **65 fatti in 32 partite** (erano 24 in 12 con il solo feed
+   italiano) — per Betis–Getafe: Pellegrini che difende Ezzalzouli dopo gli insulti, Bordalás che
+   si lamenta della rosa «la più corta», il bilancio record del Getafe;
+3. **tre difetti nuovi, trovati proprio in quei titoli** (e corretti: `news.py` e `analysis.py`):
+   - **`incidente` da solo non basta** — «Pellegrini difende Ez Abde dopo l'**incidente della
+     maglia** di Ceuta» finiva fra i guai giudiziari: ora la regola vuole la forma di strada o di
+     salute (`incidente stradale/d'auto/mortale/in auto…`, `incidente … alcol/tossicolog`);
+   - **i «contratti» generici non sono la panchina** — «FC Bayern: **Profi-Vertrag** für Tim Binder
+     bis 2030» (contratto di un giocatore) era classificato «Panchina»: ora `vertrag`, `contrat`,
+     `renewal`, `renovación`, `renovaçao`, `manager` valgono solo se nel titolo c'è anche una parola
+     di panchina (`CONTRATTO_GENERICO` + `COACH_CONTEXT`);
+   - **un evento, un fatto, anche fra categorie** — lo stesso episodio arrivava due volte perché
+     `un_soggetto` guarda dentro la stessa categoria: per il Betis la difesa di Pellegrini su Abde
+     compariva come «Dichiarazioni» e come «Club». Nuovo `un_evento()`: la chiave è la **persona di
+     questa partita** nominata nel titolo, e il conteggio finisce in card (`doppioni`, «già
+     raccontato da un'altra voce»), ricalcolato dal verificatore `[20]`;
+4. **misura dopo le tre correzioni** (stesso archivio nuovo): **58 fatti in 29 partite** —
+   Società 17, Panchina 16, Tifoseria 10, Spogliatoio 5, Fuori dal campo 3, Squadra 3,
+   Dichiarazioni 2, Stadio e città 1, Club 1 — con **3 doppioni** fermati e **8 voci di altre
+   squadre** contate. Il numero **scende** rispetto ai 65 perché il dedup e i due gate tolgono
+   rumore: è la stessa logica del 16/09 (meglio tre fatti veri che cinque con due doppioni).
+
+**Verifiche dopo le correzioni** (con l'archivio nuovo, `data/processed` di `main` copiato in
+loco e poi ripristinato): suite **360 passed**; `fda build` exit 0 (**375** pagine partita, 2.364
+fixture, 7.488 giocatori); `verify_site` **0 problemi · 93.233 controlli numerici**; ruff 173 =
+baseline. La pagina di esempio `5868063` (Betis–Getafe) ora **pubblica**: 1 fatto per il Betis
+(Pellegrini/Ezzalzouli, con «Perché conta: «Ezzalzouli» è in distinta come titolare»), 2 per il
+Getafe (Bordalás, bilancio record), più il blocco «Da sapere» sullo stadio.
