@@ -1338,7 +1338,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     lu19 = st.read("lineup")
     sim19 = st.read("season_sim")
     from fda.site.analysis import MatchAnalysis as _MA
-    from fda.sources.news import JUNK_NEWS, news_value
+    from fda.sources.news import JUNK_NEWS, is_italian_news, news_value
     ma19 = _MA(st)
     n_bench = 0
     if not fx19.empty and not lu19.empty and "role" in lu19.columns:
@@ -1540,6 +1540,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                  f"(«{titolo[:60]}»)")
                 if news_value(titolo) is not None:
                     fails.append(f"{pg.name}: voce senza sostanza pubblicata in card "
+                                 f"(«{titolo[:60]}»)")
+                if not is_italian_news(titolo):
+                    fails.append(f"{pg.name}: voce non in lingua italiana pubblicata in card "
                                  f"(«{titolo[:60]}»)")
             if not atteso["notizie"] and atteso["esaminate"]:
                 checks += 1

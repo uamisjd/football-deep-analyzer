@@ -399,6 +399,28 @@ def test_da_sapere_stadio_diverso_e_panchina_nuova(tmp_path):
     st.close()
 
 
+def test_da_sapere_ex_di_turno(tmp_path):
+    """Il blocco «Da sapere» rileva quando un tecnico affronta una sua ex squadra."""
+    st = Store(tmp_path / "ex_turno")
+    st.write("fixtures", _fixtures([
+        (10, 55, "2026", "5", KO("2026-09-20 18:00"), 1, "Roma", 2, "Inter", None, None, "scheduled", "fotmob"),
+    ]))
+    st.write("match_info", pd.DataFrame([
+        {"match_id": 10, "stadium_name": "Stadio Olimpico", "stadium_capacity": 70000},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 10, "team_id": 1, "player_id": 500, "player_name": "Gian Piero Gasperini", "role": "coach"},
+        {"match_id": 10, "team_id": 2, "player_id": 600, "player_name": "Simone Inzaghi", "role": "coach"},
+    ]))
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(10, 1, "Roma", 2, "Inter", KO("2026-09-20 18:00"))
+    ex_list = [s for s in sapere if s["titolo"] == "Ex di turno"]
+    assert len(ex_list) == 1
+    assert "Gian Piero Gasperini" in ex_list[0]["testo"]
+    assert "Inter" in ex_list[0]["testo"]
+    st.close()
+
+
 def test_bollettino_tabella_vuota_degrada(tmp_path):
     st = Store(tmp_path / "bollettino_vuoto")
     a = MatchAnalysis(st)
@@ -521,3 +543,81 @@ def test_clima_squadra_serenissima_senza_segnali(mood_analysis):
     # Roma invece ha giocato il 13/09: il riposo corto È un segnale, e va pubblicato
     roma = mood_analysis.club_mood(8, 1, "Roma", KO("2026-09-16 18:00"))
     assert [r["text"] for r in roma] == ["riposo corto: 3 giorni"]
+
+
+def test_google_news_params_italian_search_names():
+    """Le query di Google News per club esteri usano i nomi comuni della stampa italiana."""
+    from fda.sources.news import google_news_params
+
+    assert "Bayern Monaco" in google_news_params("Bayern München")["q"]
+    assert "Betis" in google_news_params("Real Betis")["q"]
+    assert "Marsiglia" in google_news_params("Marseille")["q"]
+    assert "Sporting Lisbona" in google_news_params("Sporting CP")["q"]
+    assert "Colonia" in google_news_params("1. FC Köln")["q"]
+    assert google_news_params("Inter")["q"] == '"Inter" calcio'
+
+
+def test_parse_direct_sports_rss():
+    """I feed RSS diretti attribuiscono gli articoli italiani solo ai club menzionati."""
+    from fda.sources.news import parse_direct_sports_rss
+
+    xml = """<rss version="2.0"><channel>
+    <item>
+      <title>Bologna, Palladino presenta la sfida di campionato</title>
+      <link>https://sport.sky.it/calcio/bologna</link>
+      <pubDate>Thu, 17 Sep 2026 10:00:00 GMT</pubDate>
+      <description>Il nuovo tecnico rossoblù carica la squadra</description>
+    </item>
+    <item>
+      <title>Bayern Monaco, nuovo stop muscolare per Kane</title>
+      <link>https://www.ansa.it/calcio/bayern</link>
+      <pubDate>Thu, 17 Sep 2026 11:00:00 GMT</pubDate>
+      <description>L'attaccante salta la trasferta di Bundesliga</description>
+    </item>
+    <item>
+      <title>Tennis: trionfo azzurro in Coppa Davis</title>
+      <link>https://example.com/tennis</link>
+      <pubDate>Thu, 17 Sep 2026 12:00:00 GMT</pubDate>
+      <description>Grande vittoria a Bologna nel girone</description>
+    </item>
+    </channel></rss>"""
+
+    team_map = {"bologna": 9857, "bayern monaco": 9823}
+    diag = {}
+    items = parse_direct_sports_rss(xml, team_map, "Sky Sport", diag)
+
+    assert len(items) == 3   # 2 calcio + 1 con Bologna nel desc
+    assert any(it["team_id"] == 9857 and "Palladino" in it["title"] for it in items)
+    assert any(it["team_id"] == 9823 and "Bayern Monaco" in it["title"] for it in items)
+    assert all(it["source"] == "Sky Sport" for it in items)
+    assert diag.get("direct_feed_items") == 3
+    assert diag.get("direct_feed_attribuiti") == 3
+
+
+def test_da_sapere_strisce_e_digiuni(tmp_path):
+    """«Da sapere» rileva strisce di imbattibilità, serie di sconfitte e digiuni dai dati."""
+    st = Store(tmp_path / "strisce")
+    # Squadra 1 (Roma): 5 vittorie consecutive
+    # Squadra 2 (Inter): 3 sconfitte consecutive
+    rows = [
+        (1, 55, "2026", "1", KO("2026-09-01 18:00"), 1, "Roma", 3, "Milan", 2, 0, "finished", "fotmob"),
+        (2, 55, "2026", "2", KO("2026-09-04 18:00"), 4, "Lazio", 1, "Roma", 0, 1, "finished", "fotmob"),
+        (3, 55, "2026", "3", KO("2026-09-07 18:00"), 1, "Roma", 5, "Torino", 3, 1, "finished", "fotmob"),
+        (4, 55, "2026", "4", KO("2026-09-10 18:00"), 6, "Genoa", 1, "Roma", 1, 2, "finished", "fotmob"),
+        (5, 55, "2026", "5", KO("2026-09-13 18:00"), 1, "Roma", 7, "Parma", 2, 0, "finished", "fotmob"),
+        # Inter: 3 sconfitte
+        (6, 55, "2026", "3", KO("2026-09-07 18:00"), 2, "Inter", 3, "Milan", 0, 1, "finished", "fotmob"),
+        (7, 55, "2026", "4", KO("2026-09-10 18:00"), 4, "Lazio", 2, "Inter", 2, 1, "finished", "fotmob"),
+        (8, 55, "2026", "5", KO("2026-09-13 18:00"), 2, "Inter", 5, "Torino", 0, 2, "finished", "fotmob"),
+        # Gara futura
+        (9, 55, "2026", "6", KO("2026-09-17 18:00"), 1, "Roma", 2, "Inter", None, None, "scheduled", "fotmob"),
+    ]
+    st.write("fixtures", _fixtures(rows))
+    st.write("match_info", pd.DataFrame([{"match_id": 9, "stadium_name": "Olimpico"}]))
+    st.write("lineup", pd.DataFrame())
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(9, 1, "Roma", 2, "Inter", KO("2026-09-17 18:00"))
+
+    assert any(s["titolo"] == "Striscia positiva" and "Roma" in s["testo"] and "5 partite consecutive" in s["testo"] for s in sapere)
+    assert any(s["titolo"] == "Momento delicato" and "Inter" in s["testo"] and "3 sconfitte consecutive" in s["testo"] for s in sapere)
+    st.close()

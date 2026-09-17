@@ -72,3 +72,42 @@ def test_plurali_italiani():
     assert it_plural(1, "pareggio") == "1 pareggio" and it_plural(12, "pareggio") == "12 pareggi"
     assert it_plural(1, "vittoria", "vittorie") == "1 vittoria"
     assert it_plural(2, "tiro", "tiri") == "2 tiri"
+
+
+def test_is_italian_news():
+    """I titoli pubblicati nelle schede devono essere rigorosamente in lingua italiana."""
+    from fda.sources.news import is_italian_news
+
+    # Titoli italiani validi: devono essere accettati
+    assert is_italian_news("Bologna, esonerato Tedesco: arriva Palladino con contratto fino al 2029")
+    assert is_italian_news("Lazio-Milan, tifosi scortano la squadra ma disertano l’Olimpico")
+    assert is_italian_news("Cuesta si gioca la panchina del Parma, pronto uno tra Nicola e D'Aversa")
+    assert is_italian_news("Real Madrid, Espì al 91’ salva Mourinho dalla contestazione")
+    assert is_italian_news("Atalanta, i conti del mercato e l'impatto che avranno sul bilancio")
+
+    # Titoli spagnoli: devono essere scartati
+    assert not is_italian_news("«La política divide y el fútbol une»: Pellegrini defiende a Ezzalzouli tras los insultos marroquíes")
+    assert not is_italian_news("José Bordalás se vuelve a quejar de la plantilla del Getafe y ensalza la del Betis")
+    assert not is_italian_news("El Getafe CF dibuja un presupuesto récord desde la Covid en 2026-2027")
+    assert not is_italian_news("Iñigo Pérez y su posible destitución del Villarreal CF")
+    assert not is_italian_news("¿Cuándo y dónde ver el partido?")
+
+    # Titoli inglesi: devono essere scartati
+    assert not is_italian_news("Carrick sack demanded now but Man Utd fans split")
+    assert not is_italian_news("Jamie Carragher: Arsenal boss Mikel Arteta becoming like Sir Alex Ferguson")
+    assert not is_italian_news("Inside Matthias Jaissle's brutal dressing room blast as Newcastle stars told learn fast")
+
+    # Titoli tedeschi: devono essere scartati
+    assert not is_italian_news("Fußball-Bundesliga: Medien – HSV verlängert Vertrag mit Trainer Polzin bis 2029")
+    assert not is_italian_news("Bayern-Star Lennart Karl entschuldigt sich für Jubel-Geste beim Elversberg-Spiel")
+
+    # Titoli francesi: devono essere scartati
+    assert not is_italian_news("Santos – Monaco : Neymar solde une dette de 2 M€ liée à Jean Lucas")
+    assert not is_italian_news("Les supporters de Marseille interdits de déplacement à Istanbul après une sanction")
+
+    # Titoli olandesi: devono essere scartati
+    assert not is_italian_news("Veelbesproken oud-Feyenoorder (31) bekent schuld na stevige crash met Lamborghini")
+    assert not is_italian_news("FC Utrecht grijpt hard in na incidenten en deelt eerste stadionverboden uit")
+
+    # Titoli portoghesi: devono essere scartati
+    assert not is_italian_news("Cérebro com mais golo e sem limites: Gabri Veiga vai estar na seleção espanhola")

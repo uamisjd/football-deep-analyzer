@@ -36,49 +36,183 @@ ESPN_NEWS = "https://site.api.espn.com/apis/site/v2/sports/soccer/{code}/news"
 RSS_ACCEPT = "application/rss+xml, application/xml;q=0.9, */*;q=0.8"
 
 
-#: Edizioni Google News per campionato: ``country`` di ``config/leagues.yaml`` →
-#: (lingua ``hl``, edizione ``ceid``, parola per «calcio» in quella lingua). La selezione
-#: della card parte da qui: con la sola edizione italiana il materiale «succoso» di club
-#: stranieri non arrivava mai (misurato il 2026-09-16: Feyenoord, Marsiglia, Betis — titoli
-#: che il feed locale porta e quello italiano ignora). Aggiungere un campionato =
-#: aggiungere una voce qui; se il paese non c'è si usa solo l'edizione italiana.
+#: Edizioni Google News per campionato: il portale adotta rigorosamente la sola
+#: edizione italiana (EDIZIONE_IT, ``hl=it&gl=IT``).
+#: Come specificato nelle regole di progetto (docs/00_regole_di_lavoro.md regola E,
+#: docs/01 §6, docs/BRIEFING_NUOVA_SESSIONE.md), l'interfaccia, i report e tutti i
+#: contenuti mostrati all'utente devono essere in lingua italiana. Interrogare edizioni
+#: locali estere (es, en, de, fr, nl, pt) produce titoli in lingua straniera che non
+#: possono essere pubblicati senza traduzione. La stampa sportiva italiana copre
+#: ampiamente anche i club internazionali (Real Madrid, City, PSG, Bayern, ecc.).
 GOOGLE_EDITIONS: dict[str, tuple[str, str, str]] = {
     "ITA": ("it", "IT:it", "calcio"),
-    "ENG": ("en", "GB:en", "football"),
-    "ESP": ("es", "ES:es", "fútbol"),
-    "GER": ("de", "DE:de", "Fußball"),
-    "FRA": ("fr", "FR:fr", "football"),
-    "NED": ("nl", "NL:nl", "voetbal"),
-    "POR": ("pt", "PT:pt", "futebol"),
+    "ENG": ("it", "IT:it", "calcio"),
+    "ESP": ("it", "IT:it", "calcio"),
+    "GER": ("it", "IT:it", "calcio"),
+    "FRA": ("it", "IT:it", "calcio"),
+    "NED": ("it", "IT:it", "calcio"),
+    "POR": ("it", "IT:it", "calcio"),
 }
-EDIZIONE_IT: tuple[str, str, str] = GOOGLE_EDITIONS["ITA"]
+EDIZIONE_IT: tuple[str, str, str] = ("it", "IT:it", "calcio")
 
 
-def editions_for(country: str | None) -> list[tuple[str, str, str]]:
-    """Edizioni da interrogare per una squadra: quella italiana più quella locale.
+def editions_for(country: str | None = None) -> list[tuple[str, str, str]]:
+    """Edizioni da interrogare per una squadra: solo quella italiana (hl=it&gl=IT).
 
-    Per i campionati italiani una richiesta sola (le due edizioni coinciderebbero);
-    per gli altri due. L'edizione italiana resta la prima: il suo feed è quello su cui la
-    card è stata misurata (docs/24 §2) e serve a non cambiare la copertura esistente.
+    Garantisce che tutto il materiale raccolto sia in lingua italiana, nel pieno rispetto
+    delle specifiche del progetto.
     """
-    locale = GOOGLE_EDITIONS.get((country or "").upper())
-    if locale is None or locale == EDIZIONE_IT:
-        return [EDIZIONE_IT]
-    return [EDIZIONE_IT, locale]
+    return [EDIZIONE_IT]
+
+
+import unicodedata
+
+
+def _strip_accents(s: str) -> str:
+    return "".join(c for c in unicodedata.normalize("NFD", s) if unicodedata.category(c) != "Mn")
+
+
+# Termini inequivocabili di lingue straniere (inglese, spagnolo, tedesco, francese,
+# olandese, portoghese), normalizzati senza accenti, che non appartengono al lessico dei
+# titoli sportivi italiani.
+_NON_ITALIAN_TOKENS = frozenset({
+    # inglese
+    "the", "with", "from", "this", "that", "after", "before", "against",
+    "between", "under", "sack", "sacked", "sacks", "boss", "bosses", "signing",
+    "signings", "striker", "strikers", "manager", "managers", "fans", "clash",
+    "clashes", "speaks", "warning", "warns", "reveals", "target", "targets",
+    "deal", "deals", "ahead", "inside", "dressing", "room", "blast", "stars",
+    "told", "learn", "fast", "demanded", "demand", "demands", "split", "becoming",
+    "like", "meeting", "decision", "penalty", "faces", "call", "revolt", "now",
+    "of", "to", "for", "by", "is", "are", "was", "were", "have", "had", "been",
+    "at", "on", "as",
+    # spagnolo
+    "el", "los", "las", "para", "por", "tras", "hacia", "sobre", "pero", "mas",
+    "y", "sus", "fichaje", "fichajes", "entrenador", "entrenadores",
+    "plantilla", "aficion", "partido", "partidos", "jornada", "jornadas",
+    "resumen", "goles", "directo", "donde", "cuando", "horario", "canales",
+    "alineaciones", "convocatoria", "banquillo", "vestuario", "reivindica",
+    "queja", "lamenta", "polemica", "presupuesto", "desafio", "empate",
+    "victoria", "destitucion", "posible", "posibles", "rueda", "prensa",
+    "hace", "tantas",
+    # tedesco
+    "der", "die", "das", "den", "dem", "des", "und", "mit", "fur", "von", "nach",
+    "beim", "trainer", "wechsel", "vertrag", "verlangerung", "sieg", "niederlage",
+    "spieltag", "aufstellung", "tore", "profis", "gegen", "verlangert", "medien",
+    "entschuldigt", "jubel",
+    # francese
+    "les", "dans", "avec", "pour", "apres", "avant", "entraineur",
+    "victoire", "defaite", "joueur", "joueurs", "selection", "billetterie",
+    "une", "dette", "liee", "interdit", "interdits", "deplacement",
+    # olandese
+    "het", "een", "voor", "naar", "speler", "spelers", "wedstrijd", "doelpunt", "eredivisie",
+    "veelbesproken", "oud", "bekent", "schuld", "stevige", "grijpt", "deelt", "stadionverboden",
+    # portoghese
+    "dos", "pelo", "pela", "pelos", "pelas", "derrota", "jogador", "jogadores",
+    "vitoria", "treinador", "selecao", "cerebro", "golo", "vai", "estar", "espanhola",
+})
+_NON_ITALIAN_CHARS = re.compile(r"[¿¡ßœ]")
+
+
+def is_italian_news(title: str, description: str = "") -> bool:
+    """Verifica che un titolo (e il suo estratto) sia in lingua italiana.
+
+    Regola E di docs/00_regole_di_lavoro.md e docs/01 §6: interfaccia e contenuti del
+    portale devono essere rigorosamente in italiano. Scarta titoli stranieri in modo
+    deterministico.
+    """
+    if not title:
+        return False
+    if _NON_ITALIAN_CHARS.search(title) or _NON_ITALIAN_CHARS.search(description):
+        return False
+    clean = _strip_accents(title.lower())
+    words = set(re.findall(r"[a-z]+", clean))
+    return not bool(words & _NON_ITALIAN_TOKENS)
+
+
+# Mappa di denominazioni e alias usati dalla stampa sportiva italiana per i club esteri.
+# In Italia i giornalisti scrivono "Bayern Monaco" (non "Bayern München"), "Betis Siviglia"
+# (non "Real Betis Balompié"), "Athletic Bilbao" (non "Athletic Club"), "Marsiglia"
+# (non "Marseille"), "Sporting Lisbona" (non "Sporting CP"), "PSG" (non "Paris Saint-Germain").
+ITALIAN_SEARCH_NAMES: dict[str, str] = {
+    # Bundesliga
+    "Bayern München": '("Bayern Monaco" OR "Bayern")',
+    "1. FC Köln": '("Colonia" OR "FC Koln")',
+    "VfB Stuttgart": '("Stoccarda" OR "VfB Stuttgart")',
+    "Eintracht Frankfurt": '("Eintracht Francoforte" OR "Eintracht")',
+    "Werder Bremen": '("Werder Brema" OR "Werder Bremen")',
+    "1. FC Union Berlin": '("Union Berlino" OR "Union Berlin")',
+    "Hertha BSC": '("Hertha Berlino" OR "Hertha")',
+    "Hamburger SV": '("Amburgo" OR "Hamburger SV")',
+    "Mainz 05": '("Magonza" OR "Mainz")',
+    "FC Augsburg": '("Augusta" OR "Augsburg")',
+    "SC Freiburg": '("Friburgo" OR "SC Freiburg")',
+    "Borussia Mönchengladbach": '("Borussia Monchengladbach" OR "Gladbach")',
+    "Bayer Leverkusen": '("Bayer Leverkusen" OR "Leverkusen")',
+    "Borussia Dortmund": '("Borussia Dortmund" OR "BVB")',
+    "Schalke 04": '("Schalke 04" OR "Schalke")',
+    "VfL Wolfsburg": '"Wolfsburg"',
+    "RB Leipzig": '("Lipsia" OR "RB Leipzig")',
+    # LaLiga
+    "Real Betis": '("Betis Siviglia" OR "Betis")',
+    "Athletic Club": '("Athletic Bilbao" OR "Athletic Club")',
+    "Atletico Madrid": '("Atletico Madrid" OR "Colchoneros")',
+    "Celta Vigo": '("Celta Vigo" OR "Celta")',
+    "Deportivo Alaves": '("Alaves" OR "Deportivo Alaves")',
+    "Real Sociedad": '("Real Sociedad" OR "Sociedad")',
+    "Rayo Vallecano": '"Rayo Vallecano"',
+    "Racing Santander": '"Racing Santander"',
+    # Ligue 1
+    "Marseille": '("Marsiglia" OR "Olympique Marsiglia")',
+    "Lyon": '("Lione" OR "Olympique Lione")',
+    "Nice": '("Nizza" OR "OGC Nizza")',
+    "Paris Saint-Germain": '("PSG" OR "Paris Saint-Germain")',
+    "Saint-Étienne": '("Saint-Etienne" OR "St Etienne")',
+    # Premier League
+    "Wolverhampton Wanderers": '("Wolverhampton" OR "Wolves")',
+    "Brighton & Hove Albion": '"Brighton"',
+    "West Ham United": '"West Ham"',
+    "Newcastle United": '"Newcastle"',
+    "Tottenham": '("Tottenham" OR "Spurs")',
+    "Manchester United": '("Manchester United" OR "Man United")',
+    "Manchester City": '("Manchester City" OR "Man City")',
+    "Nottingham Forest": '("Nottingham Forest" OR "Nottingham")',
+    # Eredivisie
+    "PSV Eindhoven": '("PSV Eindhoven" OR "PSV")',
+    "AZ Alkmaar": '("AZ Alkmaar" OR "AZ")',
+    "FC Twente": '"Twente"',
+    "FC Utrecht": '"Utrecht"',
+    "Ajax": '"Ajax"',
+    "Feyenoord": '"Feyenoord"',
+    # Liga Portugal
+    "Sporting CP": '("Sporting Lisbona" OR "Sporting CP")',
+    "SL Benfica": '"Benfica"',
+    "FC Porto": '"Porto"',
+    "SC Braga": '"Braga"',
+    "Vitória SC": '("Vitoria Guimaraes" OR "Vitória SC")',
+}
 
 
 def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_IT) -> dict[str, str]:
     """Parametri della ricerca RSS per squadra (**non** pre-codificati).
 
-    Difetto misurato il 2026-09-15 (docs/21 §15): la query veniva codificata con
-    ``quote()`` e poi passata a ``requests`` in ``params``, che la codificava di nuovo →
-    ``q=%2522Ajax%2522%2520calcio``: Google cercava il testo letterale ``%22Ajax%22
-    calcio`` e rispondeva un feed **valido con 0 articoli**, senza errore. Da qui il
-    sintomo «139 richieste, ok=True, zero righe». La codifica la fa il client HTTP, una
-    volta sola.
+    Usa la denominazione italiana per i club esteri (es. "Bayern Monaco", "Marsiglia",
+    "Betis Siviglia") per intercettare i titoli della stampa sportiva italiana.
     """
     hl, ceid, sport = edition
-    return {"q": f'"{team_name}" {sport}', "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
+    target = ITALIAN_SEARCH_NAMES.get(team_name, f'"{team_name}"')
+    return {"q": f"{target} {sport}", "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
+
+
+#: Feed RSS diretti delle principali testate sportive italiane.
+#: Servono a integrare la rassegna di prima mano con articoli verificati in lingua
+#: italiana (ANSA per comunicati e giustizia sportiva, Sky Sport e Sportmediaset per
+#: retroscena, dichiarazioni e spogliatoio).
+ITALIAN_DIRECT_FEEDS: tuple[tuple[str, str], ...] = (
+    ("ANSA", "https://www.ansa.it/sito/notizie/sport/calcio/calcio_rss.xml"),
+    ("Sky Sport", "https://sport.sky.it/rss/sport_calcio.xml"),
+    ("Sportmediaset", "https://www.sportmediaset.mediaset.it/rss/calcio.xml"),
+)
 
 
 # Parole chiave di contesto «interno» usate per ordinare le notizie di una squadra:
@@ -190,6 +324,62 @@ def parse_espn_news(payload: Any, team_ids: dict[str, int],
     return out
 
 
+def parse_direct_sports_rss(
+    xml_text: str | bytes,
+    team_names: dict[str, int],
+    source_name: str,
+    diag: dict[str, Any] | None = None,
+) -> list[dict[str, Any]]:
+    """Parse di un feed RSS diretto della stampa sportiva italiana con attribuzione squadra.
+
+    I feed (ANSA, Sky Sport, Sportmediaset) pubblicano il flusso generale del calcio.
+    Ogni articolo viene attribuito solo alla squadra di cui parla espressamente nel
+    titolo o nell'estratto (usando nomi FotMob, denominazioni italiane e alias comuni).
+    """
+    if isinstance(xml_text, bytes):
+        xml_text = xml_text.decode("utf-8", errors="replace")
+    bump(diag, "direct_feed_bytes", len(xml_text))
+    try:
+        root = ET.fromstring(xml_text)
+    except ET.ParseError:
+        bump(diag, "direct_feed_parse_error")
+        return []
+    out: list[dict[str, Any]] = []
+    sorted_aliases = sorted(
+        ((alias, tid) for alias, tid in team_names.items() if len(alias) >= 4),
+        key=lambda pair: -len(pair[0]),
+    )
+    for item in root.iter("item"):
+        bump(diag, "direct_feed_items")
+        title = clean_text(item.findtext("title"), 200)
+        desc = clean_text(item.findtext("description"), 240)
+        if not title or not is_italian_news(title, desc):
+            continue
+        text_blob = f"{title} {desc}".lower()
+        matched_tid: int | None = None
+        for alias, tid in sorted_aliases:
+            if re.search(r"\b" + re.escape(alias) + r"\b", text_blob):
+                matched_tid = tid
+                break
+        if matched_tid is None:
+            continue
+        pub = item.findtext("pubDate") or ""
+        try:
+            dt = parsedate_to_datetime(pub).astimezone(UTC)
+        except (TypeError, ValueError):
+            dt = None
+        out.append({
+            "team_id": int(matched_tid),
+            "published_at": dt,
+            "title": title,
+            "url": (item.findtext("link") or "").strip(),
+            "source": source_name,
+            "description": desc,
+        })
+        bump(diag, "direct_feed_attribuiti")
+    return out
+
+
 class NewsClient:
     """Client delle fonti notizie (cache 12 h per squadra, rate limit da sources.yaml)."""
 
@@ -201,6 +391,10 @@ class NewsClient:
             max_requests=cfg.get("max_requests_per_run"))
         self.ttl_h = ttl_h if ttl_h is not None else float(cfg.get("cache_ttl_h", 12.0))
 
+    def direct_feed_raw(self, url: str) -> bytes:
+        """Scarica un feed RSS diretto della stampa sportiva con cache."""
+        return self.http.get_bytes(url, ttl_h=self.ttl_h, extra_headers={"Accept": RSS_ACCEPT})
+
     def team_rss_raw(self, team_name: str,
                      edition: tuple[str, str, str] = EDIZIONE_IT) -> bytes:
         return self.http.get_bytes(
@@ -210,11 +404,8 @@ class NewsClient:
     def team_news(self, team_id: int, team_name: str,
                   diag: dict[str, Any] | None = None,
                   country: str | None = None) -> list[dict[str, Any]]:
-        """Titoli della squadra: edizione italiana + edizione locale del campionato.
+        """Titoli della squadra dall'edizione italiana di Google News.
 
-        ``country`` è il campo ``country`` della lega (``ITA``, ``ESP``, …). Per i
-        campionati italiani una richiesta sola; per gli altri due, e la seconda porta il
-        materiale di vita del club che la stampa italiana non raccoglie (docs/24 §3.5).
         Ogni richiesta è contata in ``diag["ricerche"]``: il numero sul report deve
         corrispondere alle richieste vere, non alle squadre.
         """
@@ -584,25 +775,33 @@ def meaningful_news(title: str | None, description: str | None = "",
     return classify_news(title, description, source)[0] is not None
 
 
+PIATTO_NEWS = re.compile(
+    r"il punto sulla giornata|il punto sul campionato|il punto di giornata|"
+    r"il quadro della giornata|panoramica della giornata|la rassegna stampa di oggi|"
+    r"un punto m[aá]s|un punto e a capo",
+    re.IGNORECASE,
+)
+
+
 def news_value(title: str | None, description: str | None = "",
                source: str | None = None) -> str | None:
-    """Il fatto può **spostare qualcosa**? ``None`` se sì, altrimenti il motivo.
+    """Il fatto può **spostare qualcosa** o dare sostanza di club? ``None`` se sì, altrimenti il motivo.
 
-    Gate editoriale della card (docs/24 §3.5). Ritorna:
-
-    - ``"annuncio"`` — conferenza stampa, presentazione, sponsor, lavori, orari, biglietti:
-      fresco e pertinente, ma non cambia nulla di questa partita;
-    - ``"piatto"`` — nessuna frizione, nessuna decisione, nessun vincolo: la cronaca della
-      giornata;
-    - ``None`` — il titolo può entrare in card.
+    Gate editoriale della card:
+    - ``"annuncio"`` — conferenza stampa di mera logistica, presentazione sponsor, lavori allo
+      stadio, orari e biglietti;
+    - ``"piatto"`` — rassegna stampa generica, punto sul campionato privo di eventi specifici
+      o testo vuoto;
+    - ``None`` — il titolo ha valore informativo ed entra in card.
 
     Il testo esaminato è titolo + brano senza la testata (vedi :func:`strip_credit`).
     """
     text = f"{title or ''} {strip_credit(description, source)}"
-    if not text.strip():
+    clean = _strip_accents(text.lower()).strip()
+    if not clean:
         return "piatto"
     if ANNUNCIO_NEWS.search(text):
         return "annuncio"
-    if not CONSEGUENZA_NEWS.search(text):
+    if PIATTO_NEWS.search(text) or PIATTO_NEWS.search(clean):
         return "piatto"
     return None

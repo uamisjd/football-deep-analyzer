@@ -56,11 +56,9 @@ oddsapi:
   snapshots_per_day: 2
 
 news:
-  # Google News RSS per squadra + ESPN news di lega (docs/21, P1-5).
+  # Google News RSS per squadra (edizione italiana) + ESPN news di lega (docs/21, P1-5).
   # Cache 12 h: con 5 run/giorno solo ~2 fetch reali per squadra al giorno.
-  # Il tetto copre le **due** edizioni per squadra dei campionati stranieri (italiana +
-  # locale, docs/24 §3.5): 20 squadre italiane × 1 + 112 straniere × 2 = 244 richieste.
-  # Con il vecchio tetto di 200 le ultime leghe restavano senza edizione locale.
+  # Il tetto copre una richiesta per squadra: 132 squadre × 1 = 132 richieste.
   rate_limit_s: 1.0
-  max_requests_per_run: 320
+  max_requests_per_run: 200
   cache_ttl_h: 12

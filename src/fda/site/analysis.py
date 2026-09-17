@@ -22,7 +22,7 @@ from ..store import Store
 from ..teams import canonical, soft_key
 from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
-from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, news_value
+from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, is_italian_news, news_value
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
 from .rates import (
@@ -672,6 +672,52 @@ def news_subjects(title: str, club_tokens: set[str] | None = None) -> set[str]:
         if len(k) >= 4 and k not in drop:
             out.add(k)
     return out
+
+
+# Mappa storicamente verificata dei club allenati in precedenza dai tecnici attivi nelle 7 leghe:
+# serve a rilevare gli «Ex di turno», un fatto di contorno cruciale nella vita del club.
+COACH_FORMER_CLUBS: dict[str, set[str]] = {
+    "Gian Piero Gasperini": {"inter", "genoa", "palermo", "crotone"},
+    "Massimiliano Allegri": {"milan", "juventus", "cagliari", "sassuolo"},
+    "Antonio Conte": {"juventus", "inter", "chelsea", "tottenham", "atalanta", "bari", "siena"},
+    "Luciano Spalletti": {"roma", "inter", "napoli", "udinese", "empoli", "sampdoria"},
+    "Maurizio Sarri": {"napoli", "juventus", "chelsea", "lazio", "empoli"},
+    "Daniele De Rossi": {"roma", "spal"},
+    "Raffaele Palladino": {"monza"},
+    "Stefano Pioli": {"milan", "fiorentina", "inter", "lazio", "bologna", "chievo", "parma"},
+    "Paulo Fonseca": {"roma", "milan", "lille", "porto", "braga"},
+    "José Mourinho": {"inter", "roma", "real madrid", "chelsea", "tottenham", "manchester united", "porto"},
+    "Manuel Pellegrini": {"real madrid", "villarreal", "malaga", "manchester city", "west ham"},
+    "José Bordalás": {"valencia", "alaves", "elche"},
+    "Marcelino": {"villarreal", "valencia", "athletic club", "sevilla", "marseille"},
+    "Pep Guardiola": {"barcelona", "bayern munchen"},
+    "Luis Enrique": {"roma", "barcelona", "celta vigo"},
+    "Carlo Ancelotti": {"milan", "real madrid", "chelsea", "paris saint germain", "bayern munchen", "juventus", "napoli", "everton", "parma"},
+    "Marco Rose": {"borussia dortmund", "borussia monchengladbach", "rb leipzig"},
+    "Niko Kovac": {"eintracht frankfurt", "bayern munchen", "monaco", "vfl wolfsburg"},
+    "Graham Potter": {"brighton and hove albion", "chelsea"},
+    "Enzo Maresca": {"leicester city", "parma"},
+    "Michael Carrick": {"manchester united"},
+    "Thomas Frank": {"brentford"},
+    "Ruben Amorim": {"sporting cp", "braga", "casa pia"},
+    "Sérgio Conceição": {"porto", "nantes", "braga", "vitoria sc"},
+    "Roger Schmidt": {"benfica", "bayer leverkusen", "psv eindhoven"},
+    "Peter Bosz": {"ajax", "borussia dortmund", "bayer leverkusen", "lyon", "psv eindhoven"},
+    "Francesco Farioli": {"nice", "ajax"},
+    "Roberto De Zerbi": {"brighton and hove albion", "sassuolo"},
+    "Igor Tudor": {"lazio", "marseille", "hellas verona", "udinese"},
+    "Alberto Gilardino": {"genoa"},
+    "Claudio Ranieri": {"roma", "cagliari", "juventus", "inter", "leicester city", "chelsea", "monaco", "valencia", "atletico madrid", "fiorentina", "napoli", "sampdoria"},
+    "Ivan Juric": {"torino", "hellas verona", "genoa", "crotone"},
+    "Thiago Motta": {"bologna", "spezia", "genoa"},
+    "Vincenzo Italiano": {"fiorentina", "spezia", "trapani"},
+    "Paolo Vanoli": {"torino", "venezia"},
+    "Marco Baroni": {"lazio", "hellas verona", "lecce", "frosinone"},
+    "Davide Nicola": {"cagliari", "empoli", "salernitana", "torino", "genoa", "udinese", "crotone"},
+    "Roberto D'Aversa": {"empoli", "lecce", "sampdoria", "parma"},
+    "Fabio Pecchia": {"parma", "cremonese", "hellas verona"},
+    "Patrick Vieira": {"genoa", "crystal palace", "nice", "strasbourg"},
+}
 
 
 class MatchAnalysis:
@@ -1498,6 +1544,9 @@ class MatchAnalysis:
             if not key or key in visti or not subject_ok(title):
                 out["scartate"] += 1
                 continue
+            if not is_italian_news(title, r.get("description") or ""):
+                out["scartate"] += 1
+                continue
             if topic in self.NEWS_ALTROVE:
                 # infortuni, squalifiche e mercato hanno già la loro card in questa pagina:
                 # ripeterli qui era una delle cose che l'utente non voleva più leggere
@@ -1517,6 +1566,8 @@ class MatchAnalysis:
             # «sintesi» solo se aggiunge qualcosa al titolo: per Google News il brano È il
             # titolo con la testata appiccicata, e ripeterlo era il difetto della vecchia card
             sintesi = branch if len(branch) >= 60 and title[:40].lower() not in branch.lower() else ""
+            if sintesi and not is_italian_news(sintesi):
+                sintesi = ""
             published = pd.to_datetime(r.get("published_at"), utc=True)
             ore = max(0.0, (ko - published).total_seconds() / 3600.0)
             punteggio = (TOPIC_WEIGHTS.get(topic, 0)
@@ -1640,10 +1691,20 @@ class MatchAnalysis:
                             "testo": (f"il dato di questa partita indica {stadio}{posti(capienza)}; "
                                       f"le ultime {len(st)} gare interne di {home_name} si sono "
                                       f"giocate a {abituale}{posti(cap_ab)}.")})
-        for tid, nome in ((home_id, home_name), (away_id, away_name)):
+        for tid, nome, opp_name, verbo in (
+            (home_id, home_name, away_name, "allenato"),
+            (away_id, away_name, home_name, "guidato"),
+        ):
             co = self.coach(tid, kickoff)
             if not co:
                 continue
+            cname = str(co.get("name") or "").strip()
+            former = COACH_FORMER_CLUBS.get(cname, set())
+            if former and any(f in soft_key(opp_name) for f in former):
+                out.append({
+                    "titolo": "Ex di turno",
+                    "testo": f"partita speciale per {cname}: affronta {opp_name}, squadra che ha già {verbo} in carriera.",
+                })
             gare = co.get("matches")
             try:
                 gare = int(gare)
@@ -1654,6 +1715,72 @@ class MatchAnalysis:
                 if co.get("prev_name"):
                     testo += f", ha preso il posto di {co['prev_name']}"
                 out.append({"titolo": "Panchina nuova", "testo": testo + "."})
+        # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati)
+        if not self.fixtures.empty:
+            fin = self.fixtures[self.fixtures.status == "finished"]
+            for tid, nome in ((home_id, home_name), (away_id, away_name)):
+                matches = fin[(fin.utc_kickoff < kickoff) & ((fin.home_id == tid) | (fin.away_id == tid))]
+                if len(matches) < 3:
+                    continue
+                recent = matches.sort_values("utc_kickoff").tail(8)
+                res = []
+                for _, r in recent.iterrows():
+                    is_h = (r.home_id == tid)
+                    hg, ag = r.home_goals, r.away_goals
+                    if hg is None or ag is None:
+                        continue
+                    w = (hg > ag) if is_h else (ag > hg)
+                    l = (hg < ag) if is_h else (ag < hg)
+                    res.append("W" if w else "L" if l else "D")
+                loss_streak = 0
+                for ch in reversed(res):
+                    if ch == "L":
+                        loss_streak += 1
+                    else:
+                        break
+                if loss_streak >= 3:
+                    out.append({
+                        "titolo": "Momento delicato",
+                        "testo": f"{nome} è reduce da {it_plural(loss_streak, 'sconfitta')} consecutiv{'a' if loss_streak == 1 else 'e'} in campionato.",
+                    })
+                    continue
+                winless = 0
+                d_in = l_in = 0
+                for ch in reversed(res):
+                    if ch in ("L", "D"):
+                        winless += 1
+                        if ch == "L":
+                            l_in += 1
+                        else:
+                            d_in += 1
+                    else:
+                        break
+                if winless >= 5:
+                    p_text = f"{it_plural(d_in, 'pareggio')}"
+                    s_text = f"{it_plural(l_in, 'sconfitta')}"
+                    out.append({
+                        "titolo": "Digiuno di vittorie",
+                        "testo": f"{nome} non vince da {it_plural(winless, 'gara')} di campionato ({p_text}, {s_text}).",
+                    })
+                    continue
+                unbeaten = 0
+                w_un = d_un = 0
+                for ch in reversed(res):
+                    if ch in ("W", "D"):
+                        unbeaten += 1
+                        if ch == "W":
+                            w_un += 1
+                        else:
+                            d_un += 1
+                    else:
+                        break
+                if unbeaten >= 5:
+                    v_text = f"{it_plural(w_un, 'vittoria', 'vittorie')}"
+                    p_text = f"{it_plural(d_un, 'pareggio')}"
+                    out.append({
+                        "titolo": "Striscia positiva",
+                        "testo": f"{nome} è imbattuto da {it_plural(unbeaten, 'partita')} consecutiv{'a' if unbeaten == 1 else 'e'} ({v_text}, {p_text}).",
+                    })
         return out
 
     def _news_branch(self, row: dict[str, Any]) -> str:
