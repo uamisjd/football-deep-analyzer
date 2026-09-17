@@ -111,3 +111,82 @@ def test_is_italian_news():
 
     # Titoli portoghesi: devono essere scartati
     assert not is_italian_news("Cérebro com mais golo e sem limites: Gabri Veiga vai estar na seleção espanhola")
+
+
+def test_is_italian_news_casi_reali_2026_09_17():
+    """I 61 titoli stranieri davvero pubblicati il 17/09/2026 (docs/25 §2).
+
+    Erano passati dal vecchio filtro a liste di parole perché non contenevano nessuna
+    parola-chiave straniera: il portale dichiarava «titoli in lingua italiana» e
+    pubblicava olandese, tedesco, francese, spagnolo, portoghese e inglese. Ogni riga
+    qui sotto è una voce vista su una scheda pubblicata.
+    """
+    from fda.sources.news import is_italian_news
+
+    stranieri = [
+        # olandese
+        "FC Utrecht Maatjes officieel van start in Stadion Galgenwaard",
+        "Voormalig FC Twente-ster Bryan Ruiz begint aan eerste klus als hoofdtrainer",
+        "Ajax-coach Míchel hoopt op komst Bissouma: 'Heeft veel kwaliteiten'",
+        # inglese
+        "Bournemouth left-back Adrien Truffert named in Zinédine Zidane’s first extended France squad",
+        "Mark Walter sells stake in Chelsea FC amid investigation",
+        "When will Man United’s £2bn new stadium open? Latest news amid ‘opening date’ reports",
+        "Rodri a player 'we cannot replace,' says Man City's Hugo Viana",
+        "Nottingham Forest stadium expansion plans approved",
+        "Hull FC suspend prop forward Sam Lisone pending investigation",
+        "7pm BST: Live U21s football - watch West Ham United v Liverpool",
+        # francese
+        "Auxerre - Still : « C'est peut-être romantique, mais... » : Sports - Orange - Sports",
+        "Stade Brestois. Mama Baldé, opéré du pouce, espéré contre Auxerre",
+        "VIDÉO. FC Lorient. Ibrahima Baldé : « Forcément content de mon match »",
+        "Ligue 1. Le coordinateur sportif Kader Mangane sur le départ du Racing Club de Strasbourg",
+        "« Genesio ne démissionnera pas » : le message qui circule à Marseille",
+        "L’OGC Nice vers un triste record…",
+        # spagnolo
+        "Cómo afecta la detención de Rakan Al-Thani al futuro del Málaga CF",
+        "Iñigo Pérez: \"No tengo miedo al cese\"",
+        # tedesco
+        "Trainerwechsel bei Leverkusen-Gegner",
+        "Eintracht Frankfurt: Adi Hütters Knallhart-Kurs – Kader, System, Talente",
+        "Nationalmannschaft: Jürgen Klopp setzt auf Felix Nmecha im DFB-Team",
+        "WERDERFRAUEN: Nordderby erneut im Weserstadion",
+        # portoghese
+        "Petrasso: «Limpámos a nossa imagem»",
+        "FC Porto tem nova academia de futebol no Paquistão",
+        "«Agora é fácil falar!» Marco Silva analisa triunfo histórico do Benfica e visita ao FC Porto",
+        "Manuel Mendonça: «Demonstração muito grande»",
+    ]
+    for t in stranieri:
+        assert not is_italian_news(t), f"titolo straniero pubblicato: {t}"
+
+    # Gli italiani dello stesso giorno devono restare: compresi i titoli urlati, che
+    # il rilevatore statistico da solo legge come inglese o portoghese
+    italiani = [
+        "NAPOLI, LOBOTKA E IL RINNOVO: IL FUTURO DEL CENTROCAMPISTA RESTA UN REBUS",
+        "FIORENTINA-NAPOLI, 300 TIFOSI AZZURRI AL FRANCHI: LA SQUADRA NON SARÀ SOLA",
+        "FIGC * FEDERAZIONE ITALIANA GIUOCO CALCIO: «SERIE A WOMEN, DERBY ROMA SABATO 3 OTTOBRE ORE 18, MILAN-JUVENTUS DOMENICA 4",
+        "Pellegrini difende Ez Abde dopo l'incidente della maglia di Ceuta: \"Il calcio non deve essere motivo di divisione, ma di",
+        "Il Lens caccia Toppmöller: le motivazioni dietro l'esonero",
+        "Newcastle, Jaissle: il pesante ko contro il Leeds è «difficile da digerire»",
+        "Tottenham, De Zerbi nei guai: spesi 300 milioni ma la squadra non segna più",
+        "Lo stadio del Levante si allaga dopo il diluvio: il tunnel sommerso dall'acqua, non si può giocare",
+        "Ex viola, Gosens: «Il calcio è follia, mi hanno tagliato all'improvviso. Grato allo Schalke»",
+        "Goncalo Ramos: \"Se segno non esulto perché il Benfica è la mia casa\". Sulla maglia n° 9, Ibra, Modric...",
+    ]
+    for t in italiani:
+        assert is_italian_news(t), f"titolo italiano scartato: {t}"
+
+
+def test_is_italian_news_senza_grammatica_non_pubblica():
+    """Un titolo di soli nomi propri non dichiara nessuna lingua: non si pubblica.
+
+    «Getafe vs Deportivo A Coruña» e «Nottingham Forest vs Leeds United» non hanno
+    una sola parola italiana: pubblicarli come italiani era un azzardo, e sono di
+    norma pagine di «quote e pronostici» o di diretta, che la card esclude comunque.
+    """
+    from fda.sources.news import is_italian_news
+
+    assert not is_italian_news("Getafe vs Deportivo A Coruña")
+    assert not is_italian_news("Nottingham Forest vs Leeds United")
+    assert is_italian_news("Bologna-Torino, Orsolini prova il recupero")

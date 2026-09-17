@@ -1781,7 +1781,121 @@ class MatchAnalysis:
                         "titolo": "Striscia positiva",
                         "testo": f"{nome} è imbattuto da {it_plural(unbeaten, 'partita')} consecutiv{'a' if unbeaten == 1 else 'e'} ({v_text}, {p_text}).",
                     })
+        # Fatti di rendimento dentro le proprie mura (docs/25 §4): servono quando la
+        # rassegna stampa in italiano non copre la squadra. Senza queste due righe, con
+        # il filtro lingua del 17/09/2026 la card restava vuota nel 78% delle partite di
+        # Ligue 1 e nel 67% di quelle di Bundesliga (misurato su 68 schede): la parità
+        # fra le 7 leghe non può dipendere da quanto la stampa italiana scrive di Le
+        # Havre o di Paderborn. Qui i numeri vengono dai nostri dati e valgono per tutti.
+        for tid, nome, in_casa in ((home_id, home_name, True), (away_id, away_name, False)):
+            record = self._sapere_campo(tid, nome, in_casa, kickoff)
+            if record:
+                out.append(record)
+            bomber = self._sapere_bomber(match_id, tid, nome, kickoff)
+            if bomber:
+                out.append(bomber)
         return out
+
+    def _gare_finite(self, kickoff: datetime) -> Any:
+        """Gare di campionato già giocate prima del calcio d'inizio (stagione corrente)."""
+        if self.fixtures.empty or "status" not in self.fixtures.columns:
+            return self.fixtures
+        fin = self.fixtures[(self.fixtures.status == "finished")
+                            & (self.fixtures.utc_kickoff < kickoff)]
+        return fin
+
+    def _sapere_campo(self, team_id: int, nome: str, in_casa: bool,
+                      kickoff: datetime) -> dict[str, str] | None:
+        """«Dentro le mura» / «Lontano da casa»: il rendimento nel proprio campo.
+
+        Il «Confronto di stagione» dice quanto vale la squadra **in media**; qui si
+        separa ciò che ha fatto dove si gioca questa partita: il vantaggio del campo
+        non è una voce di colore, è metà del punteggio di una squadra di metà
+        classifica. Pubblicato solo con almeno **3** gare giocate in quel ruolo:
+        con una o due il bilancio è un caso, non un fatto.
+        """
+        fin = self._gare_finite(kickoff)
+        if fin.empty:
+            return None
+        colonna = "home_id" if in_casa else "away_id"
+        gare = fin[fin[colonna] == team_id]
+        v = p = s = 0
+        for _, r in gare.iterrows():
+            hg, ag = r.home_goals, r.away_goals
+            if hg is None or ag is None or pd.isna(hg) or pd.isna(ag):
+                continue
+            fatti, subiti = (hg, ag) if in_casa else (ag, hg)
+            if fatti > subiti:
+                v += 1
+            elif fatti < subiti:
+                s += 1
+            else:
+                p += 1
+        n = v + p + s
+        if n < 3:
+            return None
+        punti = 3 * v + p
+        esito = (f"{it_plural(v, 'vittoria', 'vittorie')}, {it_plural(p, 'pareggio')} "
+                 f"e {it_plural(s, 'sconfitta', 'sconfitte')}")
+        titolo = "Dentro le mura" if in_casa else "Lontano da casa"
+        dove = "in casa" if in_casa else "in trasferta"
+        return {"titolo": titolo,
+                "testo": (f"{nome} {dove}: {esito} in {it_plural(n, 'gara')} "
+                          f"({it_plural(punti, 'punto', 'punti')} su {3 * n}, "
+                          f"{punti / n:.2f} a gara).")}
+
+    def _sapere_bomber(self, match_id: int, team_id: int, nome: str,
+                       kickoff: datetime) -> dict[str, str] | None:
+        """«L'uomo gol»: chi ha segnato di più per quella squadra in questo campionato.
+
+        Fatto sempre disponibile (basta un gol segnato) e mai ridondante: la scheda
+        elenca la rosa in ordine di ruolo, non dice chi sta segnando. Se il giocatore
+        risulta **indisponibile** per questa partita lo dice: «il miglior marcatore è
+        fuori» è esattamente l'informazione che manca a chi legge, e nascondere il
+        nome solo perché è infortunato sarebbe una verità a metà.
+        """
+        if self.player_stats.empty:
+            return None
+        ps = self.player_stats[(self.player_stats.team_id == team_id)
+                               & (self.player_stats.key == "goals")]
+        if ps.empty:
+            return None
+        fin = self._gare_finite(kickoff)
+        if not fin.empty:
+            giocate = {int(x) for x in fin.match_id}
+            ps = ps[ps.match_id.isin(giocate)]
+        if ps.empty:
+            return None
+        somme = ps.groupby("player_id")["value"].sum().sort_values(ascending=False,
+                                                                   kind="mergesort")
+        if somme.empty:
+            return None
+        pid = int(somme.index[0])
+        # La fonte scrive lo stesso giocatore in due modi («Adzic» e «Adžić»): il nome
+        # pubblicato è la grafia più frequente, non la prima riga capitata — altrimenti
+        # la stessa scheda potrebbe chiamarlo in due modi diversi fra le sue sezioni.
+        nomi = ps.loc[ps.player_id == pid, "player_name"].mode()
+        pname = str(nomi.iloc[0]) if len(nomi) else ""
+        if not pname:
+            return None
+        try:
+            gol = int(somme.iloc[0])
+        except (TypeError, ValueError):
+            return None
+        if gol < 1:
+            return None
+        testo = (f"il miglior marcatore di {nome} in questo campionato è {pname} "
+                 f"({it_plural(gol, 'gol')})")
+        if not self.lineup.empty:
+            fuori = self.lineup[(self.lineup.match_id == match_id)
+                                & (self.lineup.team_id == team_id)
+                                & (self.lineup.role == "unavailable")
+                                & (self.lineup.player_id == pid)]
+            if not fuori.empty:
+                tipo = str(fuori.iloc[0].get("unavailability_type") or "").strip().lower()
+                testo += (", che però è indisponibile per questa gara"
+                          + (f" ({tipo})" if tipo in ("injury", "suspension") else ""))
+        return {"titolo": "L'uomo gol", "testo": testo + "."}
 
     def _news_branch(self, row: dict[str, Any]) -> str:
         """Brano della notizia **senza la testata**: il nome della testata non è contenuto.

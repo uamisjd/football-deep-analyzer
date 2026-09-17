@@ -621,3 +621,70 @@ def test_da_sapere_strisce_e_digiuni(tmp_path):
     assert any(s["titolo"] == "Striscia positiva" and "Roma" in s["testo"] and "5 partite consecutive" in s["testo"] for s in sapere)
     assert any(s["titolo"] == "Momento delicato" and "Inter" in s["testo"] and "3 sconfitte consecutive" in s["testo"] for s in sapere)
     st.close()
+
+
+def test_da_sapere_bilancio_campo_e_uomo_gol(tmp_path):
+    """I due fatti che tengono piena la card quando la stampa non copre la squadra.
+
+    docs/25 §4: con il filtro lingua del 17/09/2026 la card restava vuota nel 78% delle
+    partite di Ligue 1. «Dentro le mura / Lontano da casa» e «L'uomo gol» sono
+    ricavati dai nostri dati e valgono in tutti e 7 i campionati.
+    """
+    st = Store(tmp_path / "campo")
+    rows = [
+        # Roma in casa: vittoria, pareggio, vittoria (3 gare interne)
+        (1, 55, "2026", "1", KO("2026-09-01 18:00"), 1, "Roma", 3, "Milan", 2, 0, "finished", "fotmob"),
+        (3, 55, "2026", "3", KO("2026-09-07 18:00"), 1, "Roma", 5, "Torino", 1, 1, "finished", "fotmob"),
+        (5, 55, "2026", "5", KO("2026-09-13 18:00"), 1, "Roma", 7, "Parma", 2, 0, "finished", "fotmob"),
+        # Inter in trasferta: vittoria, pareggio, sconfitta
+        (2, 55, "2026", "2", KO("2026-09-04 18:00"), 4, "Lazio", 2, "Inter", 1, 2, "finished", "fotmob"),
+        (4, 55, "2026", "4", KO("2026-09-10 18:00"), 6, "Genoa", 2, "Inter", 2, 1, "finished", "fotmob"),
+        (6, 55, "2026", "6", KO("2026-09-14 18:00"), 8, "Napoli", 2, "Inter", 1, 1, "finished", "fotmob"),
+        # gara futura: Roma-Inter
+        (9, 55, "2026", "7", KO("2026-09-20 18:00"), 1, "Roma", 2, "Inter", None, None, "scheduled", "fotmob"),
+    ]
+    st.write("fixtures", _fixtures(rows))
+    st.write("match_info", pd.DataFrame([{"match_id": 9, "stadium_name": "Olimpico"}]))
+    st.write("player_stats", pd.DataFrame([
+        {"match_id": 1, "team_id": 1, "player_id": 10, "player_name": "Dybala", "key": "goals", "value": 2.0, "total": None},
+        {"match_id": 3, "team_id": 1, "player_id": 10, "player_name": "Dybala", "key": "goals", "value": 1.0, "total": None},
+        {"match_id": 5, "team_id": 1, "player_id": 11, "player_name": "Pellegrini", "key": "goals", "value": 1.0, "total": None},
+        # gol in una gara NON ancora giocata: non conta (la scheda non conosce il futuro)
+        {"match_id": 9, "team_id": 1, "player_id": 11, "player_name": "Pellegrini", "key": "goals", "value": 9.0, "total": None},
+        {"match_id": 2, "team_id": 2, "player_id": 20, "player_name": "Thuram", "key": "goals", "value": 1.0, "total": None},
+        {"match_id": 2, "team_id": 2, "player_id": 20, "player_name": "Thuram", "key": "minutes_played", "value": 90.0, "total": None},
+    ]))
+    st.write("lineup", pd.DataFrame([
+        # il capocannoniere della Roma è indisponibile per questa partita
+        {"match_id": 9, "team_id": 1, "player_id": 10, "player_name": "Dybala", "role": "unavailable",
+         "unavailability_type": "injury"},
+    ]))
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(9, 1, "Roma", 2, "Inter", KO("2026-09-20 18:00"))
+    # due squadre → due righe «L'uomo gol»: il titolo si ripete, il testo dice di chi
+    testi = [(s["titolo"], s["testo"]) for s in sapere]
+
+    assert ("Dentro le mura", "Roma in casa: 2 vittorie, 1 pareggio e 0 sconfitte in 3 gare (7 punti su 9, 2.33 a gara).") in testi
+    assert ("Lontano da casa", "Inter in trasferta: 1 vittoria, 1 pareggio e 1 sconfitta in 3 gare (4 punti su 9, 1.33 a gara).") in testi
+    # l'uomo gol conta solo le gare finite: Pellegrini resta a 1, Dybala a 3
+    assert ("L'uomo gol", "il miglior marcatore di Roma in questo campionato è Dybala (3 gol), che però è indisponibile per questa gara (injury).") in testi
+    assert ("L'uomo gol", "il miglior marcatore di Inter in questo campionato è Thuram (1 gol).") in testi
+    st.close()
+
+
+def test_da_sapere_bilancio_con_poche_gare_non_pubblica(tmp_path):
+    """Con meno di 3 gare nel ruolo il bilancio è un caso, non un fatto: non si pubblica."""
+    st = Store(tmp_path / "poche")
+    rows = [
+        (1, 55, "2026", "1", KO("2026-09-01 18:00"), 1, "Roma", 3, "Milan", 2, 0, "finished", "fotmob"),
+        (2, 55, "2026", "2", KO("2026-09-05 18:00"), 1, "Roma", 4, "Sassuolo", 1, 0, "finished", "fotmob"),
+        (3, 55, "2026", "3", KO("2026-09-09 18:00"), 1, "Roma", 2, "Inter", None, None, "scheduled", "fotmob"),
+    ]
+    st.write("fixtures", _fixtures(rows))
+    st.write("match_info", pd.DataFrame([{"match_id": 3, "stadium_name": "Olimpico"}]))
+    st.write("player_stats", pd.DataFrame())
+    st.write("lineup", pd.DataFrame())
+    an = MatchAnalysis(st)
+    sapere = an.news_sapere(3, 1, "Roma", 2, "Inter", KO("2026-09-09 18:00"))
+    assert not any(s["titolo"] in ("Dentro le mura", "Lontano da casa") for s in sapere)
+    st.close()

@@ -89,6 +89,13 @@ nella PR). Se il push non riesce, il lavoro va consegnato nello stesso turno com
 - **Uso personale** fino al completamento: sito non pubblicizzato, nessuna ripubblicazione massiva di dati grezzi di terzi, attribuzione delle fonti.
 - **Sezione quote/valore**: sì, con disclaimer (informazione statistica, non consiglio; 18+).
 - **Lingua**: interfaccia, report e documenti in italiano; codice, nomi di file e dati in inglese.
+  **L'italiano vale anche per tutto ciò che l'utente legge fuori dal sito**: le risposte
+  dell'agente in chat (compresi riepiloghi, checklist e «prossimo passo»), i titoli delle PR e i
+  messaggi di commit. Regola resa esplicita il 2026-09-17 (`docs/25` §8) dopo una richiesta
+  dell'utente: un messaggio pieno di contenuti ma in inglese è un contenuto perso. Il materiale
+  raccolto da fonti estere si pubblica solo se è in italiano (`is_italian_news`, `docs/25` §3):
+  quello in un'altra lingua non si traduce né si riscrive, si scarta — e la scheda dichiara
+  perché è vuota.
 - **Riuso prima di scrivere**: librerie esistenti (penaltyblog, soccerdata, mplsoccer) prima di codice proprio.
 - **Onestà sui numeri**: ogni previsione viene registrata e valutata pubblicamente (RPS/Brier); niente "accuratezza" dichiarata senza misura.
 - **Rispetto delle fonti**: limiti di richieste per fonte, cache, nessun aggiramento di CAPTCHA o protezioni.
