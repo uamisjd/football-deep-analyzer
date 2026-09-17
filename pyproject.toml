@@ -46,7 +46,11 @@ fda = "fda.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"fda.site" = ["templates/*.html"]
+# `templates/*.html` e `assets/*.css` sono letti a runtime con `Path(__file__).parent/...`
+# (FileSystemLoader di Jinja e `_write_assets`): senza questa dichiarazione un'installazione
+# NON editable (`pip install .`) produce un pacchetto senza i file e `fda build` cade con
+# FileNotFoundError. Verificato il 2026-09-17 costruendo la wheel: site.css mancava.
+"fda.site" = ["templates/*.html", "assets/*.css"]
 
 [tool.ruff]
 line-length = 100

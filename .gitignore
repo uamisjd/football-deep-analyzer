@@ -14,13 +14,24 @@ data/raw/
 data/cache/
 *.log
 
-# Dati elaborati: versionati (data/processed, data/*.duckdb) — vedi docs/03.
+# Dati elaborati: versionati (data/processed/*.parquet) — vedi docs/03.
+# Eccezione: il database DuckDB è una vista derivata dai Parquet, si rigenera in pochi
+# secondi (`Store.refresh_views`) e cambierebbe a ogni run (5 commit al giorno): binario
+# in history senza informazione. Verificato il 2026-09-17: cancellandolo, `Store` lo
+# ricrea con le sue 26 viste. `store.py` lo dichiarava già «non versionato»; lo era.
+data/processed/fda.duckdb
 # Sito generato
 site/_build/
 
 # Segreti
 .env
 
+# Artefatti di test e misura locali
+.coverage
+htmlcov/
+
 # Sito generato da `fda build` (pubblicato via Actions → Pages) — SOLO alla radice,
 # non il pacchetto sorgente src/fda/site/
 /site/
+# Anteprima locale generata da scripts/anteprima_scheda.py
+/site_preview/

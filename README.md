@@ -21,8 +21,9 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/22_numeri_pubblicati_e_fonti_2026-09-16.md`](docs/22_numeri_pubblicati_e_fonti_2026-09-16.md) — coerenza dei numeri pubblicati e fonti che dicono il vero (backoff, sonda).
 - [`docs/23_quote_e_rate_stabilizzate_2026-09-16.md`](docs/23_quote_e_rate_stabilizzate_2026-09-16.md) — stime stabilizzate, quote non più rate per 90, difetti del backoff ESPN.
 - [`docs/25_revisione_lingua_e_parita_2026-09-17.md`](docs/25_revisione_lingua_e_parita_2026-09-17.md) — revisione completa del portale: il filtro che pubblicava titoli stranieri come italiani e la parità fra le 7 leghe.
+- [`docs/26_revisione_totale_2026-09-17.md`](docs/26_revisione_totale_2026-09-17.md) — **revisione totale del progetto**: cosa è stato riverificato, i difetti trovati (potatura delle notizie, CSS fuori dalla wheel, anteprima che sovrascriveva il sito, DuckDB derivato versionato) e le decisioni aperte.
 
-> L'**indice completo** dei 27 file di `docs/` (con l'albero del codice e i workflow) è nel briefing, sezione 6.
+> L'**indice completo** dei 31 file di `docs/` (con l'albero del codice e i workflow) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 
@@ -35,7 +36,7 @@ pytest -q          # test
 
 ## Come funziona (in breve)
 
-`fda daily` = `collect` (FotMob, Understat, ESPN → `data/processed/*.parquet`) → `predict` (Dixon-Coles + Elo) → `simulate` (Monte Carlo stagione) → `build` (sito in `site/`, incluse le schede giocatore).
+`fda daily` = `collect` (FotMob, Understat, ESPN, Google News → `data/processed/*.parquet`) → `calibrate` → `predict` (Dixon-Coles + Elo) → `backtest` → `mercati-monitor` → `simulate` (Monte Carlo stagione) → `build` (sito in `site/`, incluse le schede giocatore). Ogni passo dopo `collect` è isolato: se cade, il run degrada e pubblica comunque.
 GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), committa i dati e pubblica il sito su GitHub Pages.
 
 ### Attivazione (una volta sola, dal ramo `main`)

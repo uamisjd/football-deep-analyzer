@@ -512,6 +512,25 @@ def collect_news(store: Store, keys: list[str] | None = None,
         else:
             fuori_finestra += 1
     stored = store.upsert("news", fresh) if fresh else 0
+    # Potatura dell'archivio. La docstring di questa funzione la promette dal 2026-09-12
+    # («le righe vecchie oltre ``window_days`` vengono potate») ma il passo non era
+    # implementato: ``cut`` filtrava solo le righe **in arrivo**, così ``news.parquet``
+    # cresceva a ogni run senza limite. Misurato il 2026-09-17 su dati reali: 18.705 righe
+    # / 4,9 MB e +1.562 righe/giorno (0,41 MB/giorno) → il limite GitHub di 100 MB per
+    # singolo file arrivava in ~230 giorni, con 5 run al giorno che ne riscrivono il blob
+    # nella storia del repository. La card legge 7 giorni e ``verify_site`` [20] 12:
+    # ``window_days`` (30) resta un margine largo, e il numero di righe potate è dichiarato
+    # nell'imbuto di *Stato fonti* invece di restare invisibile.
+    potate = 0
+    archivio = store.read("news")
+    if not archivio.empty and "published_at" in archivio.columns:
+        eta = pd.to_datetime(archivio["published_at"], utc=True, errors="coerce")
+        # NaT (riga senza data) non è «più vecchia di cut»: resta, non si butta un dato
+        # solo perché non se ne conosce l'età
+        tieni = archivio[~(eta < cut)]
+        potate = int(len(archivio) - len(tieni))
+        if potate:
+            store.write("news", tieni)
     report.requests = {"news": nc.http.mark() - nc0,
                        "espn": ec.http.mark() - ec0}
     report.note("news", rows=stored,
@@ -519,7 +538,8 @@ def collect_news(store: Store, keys: list[str] | None = None,
                                    f"articoli {diag.get('items', 0)}",
                                    f"corpi non RSS {diag.get('parse_error', 0)}",
                                    f"in finestra {len(fresh)}", f"fuori finestra {fuori_finestra}",
-                                   f"senza data {senza_data}", f"salvate {stored}"),
+                                   f"senza data {senza_data}", f"salvate {stored}",
+                                   f"potate {potate}"),
                 digest_text=digest(f"rss: byte {diag.get('bytes', 0)}",
                                    f"item {diag.get('items', 0)}",
                                    f"parse_error {diag.get('parse_error', 0)}",

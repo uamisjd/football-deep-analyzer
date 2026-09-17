@@ -586,7 +586,13 @@ def daily_cmd(
     league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     skip_predict: bool = typer.Option(False, help="Salta i modelli (solo raccolta + sito)"),
 ) -> None:
-    """Run giornaliero completo: collect → predict → build. È ciò che esegue GitHub Actions."""
+    """Run giornaliero completo. È ciò che esegue GitHub Actions.
+
+    Catena reale (ogni passo dopo ``collect`` è isolato: se cade, il run degrada e pubblica
+    comunque il sito): ``collect`` → ``calibrate`` → ``predict`` → ``backtest`` →
+    ``mercati-monitor`` → ``simulate`` → ``build``. Con ``--skip-predict`` restano
+    ``collect`` e ``build``.
+    """
     from typer.testing import CliRunner  # noqa: F401  (import di controllo)
 
     # DETAIL_WINDOW_DAYS: i dettagli (incluse le coordinate stadio) sono raccolti per l'intera

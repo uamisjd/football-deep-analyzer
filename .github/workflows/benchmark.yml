@@ -1,15 +1,30 @@
+# Benchmark del modello contro le quote di chiusura Pinnacle (docs/19 §1.1, opzione A):
+# le quote restano fuori dalla pipeline di pubblicazione e servono solo come metro esterno.
+# Una volta al mese: le quote di chiusura cambiano a stagione finita, non ogni giorno.
 name: benchmark-quote
 on:
   workflow_dispatch:
-  schedule: [{cron: "20 4 3 * *"}]          # il 3 del mese: le quote di chiusura cambiano a stagione finita
+  schedule: [{cron: "20 4 3 * *"}]          # il 3 del mese
 jobs:
   benchmark:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
-      - run: pip install -e .[dev]
+      # versioni allineate agli altri workflow del repository (checkout/setup-python/
+      # upload-artifact erano ferme a v4/v5/v4: non un errore, ma un drift che rende
+      # difficile capire quale sia la versione di riferimento del progetto)
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      # quotato: `.[dev]` non quotato è un glob per la shell (`.d`, `.e`, `.v`)
+      - run: pip install -q -e ".[dev]"
       - run: python scripts/benchmark_quote.py --json docs/_benchmark_quote.json
-      - uses: actions/upload-artifact@v4
-        with: {name: benchmark-quote, path: docs/_benchmark_quote.json}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: benchmark-quote
+          path: docs/_benchmark_quote.json
+          retention-days: 90
+          if-no-files-found: warn

@@ -14,7 +14,7 @@ payload, entrambe «OK», zero righe salvate e nessuna spiegazione leggibile):
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime, timedelta, timezone
 
 import pandas as pd
 import requests
@@ -153,6 +153,16 @@ class _FakeNews:
         client = http or self.http
         return json.loads(client.get_bytes(ESPN_NEWS.format(code=espn_code), ttl_h=12.0))
 
+    def direct_feed_raw(self, url: str) -> bytes:
+        """Feed RSS diretti della stampa italiana (ANSA, Sky Sport, Sportmediaset).
+
+        Senza questo metodo il collettore sollevava ``AttributeError`` su ognuno dei tre
+        feed a ogni test: ``_safe`` lo catturava, quindi la suite restava verde mentre il
+        ramo dei feed diretti non veniva **mai** esercitato e tre errori finti finivano
+        negli errori del report (trovato il 2026-09-17, docs/26 §5).
+        """
+        return self.http.get_bytes(url, ttl_h=12.0, extra_headers={"Accept": "application/rss+xml"})
+
 
 class _FakeEspn:
     def __init__(self, start: int = 0) -> None:
@@ -183,8 +193,11 @@ def test_collect_news_pubblica_imbuto_e_contatori_separati(tmp_path):
     assert "articoli 0" in riga["detail"]                  # il motivo, in pagina
     assert "item 0" in riga["digest"] and "rss:" in riga["digest"]
     assert "in finestra 0" in riga["detail"]
-    # le richieste ESPN non finiscono più nel contatore delle notizie
-    assert report.requests == {"news": 2, "espn": 1}
+    # le richieste ESPN non finiscono più nel contatore delle notizie. Il totale è 5:
+    # 2 ricerche Google (una per squadra) + 3 feed diretti (ANSA, Sky Sport, Sportmediaset)
+    assert report.requests == {"news": 5, "espn": 1}
+    # il ramo dei feed diretti è esercitato davvero: nessun AttributeError fra gli errori
+    assert not [e for e in report.errors if e.startswith("news direct")], report.errors
     riga_espn = stato[stato.source == "espn:NEWS"].iloc[0]
     assert riga_espn["rows"] == 0 and "articoli di lega 0" in riga_espn["detail"]
     st.close()
@@ -251,4 +264,53 @@ def test_parse_rss_conta_le_date_illeggibili_nel_collettore(tmp_path):
     collect_news(st, keys=["ITA1"], news=nc, espn=_FakeEspn())
     riga = st.read("source_status").query("source == 'news:NEWS'").iloc[0]
     assert "senza data 2" in riga["detail"] and riga["rows"] == 0
+    st.close()
+
+
+def test_collect_news_pota_l_archivio_oltre_la_finestra(tmp_path):
+    """La potatura che la docstring di ``collect_news`` prometteva senza implementarla.
+
+    Caso reale trovato il 2026-09-17 (docs/26 §2): ``window_days`` filtrava solo le righe
+    **in arrivo**, così ``news.parquet`` cresceva a ogni run — 18.705 righe / 4,9 MB e
+    +1.562 righe/giorno misurate sui dati del repo, cioè il limite GitHub di 100 MB per
+    singolo file in ~230 giorni, con 5 run al giorno che ne riscrivono il blob in history.
+
+    Tre comportamenti da tenere distinti: la riga oltre la finestra si pota, quella dentro
+    resta, e una riga **senza data** non si butta (non si elimina un dato solo perché non
+    se ne conosce l'età). Il conteggio finisce nell'imbuto di *Stato fonti*.
+    """
+    st = _store_con_fixtures(tmp_path)
+
+    def iso(giorni: int) -> str:
+        return (datetime.now(UTC) - timedelta(days=giorni)).isoformat()
+
+    st.write("news", pd.DataFrame([
+        {"team_id": 1, "published_at": iso(90), "title": "Vecchia", "url": "u/90",
+         "source": "s", "description": ""},
+        {"team_id": 1, "published_at": iso(5), "title": "Fresca", "url": "u/5",
+         "source": "s", "description": ""},
+        {"team_id": 1, "published_at": None, "title": "Senza data", "url": "u/nd",
+         "source": "s", "description": ""},
+    ]))
+    collect_news(st, keys=["ITA1"], news=_FakeNews(), espn=_FakeEspn(), window_days=30)
+
+    assert set(st.read("news")["title"]) == {"Fresca", "Senza data"}
+    riga = st.read("source_status").query("source == 'news:NEWS'").iloc[0]
+    assert "potate 1" in riga["detail"], riga["detail"]
+    st.close()
+
+
+def test_collect_news_non_pota_se_non_ce_nulla_di_vecchio(tmp_path):
+    """Nessuna potatura inutile: l'archivio in finestra non viene riscritto."""
+    st = _store_con_fixtures(tmp_path)
+    recente = (datetime.now(UTC) - timedelta(days=2)).isoformat()
+    st.write("news", pd.DataFrame([
+        {"team_id": 1, "published_at": recente, "title": "Fresca", "url": "u/2",
+         "source": "s", "description": ""},
+    ]))
+    prima = st.path("news").read_bytes()
+    collect_news(st, keys=["ITA1"], news=_FakeNews(), espn=_FakeEspn(), window_days=30)
+    assert set(st.read("news")["title"]) == {"Fresca"}
+    assert st.path("news").read_bytes() == prima, "riscrittura senza motivo (diff Git inutile)"
+    assert "potate 0" in st.read("source_status").query("source == 'news:NEWS'").iloc[0]["detail"]
     st.close()
