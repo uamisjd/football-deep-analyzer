@@ -23,7 +23,7 @@ import pandas as pd
 
 from .backoff import sospensione
 from .config import DETAIL_WINDOW_DAYS, League, cups, leagues, season_start_year
-from .diagnostics import MAX_DETAIL, MAX_DIGEST, bump, detail, digest, shape_of
+from .diagnostics import MAX_DETAIL, MAX_DIGEST, detail, digest, shape_of
 from .sources.espn import EspnClient, to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
 from .sources.news import NewsClient, parse_espn_news
@@ -417,10 +417,12 @@ def collect_news(store: Store, keys: list[str] | None = None,
                  window_days: int = 30) -> CollectReport:
     """Notizie per squadra (docs/21, P1-5): Google News RSS + ESPN news di lega.
 
-    Una richiesta RSS per squadra della stagione (cache 12 h: i run successivi allo
-    stesso giorno non ridownloadano) + una JSON ESPN per campionato. Le righe vecchie
-    oltre ``window_days`` vengono potate: la card legge 12 giorni, il resto è peso morto
-    nel Parquet. Fonte isolata come le altre: se Google non è raggiungibile il run
+    Una o due richieste RSS per squadra della stagione (cache 12 h: i run successivi allo
+    stesso giorno non ridownloadano): l'edizione italiana e, per i campionati stranieri,
+    l'edizione locale — è quella che porta il materiale di vita del club che la stampa
+    italiana non raccoglie (docs/24 §3.5). Più una JSON ESPN per campionato. Le righe
+    vecchie oltre ``window_days`` vengono potate: la card legge 7 giorni, il resto è peso
+    morto nel Parquet. Fonte isolata come le altre: se Google non è raggiungibile il run
     continua e ``source_status`` mostra l'avviso; la card degrada a segnaposto onesto.
     """
     now = datetime.now(timezone.utc)
@@ -435,15 +437,18 @@ def collect_news(store: Store, keys: list[str] | None = None,
         report.note("espn", rows=0, detail_text="calendario non disponibile, raccolta saltata")
         store.upsert("source_status", report.as_status_rows())
         return report
-    teams = fx.drop_duplicates("home_id")[["home_id", "home_name"]]
+    teams = fx.drop_duplicates("home_id")[["home_id", "home_name", "league_id"]]
     rows: list[dict[str, Any]] = []
     # imbuto delle notizie (docs/21 §15): byte letti, articoli visti, corpi non-RSS,
-    # articoli senza titolo, articoli ESPN visti e attribuiti a una squadra
+    # articoli senza titolo, articoli ESPN visti e attribuiti a una squadra. Le ricerche
+    # sono contate dal client (una o due per squadra secondo il campionato, docs/24 §3.5)
     diag: dict[str, Any] = {}
-    bump(diag, "ricerche", len(teams))
-    for tid, name in teams.itertuples(index=False):
+    paesi = {int(lg.fotmob_id): lg.country for lg in leagues()}
+    for tid, name, lid in teams.itertuples(index=False):
+        paese = paesi.get(int(lid))          # edizione locale del campionato (docs/24 §3.5)
         items = _safe(f"news rss {name}",
-                      lambda t=tid, n=name: nc.team_news(int(t), str(n), diag), report)
+                      lambda t=tid, n=name, c=paese:
+                          nc.team_news(int(t), str(n), diag, country=c), report)
         if items:
             rows.extend(items)
     # ESPN news di lega: passa dal client ESPN (contabilità separata) e attribuisce ogni

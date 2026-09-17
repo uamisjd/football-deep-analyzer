@@ -1338,6 +1338,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     lu19 = st.read("lineup")
     sim19 = st.read("season_sim")
     from fda.site.analysis import MatchAnalysis as _MA
+    from fda.sources.news import JUNK_NEWS, news_value
     ma19 = _MA(st)
     n_bench = 0
     if not fx19.empty and not lu19.empty and "role" in lu19.columns:
@@ -1428,78 +1429,126 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 
-    # 20) notizie (docs/21 P1-5): ogni titolo/link stampato esiste in news.parquet per la
-    # squadra della card che lo pubblica, dentro la finestra 12 giorni, max 4 per squadra.
-    # Attribuzione per BLOCCO (header «<p><b>Squadra</b> · N notizie…</p><ul>…</ul>»), non
-    # per URL: lo stesso articolo viene raccolto per entrambe le squadre della partita
-    # (misurato il 2026-09-16: 885 url su 4.419 presenti in news.parquet per più team_id),
-    # quindi dalla sola URL non si può dire di chi sia la notizia stampata.
-    news20 = st.read("news")
-    if not news20.empty:
-        news20 = news20.assign(team_id=news20.team_id.astype(int))
+    # 20) «Vita del club» (docs/24 §3.5): la card pubblica solo fatti dentro la finestra di
+    # 7 giorni che possono spostare qualcosa. Conteggi, voci pubblicate, «in riserva» e
+    # blocco «Da sapere» sono ricalcolati con le stesse funzioni del build e confrontati col
+    # markup: se una regola cambia nel codice e non nella pagina, il controllo fallisce.
     n_news = 0
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
-        if 'id="notizie"' not in html:
-            if not news20.empty and "Analisi pre-partita" in html:
-                ids20 = {int(r) for r in news20.team_id.unique()} if not news20.empty else set()
-                fr20 = fx19[fx19.match_id == int(pg.stem)] if not fx19.empty else fx19
-                if not fr20.empty:
-                    fr20 = fr20.iloc[0]
-                    if {int(fr20.home_id), int(fr20.away_id)} & ids20:
-                        fails.append(f"{pg.name}: notizie disponibili ma sezione assente")
+        if 'id="notizie"' not in html or fx19.empty:
             continue
-        n_news += 1
-        if news20.empty:
-            fails.append(f"{pg.name}: sezione notizie senza tabella news")
+        rows20 = fx19[fx19.match_id == int(pg.stem)]
+        if rows20.empty:
             continue
+        fr = rows20.iloc[0]
         mid = int(pg.stem)
-        fr = fx19[fx19.match_id == mid].iloc[0] if not fx19.empty else None
-        kickoff = pd.Timestamp(fr.utc_kickoff) if fr is not None else pd.Timestamp.now(tz="UTC")
+        kickoff = pd.Timestamp(fr.utc_kickoff)
+        n_news += 1
         inizio = html.find('id="notizie"')
         fine = html.find('<div class="card"', inizio + 10)
         card = html[inizio:fine if fine != -1 else len(html)]
-        blocchi = re.split(r'<p style="margin:0 0 6px"><b>', card)[1:]
+        testo_card = html_unescape(card)
+        # blocco «Da sapere»: ogni riga derivata dai dati deve essere sulla pagina
+        for s in ma19.news_sapere(mid, int(fr.home_id), str(fr.home_name),
+                                  int(fr.away_id), str(fr.away_name), kickoff):
+            checks += 1
+            if s["testo"] not in testo_card:
+                fails.append(f"{pg.name}: riga «Da sapere · {s['titolo']}» assente o diversa")
+        blocchi = re.split(r'<p style="margin:12px 0 6px"><b>', card)[1:]
+        if len(blocchi) != 2:
+            fails.append(f"{pg.name}: card con {len(blocchi)} colonne invece di 2")
+            continue
+        visti20: set[str] = set()
+        titoli_pagina: list[str] = []
         for blocco in blocchi:
             team_name = html_unescape(blocco.split("</b>", 1)[0])
-            if fr is None:
-                continue
             if team_name == str(fr.home_name):
-                tid = int(fr.home_id)
+                tid, opp = int(fr.home_id), str(fr.away_name)
             elif team_name == str(fr.away_name):
-                tid = int(fr.away_id)
+                tid, opp = int(fr.away_id), str(fr.home_name)
             else:
-                fails.append(f"{pg.name}: intestazione notizie di squadra sconosciuta ({team_name[:30]})")
+                fails.append(f"{pg.name}: intestazione card di squadra sconosciuta ({team_name[:30]})")
                 continue
+            co = ma19.coach(tid, kickoff) or {}
+            atteso = ma19.team_news(tid, team_name, kickoff,
+                                    squad=ma19.match_squad(mid, tid), seen=visti20,
+                                    opponent=opp, coach=co.get("name"))
             head = blocco.split("<ul", 1)[0]
-            m_decl = re.search(r"· (\d+) notiz", head)
-            dichiarato = int(m_decl.group(1)) if m_decl else 0
-            stampati = re.findall(r'<a href="(https?://[^"]+)" rel="noopener[^"]*">([^<]+)</a>', blocco)
-            for url, title in stampati:
-                riga = news20[news20.url == url]
-                if riga.empty:
-                    fails.append(f"{pg.name}: notizia senza riscontro in news.parquet ({title[:40]})")
-                    continue
-                riga_team = riga[riga.team_id == tid]
-                if riga_team.empty:
-                    fails.append(f"{pg.name}: notizia di squadra estranea alla card di {team_name[:20]} "
-                                 f"({title[:40]})")
-                    continue
+            # ogni numero stampato nell'intestazione deve essere quello calcolato
+            for etichetta, valore, schema in (
+                    ("titoli esaminati", atteso["esaminate"],
+                     r"· (\d+) titol[oi] (?:esaminato|esaminati)"),
+                    ("pubblicati", atteso["pubblicate"], r"· (\d+) pubblicat[oi]"),
+                    ("annunci o logistica", atteso["annunci"], r"· (\d+) annunc"),
+                    ("servizio o cronaca", atteso["scartate"], r"· (\d+) servizio o cronaca"),
+                    ("altra squadra", atteso["altre"], r"· (\d+) su un'altra squadra"),
+                    ("non spostano nulla", atteso["piatti"], r"· (\d+) non (?:sposta|spostano) nulla"),
+                    ("oltre il limite", atteso["oltre"], r"· (\d+) oltre il limite"),
+                    ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):
                 checks += 1
-                # lo stesso (url, team_id) può avere più righe con published_at diversi (il feed
-                # ripubblica il link con data aggiornata): la card stampa quella dentro finestra,
-                # quindi il controllo passa se ALMENO una riga raccolta rispetta titolo e finestra
-                if not any(html_unescape(str(r.title)) == html_unescape(title)
-                           for r in riga_team.itertuples(index=False)):
-                    fails.append(f"{pg.name}: titolo stampato diverso dal raccolto ({title[:40]})")
-                if not notizia_in_finestra(riga_team, kickoff):
-                    fails.append(f"{pg.name}: notizia fuori finestra 12 giorni ({title[:40]})")
-            if len(stampati) > 4:
-                fails.append(f"{pg.name}: {len(stampati)} notizie per {team_name[:20]} (max 4)")
-            if dichiarato != len(stampati):
-                fails.append(f"{pg.name}: card di {team_name[:20]} dichiara {dichiarato} notizie "
-                             f"ma ne stampa {len(stampati)}")
-    print(f"[20] pagine con notizie riconciliate: {n_news}")
+                m = re.search(schema, head)
+                stampato = int(m.group(1)) if m else 0
+                if stampato != valore:
+                    fails.append(f"{pg.name}: «{etichetta}» di {team_name[:20]} stampa "
+                                 f"{stampato}, i dati dicono {valore}")
+            checks += 1
+            m = re.search(r"<b>(\d+) in riserva</b>", head)
+            if (int(m.group(1)) if m else 0) != len(atteso["riserva"]):
+                fails.append(f"{pg.name}: «in riserva» di {team_name[:20]} non corrisponde "
+                             f"ai dati ({len(atteso['riserva'])})")
+            stampati = re.findall(r'<a href="(https?://[^"]+)" rel="noopener noreferrer nofollow">'
+                                  r'(.*?)</a>', blocco.split("In riserva", 1)[0])
+            attesi = [(str(n["url"]), str(n["title"])) for n in atteso["notizie"]]
+            checks += 1
+            if [(u, html_unescape(t)) for u, t in stampati] != attesi:
+                fails.append(f"{pg.name}: voci della card di {team_name[:20]} diverse da "
+                             f"quelle calcolate ({len(stampati)} stampate, {len(attesi)} attese)")
+                continue
+            etichette = [html_unescape(x) for x in
+                         re.findall(r'<span class="topic">(.*?)</span>', blocco.split("In riserva", 1)[0])]
+            attese_et = [str(n["topic_label"]) for n in atteso["notizie"]]
+            checks += 1
+            if etichette != attese_et:
+                fails.append(f"{pg.name}: categorie della card di {team_name[:20]} diverse "
+                             f"da quelle calcolate ({etichette} vs {attese_et})")
+            # limite per categoria (max 2): i dati lo garantiscono, la pagina lo rispetta
+            checks += 1
+            if etichette and max(etichette.count(x) for x in etichette) > atteso["categoria_limite"]:
+                fails.append(f"{pg.name}: più di {atteso['categoria_limite']} voci della stessa "
+                             f"categoria per {team_name[:20]}")
+            # «in riserva»: le voci dichiarate devono essere quelle calcolate
+            ris = re.findall(r'In riserva, fuori dai tre per regola: <a href="([^"]+)"',
+                             blocco)
+            checks += 1
+            if ris != [str(n["url"]) for n in atteso["riserva"]]:
+                fails.append(f"{pg.name}: riserva di {team_name[:20]} diversa dai dati "
+                             f"({len(ris)} stampate, {len(atteso['riserva'])} attese)")
+            # finestra e sostanza: nessuna voce fuori dai 7 giorni e nessun annuncio
+            checks += 1
+            for n in atteso["notizie"]:
+                if (kickoff - n["published_at"]) > pd.Timedelta(days=atteso["finestra"]):
+                    fails.append(f"{pg.name}: voce di {team_name[:20]} fuori dalla finestra "
+                                 f"di {atteso['finestra']} giorni")
+            checks += 1
+            for _u, t in stampati:
+                titolo = html_unescape(t)
+                if JUNK_NEWS.search(titolo):
+                    fails.append(f"{pg.name}: voce di servizio pubblicata in card "
+                                 f"(«{titolo[:60]}»)")
+                if news_value(titolo) is not None:
+                    fails.append(f"{pg.name}: voce senza sostanza pubblicata in card "
+                                 f"(«{titolo[:60]}»)")
+            if not atteso["notizie"] and atteso["esaminate"]:
+                checks += 1
+                if "Niente che possa spostare qualcosa" not in testo_card:
+                    fails.append(f"{pg.name}: card vuota di {team_name[:20]} senza riga di "
+                                 f"trasparenza")
+            titoli_pagina.extend(t for _u, t in stampati)
+        checks += 1
+        if len(titoli_pagina) != len(set(titoli_pagina)):
+            fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
+    print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
     # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
     # con le stesse soglie; se una squadra ha segnali la card deve esserci.
@@ -1650,41 +1699,94 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: riga conversione presente ma nessuna grande occasione")
     print(f"[25] conversione grandi occasioni verificata: {n_conv} pagine")
 
-    # 26) mercato (docs/21 P2-7): i nomi e i conteggi stampati nella card devono venire
-    # dalla tabella transfers (4 più recenti per direzione, data desc); la card c'è se e
-    # solo se la fonte ha righe per almeno una delle due squadre. Finché collect_transfers
-    # non ha girato in Actions la tabella è vuota e il controllo è vacuo per costruzione.
+    # 26) mercato (docs/21 P2-7, rifatto in docs/24 §4): la card mostra la finestra
+    # ricavata dai dati, gli importi in forma leggibile e gli arrivi già in distinta.
+    # Qui si rifà il conto con le stesse funzioni del build e si confronta con la pagina:
+    # righe, ordine, importi, estremi della finestra, saldo e «già in campo».
     n_mkt = 0
-    tr26 = st.read("transfers")
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
-        if "Analisi pre-partita" not in html or fx19.empty or tr26.empty:
+        if "Analisi pre-partita" not in html or fx19.empty:
             continue
-        rows = fx19[fx19.match_id == int(pg.stem)]
-        if rows.empty:
+        rows26 = fx19[fx19.match_id == int(pg.stem)]
+        if rows26.empty:
             continue
-        fr = rows.iloc[0]
+        fr = rows26.iloc[0]
+        mid = int(pg.stem)
         txt = html_unescape(html)
-        exp_names, has_data = [], False
-        for tid in (int(fr.home_id), int(fr.away_id)):
-            d = tr26[tr26.team_id == tid]
-            if not d.empty:
-                has_data = True
-            for direction in ("in", "out"):
-                dd = d[d.direction == direction].sort_values("date", ascending=False, na_position="last")
-                exp_names.extend(str(x) for x in dd.player_name.head(4))
-        card = "Mercato: arrivi e partenze" in txt
+        attesi26 = {int(fr.home_id): ma19.transfer_window(int(fr.home_id), mid),
+                    int(fr.away_id): ma19.transfer_window(int(fr.away_id), mid)}
+        card = "id=\"mercato\"" in html
         checks += 1
-        if card != has_data:
+        if card != any(v is not None for v in attesi26.values()):
             fails.append(f"{pg.name}: card mercato incoerente colla tabella transfers")
             continue
         if not card:
             continue
         n_mkt += 1
-        for nm in exp_names:
+        # la card è divisa in due colonne, una per squadra: i controlli vanno fatti sulla
+        # colonna, non sull'intera card (la riga «già in campo» di una squadra non è di
+        # pertinenza dell'altra)
+        colonne = re.split(r'<h3 style="margin:0 0 8px">', html[html.find('id="mercato"'):])[1:]
+        per_nome = {}
+        for col in colonne:
+            nome_col = html_unescape(col.split("</h3>", 1)[0]).strip()
+            per_nome[nome_col] = col
+        for tid, mk in attesi26.items():
+            if mk is None:
+                continue
+            nome = str(fr.home_name) if tid == int(fr.home_id) else str(fr.away_name)
+            col = per_nome.get(nome)
             checks += 1
-            if nm not in txt:
-                fails.append(f"{pg.name}: nome mercato «{nm}» assente o diverso dalla tabella")
+            if col is None:
+                fails.append(f"{pg.name}: colonna mercato di {nome} assente")
+                continue
+            col_txt = html_unescape(col)
+            checks += 1
+            if mk["stale"]:
+                if f"l'ultimo risale al <b>{mk['ultimo']}</b>" not in col:
+                    fails.append(f"{pg.name}: {nome}: ultimo movimento non dichiarato come calcolato")
+                continue
+            attesa_testa = (f"<b>{mk['n_in']}</b> arrivo" if mk["n_in"] == 1
+                            else f"<b>{mk['n_in']}</b> arrivi")
+            attesa_testa += (" · <b>1</b> partenza" if mk["n_out"] == 1
+                             else f" · <b>{mk['n_out']}</b> partenze")
+            attesa_testa += (f" nella finestra dal <b>{mk['window_start']}</b> al "
+                             f"<b>{mk['window_end']}</b>")
+            checks += 1
+            if attesa_testa not in col:
+                fails.append(f"{pg.name}: {nome}: finestra e conteggi non corrispondono ai dati")
+            for chiave, direzione in (("arrivals", "in"), ("departures", "out")):
+                righe = [t for t in mk[chiave]]
+                if righe:
+                    checks += 1
+                    etichetta = "Arrivi" if direzione == "in" else "Partenze"
+                    if etichetta not in col:
+                        fails.append(f"{pg.name}: {nome}: sezione «{etichetta}» assente")
+                for t in righe:
+                    checks += 1
+                    if str(t["name"]) not in col_txt:
+                        fails.append(f"{pg.name}: mercato {nome} ({direzione}): "
+                                     f"«{t['name']}» assente o diversa dalla tabella")
+                    checks += 1
+                    if t["fee"] not in col_txt:
+                        fails.append(f"{pg.name}: mercato {nome}: importo «{t['fee']}» non "
+                                     f"stampato come calcolato")
+            checks += 1
+            if mk["in_campo"]:
+                riga = (f"<b>Già in campo:</b> {len(mk['in_campo'])} "
+                        + ("arrivo" if len(mk["in_campo"]) == 1 else "arrivi"))
+                if riga not in col:
+                    fails.append(f"{pg.name}: {nome}: riga «già in campo» assente o diversa "
+                                 f"dal calcolo")
+                for p26 in mk["in_campo"]:
+                    checks += 1
+                    if str(p26["name"]) not in col_txt:
+                        fails.append(f"{pg.name}: {nome}: arrivo già in distinta non pubblicato "
+                                     f"({p26['name']})")
+            elif "Già in campo:" in col:
+                fails.append(f"{pg.name}: {nome}: riga «già in campo» presente ma nessun "
+                             f"arrivo in distinta secondo i dati")
     print(f"[26] card mercato riconciliate: {n_mkt} pagine")
 
     st.close()

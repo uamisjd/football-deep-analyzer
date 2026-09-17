@@ -142,7 +142,9 @@ class _FakeNews:
     def __init__(self, start: int = 0) -> None:
         self.http = _FakeHttp(RSS_VUOTO.encode(), start=start)
 
-    def team_news(self, team_id, team_name, diag=None):
+    def team_news(self, team_id, team_name, diag=None, country=None):
+        # ``country`` esiste nella firma del client vero (edizione locale, docs/24 §3.5):
+        # il finto risponde lo stesso feed perché qui interessa la contabilità.
         raw = self.http.get_bytes(GOOGLE_RSS, params=google_news_params(team_name), ttl_h=12.0,
                                   extra_headers={"Accept": "application/rss+xml"})
         return parse_rss(raw, team_id, diag)
@@ -241,7 +243,7 @@ def test_la_firma_non_contiene_mai_valori_dall_endpoint_vero():
 
 
 def test_parse_rss_conta_le_date_illeggibili_nel_collettore(tmp_path):
-    """Una data illeggibile non pubblica la riga (finestra 12 giorni) ma viene contata."""
+    """Una data illeggibile non pubblica la riga (finestra 7 giorni) ma viene contata."""
     rss = RSS_UNO.replace("Mon, 14 Sep 2026 18:05:00 GMT", "data non leggibile")
     st = _store_con_fixtures(tmp_path)
     nc = _FakeNews()
