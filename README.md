@@ -20,6 +20,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/21_verifica_qqv_piano_2026-09-15.md`](docs/21_verifica_qqv_piano_2026-09-15.md) — verifica quantitativa/qualitativa/visiva e piano di miglioramento.
 - [`docs/22_numeri_pubblicati_e_fonti_2026-09-16.md`](docs/22_numeri_pubblicati_e_fonti_2026-09-16.md) — coerenza dei numeri pubblicati e fonti che dicono il vero (backoff, sonda).
 - [`docs/23_quote_e_rate_stabilizzate_2026-09-16.md`](docs/23_quote_e_rate_stabilizzate_2026-09-16.md) — stime stabilizzate, quote non più rate per 90, difetti del backoff ESPN.
+- [`docs/25_revisione_lingua_e_parita_2026-09-17.md`](docs/25_revisione_lingua_e_parita_2026-09-17.md) — revisione completa del portale: il filtro che pubblicava titoli stranieri come italiani e la parità fra le 7 leghe.
 
 > L'**indice completo** dei 27 file di `docs/` (con l'albero del codice e i workflow) è nel briefing, sezione 6.
 

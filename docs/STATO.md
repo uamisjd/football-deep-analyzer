@@ -1,5 +1,19 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
+**Ultimo aggiornamento:** 2026-09-17 (sessione `arena/01a0afc8`, ventottesimo giro) — **Revisione completa richiesta dall'utente («perché non è in lingua italiana? … rivedi e rileggiti tutto»): trovato e corretto il difetto vero — la card «Vita del club» pubblicava titoli in sei lingue — e chiuso il buco di copertura che la correzione apriva.** Documento: [`docs/25`](25_revisione_lingua_e_parita_2026-09-17.md).
+- **Cosa non andava (misurato, non presunto):** il filtro che doveva garantire l'italiano (`is_italian_news`) era una **lista nera di ~230 parole**: un titolo era italiano se non conteneva quelle parole. Sulle **161 voci pubblicate** il 17/09 nelle schede, **61 (37,9%) non erano in italiano** — olandese, tedesco, portoghese, francese, spagnolo, inglese: «Trainerwechsel bei Leverkusen-Gegner», «Petrasso: «Limpámos a nossa imagem»», «Nottingham Forest stadium expansion plans approved». Il portale dichiarava «titoli in lingua italiana» e pubblicava sei lingue. Nessun controllo lo vedeva perché `verify_site` [20] **chiamava la stessa funzione** che aveva scelto le voci: ricertificava, non verificava.
+- **Interventi:**
+  1. `src/fda/sources/news.py`: `is_italian_news()` a **due stadi** — veto lessicale invariato **più** rilevamento statistico con `langdetect` (puro Python, offline, nessuna chiave, seed fisso per la ripetibilità) su titolo+estratto; con meno di 6 parole o con il rilevatore dubbio decide la grammatica italiana. `langdetect` aggiunto a `pyproject.toml`.
+  2. `src/fda/site/analysis.py` + `templates/match.html`: due fatti **in italiano, dai nostri dati**, per la parità fra le 7 leghe — **«Dentro le mura» / «Lontano da casa»** (bilancio della squadra nel ruolo in cui gioca, da 3 gare in su) e **«L'uomo gol»** (miglior marcatore del campionato, con l'indisponibilità dichiarata). Il footer della card non dichiara più ESPN fra le fonti pubblicate: **le notizie ESPN sono in inglese** (1 riga su 30 passa il filtro) e la fonte è **sospesa** (403 su 7/7 leghe).
+  3. `scripts/verify_site.py`: **invariante [20b]** che ricalcola bilancio e uomo gol **con pandas, in modo indipendente** dal sito; allineato il controllo lingua all'ingresso vero (titolo + estratto, non il solo titolo) e reso specifico il [23] («è indisponibile» ora compare anche in «L'uomo gol»).
+  4. `docs/00_regole_di_lavoro.md` regola E: l'italiano vale **anche per le risposte in chat, i titoli di PR e i commit** (era la parte mancante).
+- **Misure (68 schede in programma):**
+  - copertura della card: **91,2% (62/68) → 69,1% (47/68)** col solo filtro corretto (Ligue 1 **22%**, Bundesliga **33%**: la stampa italiana non scrive di Le Havre o Paderborn) → **100% (68/68)** con i fatti dai nostri dati. Righe «Da sapere» 42 → **227**; voci di rassegna 161 → **76**, tutte italiane.
+  - filtro: sulle 161 voci i 61 stranieri sono scartati **tutti**, i 100 italiani conservati **tutti**; su 210 titoli etichettati per testata 70,5% → **93,3%** di esattezza (stranieri fatti passare: 60 → 5, e in 4 casi su 5 la testata estera scriveva in italiano).
+- **Verifiche:** **369 passed** (+4 test: 2 sul filtro con i casi reali, 2 sui nuovi fatti) · `fda build` 0 errori (375 schede · 2.364 partite · 7.478 giocatori) · `verify_site` **0 problemi · 93.696 controlli** (erano 93.201) · ruff **173** = baseline (0 rilievi nuovi).
+- **Aperto (da decidere con l'utente):** il materiale straniero scartato è ricco (4.045 righe su 18.270) e pubblicarlo in italiano richiederebbe una **traduzione automatica** (modello locale in CI o endpoint pubblico non ufficiale): tocca la promessa «nessun testo è inventato», quindi non è stato fatto di propria iniziativa. Inoltre il feed diretto **Sportmediaset risponde 404** nell'ultimo run: da confermare al prossimo (nel sandbox non ho rete per provare un URL alternativo).
+- **Prossimo passo:** PR di questo giro; poi, su indicazione dell'utente, traduzione automatica (§7 di `docs/25`) e verifica del feed Sportmediaset.
+
 **Ultimo aggiornamento:** 2026-09-17 (sessione `arena/01a0aebc`, ventisettesimo giro) — **Risolto il problema delle card «Vita del club» vuote: riformulati metodo, filtri e intelligence interna (richiesta utente: «su molti match è vuota, dove stiamo sbagliando? ricerche? fonti? metodo? dobbiamo riformulare?»):**
 - **Diagnosi quantitativa dei difetti (misurata su 69 gare future / 138 colonne):** prima dell'intervento solo 20 colonne su 138 (14,5%) avevano notizie. La causa principale non era la mancanza di dati (8.789 articoli esaminati), ma **filtri metodologici iper-distruttivi**:
   1. *Il collo di bottiglia del «piatto»*: `news_value()` scartava come "piatto" qualsiasi fatto che non contenesse parole di dramma giudiziario o crisi nera (`CONSEGUENZA_NEWS`), buttando via 321 notizie di valore su scelte del mister, gerarchie, spogliatoio e clima societario;
@@ -136,3 +150,18 @@
 - Implementato audit automatico delle schede future in `src/fda/site/audit.py`, visualizzato in `stato.html`; test suite: 49 passed.
 - **Riferimento di mercato come metro esterno** (misurato 2026-09-14, `arena/01a0a1a3`, `docs/19` §1.1): le quote di chiusura Pinnacle di tutte e 7 le leghe sono disponibili sullo **stesso mirror già in uso** per NED1/POR1. Decisione da prendere: **(A, raccomandata)** le quote restano fuori dalla pipeline e diventano solo un benchmark riproducibile in CI (`scripts/benchmark_quote.py` + job mensile) — rischio zero sul modello; **(B)** `datahub_base` esteso alle 5 grandi leghe (5 righe di config) per avere le quote dentro `history.parquet` e nel laboratorio — rompe `tests/test_models.py:79-90` che codifica la decisione opposta e lega il progetto a un repo personale. **Non è in contraddizione con la direttiva utente sulle quote** (non sono un requisito editoriale): qui non si pubblicano quote, si misura la distanza del modello dal livello di mercato.
 - **Candidato γ-sharpening RESPINTO** (2026-09-14, `docs/19` §1.3): da non ritestare con griglia stretta. Se si vuole attaccare la sottostima dei favoriti (§1.2), la strada è la **ricalibrazione del vettore 1X2** (temperatura) come candidato del laboratorio con griglia pre-registrata (§1.4, §1.2).
+- **Giro di revisione lingua, secondo atto** (2026-09-17, branch `arena/01a0afc8`, PR #50,
+  `docs/25` §9): la card «Vita del club» pubblicata su GitHub Pages non è ancora quella della PR
+  (il merge lo fa l'utente). Nel build della PR i due titoli spagnoli di Málaga-Villarreal sono
+  respinti dal gate; il contatore «in un'altra lingua» è stato aggiunto e messo **prima** degli
+  altri vagli (prima i titoli stranieri venivano contati come «servizio o cronaca»: 131 → 11, con
+  121 dichiarati come stranieri); due fatti nuovi dai nostri dati («Porta inviolata»,
+  «Finale da brividi» sui gol subiti dopo il 75') hanno portato le righe «Da sapere» da 227 a 295
+  su 68 partite, sempre con 0 titoli non italiani. Test 371, `verify_site` 94.024 controlli, ruff
+  baseline.
+- **Deroga al merge (2026-09-17):** su richiesta esplicita dell'utente («Please merge the pull
+  request»), la PR **#50** (lingua italiana garantita + card «Vita del club»; commit `cab20ec` e
+  `4053e5c`) è stata **fusa dall'agente** su `main`, in deroga alla regola D che riserva il merge
+  all'utente. Condizioni: CI verde (`test pass`), PR `MERGEABLE · CLEAN`. Registrato anche in
+  `docs/13` §«Deroga al flusso di merge». La regola generale resta: senza richiesta esplicita
+  dell'utente, l'agente apre la PR e si ferma.

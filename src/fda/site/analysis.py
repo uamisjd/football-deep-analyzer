@@ -223,7 +223,7 @@ def _no_news() -> dict[str, Any]:
     """Bollettino vuoto per le partite finite (la card non si stampa, il contesto resta tipato)."""
     return {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
             "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0,
-            "vecchie": 0, "pertinenti": 0,
+            "vecchie": 0, "pertinenti": 0, "lingua": 0,
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
 
 
@@ -1338,6 +1338,9 @@ class MatchAnalysis:
     NEWS_LIMIT: ClassVar[int] = 3                # fatti pubblicati per squadra
     NEWS_CATEGORY_LIMIT: ClassVar[int] = 2       # non più di due fatti della stessa categoria
     NEWS_RESERVE_LIMIT: ClassVar[int] = 2        # «in riserva»: i primi che non entrano nei tre
+    # «Da sapere»: tetto alle righe derivate dai nostri dati. Oltre questa soglia la card
+    # smette di essere un riassunto e diventa un elenco (docs/25 §5).
+    SAPERE_MAX: ClassVar[int] = 8
     # temi che la scheda copre già altrove: ripeterli nella card non aggiunge nulla
     NEWS_ALTROVE: ClassVar[frozenset[str]] = frozenset({"infortuni", "squalifiche", "mercato"})
 
@@ -1397,6 +1400,7 @@ class MatchAnalysis:
         out: dict[str, Any] = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0,
                                "scartate": 0, "oltre": 0, "annunci": 0, "piatti": 0,
                                "altre": 0, "doppioni": 0, "vecchie": 0, "pertinenti": 0,
+                               "lingua": 0,
                                "finestra": days, "limite": limit,
                                "categoria_limite": self.NEWS_CATEGORY_LIMIT,
                                "riserva_limite": self.NEWS_RESERVE_LIMIT}
@@ -1537,14 +1541,19 @@ class MatchAnalysis:
         for r in rows:
             title = str(r.get("title") or "").strip()
             key = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+            # La lingua viene **prima** di tutto (docs/25 §5): se il titolo non è
+            # italiano, dire «servizio o cronaca» è falso — su Málaga-Villarreal la card
+            # diceva «132 titoli esaminati · 131 servizio o cronaca» quando 116 di
+            # quelli erano semplicemente in spagnolo o in inglese. Il motivo dello
+            # scarto deve essere quello vero, e in italiano.
+            if not title or not is_italian_news(title, r.get("description") or ""):
+                out["lingua"] += 1
+                continue
             topic, _evidence = classify_news(title, r.get("description"), r.get("source"))
-            if topic is None or not title:
+            if topic is None:
                 out["scartate"] += 1
                 continue
             if not key or key in visti or not subject_ok(title):
-                out["scartate"] += 1
-                continue
-            if not is_italian_news(title, r.get("description") or ""):
                 out["scartate"] += 1
                 continue
             if topic in self.NEWS_ALTROVE:
@@ -1711,7 +1720,8 @@ class MatchAnalysis:
             except (TypeError, ValueError):
                 continue
             if gare <= 3:
-                testo = f"{nome} ha cambiato allenatore da poco: {co.get('name')} è in carica da {gare} gare"
+                testo = (f"{nome} ha cambiato allenatore da poco: {co.get('name')} è in "
+                        f"carica da {it_plural(gare, 'gara')}")
                 if co.get("prev_name"):
                     testo += f", ha preso il posto di {co['prev_name']}"
                 out.append({"titolo": "Panchina nuova", "testo": testo + "."})
@@ -1781,7 +1791,211 @@ class MatchAnalysis:
                         "titolo": "Striscia positiva",
                         "testo": f"{nome} è imbattuto da {it_plural(unbeaten, 'partita')} consecutiv{'a' if unbeaten == 1 else 'e'} ({v_text}, {p_text}).",
                     })
+        # Fatti di rendimento dentro le proprie mura (docs/25 §4): servono quando la
+        # rassegna stampa in italiano non copre la squadra. Senza queste due righe, con
+        # il filtro lingua del 17/09/2026 la card restava vuota nel 78% delle partite di
+        # Ligue 1 e nel 67% di quelle di Bundesliga (misurato su 68 schede): la parità
+        # fra le 7 leghe non può dipendere da quanto la stampa italiana scrive di Le
+        # Havre o di Paderborn. Qui i numeri vengono dai nostri dati e valgono per tutti.
+        for tid, nome, in_casa in ((home_id, home_name, True), (away_id, away_name, False)):
+            record = self._sapere_campo(tid, nome, in_casa, kickoff)
+            if record:
+                out.append(record)
+            bomber = self._sapere_bomber(match_id, tid, nome, kickoff)
+            if bomber:
+                out.append(bomber)
+        # Fatti di rendimento «di dettaglio» (docs/25 §5): entrano solo se la card non è
+        # già piena, così non spostano mai i fatti che la tengono in piedi.
+        for tid, nome in ((home_id, home_name), (away_id, away_name)):
+            for fatto in (self._sapere_porta(tid, nome, kickoff),
+                          self._sapere_finale(tid, nome, kickoff)):
+                if fatto and len(out) < self.SAPERE_MAX:
+                    out.append(fatto)
         return out
+
+    def _assist_giocatore(self, team_id: int, player_id: int, kickoff: datetime) -> int:
+        """Assist del giocatore nelle gare già giocate di questo campionato (0 se nessuno).
+
+        Serve a completare l'«uomo gol»: chi segna e fa segnare pesa due volte. Come per
+        i gol, contano solo le partite finite prima del calcio d'inizio.
+        """
+        if self.player_stats.empty or "key" not in self.player_stats.columns:
+            return 0
+        fin = self._gare_finite(kickoff)
+        if fin.empty:
+            return 0
+        giocate = {int(x) for x in fin.match_id}
+        a = self.player_stats[(self.player_stats.team_id == team_id)
+                              & (self.player_stats.player_id == player_id)
+                              & (self.player_stats.key == "assists")
+                              & self.player_stats.match_id.isin(giocate)]
+        if a.empty:
+            return 0
+        try:
+            return int(a["value"].sum())
+        except (TypeError, ValueError):
+            return 0
+
+    def _sapere_porta(self, team_id: int, nome: str, kickoff: datetime) -> dict[str, str] | None:
+        """«Porta inviolata»: quante volte la squadra ha finito la gara senza subire gol.
+
+        Con una o due gare il dato non dice nulla; da **tre** in su distingue una difesa
+        solida da una squadra che concede sempre qualcosa. Serve anche a spiegare il
+        «Dentro le mura»: punti fatti spesso con le reti inviolate pesano diversamente.
+        """
+        fin = self._gare_finite(kickoff)
+        if fin.empty:
+            return None
+        gare = fin[(fin.home_id == team_id) | (fin.away_id == team_id)]
+        if len(gare) < 3:
+            return None
+        subiti = gare.apply(lambda r: r.away_goals if r.home_id == team_id else r.home_goals,
+                            axis=1)
+        chiuse = int((subiti == 0).sum())
+        if chiuse < 2:
+            return None
+        if chiuse == len(gare):
+            return {"titolo": "Porta inviolata",
+                    "testo": (f"{nome} non ha ancora subito gol in campionato "
+                              f"({it_plural(len(gare), 'gara')}).")}
+        return {"titolo": "Porta inviolata",
+                "testo": (f"{nome} ha chiuso la porta in {it_plural(chiuse, 'gara')} "
+                          f"su {len(gare)}.")}
+
+    def _sapere_finale(self, team_id: int, nome: str, kickoff: datetime) -> dict[str, str] | None:
+        """«Finale da brividi»: quanti gol la squadra subisce **dopo il 75'**.
+
+        Viene dagli eventi minuto per minuto, non da una media: è il dato che spiega
+        perché una partita chiusa al 70' può ancora muoversi. Soglia: almeno **3** gol
+        subiti nel finale e almeno un terzo del totale, altrimenti è un caso.
+        """
+        fin = self._gare_finite(kickoff)
+        if self.events.empty or fin.empty or "is_home" not in self.events.columns:
+            return None
+        giocate = {int(x) for x in fin.match_id}
+        ev = self.events[self.events.match_id.isin(giocate)
+                         & (self.events.type == "Goal")
+                         & self.events.minute.notna()]
+        if ev.empty:
+            return None
+        m = ev.merge(fin[["match_id", "home_id", "away_id"]], on="match_id", how="inner")
+        if m.empty:
+            return None
+        # il gol è «subito da» chi non l'ha segnato: is_home dice chi ha segnato
+        m = m[m.apply(lambda r: (r.away_id if bool(r.is_home) else r.home_id) == team_id,
+                      axis=1)]
+        totale = len(m)
+        if totale < 4:
+            return None
+        tardi = int((m.minute.astype(float) >= 75).sum())
+        if tardi < 3 or tardi / totale < 0.34:
+            return None
+        return {"titolo": "Finale da brividi",
+                "testo": (f"{nome} ha subito {tardi} dei {totale} gol dopo il 75' "
+                          f"(il {round(100 * tardi / totale)}% di quelli presi fin qui).")}
+
+    def _gare_finite(self, kickoff: datetime) -> Any:
+        """Gare di campionato già giocate prima del calcio d'inizio (stagione corrente)."""
+        if self.fixtures.empty or "status" not in self.fixtures.columns:
+            return self.fixtures
+        fin = self.fixtures[(self.fixtures.status == "finished")
+                            & (self.fixtures.utc_kickoff < kickoff)]
+        return fin
+
+    def _sapere_campo(self, team_id: int, nome: str, in_casa: bool,
+                      kickoff: datetime) -> dict[str, str] | None:
+        """«Dentro le mura» / «Lontano da casa»: il rendimento nel proprio campo.
+
+        Il «Confronto di stagione» dice quanto vale la squadra **in media**; qui si
+        separa ciò che ha fatto dove si gioca questa partita: il vantaggio del campo
+        non è una voce di colore, è metà del punteggio di una squadra di metà
+        classifica. Pubblicato solo con almeno **3** gare giocate in quel ruolo:
+        con una o due il bilancio è un caso, non un fatto.
+        """
+        fin = self._gare_finite(kickoff)
+        if fin.empty:
+            return None
+        colonna = "home_id" if in_casa else "away_id"
+        gare = fin[fin[colonna] == team_id]
+        v = p = s = 0
+        for _, r in gare.iterrows():
+            hg, ag = r.home_goals, r.away_goals
+            if hg is None or ag is None or pd.isna(hg) or pd.isna(ag):
+                continue
+            fatti, subiti = (hg, ag) if in_casa else (ag, hg)
+            if fatti > subiti:
+                v += 1
+            elif fatti < subiti:
+                s += 1
+            else:
+                p += 1
+        n = v + p + s
+        if n < 3:
+            return None
+        punti = 3 * v + p
+        esito = (f"{it_plural(v, 'vittoria', 'vittorie')}, {it_plural(p, 'pareggio')} "
+                 f"e {it_plural(s, 'sconfitta', 'sconfitte')}")
+        titolo = "Dentro le mura" if in_casa else "Lontano da casa"
+        dove = "in casa" if in_casa else "in trasferta"
+        return {"titolo": titolo,
+                "testo": (f"{nome} {dove}: {esito} in {it_plural(n, 'gara')} "
+                          f"({it_plural(punti, 'punto', 'punti')} su {3 * n}, "
+                          f"{punti / n:.2f} a gara).")}
+
+    def _sapere_bomber(self, match_id: int, team_id: int, nome: str,
+                       kickoff: datetime) -> dict[str, str] | None:
+        """«L'uomo gol»: chi ha segnato di più per quella squadra in questo campionato.
+
+        Fatto sempre disponibile (basta un gol segnato) e mai ridondante: la scheda
+        elenca la rosa in ordine di ruolo, non dice chi sta segnando. Se il giocatore
+        risulta **indisponibile** per questa partita lo dice: «il miglior marcatore è
+        fuori» è esattamente l'informazione che manca a chi legge, e nascondere il
+        nome solo perché è infortunato sarebbe una verità a metà.
+        """
+        if self.player_stats.empty:
+            return None
+        ps = self.player_stats[(self.player_stats.team_id == team_id)
+                               & (self.player_stats.key == "goals")]
+        if ps.empty:
+            return None
+        fin = self._gare_finite(kickoff)
+        if not fin.empty:
+            giocate = {int(x) for x in fin.match_id}
+            ps = ps[ps.match_id.isin(giocate)]
+        if ps.empty:
+            return None
+        somme = ps.groupby("player_id")["value"].sum().sort_values(ascending=False,
+                                                                   kind="mergesort")
+        if somme.empty:
+            return None
+        pid = int(somme.index[0])
+        # La fonte scrive lo stesso giocatore in due modi («Adzic» e «Adžić»): il nome
+        # pubblicato è la grafia più frequente, non la prima riga capitata — altrimenti
+        # la stessa scheda potrebbe chiamarlo in due modi diversi fra le sue sezioni.
+        nomi = ps.loc[ps.player_id == pid, "player_name"].mode()
+        pname = str(nomi.iloc[0]) if len(nomi) else ""
+        if not pname:
+            return None
+        try:
+            gol = int(somme.iloc[0])
+        except (TypeError, ValueError):
+            return None
+        if gol < 1:
+            return None
+        assist = self._assist_giocatore(team_id, pid, kickoff)
+        testo = (f"il miglior marcatore di {nome} in questo campionato è {pname} "
+                 f"({it_plural(gol, 'gol')}"
+                 + (f" e {it_plural(assist, 'assist')})" if assist else ")"))
+        if not self.lineup.empty:
+            fuori = self.lineup[(self.lineup.match_id == match_id)
+                                & (self.lineup.team_id == team_id)
+                                & (self.lineup.role == "unavailable")
+                                & (self.lineup.player_id == pid)]
+            if not fuori.empty:
+                tipo = str(fuori.iloc[0].get("unavailability_type") or "").strip().lower()
+                testo += (", che però è indisponibile per questa gara"
+                          + (f" ({tipo})" if tipo in ("injury", "suspension") else ""))
+        return {"titolo": "L'uomo gol", "testo": testo + "."}
 
     def _news_branch(self, row: dict[str, Any]) -> str:
         """Brano della notizia **senza la testata**: il nome della testata non è contenuto.

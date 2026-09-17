@@ -114,20 +114,117 @@ _NON_ITALIAN_TOKENS = frozenset({
 _NON_ITALIAN_CHARS = re.compile(r"[¿¡ßœ]")
 
 
+#: Parole funzionali italiane inequivocabili. Servono quando il rilevatore statistico
+#: non ha abbastanza testo (titoli di 3-5 parole, tutti nomi propri) o è in dubbio:
+#: in entrambi i casi la presenza di grammatica italiana è l'unica prova disponibile.
+_ITALIAN_MARKERS = frozenset({
+    # articoli e preposizioni articolate
+    "il", "lo", "la", "i", "gli", "le", "un", "uno", "una",
+    "del", "dello", "della", "dei", "degli", "delle", "al", "allo", "alla", "ai",
+    "agli", "alle", "nel", "nello", "nella", "nei", "negli", "nelle", "sul", "sullo",
+    "sulla", "sui", "sugli", "sulle", "dal", "dallo", "dalla", "dai", "dagli", "dalle",
+    "col", "coi",
+    # preposizioni, congiunzioni e avverbi
+    "con", "per", "tra", "fra", "dopo", "prima", "mentre", "perche", "perchè", "pero",
+    "però", "quindi", "dunque", "contro", "senza", "anche", "come", "quando", "dove",
+    "non", "sia", "siano", "essere", "stato", "stata", "stati", "state", "sono",
+    "hanno", "aveva", "avevano", "oggi", "domani", "ieri", "ora", "ancora", "tutti",
+    "tutte", "tutto", "ogni", "piu", "più", "meno", "molto", "nuovo", "nuova",
+    # lessico del calcio all'italiana (assente nelle altre lingue)
+    "calcio", "squadra", "partita", "gara", "gare", "gol", "goal", "allenatore",
+    "giocatore", "giocatori", "mercato", "stagione", "campionato", "vittoria",
+    "sconfitta", "sconfitte", "pareggio", "pareggi", "punti", "minuto", "minuti",
+    "casa", "trasferta", "tifosi", "societa", "società", "panchina", "rosa",
+    "attaccante", "centrocampista", "portiere", "difensore", "rigore", "rigori",
+})
+
+#: Sotto questa soglia di parole il rilevatore statistico non distingue una lingua
+#: dall'altra (misurato: «Brighton & Hove Albion vs Arsenal» viene letto come inglese,
+#: «Getafe vs Deportivo A Coruña» come spagnolo). In quel caso decide solo la grammatica.
+_MIN_PAROLE_LINGUA = 6
+
+
+def _stima_lingua(testo: str) -> list[tuple[str, float]]:
+    """Stime (lingua, probabilità) ordinate per verosimiglianza; lista vuota se non si può.
+
+    ``langdetect`` è una libreria piccola, offline e senza chiavi: lavora sui modelli
+    statistici inclusi nel pacchetto, quindi non aggiunge richieste di rete alla
+    pipeline e non viola la regola del costo zero. Il seed fisso rende la stima
+    **deterministica**: a parità di testo la risposta non cambia fra un run e l'altro
+    (senza seed ``langdetect`` usa casualità interna e lo stesso titolo poteva passare
+    in un run e cadere in quello dopo).
+    """
+    try:
+        from langdetect import DetectorFactory, LangDetectException, detect_langs
+    except ImportError:  # libreria assente: resta il solo veto lessicale
+        return []
+    try:
+        DetectorFactory.seed = 0
+        return [(d.lang, float(d.prob)) for d in detect_langs(testo)]
+    except (LangDetectException, ValueError):
+        return []
+
+
 def is_italian_news(title: str, description: str = "") -> bool:
     """Verifica che un titolo (e il suo estratto) sia in lingua italiana.
 
     Regola E di docs/00_regole_di_lavoro.md e docs/01 §6: interfaccia e contenuti del
-    portale devono essere rigorosamente in italiano. Scarta titoli stranieri in modo
-    deterministico.
+    portale devono essere rigorosamente in italiano.
+
+    **Perché non basta la lista di parole (misurato il 2026-09-17, docs/25 §2).** Il
+    vecchio filtro scartava un titolo solo se conteneva una parola-straniera nota, e
+    quindi lasciava passare tutto il resto: sulle **161** voci pubblicate quel giorno
+    nelle schede, **61 non erano in italiano** (olandese, tedesco, portoghese,
+    francese, spagnolo, inglese) pur non contenendo nessuna parola della lista —
+    «Trainerwechsel bei Leverkusen-Gegner», «Petrasso: «Limpámos a nossa imagem»»,
+    «Nottingham Forest stadium expansion plans approved». Il portale dichiarava
+    «titoli in lingua italiana» pubblicando testo in sei lingue.
+
+    La regola ora è a due stadi, entrambi deterministici:
+
+    1. **veto lessicale** (invariato): caratteri e parole che in un titolo di calcio
+       italiano non compaiono (¿ ¡ ß œ, «the», «el», «van de», «des», …);
+    2. **rilevamento statistico** su titolo + estratto, con ``langdetect``. Testo
+       troppo corto (meno di 6 parole) o dubbio del rilevatore: decide la presenza di
+       grammatica italiana, altrimenti si scarta — un titolo di cui non si può
+       affermare la lingua non si pubblica.
+
+    Misurato sulle 161 voci pubblicate: i 61 titoli stranieri sono scartati **tutti**,
+    i 100 italiani conservati **tutti** (nessun falso scarto). Sul campione di 210
+    titoli etichettati per testata la vecchia regola sbagliava 60 volte su 180
+    stranieri, la nuova 5 (tutti casi di testate estere che scrivono in italiano).
     """
     if not title:
         return False
+    description = description or ""
     if _NON_ITALIAN_CHARS.search(title) or _NON_ITALIAN_CHARS.search(description):
         return False
     clean = _strip_accents(title.lower())
     words = set(re.findall(r"[a-z]+", clean))
-    return not bool(words & _NON_ITALIAN_TOKENS)
+    if words & _NON_ITALIAN_TOKENS:
+        return False
+    testo = f"{title} {description}".strip()
+    parole = re.findall(r"[A-Za-zÀ-ÿ']+", testo)
+    marcatori = {p.lower().strip("'") for p in parole} & _ITALIAN_MARKERS
+    stime = _stima_lingua(testo.lower())
+    if not stime:
+        # rilevatore non disponibile: resta il veto lessicale, come prima del 2026-09-17
+        return True
+    if len(parole) < _MIN_PAROLE_LINGUA:
+        # troppo poco testo per una statistica: senza grammatica italiana non si pubblica
+        return bool(marcatori)
+    top_lang, top_prob = stime[0]
+    if top_lang == "it":
+        return True
+    if top_prob < 0.90:
+        # il rilevatore è incerto: l'italiano in classifica con grammatica italiana
+        # dichiarata (almeno due parole funzionali) vale più di una prima posizione
+        # presa per poco (è il caso dei titoli tutti maiuscoli, es. «NAPOLI, LOBOTKA E
+        # IL RINNOVO: …», letti come inglese o portoghese).
+        it_prob = next((p for lg, p in stime if lg == "it"), 0.0)
+        if it_prob >= 0.05 and len(marcatori) >= 2:
+            return True
+    return False
 
 
 # Mappa di denominazioni e alias usati dalla stampa sportiva italiana per i club esteri.

@@ -26,6 +26,82 @@ BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp
 TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
 
 
+def record_campo(fx: Any, team_id: int, in_casa: bool, kickoff: Any) -> tuple[int, int, int, int]:
+    """Bilancio di una squadra **nel ruolo in cui gioca questa partita**.
+
+    Ricalcolo indipendente del «Da sapere · Dentro le mura / Lontano da casa»
+    (docs/25 §4): stesso numero, altra strada — qui vettorizzato su pandas, nel sito
+    riga per riga. Serve a beccare l'errore che un ricalcolo con la stessa funzione
+    non può vedere: se il filtro sulle gare finite o il verso casa/trasferta cambia da
+    una parte sola, i due numeri divergono e il controllo salta.
+    """
+    fin = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)]
+    col = "home_id" if in_casa else "away_id"
+    g = fin[(fin[col] == team_id) & fin.home_goals.notna() & fin.away_goals.notna()]
+    if in_casa:
+        vittorie = int((g.home_goals > g.away_goals).sum())
+        sconfitte = int((g.home_goals < g.away_goals).sum())
+    else:
+        vittorie = int((g.away_goals > g.home_goals).sum())
+        sconfitte = int((g.away_goals < g.home_goals).sum())
+    n = len(g)
+    return vittorie, n - vittorie - sconfitte, sconfitte, n
+
+
+def porta_inviolata(fx: Any, team_id: int, kickoff: Any) -> tuple[int, int] | None:
+    """Gare senza gol subiti (ricalcolo indipendente del «Da sapere · Porta inviolata»)."""
+    fin = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)]
+    g = fin[(fin.home_id == team_id) | (fin.away_id == team_id)]
+    if len(g) < 3:
+        return None
+    subiti = g.apply(lambda r: r.away_goals if r.home_id == team_id else r.home_goals, axis=1)
+    chiuse = int((subiti == 0).sum())
+    return (chiuse, len(g)) if chiuse >= 2 else None
+
+
+def gol_tardi(ev: Any, fx: Any, team_id: int, kickoff: Any) -> tuple[int, int] | None:
+    """Gol subiti dopo il 75' (ricalcolo indipendente del «Da sapere · Finale da brividi»)."""
+    if ev.empty or "is_home" not in ev.columns:
+        return None
+    fin = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)]
+    giocate = {int(x) for x in fin.match_id}
+    e = ev[ev.match_id.isin(giocate) & (ev.type == "Goal") & ev.minute.notna()]
+    if e.empty:
+        return None
+    m = e.merge(fin[["match_id", "home_id", "away_id"]], on="match_id", how="inner")
+    m = m[m.apply(lambda r: (r.away_id if bool(r.is_home) else r.home_id) == team_id, axis=1)]
+    totale = len(m)
+    if totale < 4:
+        return None
+    tardi = int((m.minute.astype(float) >= 75).sum())
+    return (tardi, totale) if tardi >= 3 and tardi / totale >= 0.34 else None
+
+
+def capocannoniere(ps: Any, fx: Any, team_id: int, kickoff: Any) -> tuple[str, int] | None:
+    """Miglior marcatore di una squadra nel campionato (ricalcolo indipendente).
+
+    Somma i gol delle sole gare **finite** prima del calcio d'inizio: sommare tutte le
+    righe del Parquet includerebbe partite non ancora giocate (e quindi un futuro che
+    la scheda non può conoscere). Restituisce (nome, gol) o None se nessuno ha segnato.
+    """
+    if ps.empty or "key" not in ps.columns:
+        return None
+    fin = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)]
+    giocate = {int(x) for x in fin.match_id}
+    g = ps[(ps.team_id == team_id) & (ps.key == "goals") & ps.match_id.isin(giocate)]
+    if g.empty:
+        return None
+    somme = g.groupby("player_id")["value"].sum().sort_values(ascending=False, kind="mergesort")
+    if somme.empty or float(somme.iloc[0]) < 1:
+        return None
+    pid = int(somme.index[0])
+    # stessa regola del sito: la grafia più frequente (docs/25 §4), non la prima riga
+    nomi = g.loc[g.player_id == pid, "player_name"].mode()
+    if nomi.empty:
+        return None
+    return str(nomi.iloc[0]), int(float(somme.iloc[0]))
+
+
 def notizia_in_finestra(righe: Any, kickoff: Any, giorni: int = 12) -> bool:
     """True se **almeno una** riga raccolta per (url, squadra) cade nella finestra.
 
@@ -1336,6 +1412,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
+    ps19 = st.read("player_stats")
+    ev19 = st.read("events")
+    # il sito giudica la lingua su titolo + estratto: qui l'estratto si rilegge dal
+    # Parquet, altrimenti il controllo darebbe «non italiano» su titoli italiani brevi
+    nd19 = st.read("news")
+    desc19 = ({str(x): str(y or "") for x, y in zip(nd19.title, nd19.description)}
+              if not nd19.empty and "description" in nd19.columns else {})
     sim19 = st.read("season_sim")
     from fda.site.analysis import MatchAnalysis as _MA
     from fda.sources.news import JUNK_NEWS, is_italian_news, news_value
@@ -1455,6 +1538,56 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             checks += 1
             if s["testo"] not in testo_card:
                 fails.append(f"{pg.name}: riga «Da sapere · {s['titolo']}» assente o diversa")
+        # 20b) gli stessi fatti ricalcolati con pandas, senza passare dal sito
+        # (docs/25 §4): il bilancio casa/trasferta e l'uomo gol sono i due fatti che
+        # tengono piena la card quando la stampa italiana non scrive della squadra, e
+        # un errore qui si vedrebbe come un dato inventato, non come un buco.
+        if not ps19.empty:
+            for tid, tname, in_casa in ((int(fr.home_id), str(fr.home_name), True),
+                                        (int(fr.away_id), str(fr.away_name), False)):
+                checks += 1
+                v, p, s, n = record_campo(fx19, tid, in_casa, kickoff)
+                if n >= 3:
+                    punti = 3 * v + p
+                    riga = (f"{tname} {'in casa' if in_casa else 'in trasferta'}: "
+                            f"{v} {'vittoria' if v == 1 else 'vittorie'}, "
+                            f"{p} {'pareggio' if p == 1 else 'pareggi'} e "
+                            f"{s} {'sconfitta' if s == 1 else 'sconfitte'} in "
+                            f"{n} {'gara' if n == 1 else 'gare'} "
+                            f"({punti} {'punto' if punti == 1 else 'punti'} su {3 * n}, "
+                            f"{punti / n:.2f} a gara).")
+                    if riga not in testo_card:
+                        fails.append(f"{pg.name}: bilancio {'casa' if in_casa else 'trasferta'} "
+                                     f"di {tname[:20]} assente o diverso dal ricalcolo")
+                checks += 1
+                bomber = capocannoniere(ps19, fx19, tid, kickoff)
+                if bomber and f"{bomber[0]} ({bomber[1]} " not in testo_card:
+                    fails.append(f"{pg.name}: uomo gol di {tname[:20]} assente o diverso "
+                                 f"({bomber[0]} · {bomber[1]} gol attesi)")
+            # i due fatti «di dettaglio» entrano solo sotto il tetto di 8 righe: se la
+            # card non è piena e il dato c'è, la riga deve esserci
+            if testo_card.count("Da sapere ·") < 8:
+                for tid, tname in ((int(fr.home_id), str(fr.home_name)),
+                                   (int(fr.away_id), str(fr.away_name))):
+                    checks += 1
+                    pi = porta_inviolata(fx19, tid, kickoff)
+                    if pi:
+                        chiuse, n = pi
+                        riga = (f"{tname} non ha ancora subito gol in campionato "
+                                f"({n} gare)." if chiuse >= n else
+                                f"{tname} ha chiuso la porta in {chiuse} gare su {n}.")
+                        if riga not in testo_card:
+                            fails.append(f"{pg.name}: porta inviolata di {tname[:20]} "
+                                         f"assente o diversa ({chiuse}/{n})")
+                    checks += 1
+                    gt = gol_tardi(ev19, fx19, tid, kickoff)
+                    if gt:
+                        tardi, totale = gt
+                        riga = (f"{tname} ha subito {tardi} dei {totale} gol dopo il 75' "
+                                f"(il {round(100 * tardi / totale)}% di quelli presi fin qui).")
+                        if riga not in testo_card:
+                            fails.append(f"{pg.name}: gol nel finale di {tname[:20]} "
+                                         f"assenti o diversi ({tardi}/{totale})")
         blocchi = re.split(r'<p style="margin:12px 0 6px"><b>', card)[1:]
         if len(blocchi) != 2:
             fails.append(f"{pg.name}: card con {len(blocchi)} colonne invece di 2")
@@ -1535,13 +1668,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             checks += 1
             for _u, t in stampati:
                 titolo = html_unescape(t)
+                estratto = desc19.get(titolo, "")
                 if JUNK_NEWS.search(titolo):
                     fails.append(f"{pg.name}: voce di servizio pubblicata in card "
                                  f"(«{titolo[:60]}»)")
                 if news_value(titolo) is not None:
                     fails.append(f"{pg.name}: voce senza sostanza pubblicata in card "
                                  f"(«{titolo[:60]}»)")
-                if not is_italian_news(titolo):
+                if not is_italian_news(titolo, estratto):
                     fails.append(f"{pg.name}: voce non in lingua italiana pubblicata in card "
                                  f"(«{titolo[:60]}»)")
             if not atteso["notizie"] and atteso["esaminate"]:
@@ -1634,7 +1768,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             checks += 1
             if html.count(badge) != exp[key]:
                 fails.append(f"{pg.name}: badge «{badge}» {html.count(badge)} vs {exp[key]} ruoli")
-        has_alert = "è indisponibile" in txt
+        # frase intera dell'avviso (docs/25 §4): la sottostringa «è indisponibile»
+        # da sola intercetta anche il «Da sapere · L'uomo gol», che è un'altra cosa
+        has_alert = "Il contributo offensivo più alto della lista" in txt
         if (alerts > 0) != has_alert:
             fails.append(f"{pg.name}: avviso top contributor assente coerente? {has_alert} vs {alerts}")
     print(f"[23] badge «giocherà?» riconciliati: {n_status} pagine")
