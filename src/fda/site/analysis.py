@@ -22,7 +22,7 @@ from ..store import Store
 from ..teams import canonical, soft_key
 from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
-from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, news_value
+from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, is_italian_news, news_value
 from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
 from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
 from .rates import (
@@ -1498,6 +1498,9 @@ class MatchAnalysis:
             if not key or key in visti or not subject_ok(title):
                 out["scartate"] += 1
                 continue
+            if not is_italian_news(title, r.get("description") or ""):
+                out["scartate"] += 1
+                continue
             if topic in self.NEWS_ALTROVE:
                 # infortuni, squalifiche e mercato hanno già la loro card in questa pagina:
                 # ripeterli qui era una delle cose che l'utente non voleva più leggere
@@ -1517,6 +1520,8 @@ class MatchAnalysis:
             # «sintesi» solo se aggiunge qualcosa al titolo: per Google News il brano È il
             # titolo con la testata appiccicata, e ripeterlo era il difetto della vecchia card
             sintesi = branch if len(branch) >= 60 and title[:40].lower() not in branch.lower() else ""
+            if sintesi and not is_italian_news(sintesi):
+                sintesi = ""
             published = pd.to_datetime(r.get("published_at"), utc=True)
             ore = max(0.0, (ko - published).total_seconds() / 3600.0)
             punteggio = (TOPIC_WEIGHTS.get(topic, 0)
