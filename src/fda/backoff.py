@@ -69,7 +69,7 @@ def state(store: Store, source: str, step: str) -> tuple[int, int]:
     """
     try:
         df = store.read("source_status")
-    except Exception:  # noqa: BLE001 — storico illeggibile o assente non deve fermare la raccolta
+    except Exception:
         return 0, 0
     if df is None or df.empty or not {"source", "error", "ok"}.issubset(df.columns):
         return 0, 0

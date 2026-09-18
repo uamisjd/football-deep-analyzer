@@ -5,7 +5,9 @@ senza max_backfill → il default restava typer.Option → TypeError su
 old[:max_backfill] alla prima lega senza Understat (NED1).
 """
 import warnings
+
 import pandas as pd
+
 import fda.collect as collect_mod
 import fda.site.build as site_build_mod
 import fda.store as store_mod

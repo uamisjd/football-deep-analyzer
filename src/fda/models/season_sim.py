@@ -292,7 +292,7 @@ def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int =
             top = df.sort_values("exp_points", ascending=False).head(3)
             log.info("%s: %d simulazioni su %d gare restanti — %s", lg.name, n_sims, len(rem),
                      " · ".join(f"{r.team} {r.exp_points:.0f}pt ({r.p_title:.0%})" for r in top.itertuples()))
-        except Exception as exc:  # noqa: BLE001 — una lega senza dati non deve fermare le altre
+        except Exception as exc:
             log.warning("%s: simulazione saltata (%s: %s)", lg.name, type(exc).__name__, exc)
     cols = ["league_key", "team", "played", "points", "exp_points", "pos_mean",
             "p_title", "top_n", "p_top_n", "p_top4", "p_rel", "n_sims", "n_train",

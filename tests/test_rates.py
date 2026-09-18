@@ -104,7 +104,7 @@ def _totals(rows):
 def test_gruppi_per_lega_e_ruolo_con_ripieghi_e_etichette():
     """Gruppo specifico se ha abbastanza pari; altrimenti la lega; altrimenti tutte le leghe."""
     righe = [{"player_id": i, "minutes": 600.0, "shots": 10.0,
-              "league_id": 55 if i < 10 else 47, "position": 3 if i < 10 else 3}
+              "league_id": 55 if i < 10 else 47, "position": 3}
              for i in range(20)]
     groups = _totals(righe)[["league_id", "position", "minutes"]]
     totals = _totals(righe)[["shots"]]

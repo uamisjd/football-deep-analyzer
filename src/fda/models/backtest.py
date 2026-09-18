@@ -21,8 +21,16 @@ import pandas as pd
 
 from .calibration import Calibration
 from .dc_grid import grid_markets_many, tau_grid_many
-from .predict import (MODEL_VERSION, SHRINK_PRIOR, DixonColesModel, EloModel, ensemble, log_loss,
-                      outcome_index, wilson_interval)
+from .predict import (
+    MODEL_VERSION,
+    SHRINK_PRIOR,
+    DixonColesModel,
+    EloModel,
+    ensemble,
+    log_loss,
+    outcome_index,
+    wilson_interval,
+)
 
 log = logging.getLogger("fda.backtest")
 
@@ -180,7 +188,7 @@ def backtest_summary(df: pd.DataFrame,
     rps = float((((probs.cumsum(1) - onehot.cumsum(1)) ** 2).sum(1) / 2).mean())
     rps_naive = float((((naive_arr.cumsum(1) - onehot.cumsum(1)) ** 2).sum(1) / 2).mean())
     p_real = probs[np.arange(len(df)), oc]
-    n = int(len(df))
+    n = len(df)
     calib = []
     for i, label in enumerate(OUTCOME_LABELS):
         k = int((oc == i).sum())
@@ -200,7 +208,7 @@ def backtest_summary(df: pd.DataFrame,
             continue
         pr, y = pr[ok], y[ok]
         n_mk = int(ok.sum())
-        k_mk = int(round(float(y.sum())))
+        k_mk = round(float(y.sum()))
         lo, hi = wilson_interval(k_mk, n_mk)
         prev = float(pr.mean())
         brier = float(((pr - y) ** 2).mean())

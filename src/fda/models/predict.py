@@ -14,7 +14,7 @@ import logging
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -88,7 +88,7 @@ class DixonColesModel:
     fitted_at: datetime | None = field(default=None, init=False)
     n_matches: int = field(default=0, init=False)
 
-    def fit(self, hist: pd.DataFrame, as_of: datetime | None = None) -> "DixonColesModel":
+    def fit(self, hist: pd.DataFrame, as_of: datetime | None = None) -> DixonColesModel:
         df = hist.dropna(subset=["home_goals", "away_goals"]).copy()
         if as_of is not None:
             df = df[df["date"] <= pd.Timestamp(as_of).tz_localize(None) if df["date"].dt.tz is None
@@ -109,8 +109,8 @@ class DixonColesModel:
         w = pd.Series(np.asarray(weights, dtype=float), index=df.index)
         per_team = w.groupby(df["home"]).sum().add(w.groupby(df["away"]).sum(), fill_value=0.0)
         self.team_weight = {str(t): float(v) for t, v in per_team.items()}
-        self.n_matches = int(len(df))
-        self.fitted_at = datetime.now(timezone.utc)
+        self.n_matches = len(df)
+        self.fitted_at = datetime.now(UTC)
         return self
 
     def shrunk_params(self, params: dict[str, float] | Any) -> dict[str, float]:
@@ -187,7 +187,7 @@ class EloModel:
     ratings: dict[str, float] = field(default_factory=dict)
     history: list[dict[str, Any]] = field(default_factory=list, init=False)
 
-    def fit(self, hist: pd.DataFrame) -> "EloModel":
+    def fit(self, hist: pd.DataFrame) -> EloModel:
         elo = pb.ratings.Elo(k=self.k, home_field_advantage=self.home_field_advantage)
         df = hist.dropna(subset=["home_goals", "away_goals"]).sort_values("date")
         # 0 = vittoria casa, 1 = pareggio, 2 = vittoria trasferta (convenzione penaltyblog)
@@ -543,7 +543,7 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     cal = calibration or Calibration()
     dc = DixonColesModel(xi=xi, shrink_prior=shrink_prior).fit(hist)
     elo = EloModel().fit(hist)
-    made_at = datetime.now(timezone.utc)
+    made_at = datetime.now(UTC)
     # neutre di lega per il fallback neopromosse (audit 1.7): medie gol osservate
     neutral_lh = float(hist["home_goals"].mean()) if not hist.empty and "home_goals" in hist.columns else 1.35
     neutral_la = float(hist["away_goals"].mean()) if not hist.empty and "away_goals" in hist.columns else 1.15

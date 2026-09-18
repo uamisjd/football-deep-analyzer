@@ -20,7 +20,7 @@ NED1, POR1 = 57, 61  # league_id FotMob
 
 
 def git(*args: str) -> bytes:
-    out = subprocess.run(["git", *args], check=True, capture_output=True)  # noqa: S603, S607
+    out = subprocess.run(["git", *args], check=True, capture_output=True)
     return out.stdout
 
 

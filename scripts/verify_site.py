@@ -130,8 +130,24 @@ ENGLISH = re.compile(
 # concordanza: «1 rossi», «1 gare», «1 vittorie»…
 # Non intercettare il finale «,1 gialli» di un decimale (es. 3,1 gialli/gara):
 # si cerca un vero contatore intero all'inizio della parola.
-AGREEMENT = re.compile(r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti)\b")
+# Sostantivi aggiunti il 18/09/2026: la lista originale non conteneva «punti» né
+# «titolari», cioè le uniche due forme davvero sbagliate allora in linea
+# («+1 punti sul secondo», 56× su 43 pagine; «di cui 1 titolari abituali», 25× su 22).
+# Misurato sull'estensione: 81 occorrenze intercettate, 0 falsi positivi. Il verso opposto
+# («2 punto») NON è presidiato: l'unico candidato trovato era «Schalke 04 giocatore»,
+# nome di squadra seguito da un'intestazione di tabella — un falso positivo certo.
+AGREEMENT = re.compile(
+    r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
+    r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
+    r"giocatori|campionati|cartellini|allenatori)\b")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
+# Attributi che un lettore di schermo pronuncia: il testo lì dentro è a tutti gli effetti
+# testo nostro, ma i controlli di lingua giravano solo sul testo visibile (audit 18/09/2026).
+# Misurato su quella dimensione allora scoperta: 30 «1 punti» negli aria-label della forma e
+# 124 «9.0 rigori totali» (float dove serve un intero) nei tooltip dell'arbitro. Vanno raccolti
+# dentro il parser, non con una regex sul grezzo: così restano fuori i title dei link della
+# card notizie, che sono titoli di stampa citati verbatim (stessa ragione del testo).
+ATTR_LEGGIBILI = ("aria-label", "title", "alt", "placeholder")
 
 
 class Text(HTMLParser):
@@ -141,6 +157,13 @@ class Text(HTMLParser):
     brani sono della stampa, pubblicati **verbatim** per scelta documentata (docs/21 P1-5
     e footer della card stessa) — i controlli su decimali/inglese/concordanza valgono per
     il testo NOSTRO, non per le citazioni delle testate. I link della card li verifica [20].
+
+    **Eccezione ``class="sapere"`` (audit 18/09/2026).** I blocchi «Da sapere · …» vivono
+    dentro quella stessa card ma sono **frasi generate da noi**, non citazioni: escludendo
+    l'intera card l'esclusione era troppo larga e il nostro testo usciva dai controlli di
+    lingua. Risultato misurato: «4 punti su 9, 1.33 a gara» (decimale col punto, 52
+    occorrenze su 29 schede) passava indisturbato perché nessun controllo lo leggeva.
+    Gli elementi marcati ``sapere`` sono quindi riammessi anche dentro la card.
     """
 
     def __init__(self) -> None:
@@ -151,6 +174,9 @@ class Text(HTMLParser):
         self.skip = 0
         self.news_tag: str | None = None
         self.news_depth = 0
+        self.sapere_tag: str | None = None
+        self.sapere_depth = 0
+        self.readable_attrs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
         if tag in ("style", "script", "head", "svg"):
@@ -159,6 +185,12 @@ class Text(HTMLParser):
             self.news_tag, self.news_depth = tag, 1
         elif self.news_tag == tag:
             self.news_depth += 1
+        # «Da sapere»: testo nostro dentro la card delle notizie → va ricontrollato (vedi docstring)
+        if self.sapere_depth == 0 and any(
+                k == "class" and v and "sapere" in str(v).split() for k, v in attrs):
+            self.sapere_tag, self.sapere_depth = tag, 1
+        elif self.sapere_tag == tag:
+            self.sapere_depth += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
         for k, v in attrs:
@@ -166,6 +198,8 @@ class Text(HTMLParser):
                 self.ids.add(v)
             if tag == "a" and k == "href" and v:
                 self.hrefs.append(v)
+            if k in ATTR_LEGGIBILI and v and (self.news_depth == 0 or self.sapere_depth > 0):
+                self.readable_attrs.append(str(v))
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("style", "script", "head", "svg") and self.skip:
@@ -174,9 +208,13 @@ class Text(HTMLParser):
             self.news_depth -= 1
             if self.news_depth <= 0:
                 self.news_tag, self.news_depth = None, 0
+        if self.sapere_tag == tag:
+            self.sapere_depth -= 1
+            if self.sapere_depth <= 0:
+                self.sapere_tag, self.sapere_depth = None, 0
 
     def handle_data(self, data: str) -> None:
-        if not self.skip and self.news_depth == 0:
+        if not self.skip and (self.news_depth == 0 or self.sapere_depth > 0):
             self.parts.append(data)
 
 
@@ -185,6 +223,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     fails: list[str] = []
     pages = sorted(site.rglob("*.html"))
     n_th = 0
+    n_attr = 0
     for page in pages:
         rel = str(page.relative_to(site))
         raw = page.read_text(encoding="utf-8")
@@ -209,6 +248,16 @@ def check_pages(site: Path) -> tuple[list[str], int]:
         for m in AGREEMENT.finditer(text):
             fails.append(f"{rel}: concordanza {m.group(0)!r}")
 
+        # stessa terna di controlli sugli attributi pronunciati dai lettori di schermo
+        for attr in parser.readable_attrs:
+            n_attr += 1
+            for m in DECIMAL_POINT.finditer(attr):
+                fails.append(f"{rel}: decimale col punto in attributo {m.group(0)!r}")
+            for m in ENGLISH.finditer(attr):
+                fails.append(f"{rel}: inglese in attributo {m.group(0)!r}")
+            for m in AGREEMENT.finditer(attr):
+                fails.append(f"{rel}: concordanza in attributo {m.group(0)!r}")
+
         for href in parser.hrefs:
             if href.startswith(("http://", "https://", "mailto:")):
                 continue
@@ -227,6 +276,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
                 if fragment not in target_ids:
                     fails.append(f"{rel}: ancora interna mancante {href}")
     print(f"[27] celle <th> con scope verificate: {n_th}")
+    print(f"[27b] attributi leggibili (aria-label/title/alt) verificati: {n_attr}")
     return fails, len(pages)
 
 
@@ -236,7 +286,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
 # questa invariante impedisce che torni muto.
 STATUS_ROW = re.compile(
     r'<tr><td>([^<]+)</td><td class="mut">([^<]*)</td><td class="r">([^<]*)</td>'
-    r'<td class="r">([^<]*)</td><td>(.*?)</td></tr>', re.S)
+    r'<td class="r">([^<]*)</td><td>(.*?)</td></tr>', re.DOTALL)
 
 
 def check_status(site: Path) -> tuple[list[str], int]:
@@ -276,11 +326,11 @@ def check_status(site: Path) -> tuple[list[str], int]:
 # lettore qui non ha contesto, quindi un arrotondamento sbagliato non sarebbe riconoscibile.
 CAL_ROW = re.compile(
     r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)">(.*?)</div>',
-    re.S)
+    re.DOTALL)
 CAL_PCT = re.compile(r'<span class="cal-p"[^>]*aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%"[^>]*>(.*?)</span>')
 CAL_MONTH = re.compile(
     r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
-    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.S)
+    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.DOTALL)
 MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
            "settembre", "ottobre", "novembre", "dicembre"]
 
@@ -339,7 +389,7 @@ def check_calendar(site: Path) -> tuple[list[str], int]:
         righe_totali += len(righe)
 
         for m in righe:
-            classi, lega, stato, corpo = m.groups()
+            classi, _lega, stato, corpo = m.groups()
             checks += 1
             if "cal-fav-" not in classi and "senza previsione" not in corpo:
                 fails.append(f"{rel}: riga di calendario senza esito preferito né «senza previsione»")
@@ -681,10 +731,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         sc = re.match(r"\s*(\d+)-(\d+)", rows[-1][1])
         hg, ag = (int(sc.group(1)), int(sc.group(2))) if sc else (0, 0)
         row = mi[mi.match_id == int(pg.stem)]
-        if not row.empty and pd.notna(row.iloc[0]["home_goals"]):
-            if (hg, ag) != (int(row.iloc[0]["home_goals"]), int(row.iloc[0]["away_goals"])):
-                fails.append(f"{pg.name}: in-play finisce {hg}-{ag}, risultato "
-                             f"{int(row.iloc[0]['home_goals'])}-{int(row.iloc[0]['away_goals'])}")
+        if not row.empty and pd.notna(row.iloc[0]["home_goals"]) and \
+                (hg, ag) != (int(row.iloc[0]["home_goals"]), int(row.iloc[0]["away_goals"])):
+            fails.append(f"{pg.name}: in-play finisce {hg}-{ag}, risultato "
+                         f"{int(row.iloc[0]['home_goals'])}-{int(row.iloc[0]['away_goals'])}")
     print(f"[2] pagine con probabilità in-play verificate: {n_wp}")
 
     # 3) accuratezza: RPS ricalcolato in modo indipendente dalla pagina
@@ -748,11 +798,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             return float(re.sub(r"<[^>]+>", "", txt).replace(".", "").replace(",", ".").rstrip("%"))
 
         righe = 0
-        for row in re.findall(r"<tr><td>.*?</tr>", acc_path.read_text(encoding="utf-8"), re.S):
+        for row in re.findall(r"<tr><td>.*?</tr>", acc_path.read_text(encoding="utf-8"), re.DOTALL):
             mi = re.search(r'<td class="r mut">(\d+,\d+)\s*[–-]\s*(\d+,\d+)%</td>', row)
             if not mi:
                 continue
-            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.DOTALL)
             lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
             kn = re.search(r"\((\d+)/(\d+)\)", row)
             if kn and len(cells) >= 7:                # riga di mercato: k/n esplicito, 9-10 celle
@@ -762,7 +812,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             else:                                     # nessuna k/n pubblicata: k ≈ osservato × n
                 n = int(_n(cells[1]))
                 prev, obs = _n(cells[2]), _n(cells[3])
-                k = int(round(obs * n / 100.0))
+                k = round(obs * n / 100.0)
             lo, hi = wilson_interval(k, n)
             checks += 1
             righe += 1
@@ -814,7 +864,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 print(f"[8] backtest: {len(bt)} gare fuori campione, RPS pagina {rps_bt} = ricalcolato {mine:.4f}")
 
             def _num(pattern: str, what: str) -> float | None:
-                m = re.search(pattern, card, re.S)
+                m = re.search(pattern, card, re.DOTALL)
                 if not m:
                     fails.append(f"accuratezza.html: {what} non pubblicato nella card backtest")
                     return None
@@ -903,7 +953,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi)
     prev_re = re.compile(r"<th[^>]*>Precedenti \((\d+)\)</th>")
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
-                        r' · ([^<]*?) (\d+) assenti', re.S)
+                        r' · ([^<]*?) (\d+) assenti', re.DOTALL)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
     un_count: dict[tuple[int, int], int] = {}
     if not lineup.empty:
@@ -1090,7 +1140,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         # </div></div>: altrimenti l'ultima colonna resta fuori e il confronto salta proprio
         # quella. Difetto rimasto nascosto finché la coda era sempre vuota (0 punti): con la
         # calibrazione a momenti alcune partite hanno punti anche nella colonna «7+».
-        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)\n\s*</div>', html, re.S)
+        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)\n\s*</div>', html, re.DOTALL)
         if not dp:
             fails.append(f"{pg.name}: dotplot dei gol non trovato")
         else:
@@ -1167,18 +1217,25 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     #     interi stampati vicini («+25 punti» tra 51% e 26%), e primo/secondo sono davvero
     #     i due esiti più probabili della triade; i λ sono «+», non un trattino
     n_margini = 0
+    # «punto|punti», non solo «punti»: con la sola forma plurale le 4 schede con margine 1
+    # non corrispondevano e venivano saltate in silenzio (`if not m: continue`), cioè la
+    # correzione della concordanza toglieva copertura invece di essere verificata (18/09/2026).
     hero_re = re.compile(r'<strong>([^<]*)<em>(\d+)%</em>.*?'
-                         r'\+(\d+(?:,\d+)?) punti sul secondo — (.*?) (\d+)%'
-                         r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.S)
+                         r'\+(\d+(?:,\d+)?) (punti|punto) sul secondo — (.*?) (\d+)%'
+                         r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.DOTALL)
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
         m = hero_re.search(html)
         if not m:
             continue
-        top_v, margine, second_v = int(m.group(2)), float(m.group(3).replace(",", ".")), int(m.group(5))
-        pcts = sorted((int(m.group(6)), int(m.group(7)), int(m.group(8))), reverse=True)
+        top_v, margine, second_v = int(m.group(2)), float(m.group(3).replace(",", ".")), int(m.group(6))
+        pcts = sorted((int(m.group(7)), int(m.group(8)), int(m.group(9))), reverse=True)
         checks += 1
         n_margini += 1
+        # la concordanza è ora verificata, non solo tollerata
+        attesa = "punto" if int(margine) == 1 else "punti"
+        if m.group(4) != attesa:
+            fails.append(f"{pg.name}: «+{margine:g} {m.group(4)} sul secondo», voleva «{attesa}»")
         if (top_v - second_v) != int(margine):
             fails.append(f"{pg.name}: margine +{margine:g} punti con {top_v}% e {second_v}% stampati")
         if (top_v, second_v) != (pcts[0], pcts[1]):
@@ -1323,7 +1380,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             lam_here = _disp_sum(float(row.lambda_home.iloc[0]), float(row.lambda_away.iloc[0]))
             dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
             dist = dist[np.isfinite(dist)]
-            n_exp = int(len(dist))
+            n_exp = len(dist)
             checks += 1
             n_pos += 1
             here_t, pct_t, n_t, lg_t, mean_t, med_t = m.groups()
@@ -1331,7 +1388,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: gol attesi {here_t} vs somma delle λ stampate "
                              f"{_stamp_it(lam_here)}")
             below = float((dist < lam_here).mean())
-            if int(pct_t) != int(round(below * 100)):
+            if int(pct_t) != round(below * 100):
                 fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
             if int(n_t) != n_exp:
                 fails.append(f"{pg.name}: partite di lega {n_t} vs {n_exp} in predictions")
@@ -1357,12 +1414,12 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_fg = int(ev_df[ev_df.type == "Goal"].match_id.nunique())
             fg_re = re.compile(
                 r"su (\d+(?:\.\d+)*) gol nelle\s*(\d+(?:\.\d+)*) partite di questa stagione \(7 leghe\), il "
-                r"(\d+,\d)% cade nel 1° tempo", re.S)
+                r"(\d+,\d)% cade nel 1° tempo", re.DOTALL)
             qq_re = re.compile(
                 r"la metà centrale dei primi gol cade fra\s*(dopo il 90'|\d+')\s*e\s*"
                 r"(dopo il 90'|\d+')\s*e la mediana è\s*(dopo il 90'|\d+')\. "
                 r"Pari senza gol al riposo: <b>(\d+,\d)%</b>;\s*zero gol su novanta minuti: "
-                r"(\d+,\d)%\.", re.S)
+                r"(\d+,\d)%\.", re.DOTALL)
             n_q = 0
             for pg in pages:
                 html = pg.read_text(encoding="utf-8")
@@ -1378,7 +1435,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 r1_f, r2_f = s_fg * lam_fg / 45.0, (1.0 - s_fg) * lam_fg / 45.0
                 s_ht_f = float(np.exp(-r1_f * 45.0))
 
-                def _qexp(p: float) -> float | None:
+                # r1_f/r2_f/s_ht_f legati via default: la chiusura è usata nella stessa
+                    # iterazione, ma così B023 non segnala il late-binding (ruff, pulizia 18/09)
+                def _qexp(p: float, r1_f: float = r1_f, r2_f: float = r2_f,
+                          s_ht_f: float = s_ht_f) -> float | None:
                     tail = 1.0 - p
                     t = (-np.log(tail) / r1_f) if tail >= s_ht_f else \
                         (45.0 + (-np.log(tail) - r1_f * 45.0) / r2_f)
@@ -1398,7 +1458,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 # la frase stampa «fra q1 e q3 e la mediana è q2»: riordino i gruppi
                 labels = {0.25: m_q.group(1), 0.75: m_q.group(2), 0.50: m_q.group(3)}
                 for p, t in qs.items():
-                    atteso = "dopo il 90'" if t is None else f"{int(round(t))}'"
+                    atteso = "dopo il 90'" if t is None else f"{round(t)}'"
                     n_q += 1
                     if labels[p] != atteso:
                         fails.append(f"{pg.name}: quartile p={p} primo gol «{labels[p]}» vs modello «{atteso}»")
@@ -1503,9 +1563,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     checks += 1
                     if coach[0] not in txt:
                         fails.append(f"{pg.name}: panchina senza il coach {coach[0]} dei Parquet")
-                    if coach[1] is not None:
-                        if "panchina nuova" not in txt or str(coach[1]) not in txt:
-                            fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
+                    if coach[1] is not None and \
+                            ("panchina nuova" not in txt or str(coach[1]) not in txt):
+                        fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
                 if sr is not None and 'id="panchina"' in html:
                     checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
@@ -1513,9 +1573,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         raw_top = getattr(sr, "p_top4", None)
                     raw_n = getattr(sr, "top_n", None)
                     top_n = 4 if raw_n is None or pd.isna(raw_n) else int(raw_n)
-                    pt = int(round(float(sr.p_title) * 100))
-                    pe = None if raw_top is None or pd.isna(raw_top) else int(round(float(raw_top) * 100))
-                    pr = int(round(float(sr.p_rel) * 100))
+                    pt = round(float(sr.p_title) * 100)
+                    pe = None if raw_top is None or pd.isna(raw_top) else round(float(raw_top) * 100)
+                    pr = round(float(sr.p_rel) * 100)
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
                     if atteso not in txt or f"salvezza {pr}%" not in txt:
@@ -1592,7 +1652,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                             f"{s} {'sconfitta' if s == 1 else 'sconfitte'} in "
                             f"{n} {'gara' if n == 1 else 'gare'} "
                             f"({punti} {'punto' if punti == 1 else 'punti'} su {3 * n}, "
-                            f"{punti / n:.2f} a gara).")
+                            # virgola italiana, ricostruita qui a mano di proposito: questo è
+                            # un ricalcolo INDIPENDENTE (docs/25 §4). Fino al 18/09/2026 qui
+                            # c'era lo stesso `:.2f` col punto del sito, cioè verificatore e
+                            # generatore concordavano sull'errore e nessuno dei due lo vedeva.
+                            f"{punti / n:.2f}".replace(".", ",") + " a gara).")
                     if riga not in testo_card:
                         fails.append(f"{pg.name}: bilancio {'casa' if in_casa else 'trasferta'} "
                                      f"di {tname[:20]} assente o diverso dal ricalcolo")

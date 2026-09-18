@@ -376,7 +376,7 @@ class SiteBuilder:
                 tot = displayed_sum(float(p.lambda_home), float(p.lambda_away))
                 prev = {"pct": pct, "fav": ("h", "d", "a")[fav_i], "fav_i": fav_i,
                         "gol": it_dec(tot, 1) if np.isfinite(tot) else None,
-                        "over": int(round(float(p.p_over25) * 100)) if np.isfinite(p.p_over25) else None}
+                        "over": round(float(p.p_over25) * 100) if np.isfinite(p.p_over25) else None}
             else:
                 senza += 1
             mesi[(local.year, local.month)].append({
@@ -504,9 +504,9 @@ class SiteBuilder:
                 # il totale è la somma delle due cifre stampate: la description finisce su Google,
                 # dove il lettore non ha contesto per accorgersi di un «2,38» che non chiude (docs/22)
                 page_desc = (f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name}: '
-                             f'1 {int(round(p["p_home"]*100))}% X {int(round(p["p_draw"]*100))}% 2 {int(round(p["p_away"]*100))}% '
+                             f'1 {round(p["p_home"]*100)}% X {round(p["p_draw"]*100)}% 2 {round(p["p_away"]*100)}% '
                              f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(displayed_sum(_lh, _la))} totali) · '
-                             f'Over 2,5 {int(round(p.get("p_over25",0)*100))}%')
+                             f'Over 2,5 {round(p.get("p_over25",0)*100)}%')
             else:
                 page_desc = f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name} — analisi pre-partita, forma e precedenti.'
             page_title = f'{ctx.get("home_name")} - {ctx.get("away_name")} — analisi · CalcioMetro'
@@ -656,7 +656,7 @@ class SiteBuilder:
                 composizione = composizione_campione(p, MODEL_VERSION)
                 # calibrazione: probabilità media prevista vs frequenza osservata (tutte le gare valutate)
                 oc_all = p["outcome"].to_numpy()
-                n_all = int(len(p))
+                n_all = len(p)
                 calib = []
                 for i, lbl in enumerate(("1 · vittoria in casa", "X · pareggio", "2 · vittoria in trasferta")):
                     k = int((oc_all == i).sum())
@@ -692,7 +692,7 @@ class SiteBuilder:
                     pr, y = pr[ok], y[ok]
                     base = y.mean()
                     n_mk = int(ok.sum())
-                    k_mk = int(round(float(y.sum())))
+                    k_mk = round(float(y.sum()))
                     lo_mk, hi_mk = wilson_interval(k_mk, n_mk)
                     prev_mk = float(pr.mean())
                     markets.append({"label": label, "n": n_mk, "k": k_mk, "prev": prev_mk,
@@ -730,7 +730,7 @@ class SiteBuilder:
                             "label": label,
                             "lo": lo,
                             "hi": hi,
-                            "n": int(len(sub)),
+                            "n": len(sub),
                             "rps": float(rps_b),
                             "hit": hit_b,
                             "lead_mean": float(lead_days[(lead_days >= lo) & (lead_days <= hi)].mean()),

@@ -545,6 +545,26 @@ def test_clima_squadra_serenissima_senza_segnali(mood_analysis):
     assert [r["text"] for r in roma] == ["riposo corto: 3 giorni"]
 
 
+def test_clima_infermeria_concordanza_titolari(mood_analysis, monkeypatch):
+    """«di cui 1 titolare abituale», non «di cui 1 titolari abituali» (audit 18/09/2026).
+
+    Sul sito pubblicato la forma sbagliata compariva 25 volte su 22 schede: era l'unica
+    frase del portale a stampare il contatore senza ``it_plural``, mentre ``match.html``
+    (riga indisponibili) e ``_sapere_assenze`` la concordavano già. Il test fissa il peso
+    dell'infermeria e verifica solo la concordanza, che è la riga corretta.
+    """
+    def peso(n_titolari):
+        def _f(self, match_id, team_id):
+            return {"n": 4, "starters_out": n_titolari, "contrib_lost_p90": 0.9}
+        return _f
+
+    for n, attesa in ((1, "di cui 1 titolare abituale"), (2, "di cui 2 titolari abituali")):
+        monkeypatch.setattr(MatchAnalysis, "absences_weight", peso(n))
+        testi = [r["text"] for r in mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))]
+        assert any(attesa in t for t in testi), (n, testi)
+        assert not any("1 titolari" in t for t in testi), testi
+
+
 def test_google_news_params_italian_search_names():
     """Le query di Google News per club esteri usano i nomi comuni della stampa italiana."""
     from fda.sources.news import google_news_params
@@ -664,10 +684,14 @@ def test_da_sapere_bilancio_campo_e_uomo_gol(tmp_path):
     # due squadre → due righe «L'uomo gol»: il titolo si ripete, il testo dice di chi
     testi = [(s["titolo"], s["testo"]) for s in sapere]
 
-    assert ("Dentro le mura", "Roma in casa: 2 vittorie, 1 pareggio e 0 sconfitte in 3 gare (7 punti su 9, 2.33 a gara).") in testi
-    assert ("Lontano da casa", "Inter in trasferta: 1 vittoria, 1 pareggio e 1 sconfitta in 3 gare (4 punti su 9, 1.33 a gara).") in testi
+    # virgola italiana (docs/25): prima qui era codificato l'output sbagliato «2.33 a gara»,
+    # cioè il test bloccava il difetto invece di impedirlo — audit 18/09/2026.
+    assert ("Dentro le mura", "Roma in casa: 2 vittorie, 1 pareggio e 0 sconfitte in 3 gare (7 punti su 9, 2,33 a gara).") in testi
+    assert ("Lontano da casa", "Inter in trasferta: 1 vittoria, 1 pareggio e 1 sconfitta in 3 gare (4 punti su 9, 1,33 a gara).") in testi
     # l'uomo gol conta solo le gare finite: Pellegrini resta a 1, Dybala a 3
-    assert ("L'uomo gol", "il miglior marcatore di Roma in questo campionato è Dybala (3 gol), che però è indisponibile per questa gara (injury).") in testi
+    # il tipo di indisponibilità va tradotto: prima qui era codificato l'inglese della fonte
+    # («(injury)»), unica riga del portale a pubblicare il valore grezzo — audit 18/09/2026
+    assert ("L'uomo gol", "il miglior marcatore di Roma in questo campionato è Dybala (3 gol), che però è indisponibile per questa gara (infortunio).") in testi
     assert ("L'uomo gol", "il miglior marcatore di Inter in questo campionato è Thuram (1 gol).") in testi
     st.close()
 

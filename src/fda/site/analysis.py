@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import ast
 import re
+from datetime import UTC, datetime
 from itertools import pairwise
-from datetime import datetime, timezone
 from typing import Any, ClassVar
 from zoneinfo import ZoneInfo
 
@@ -18,19 +18,29 @@ import numpy as np
 import pandas as pd
 from scipy.stats import poisson
 
-from ..store import Store
-from ..teams import canonical, soft_key
 from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
 from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, is_italian_news, news_value
-from .advanced import goals_view, probability_steps, score_matrix, shot_quality, style_rows, wp_path, xg_race
+from ..store import Store
+from ..teams import canonical, soft_key
+from .advanced import (
+    goals_view,
+    probability_steps,
+    score_matrix,
+    shot_quality,
+    style_rows,
+    wp_path,
+    xg_race,
+)
 from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
 from .rates import (
     MIN_DEN_FOR_RATE,
     Pool,
     group_label,
-    lookup as pool_lookup,
     player_pools,
+)
+from .rates import (
+    lookup as pool_lookup,
 )
 
 # Ruolo di FotMob ``usualPosition``: la codifica parte da **0**, non da 1. Verificato su
@@ -308,8 +318,8 @@ def _return_it(s: str | None) -> str | None:
 
 
 def _it2(v: float) -> str:
-    """3.5 → '3,50' (virgola decimale italiana)."""
-    return f"{float(v):.2f}".replace(".", ",")
+    """3.5 → '3,50' (virgola decimale italiana). Alias di :func:`fda.site.fmt.dec`."""
+    return dec(v, 2)
 
 
 # Fatti FotMob (`insights`): testi inglesi a template. Si traducono SOLO i pattern
@@ -319,7 +329,7 @@ def _it2(v: float) -> str:
 _INSIGHT_EN_LEAK = re.compile(
     r"\b(haven't|have scored|have (won|lost|kept|been|conceded)|clean sheet|"
     r"their last|matches|meetings|attempts|competition|ranked|average)\b",
-    re.I,
+    re.IGNORECASE,
 )
 
 # Sotto questa soglia la media gialli/partita di un arbitro ha un errore standard grande
@@ -571,7 +581,7 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
         elo_top = elo_ordered[0][0]
         elo_gap_pp = round(max(abs(float(values[k]) - float(elo_values[k])) for k in values) * 100, 1)
 
-    second_key, second_prob = ordered[1]
+    second_key, _second_prob = ordered[1]
     # probabilità DC ed Elo per tooltip dettagliato
     dc_keys = (("1", "dc_p_home"), ("X", "dc_p_draw"), ("2", "dc_p_away"))
     dc_values = {k: _prob(f) for k, f in dc_keys}
@@ -801,7 +811,7 @@ class MatchAnalysis:
 
         return {"q": [(p, _q(p)) for p in (0.25, 0.50, 0.75)],
                 "s_half": s, "s_ht": s_ht, "lam": lam_tot,
-                "n_goals": int(len(g)), "n_matches": int(g.match_id.nunique()),
+                "n_goals": len(g), "n_matches": int(g.match_id.nunique()),
                 "zero": float(np.exp(-lam_tot))}
 
     # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
@@ -824,7 +834,7 @@ class MatchAnalysis:
         p = self.preds[self.preds.league_key == lg].sort_values("made_at").groupby("match_id").tail(1)
         tot = (p.lambda_home.astype(float) + p.lambda_away.astype(float))
         tot = tot[np.isfinite(tot)]
-        n = int(len(tot))
+        n = len(tot)
         if n < 30:
             return None
         here = displayed_sum(lam[0], lam[1])   # la somma dei due λ stampati, non dei grezzi
@@ -880,7 +890,7 @@ class MatchAnalysis:
                         "current": bool(lo <= here < hi)})
         if not any(r["current"] for r in out):
             return None
-        return {"rows": out, "n_tot": int(len(fav)), "fav": here}
+        return {"rows": out, "n_tot": len(fav), "fav": here}
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
@@ -1211,7 +1221,9 @@ class MatchAnalysis:
                         )
                 else:
                     gap_eur = None
-                parts = [f"{rank}º con {pts} punti"]
+                # concordanza: «1º con 1 punti» non è italiano; due righe più sopra lo stesso
+                # file concordava già «1 punto / 2 punti dal Nº posto» (audit 18/09/2026)
+                parts = [f"{rank}º con {it_plural(pts, 'punto', 'punti')}"]
                 if gap_rel:
                     parts.append(gap_rel)
                 if gap_eur:
@@ -1316,7 +1328,11 @@ class MatchAnalysis:
                    or (ab.get("contrib_lost_p90") or 0) >= self.MOOD_ABSENT_CONTRIB):
             bits = [f"infermeria pesante: {ab['n']} assenti"]
             if ab["starters_out"]:
-                bits.append(f"di cui {ab['starters_out']} titolari abituali")
+                # concordanza: con un solo titolare «di cui 1 titolari abituali» non è italiano
+                # (25 occorrenze su 22 schede, audit 18/09). it_plural è lo stesso helper che
+                # match.html:284 e _sapere_assenze usano già per la stessa frase.
+                bits.append("di cui " + it_plural(ab["starters_out"], "titolare abituale",
+                                                  "titolari abituali"))
             if ab.get("contrib_lost_p90"):
                 bits.append(f"≈ {str(round(ab['contrib_lost_p90'], 1)).replace('.', ',')} "
                             f"xG+xA a partita in meno")
@@ -1955,7 +1971,7 @@ class MatchAnalysis:
         return {"titolo": titolo,
                 "testo": (f"{nome} {dove}: {esito} in {it_plural(n, 'gara')} "
                           f"({it_plural(punti, 'punto', 'punti')} su {3 * n}, "
-                          f"{punti / n:.2f} a gara).")}
+                          f"{_it2(punti / n)} a gara).")}
 
     def _sapere_bomber(self, match_id: int, team_id: int, nome: str,
                        kickoff: datetime) -> dict[str, str] | None:
@@ -2008,8 +2024,12 @@ class MatchAnalysis:
                                 & (self.lineup.player_id == pid)]
             if not fuori.empty:
                 tipo = str(fuori.iloc[0].get("unavailability_type") or "").strip().lower()
+                # unavailability_it() è lo stesso traduttore usato dalle righe 2529 e 3569:
+                # qui era l'unico punto a stampare il valore grezzo della fonte, e a schermo
+                # usciva «(injury)» / «(suspension)» in inglese (8 occorrenze, audit 18/09).
                 testo += (", che però è indisponibile per questa gara"
-                          + (f" ({tipo})" if tipo in ("injury", "suspension") else ""))
+                          + (f" ({unavailability_it(tipo)})"
+                             if tipo in ("injury", "suspension") else ""))
         return {"titolo": "L'uomo gol", "testo": testo + "."}
 
     def _news_branch(self, row: dict[str, Any]) -> str:
@@ -2341,7 +2361,7 @@ class MatchAnalysis:
                             signed = hg - ag if team_home else ag - hg
                             pts_total += 3 if signed > 0 else 1 if signed == 0 else 0
                         xpts, pts = round(xpts_total, 1), int(pts_total)
-                return {"source": "FotMob", "played": int(len(xg)), "xg": xg.sum(),
+                return {"source": "FotMob", "played": len(xg), "xg": xg.sum(),
                         "xga": xga.sum(), "xg_pm": xg.mean(), "xga_pm": xga.mean(),
                         "xpts": xpts, "pts": pts, "ppda": None}
         return None
@@ -2894,7 +2914,7 @@ class MatchAnalysis:
         p90 = played.minutes_played / 90.0
         contrib = xg.fillna(0.0) + xa.fillna(0.0)
         played = played.assign(p90=p90, contrib=contrib, contrib_p90=contrib / p90)
-        eligible = int(len(played))
+        eligible = len(played)
         played = played.sort_values("contrib_p90", ascending=False).head(n)
         out = []
         for r in played.itertuples(index=False):
@@ -3010,7 +3030,7 @@ class MatchAnalysis:
                 "pens": _val(d, "referee_penalties_total"), "fouls": _val(d, "referee_fouls_per_match"),
                 "league_yellows": _mean("referee_yellows_per_match"),
                 "league_fouls": _mean("referee_fouls_per_match"),
-                "league_matches": int(len(lg)) if not lg.empty else None}
+                "league_matches": len(lg) if not lg.empty else None}
 
     def _weather(self, match_id: int, desc: Any, temp: Any, precip: Any) -> dict[str, Any]:
         """Meteo della gara: FotMob primario, Open-Meteo (previsionale) come fallback."""
@@ -3132,8 +3152,9 @@ class MatchAnalysis:
     def physical_stats(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
         """Dati fisici: distanza, sprint, metri in sprint, giocatore più veloce.
 
-        FotMob li pubblica solo per una parte delle partite (**30** in archivio): la card
-        compare solo quando i dati ci sono, senza stime al posto dei numeri mancanti.
+        FotMob li pubblica solo per una parte delle partite (la copertura cresce con
+        l'archivio e non è fissa): la card compare solo quando i dati ci sono, senza
+        stime al posto dei numeri mancanti.
         """
         keys = ("physical_metrics_distance_covered", "physical_metrics_number_of_sprints",
                 "physical_metrics_sprinting", "physical_metrics_topspeed")
@@ -3154,7 +3175,7 @@ class MatchAnalysis:
                 "km": float(have.physical_metrics_distance_covered.sum() / 1000.0),
                 "sprints": int(have.physical_metrics_number_of_sprints.fillna(0).sum()),
                 "sprint_m": int(have.physical_metrics_sprinting.fillna(0).sum()),
-                "players": int(len(have)),
+                "players": len(have),
                 "fastest": None if top is None else str(top.player_name),
                 "topspeed": None if top is None else float(top.physical_metrics_topspeed)}
         if len(sides) < 2:
@@ -3304,8 +3325,8 @@ class MatchAnalysis:
         if s.empty:
             return {}
         big = s[s.xg >= 0.3]
-        return {"n": int(len(s)), "xg": float(s.xg.sum()), "on_target": int(_on_target(s).sum()),
-                "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": int(len(big)),
+        return {"n": len(s), "xg": float(s.xg.sum()), "on_target": int(_on_target(s).sum()),
+                "inside_box": int(s.is_inside_box.fillna(False).sum()), "big_chances": len(big),
                 # quante grandi occasioni sono diventate gol: la conversione di serata
                 # distingue «ha creato poco» da «ha sprecato» (utile per la gara successiva)
                 "big_goals": int((big.event_type == "Goal").sum()),
@@ -3526,7 +3547,7 @@ class MatchAnalysis:
 
         h_att, h_def = ratios(h)
         a_att, a_def = ratios(a)
-        fmt = lambda v: f"{v:.2f}".replace(".", ",")  # noqa: E731
+        fmt = _it2
         if h_att * a_def >= a_att * h_def:
             duel = (f"duello chiave: attacco {home_name} ({fmt(h_att)}× la media gol della lega) "
                     f"contro difesa {away_name} ({fmt(a_def)}× la media gol subiti): il lato più "
@@ -3667,7 +3688,8 @@ class MatchAnalysis:
                     giudizio = "in difficoltà"
                 else:
                     giudizio = "andamento nella norma"
-                s.append(f"{name}: {pts} punti nelle ultime {len(f)} ({seq}) — {giudizio}.")
+                s.append(f"{name}: {it_plural(pts, 'punto', 'punti')} nelle ultime "
+                         f"{len(f)} ({seq}) — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
@@ -3889,7 +3911,7 @@ class MatchAnalysis:
             "away_shots": self.shot_summary(match_id, away_id) if status == "finished" else {},
             "home_shotmap": self.shot_map(match_id, home_id) if status == "finished" else [],
             "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
-            "generated_at": datetime.now(timezone.utc),
+            "generated_at": datetime.now(UTC),
         }
         if status == "finished":
             ctx["detail_stats"] = self.detail_stats(match_id, home_id, away_id)

@@ -28,12 +28,12 @@ DST.mkdir(parents=True)
 for f in SRC.glob("*"):
     shutil.copy(f, DST)
 
-import fda.store as store_mod                                    # noqa: E402
+import fda.store as store_mod
 
 store_mod.PROCESSED_DIR = DST
-from fda.models.calibration import from_store                     # noqa: E402
-from fda.models.predict import calibrated_prediction              # noqa: E402
-from fda.store import Store                                       # noqa: E402
+from fda.models.calibration import from_store
+from fda.models.predict import calibrated_prediction
+from fda.store import Store
 
 store = Store(base_dir=DST)
 cal = from_store(store)
@@ -48,11 +48,11 @@ print("previsioni:", pred.shape)
 # 8,4 gol attesi. Con la ricetta promossa (`tilt`, `docs/15`) i limiti sono già applicati in
 # produzione **dopo** la calibrazione, quindi sulle righe nuove questo passaggio non interviene:
 # resta per le previsioni storiche ancora nello store.
-import numpy as np                                               # noqa: E402
-import penaltyblog as pb                                         # noqa: E402
+import numpy as np
+import penaltyblog as pb
 
-from fda.models.dc_grid import GRID_SIZE                         # noqa: E402
-from fda.models.predict import _clamp_lambda                     # noqa: E402
+from fda.models.dc_grid import GRID_SIZE
+from fda.models.predict import _clamp_lambda
 
 limitate = 0
 rows = []
@@ -83,7 +83,7 @@ for rec in pred.to_dict("records"):
 print(f"previsioni con λ riportate entro i limiti di sicurezza: {limitate}")
 store.upsert("predictions", pd.DataFrame(rows))
 
-from fda.site.build import SiteBuilder                          # noqa: E402
+from fda.site.build import SiteBuilder
 
 res = SiteBuilder(store=store, out_dir=PREVIEW_DIR).build()
 print("sito di anteprima in", PREVIEW_DIR.resolve(), res)

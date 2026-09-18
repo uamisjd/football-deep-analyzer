@@ -72,9 +72,9 @@ def audit_match(ctx: dict[str, Any], now: pd.Timestamp | None = None) -> dict[st
         # distinta pubblicata e nessun indisponibile segnalato: «nessuno è fuori» è
         # un'informazione completa, non un buco (misurato 2026-09-13: 4 squadre su 105 schede
         # finivano contate come campo mancante pur avendo la formazione con 11 nomi).
-        if item.key.endswith("_unavailable") and not _present(value):
-            if _present(ctx.get(f"{item.key.split('_', 1)[0]}_starters")):
-                value = True
+        if item.key.endswith("_unavailable") and not _present(value) and \
+                _present(ctx.get(f"{item.key.split('_', 1)[0]}_starters")):
+            value = True
         if _present(value):
             state = "presente"
         elif item.from_source and days > item.min_days_before:

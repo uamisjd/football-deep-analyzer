@@ -13,9 +13,9 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from ..models.dc_grid import clamp_rho as _clamp_rho  # noqa: F401  (riesportato per i test)
 from ..models.dc_grid import tau_grid
-from .fmt import dec as _dec, int_it as _int_it
+from .fmt import dec as _dec
+from .fmt import int_it as _int_it
 
 # Situazioni FotMob → italiano (valori reali in shots.parquet, 2026-09-11).
 SITUATION_IT = {
@@ -170,7 +170,7 @@ def _per_cento(masse: np.ndarray) -> np.ndarray:
     """
     raw = np.nan_to_num(np.asarray(masse, dtype=float), nan=0.0, posinf=0.0, neginf=0.0) * 100.0
     base = np.floor(raw).astype(int)
-    resto = int(round(100.0 - base.sum()))
+    resto = round(100.0 - base.sum())
     if resto > 0:
         ordine = np.argsort(-(raw - base), kind="stable")
         for i in ordine[:resto]:
@@ -431,14 +431,14 @@ def shot_quality(shots: pd.DataFrame, team_id: int) -> dict[str, Any] | None:
     s = s.dropna(subset=["xg"])
     if s.empty:
         return None
-    n = int(len(s))
+    n = len(s)
     xg = float(s.xg.sum())
     xgot = float(s.xgot.fillna(0).sum()) if "xgot" in s.columns else 0.0
     goals = int((s.event_type == "Goal").sum()) if "event_type" in s.columns else 0
     buckets: dict[str, dict[str, float]] = {}
     for name in ("open", "set", "pen", "other"):
         sub = s[s.situation.map(_bucket) == name] if "situation" in s.columns else s.iloc[0:0]
-        buckets[name] = {"n": int(len(sub)), "xg": float(sub.xg.sum()) if len(sub) else 0.0}
+        buckets[name] = {"n": len(sub), "xg": float(sub.xg.sum()) if len(sub) else 0.0}
     best = s.sort_values("xg", ascending=False).iloc[0]
     return {
         "n": n, "xg": xg, "xgot": xgot, "goals": goals,

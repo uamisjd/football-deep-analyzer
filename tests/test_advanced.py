@@ -301,8 +301,9 @@ def test_probability_steps_is_a_real_chain_not_a_reconstruction():
     assert steps[2]["p_home"] == pytest.approx(base["blend_p_home"]) and "1,083" in steps[2]["note"]
     assert steps[0]["delta_pp"] is None
     # ogni Δ pubblicato è la differenza fra i valori STAMPATI dei due passi adiacenti
-    from fda.site.fmt import pct_triple
     from itertools import pairwise
+
+    from fda.site.fmt import pct_triple
 
     for prev_asm, cur in pairwise(steps):
         disp_prev = max(pct_triple((prev_asm["p_home"], prev_asm["p_draw"], prev_asm["p_away"]), 1))

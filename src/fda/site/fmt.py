@@ -146,7 +146,7 @@ def pct_triple(p: tuple[float, float, float], nd: int = 0) -> list[float]:
     nd = int(nd)
     unit = 10 ** nd
     raw = [float(v) * 100.0 * unit for v in p]
-    base = [int(math.floor(x)) for x in raw]
+    base = [math.floor(x) for x in raw]
     resto = 100 * unit - sum(base)
     if resto:
         residuals = [r - f for r, f in zip(raw, base)]

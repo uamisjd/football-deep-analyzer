@@ -58,6 +58,25 @@ where = ["src"]
 line-length = 100
 target-version = "py311"
 
+# Eccezioni deliberate (pulizia ruff del 18/09/2026, vedi docs/27 §5.2): il resto del codice
+# è a zero segnalazioni. Questi moduli usano `except Exception`/`try…pass` come scelta
+# documentata di progetto («se un passo cade, il run degrada e pubblica comunque», README):
+# ignorarle qui NON le ignora nei file nuovi, dove restano vietate (regola B.4).
+[tool.ruff.lint.per-file-ignores]
+"src/fda/site/build.py" = ["BLE001", "S110"]
+"src/fda/site/analysis.py" = ["BLE001"]
+"src/fda/cli.py" = ["BLE001", "B008"]   # B008: typer.Argument in default è l'idioma di typer
+"src/fda/models/predict.py" = ["BLE001"]
+"src/fda/models/calibration.py" = ["BLE001"]
+"src/fda/models/season_sim.py" = ["BLE001"]
+"src/fda/models/lab.py" = ["BLE001"]
+"src/fda/models/backtest.py" = ["BLE001"]
+"src/fda/http.py" = ["BLE001"]
+"src/fda/collect.py" = ["BLE001"]
+"src/fda/backoff.py" = ["BLE001"]       # il wrapper di retry deve assorbire ogni errore di rete
+"scripts/probe_fonti.py" = ["BLE001"]   # sonda diagnostica: ogni fonte deve fallire da sola
+"tests/test_openmeteo.py" = ["DTZ001"]  # il codice sotto test usa datetime naive
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 filterwarnings = [

@@ -1,15 +1,24 @@
 """Laboratorio modelli: assenza di leakage, miscele di griglie, metriche appaiate, stacking."""
 
+from typing import ClassVar
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from fda.models import lab
 from fda.models.calibration import Calibration
-from fda.models.predict import ENSEMBLE_MODE, LAMBDA_TOTAL_MAX_REL
 from fda.models.dc_grid import tau_grid
-from fda.models.lab import (BASELINE, CANDIDATES, Candidate, convex_weights, per_league,
-                            summarize, walk_forward)
+from fda.models.lab import (
+    BASELINE,
+    CANDIDATES,
+    Candidate,
+    convex_weights,
+    per_league,
+    summarize,
+    walk_forward,
+)
+from fda.models.predict import ENSEMBLE_MODE, LAMBDA_TOTAL_MAX_REL
 
 
 def synthetic_hist(n_teams: int = 12, seasons: int = 3, seed: int = 3) -> pd.DataFrame:
@@ -60,7 +69,7 @@ def test_walk_forward_never_trains_on_the_future(monkeypatch):
     """Ogni gara valutata è prevista da un fit che ha visto solo partite precedenti."""
     seen: list[pd.Timestamp] = []
 
-    def spy_fit(train, cand):                     # noqa: ANN001, ANN202 — firma di fit_goals
+    def spy_fit(train, cand):
         spy = SpyGoals(train)
         seen.append(spy.train_max)
         return spy
@@ -387,7 +396,7 @@ def test_le_famiglie_senza_rho_ricevono_la_correzione_del_livello():
     from fda.models.calibration import Calibration
 
     class GrigliaFissa:
-        teams = {"A", "B"}
+        teams: ClassVar[set[str]] = {"A", "B"}
 
         def grid(self, home: str, away: str) -> np.ndarray:
             return tau_grid(1.9, 1.4, 0.0, size=lab.GRID_SIZE)

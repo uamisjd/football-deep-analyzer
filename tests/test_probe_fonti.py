@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 import pandas as pd
 
 from fda.store import Store
-from scripts.probe_fonti import PROBES, esegui, probe_openmeteo  # noqa: F401 (PROBES = contratto)
+from scripts.probe_fonti import esegui, probe_openmeteo
 
 ORA = datetime(2026, 9, 16, 9, 0, tzinfo=UTC)
 

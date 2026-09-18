@@ -351,7 +351,7 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
             obs = {"date": r.date, "league_key": league_key, "home": r.home, "away": r.away,
                    "home_goals": int(r.home_goals), "away_goals": int(r.away_goals),
                    "outcome": 0 if r.home_goals > r.away_goals else (1 if r.home_goals == r.away_goals else 2),
-                   "n_train": int(len(train))}
+                   "n_train": len(train)}
             for cand in candidates:
                 cal_c = (Calibration(scales.get(cand.key, 1.0), cal.rho_shift) if self_calibrate
                          else cal)
@@ -657,7 +657,7 @@ def summarize(rows: pd.DataFrame, baseline: str = BASELINE, draws: int = 2000) -
     keys = ["date", "league_key", "home", "away"]
     wide = {c: g.set_index(keys).sort_index() for c, g in rows.groupby("candidate")}
     if baseline not in wide:
-        baseline = str(sorted(wide)[0])
+        baseline = str(min(wide))
     ref = wide[baseline]
     tentativi_per_fam = _tentativi_dichiarati(rows)
     out: list[dict[str, Any]] = []
@@ -671,7 +671,7 @@ def summarize(rows: pd.DataFrame, baseline: str = BASELINE, draws: int = 2000) -
         famiglia = str(gg["family"].iloc[0])
         row: dict[str, Any] = {
             "candidate": cand, "label": str(gg["label"].iloc[0]), "kind": str(gg["kind"].iloc[0]),
-            "family": famiglia, "n": int(len(common)),
+            "family": famiglia, "n": len(common),
             # P1.11: la griglia pre-registrata e i tentativi della famiglia accompagnano
             # ogni verdetto (docs/00 §D): il confronto onesto è fra griglie dichiarate
             "grid_dichiarata": str(_meta_candidato(gg, "grid_dichiarata", "") or ""),
@@ -727,7 +727,7 @@ def per_league(rows: pd.DataFrame) -> pd.DataFrame:
         probs = g[["p_home", "p_draw", "p_away"]].to_numpy(float)
         oc = g["outcome"].to_numpy(int)
         famiglia = str(g["family"].iloc[0])
-        recs.append({"candidate": cand, "league_key": lg, "n": int(len(g)),
+        recs.append({"candidate": cand, "league_key": lg, "n": len(g),
                      "rps": float(_rps_rows(probs, oc).mean()),
                      "logloss": float(_logloss_rows(probs, oc).mean()),
                      "hit": float((probs.argmax(1) == oc).mean()),

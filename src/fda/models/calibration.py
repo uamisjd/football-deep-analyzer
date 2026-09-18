@@ -41,7 +41,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 import numpy as np
@@ -357,7 +357,7 @@ def fit(df: pd.DataFrame, folds: int = FOLDS, min_rows: int = MIN_ROWS,
         held_base_brier.append(bm0)
         held_bias.append(float((s_lh + s_la).mean() - goals[test].mean()))
         held_bias_base.append(float((lh[test] + la[test]).mean() - goals[test].mean()))
-        held_n.append(int(len(test)))
+        held_n.append(len(test))
 
     win = _window(np.arange(n))
     scale_full, shift_full = _estimate(lh[win], la[win], rho[win], goals[win],
@@ -402,7 +402,7 @@ def fit(df: pd.DataFrame, folds: int = FOLDS, min_rows: int = MIN_ROWS,
     # è il numero che la scheda dichiara («stimata su N gare fuori campione») e dichiarare 5.791
     # quando la stima ne usa 4.743 sarebbe una precisione falsa. Il campione resta nel corpus.
     cal = Calibration(lambda_scale=scale_full, rho_shift=shift_full, n_fit=len(win), folds=len(parts),
-                      fitted_at=datetime.now(timezone.utc), corpus=corpus,
+                      fitted_at=datetime.now(UTC), corpus=corpus,
                       window_days=window_days, estimator="momenti", metrics=metrics)
     log.info("calibrazione: λ×%.3f ρ%+.2f (momenti su %d gare) — Brier mercati holdout %.4f → %.4f "
              "(%+.4f), RPS %.4f → %.4f (%+.4f), bias λ holdout %+.3f → %+.3f",
@@ -449,6 +449,19 @@ def from_store(store: Any) -> Calibration:
         return Calibration()
 
 
-__all__ = ["BRIER_WEIGHT", "CALIBRATION_VERSION", "Calibration",
-           "FIT_WINDOW_DAYS", "FOLDS", "LAMBDA_SCALE_GRID", "MARKET_KEYS", "MIN_ROWS",
-           "RHO_SHIFT_GRID", "SCALE_BOUNDS", "evaluate", "fit", "from_store", "moment_scale"]
+__all__ = [
+    "BRIER_WEIGHT",
+    "CALIBRATION_VERSION",
+    "FIT_WINDOW_DAYS",
+    "FOLDS",
+    "LAMBDA_SCALE_GRID",
+    "MARKET_KEYS",
+    "MIN_ROWS",
+    "RHO_SHIFT_GRID",
+    "SCALE_BOUNDS",
+    "Calibration",
+    "evaluate",
+    "fit",
+    "from_store",
+    "moment_scale",
+]

@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
-from dataclasses import dataclass, asdict
-from datetime import date, datetime, timezone
+from collections.abc import Iterable
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 from ..config import RAW_DIR, season, source
 from ..diagnostics import bump, key_names, shape_of
@@ -46,7 +47,7 @@ def _dt(value: Any) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.fromisoformat(str(value)).astimezone(UTC)
     except ValueError:
         return None
 
@@ -602,7 +603,7 @@ class FotMobClient:
             h2h_home_wins=h2h[0] if len(h2h) > 0 else None,
             h2h_draws=h2h[1] if len(h2h) > 1 else None,
             h2h_away_wins=h2h[2] if len(h2h) > 2 else None,
-            fetched_at=datetime.now(timezone.utc),
+            fetched_at=datetime.now(UTC),
         )
 
         return MatchBundle(
@@ -665,7 +666,7 @@ class FotMobClient:
             team_id = int(p.get("teamId") or 0)
             name = p.get("name", "")
             for group in p.get("stats") or []:
-                for _title, item in (group.get("stats") or {}).items():
+                for item in (group.get("stats") or {}).values():
                     key = item.get("key")
                     stat = item.get("stat") or {}
                     if not key or stat.get("type") == "boolean":

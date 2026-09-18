@@ -10,8 +10,8 @@ dipendenza da seleniumbase. Endpoint: /getLeagueData/{slug}/{season}.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
-from datetime import datetime, timezone
+from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from typing import Any
 
 from ..config import source
@@ -142,7 +142,7 @@ class UnderstatClient:
             return None
         try:
             # Understat usa orari UTC nel formato 'YYYY-MM-DD HH:MM:SS'
-            return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+            return datetime.fromisoformat(value).replace(tzinfo=UTC)
         except ValueError:
             return None
 

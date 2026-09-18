@@ -10,9 +10,9 @@ Endpoint verificati il 5-6 settembre 2026 senza autenticazione:
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
-from datetime import date, datetime, timezone
-from typing import Any
+from dataclasses import asdict, dataclass
+from datetime import UTC, date, datetime
+from typing import Any, ClassVar
 
 from ..config import source
 from ..http import HttpClient
@@ -24,7 +24,7 @@ def _dt(value: str | None) -> datetime | None:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00")).astimezone(timezone.utc)
+        return datetime.fromisoformat(value).astimezone(UTC)
     except ValueError:
         return None
 
@@ -83,7 +83,7 @@ class EspnStandingRow:
 
 
 class EspnClient:
-    STATUS_MAP = {
+    STATUS_MAP: ClassVar[dict[str, str]] = {
         "STATUS_SCHEDULED": "scheduled",
         "STATUS_IN_PROGRESS": "live",
         "STATUS_HALFTIME": "live",
@@ -137,7 +137,7 @@ class EspnClient:
             venue = comp.get("venue") or {}
             eid = int(ev["id"])
 
-            def _score(c: dict) -> int | None:
+            def _score(c: dict, status: str = status) -> int | None:
                 if status not in ("finished", "live"):
                     return None
                 try:
@@ -170,7 +170,7 @@ class EspnClient:
                 team = e.get("team") or {}
                 st = {s.get("name"): s for s in e.get("stats") or []}
 
-                def _v(name: str) -> int | None:
+                def _v(name: str, st: dict = st) -> int | None:
                     v = (st.get(name) or {}).get("value")
                     return None if v is None else int(v)
 

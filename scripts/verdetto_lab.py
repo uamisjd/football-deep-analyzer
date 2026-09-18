@@ -12,9 +12,10 @@ Legge data/processed/model_lab.parquet (ALL + per-lega) e stampa:
 - bias λ, brier mercati
 - verdetto finale
 """
-import pandas as pd
 import sys
 from pathlib import Path
+
+import pandas as pd
 
 
 def _tentativi(df: pd.DataFrame, cand: str) -> int | None:
