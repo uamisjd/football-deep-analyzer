@@ -73,6 +73,11 @@ c'è nulla da potare (test dedicato: i byte del Parquet restano identici, niente
 **46.900 righe ≈ 12,3 MB** invece di crescere per sempre. Il costo residuo sulla history Git è
 dichiarato in §8.
 
+> **Aggiornamento 2026-09-18 (stessa PR).** Il paragrafo qui sopra misura il fix con la ritenzione
+> di 30 giorni, che era il default del codice. L'utente ha poi scelto **14 giorni** (§8.1): il tetto
+> scende a **~21.874 righe ≈ 5,7 MB**, la history a **~29 MB/giorno**, e al primo run vengono potate
+> **4.700** righe invece di 24. Dettagli e misure in §11.1.
+
 **Test.** `tests/test_diagnostica_fonti.py`: `test_collect_news_pota_l_archivio_oltre_la_finestra`
 (tre casi: oltre la finestra / in finestra / senza data + contatore nell'imbuto) e
 `test_collect_news_non_pota_se_non_ce_nulla_di_vecchio`. Verificato che **falliscono** senza il fix
@@ -161,23 +166,36 @@ esplicito che non restino errori `news direct …`.
 workflow `diag`); la numerazione di `docs/` resta con il buco del **09**, che non è mai esistito —
 rinumerare i documenti romperebbe centinaia di riferimenti incrociati.
 
-## 8. Aperto: tre decisioni che spettano all'utente
+## 8. Le tre decisioni: proposte il 2026-09-17, **prese dall'utente il 2026-09-18**
 
-1. **Costo residuo di `news.parquet` sulla history Git.** Con la potatura il file ha un tetto
-   (~12,3 MB), ma resta committato 5 volte al giorno: a regime sono **~61 MB/giorno di history**
-   (~22 GB/anno). Tre strade: (a) ritenzione più corta — la card legge 7 giorni e `verify_site` 12,
-   quindi 14 giorni basterebbero e il tetto scenderebbe a ~5,5 MB; (b) non versionare `news.parquet`
-   (è l'unica tabella interamente ricostruibile dalla fonte entro la finestra) e lasciarlo al solo
-   runner; (c) accettare il costo. **Non deciso di iniziativa**: cambia la politica dei dati, che è
-   una scelta dell'utente (`docs/03`).
-2. **Font di Google su ogni pagina.** `base.html` carica `Sora` e `Inter` da
-   `fonts.googleapis.com` (misurato: **8.252 link** sulle 4.126 pagine, due per pagina). È l'unica
-   dipendenza esterna a runtime di un sito che per regola non usa servizi di terzi: implica una
-   richiesta a Google a ogni visita e una resa diversa offline. Alternative: font auto-ospitati
-   (file nel pacchetto, +~300 kB una tantum) o stack di sistema. Tocco estetico: va deciso.
-3. **Crescita di `source_status`.** Non limitata, ma **misurata e trascurabile**: 2.376 righe /
-   17 kB in 12 giorni (~198 righe/giorno, ~0,5 MB/anno). Nessun intervento, annotato per non
-   ri-misurarlo.
+Sono state sottoposte all'utente invece di essere decise di iniziativa, perché tutte e tre
+toccano la politica del progetto (dati versionati, aspetto del sito). Risposte ricevute e
+applicazione:
+
+1. **Costo residuo di `news.parquet` sulla history Git → ritenzione a 14 giorni.** Con la
+   potatura il file aveva un tetto (~12,3 MB a 30 giorni), ma restava committato 5 volte al
+   giorno: a regime **~61 MB/giorno di history** (~22 GB/anno). Le strade erano (a) ritenzione
+   più corta, (b) non versionare il Parquet, (c) accettare il costo. **Scelta: (a), 14 giorni.**
+   È il valore minimo che copre le due finestre che leggono la tabella — la card guarda 7 giorni
+   (`NEWS_WINDOW_DAYS`, `analysis.py:1336`) e il gate `verify_site` [20] ne verifica 12
+   (`notizia_in_finestra`, `verify_site.py:105`) — quindi nessuna riga che il sito pubblica o che
+   il gate ricalcola viene persa. Misurato su `news.parquet` reale: al primo run vengono potate
+   **4.700** righe delle 18.705 archiviate (a 7 giorni sarebbero 7.674, a 30 solo 24); a regime
+   il file si stabilizza a **~21.874 righe · ~5,7 MB** e la history a **~29 MB/giorno**, meno
+   della metà. Costante `NEWS_RETENTION_DAYS = 14` in `collect.py`, con un test che impedisce di
+   abbassarla sotto le due finestre. Conferma dal vivo del difetto: il run `00b4ec3` di `main`
+   (2026-09-18 09:11 UTC) ha portato `news.parquet` da 4.891.680 a **5.136.037 byte**, +244 kB in
+   un solo run.
+2. **Font di Google su ogni pagina → auto-ospitati.** `base.html` caricava `Sora` e `Inter` da
+   `fonts.googleapis.com` (**8.252 link** su 4.126 pagine). **Scelta: servirli dal sito.**
+   Realizzazione in §11: `scripts/font_locali.py` scarica i woff2 e genera il CSS locale,
+   `SiteBuilder` li pubblica se presenti, `base.html` sceglie la fonte. Da notare un vincolo
+   concreto: **Google Fonts non è raggiungibile dal sandbox dell'agente** (`curl` → `000`),
+   quindi i binari non sono stati scaricati qui; il workflow `font-locali.yml`
+   (`workflow_dispatch`) li scarica in un runner e apre una PR, che l'utente unisce.
+3. **Crescita di `source_status` → nessun intervento**, confermato. Non limitata, ma misurata e
+   trascurabile: 2.376 righe / 17 kB in 12 giorni (~198 righe/giorno, ~0,5 MB/anno). Annotato per
+   non ri-misurarlo.
 
 ## 9. Verifiche
 
@@ -190,6 +208,26 @@ rinumerare i documenti romperebbe centinaia di riferimenti incrociati.
 | Wheel (`python -m build`) | senza `site.css` | con **`fda/site/assets/site.css`** |
 | `fda lab --history …` (offline) | — | exit **0** su 202 gare per candidato |
 | `git status --porcelain` | — | solo i file di questo giro; `fda.duckdb` non più tracciato |
+
+**Riesecuzione al secondo commit della PR (2026-09-18, dopo §11).** Suite **385 passed** (+8:
+1 ritenzione, 7 font); `ruff check .` **173** (due segnalazioni introdotte nello
+script nuovo e tolte nello stesso giro — una era un `NameError` latente, vedi §11.2); `fda build`
+exit **0**; `verify_site` **0 problemi · 93.574 controlli**.
+
+Sul conteggio delle pagine: **4.124** contro le 4.126 del giro precedente, e 373 schede contro 375.
+Non è un regresso del codice, e la causa è verificata. Le pagine partita vengono da tre insiemi
+(`build_indexes`, `build.py:408-420`): oggi, i prossimi `DETAIL_WINDOW_DAYS` giorni, e gli ultimi 7
+giorni **solo se `status == "finished"`**; più l'archivio (`match_info` ∩ `fixtures` con stato
+finito, `build.py:904-908`). Le due schede mancanti sono `5868063` (Real Betis–Getafe, kickoff
+2026-09-17 17:00 UTC) e `5868068` (Málaga–Villarreal, 19:30): ieri erano «oggi», oggi sono ieri, e
+nei dati locali il loro stato è ancora `live` / `scheduled` — **non** `finished`, perché dal sandbox
+non si raccolgono dati (Google e FotMob irraggiungibili) e i Parquet sono quelli del checkout. In
+produzione `fda daily` aggiorna lo stato prima del build e la scheda rientra dall'archivio. La terza
+riga di `match_info` senza pagina (`5868067`) non rientra in nessuno dei tre insiemi: in `fixtures`
+sta al **2026-10-21** con stato `scheduled`, quindi finisce nel calendario compatto e non fra le
+schede (la stessa riga in `match_info` porta un kickoff diverso, 2026-09-16: la selezione legge
+`fixtures`, quindi la scheda non c'è). Divergenza fra le due tabelle da tenere d'occhio, non toccata
+in questo giro.
 
 ## 10. Cosa è risultato a posto (misurato, per non ri-verificarlo)
 
@@ -214,3 +252,40 @@ rinumerare i documenti romperebbe centinaia di riferimenti incrociati.
 - **CSS**: 49 token definiti, 47 usati, **0 usati e non definiti**; 2 definiti e mai usati
   (`--info`, `--radius-sm`), lasciati perché fanno parte del sistema di design.
 - **CLI**: `fda version`, `fda leagues`, `fda db <sql>` funzionano offline sui dati versionati.
+
+## 11. Applicazione delle decisioni (2026-09-18, stessa PR #51)
+
+### 11.1 Ritenzione delle notizie: 30 → 14 giorni
+
+| Cosa | Prima | Dopo |
+|---|---|---|
+| Costante | `window_days: int = 30` (numero a mano nell'argomento) | `NEWS_RETENTION_DAYS = 14`, nome che dice cos'è |
+| Righe potate al primo run | 24 | **4.700** (su 18.705 archiviate) |
+| Dimensione a regime | 46.873 righe · ~12,3 MB | **21.874 righe · ~5,7 MB** |
+| History Git a regime | ~61 MB/giorno (~22 GB/anno) | **~29 MB/giorno** (~10,6 GB/anno) |
+| Riga pubblicata persa | — | **nessuna**: la card legge 7 giorni, il gate 12 |
+
+Misure su `news.parquet` reale (18.705 righe · 4,89 MB · 262 byte/riga · 1.562 righe/giorno):
+righe oltre la soglia = 7.674 a 7 giorni, 5.772 a 12, **4.700 a 14**, 24 a 30.
+
+Il valore non è libero e ora non può diventarlo per distrazione:
+`tests/test_diagnostica_fonti.py::test_la_ritenzione_delle_notizie_copre_le_finestre_di_lettura`
+impone `NEWS_RETENTION_DAYS >= 12` (gate) e `>= NEWS_WINDOW_DAYS` (card), e che il default di
+`collect_news` **sia** la costante e non un numero riscritto a mano.
+
+### 11.2 Font auto-ospitati
+
+Quattro pezzi, tutti nello stato «funziona anche se i font non ci sono ancora», perché i binari
+non possono essere scaricati dal sandbox dell'agente (Google irraggiungibile, misurato `000`):
+
+| Pezzo | Cosa fa |
+|---|---|
+| `scripts/font_locali.py` | chiede il CSS a Google con User-Agent moderno (woff2 + `unicode-range`, quindi i sottoinsiemi piccoli), scarica i file in `src/fda/site/assets/fonts/`, riscrive le URL in percorsi relativi, scrive `LICENSE.txt` (SIL OFL 1.1). `--check` verifica senza rete. |
+| `SiteBuilder._write_assets` | se i font ci sono, copia la directory in `site/assets/fonts/` e imposta `font_css = True` |
+| `base.html` | con `font_css` linka `assets/fonts/fonts.css`, altrimenti i tre tag verso Google (nessuna pagina senza caratteri) |
+| `pyproject.toml` | glob `assets/fonts/*` in `package-data`, **prima** che i file esistano: è la stessa classe di difetto di `site.css` (§2.2) |
+| `.github/workflows/font-locali.yml` | `workflow_dispatch`: scarica, `--check`, test, apre una **PR** su `font-locali` — il merge resta dell'utente (regola D) |
+
+La logica di riscrittura del CSS è una funzione pura con lo scaricatore passato come argomento
+(`riscrivi_css(testo, scarica)`), quindi è coperta dai test **senza rete**; i sette test di
+`tests/test_font_locali.py` provano entrambi gli stati del template e i due rami di `--check`.

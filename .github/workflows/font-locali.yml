@@ -1,0 +1,62 @@
+# Scarica i font e li mette nel repository, con una PR da unire.
+#
+# Perché vive qui: `base.html` caricava Sora e Inter da fonts.googleapis.com su ogni pagina
+# (misurato: 8.252 link su 4.126), l'unica dipendenza esterna a runtime del sito. La scelta
+# del 2026-09-18 (docs/26 §8) è servirli in locale, ma i binari non si possono scaricare dal
+# sandbox dell'agente — Google Fonts non è raggiungibile da lì (`curl` → 000) — quindi il
+# passo va eseguito dove la rete c'è: qui, con un clic su "Run workflow".
+#
+# Il risultato è una PR, non un commit su main: il merge lo fa sempre chi mantiene il
+# progetto (docs/00, regola D).
+name: font-locali
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  scarica:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: pip install -q -e ".[dev]"
+      # scarica i woff2 e riscrive il CSS con percorsi relativi
+      - run: python scripts/font_locali.py
+      # controprova offline: file completi, licenza presente, nessuna URL remota superstite
+      - run: python scripts/font_locali.py --check
+      # i font devono stare nel pacchetto (glob in package-data) e il template deve scegliere
+      # la fonte giusta in entrambi gli stati
+      - run: python -m pytest tests/test_font_locali.py tests/test_pacchetto.py -q
+      - name: Apri la PR con i font
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B font-locali
+          git add src/fda/site/assets/fonts
+          if git diff --cached --quiet; then
+            echo "Nessuna variazione: i font sono già quelli pubblicati."
+            exit 0
+          fi
+          git commit -m "Font locali: Sora e Inter serviti dal sito (docs/26 §8)"
+          git push -f origin font-locali
+          gh pr create \
+            --title "Font locali: Sora e Inter serviti dal sito" \
+            --body "Generata da \`font-locali\` (workflow_dispatch).
+
+          Sora e Inter vengono serviti da \`assets/fonts/\` invece che da \`fonts.googleapis.com\`:
+          8.252 richieste esterne in meno a ogni giro di build, nessuna visita segnalata a un
+          server terzo, nessun salto tipografico. I caratteri sono invariati e restano sotto
+          SIL Open Font License 1.1 (\`LICENSE.txt\` accanto ai file).
+
+          Dal prossimo \`fda build\` il template linka il CSS locale; finché questa PR non è
+          unita il sito continua a caricarli da Google, senza rotture." \
+            || echo "Una PR su font-locali è già aperta: il ramo è stato aggiornato."

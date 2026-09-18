@@ -46,11 +46,13 @@ fda = "fda.cli:app"
 where = ["src"]
 
 [tool.setuptools.package-data]
-# `templates/*.html` e `assets/*.css` sono letti a runtime con `Path(__file__).parent/...`
-# (FileSystemLoader di Jinja e `_write_assets`): senza questa dichiarazione un'installazione
-# NON editable (`pip install .`) produce un pacchetto senza i file e `fda build` cade con
-# FileNotFoundError. Verificato il 2026-09-17 costruendo la wheel: site.css mancava.
-"fda.site" = ["templates/*.html", "assets/*.css"]
+# `templates/*.html`, `assets/*.css` e `assets/fonts/*` sono letti a runtime con
+# `Path(__file__).parent/...` (FileSystemLoader di Jinja, `_write_assets`): senza questa
+# dichiarazione un'installazione NON editable (`pip install .`) produce un pacchetto senza
+# i file e `fda build` cade con FileNotFoundError. Verificato il 2026-09-17 costruendo la
+# wheel: site.css mancava. Il glob dei font non corrisponde a nulla finché
+# `scripts/font_locali.py` non è stato eseguito, e da allora porta con sé i woff2.
+"fda.site" = ["templates/*.html", "assets/*.css", "assets/fonts/*"]
 
 [tool.ruff]
 line-length = 100

@@ -314,3 +314,22 @@ def test_collect_news_non_pota_se_non_ce_nulla_di_vecchio(tmp_path):
     assert st.path("news").read_bytes() == prima, "riscrittura senza motivo (diff Git inutile)"
     assert "potate 0" in st.read("source_status").query("source == 'news:NEWS'").iloc[0]["detail"]
     st.close()
+
+
+def test_la_ritenzione_delle_notizie_copre_le_finestre_di_lettura():
+    """``NEWS_RETENTION_DAYS`` non è un numero libero: sta **sopra** chi legge la tabella.
+
+    Due finestre leggono ``news``: la card «Vita del club» guarda 7 giorni indietro dal
+    calcio d'inizio e il gate ``verify_site`` [20] ne verifica 12. Una ritenzione sotto
+    quelle soglie farebbe sparire righe che il sito pubblica o che il gate ricalcola, e
+    il difetto si vedrebbe solo in produzione. Scelta dell'utente 2026-09-18 (docs/26 §8).
+    """
+    import inspect
+
+    from fda.collect import NEWS_RETENTION_DAYS, collect_news
+    from fda.site.analysis import MatchAnalysis
+
+    assert NEWS_RETENTION_DAYS >= 12, "sotto i 12 giorni il gate verify_site [20] perde righe"
+    assert NEWS_RETENTION_DAYS >= MatchAnalysis.NEWS_WINDOW_DAYS, "sotto i 7 giorni la card si svuota"
+    default = inspect.signature(collect_news).parameters["window_days"].default
+    assert default == NEWS_RETENTION_DAYS, "il default deve essere la costante, non un numero a mano"
