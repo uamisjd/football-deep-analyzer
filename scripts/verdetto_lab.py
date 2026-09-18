@@ -6,7 +6,8 @@ Verdetto del laboratorio: applica la regola decisionale registrata in docs/13 §
 Altrimenti si resta su dc_elo_prod.
 
 Legge data/processed/model_lab.parquet (ALL + per-lega) e stampa:
-- ΔRPS complessivo + IC per ogni candidato
+- ΔRPS complessivo + IC per ogni candidato, con griglia pre-registrata e n_tentativi
+  (P1.11, docs/19 §1.4: il confronto onesto è fra griglie dichiarate, non fra risultati scelti)
 - vittorie per lega vs baseline
 - bias λ, brier mercati
 - verdetto finale
@@ -14,6 +15,24 @@ Legge data/processed/model_lab.parquet (ALL + per-lega) e stampa:
 import pandas as pd
 import sys
 from pathlib import Path
+
+
+def _tentativi(df: pd.DataFrame, cand: str) -> int | None:
+    """Tentativi della famiglia nel run (colonna P1.11); None se il run è precedente alla colonna."""
+    riga = df[df['candidate'] == cand]
+    if riga.empty:
+        return None
+    v = riga.iloc[0].get('n_tentativi')
+    return int(v) if v is not None and pd.notna(v) else None
+
+
+def _griglia(df: pd.DataFrame, cand: str) -> str:
+    """Griglia pre-registrata del candidato (colonna P1.11, '' se assente o non dichiarata)."""
+    riga = df[df['candidate'] == cand]
+    if riga.empty:
+        return ''
+    v = riga.iloc[0].get('grid_dichiarata')
+    return str(v) if v is not None and pd.notna(v) else ''
 
 def main():
     parquet = Path("data/processed/model_lab.parquet")
@@ -52,7 +71,11 @@ def main():
         bias = row.get('bias_lambda', float('nan'))
         brier = row.get('brier_mercati', float('nan'))
         mig = row.get('migliore_in', float('nan'))
-        print(f"{cand:15s} RPS {rps:.6f} Δ {delta:+.6f} IC [{lo:+.6f}; {hi:+.6f}] bias {bias:+.3f} brier {brier:.6f} migliore_in {mig:.1%}")
+        grid = _griglia(all_df, cand) or '—'
+        ntent = _tentativi(all_df, cand)
+        ntent_s = 'n/d' if ntent is None else str(ntent)
+        print(f"{cand:15s} RPS {rps:.6f} Δ {delta:+.6f} IC [{lo:+.6f}; {hi:+.6f}] bias {bias:+.3f} "
+              f"brier {brier:.6f} migliore_in {mig:.1%} · tentativi_famiglia {ntent_s} · griglia {grid}")
 
     # Vittorie per lega vs baseline
     if not per_df.empty:
@@ -105,14 +128,25 @@ def main():
             cnt, tot = wins.get(cand, (0,0))
             cond1 = hi < 0 if not pd.isna(hi) else False
             cond2 = cnt >=5
-            print(f"  {cand}: IC<0? {cond1} (hi95={hi:.6f})  >=5 leghe? {cond2} ({cnt}/7)")
+            ntent_s = _tentativi(all_df, cand)
+            ntent_s = 'n/d' if ntent_s is None else str(ntent_s)
+            print(f"  {cand}: IC<0? {cond1} (hi95={hi:.6f})  >=5 leghe? {cond2} ({cnt}/7)  "
+                  f"tentativi_famiglia {ntent_s}")
     else:
         # ordina per delta più negativo
         candidates_to_promote.sort(key=lambda x: x[1])
         best = candidates_to_promote[0]
         print(f"Verdetto: PROMUOVERE {best[0]} — ΔRPS {best[1]:+.6f} hi95 {best[2]:+.6f} vittorie {best[3]}/7")
         for cand, delta, hi, cnt in candidates_to_promote:
-            print(f"  candidato {cand}: Δ {delta:+.6f} hi95 {hi:+.6f} vittorie {cnt}/7")
+            ntent = _tentativi(all_df, cand)
+            grid = _griglia(all_df, cand)
+            # P1.11 (docs/00 §D): il verdetto dichiara quanti tentativi lo precedono e con
+            # quale griglia; senza griglia dichiarata la promozione va verificata a mano
+            nota = f"griglia dichiarata {grid}" if grid else \
+                "SENZA griglia dichiarata (candidato a parametri fissi, o colonna P1.11 assente)"
+            ntent_s = 'n/d' if ntent is None else str(ntent)
+            print(f"  candidato {cand}: Δ {delta:+.6f} hi95 {hi:+.6f} vittorie {cnt}/7 — "
+                  f"preceduto da {ntent_s} candidati della stessa famiglia in questo run; {nota}")
 
 if __name__ == "__main__":
     main()
