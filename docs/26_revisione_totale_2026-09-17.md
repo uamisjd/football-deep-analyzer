@@ -55,8 +55,8 @@ con client finti e `window_days=30`: dopo la chiamata le righe erano ancora **4*
 | Misura | Valore |
 |---|---|
 | `news.parquet` oggi | **18.705 righe · 4,89 MB · 262 byte/riga** |
-| Ritmo recente (media ultimi 7 giorni) | **1.562 righe/giorno = 0,41 MB/giorno** |
-| Giorni per arrivare a **100 MB** | **~233** (≈ metà aprile 2027) |
+| Ritmo recente (ultimi 7 giorni) | **1.531 righe/giorno = 0,40 MB/giorno** (10.716 righe) |
+| Giorni per arrivare a **100 MB** | **~250** (≈ fine maggio 2027) |
 | Limite GitHub per singolo file | **100 MB, oltre il push è rifiutato** ([1](https://fixdevs.com/blog/git-file-too-large-to-push/), [2](https://techearl.com/git-file-too-large-error)) |
 
 Cioè: fra ~8 mesi il commit dei dati del run giornaliero avrebbe cominciato a **fallire**, e con lui
@@ -68,15 +68,24 @@ solo perché non se ne conosce l'età); il conteggio finisce nell'imbuto dichiar
 (`… salvate N · potate M`), quindi la potatura è visibile e non silenziosa. Nessuna riscrittura se non
 c'è nulla da potare (test dedicato: i byte del Parquet restano identici, niente diff Git inutile).
 
-**Effetto misurato.** Oggi le righe oltre i 30 giorni sono **24**: l'intervento non svuota nulla,
+**Effetto misurato.** Oggi le righe oltre i 30 giorni sono **133**: l'intervento non svuota nulla,
 **mette un tetto**. A regime con 30 giorni di ritenzione il file si stabilizza intorno a
-**46.900 righe ≈ 12,3 MB** invece di crescere per sempre. Il costo residuo sulla history Git è
+**~45.900 righe ≈ 12,0 MB** invece di crescere per sempre. Il costo residuo sulla history Git è
 dichiarato in §8.
 
 > **Aggiornamento 2026-09-18 (stessa PR).** Il paragrafo qui sopra misura il fix con la ritenzione
-> di 30 giorni, che era il default del codice. L'utente ha poi scelto **14 giorni** (§8.1): il tetto
-> scende a **~21.874 righe ≈ 5,7 MB**, la history a **~29 MB/giorno**, e al primo run vengono potate
-> **4.700** righe invece di 24. Dettagli e misure in §11.1.
+> di 30 giorni, che era il default del codice. L'utente ha poi scelto **14 giorni** (§8.1): eseguita
+> la potatura sull'archivio reale toglie **5.028** righe su 18.705 (4.891.680 → 3.525.759 byte) e a
+> regime il tetto è **~21.400 righe ≈ 5,6 MB** con **~28 MB/giorno** di history. Dettagli e misure in
+> §11.1.
+>
+> **Correzione delle misure (2026-09-18, prima del merge).** Una prima versione di questo documento
+> dava «24 righe oltre i 30 giorni», «4.700 potate a 14 giorni» e «~233 giorni al tetto». Quei numeri
+> venivano da un conteggio per **giorni di calendario** e non dalla regola del codice, che confronta i
+> timestamp: `published_at < now - N giorni`. Rieseguendo la misura con la regola giusta sullo stesso
+> file si ottiene **133** righe oltre 30 giorni, **5.028** oltre 14 e **~250** giorni al tetto. Le
+> conclusioni non cambiano (nessuna riga pubblicata persa, tetto sotto i 100 MB), i numeri sì: quelli
+> qui sopra sono misurati eseguendo `collect_news`, non stimati.
 
 **Test.** `tests/test_diagnostica_fonti.py`: `test_collect_news_pota_l_archivio_oltre_la_finestra`
 (tre casi: oltre la finestra / in finestra / senza data + contatore nell'imbuto) e
@@ -173,16 +182,17 @@ toccano la politica del progetto (dati versionati, aspetto del sito). Risposte r
 applicazione:
 
 1. **Costo residuo di `news.parquet` sulla history Git → ritenzione a 14 giorni.** Con la
-   potatura il file aveva un tetto (~12,3 MB a 30 giorni), ma restava committato 5 volte al
-   giorno: a regime **~61 MB/giorno di history** (~22 GB/anno). Le strade erano (a) ritenzione
+   potatura il file aveva un tetto (~12,0 MB a 30 giorni), ma restava committato 5 volte al
+   giorno: a regime **~60 MB/giorno di history** (~22 GB/anno). Le strade erano (a) ritenzione
    più corta, (b) non versionare il Parquet, (c) accettare il costo. **Scelta: (a), 14 giorni.**
    È il valore minimo che copre le due finestre che leggono la tabella — la card guarda 7 giorni
    (`NEWS_WINDOW_DAYS`, `analysis.py:1336`) e il gate `verify_site` [20] ne verifica 12
    (`notizia_in_finestra`, `verify_site.py:105`) — quindi nessuna riga che il sito pubblica o che
-   il gate ricalcola viene persa. Misurato su `news.parquet` reale: al primo run vengono potate
-   **4.700** righe delle 18.705 archiviate (a 7 giorni sarebbero 7.674, a 30 solo 24); a regime
-   il file si stabilizza a **~21.874 righe · ~5,7 MB** e la history a **~29 MB/giorno**, meno
-   della metà. Costante `NEWS_RETENTION_DAYS = 14` in `collect.py`, con un test che impedisce di
+   il gate ricalcola viene persa. Misurato **eseguendo la potatura** sull'archivio reale: al primo
+   run vengono potate **5.028** righe delle 18.705 archiviate (a 7 giorni sarebbero 7.988, a 30
+   sarebbero 133); il file passa da 4.891.680 a **3.525.759 byte** e a regime, al ritmo degli ultimi
+   7 giorni, si stabilizza a **~21.400 righe ≈ 5,6 MB** con **~28 MB/giorno** di history: meno della
+   metà. Costante `NEWS_RETENTION_DAYS = 14` in `collect.py`, con un test che impedisce di
    abbassarla sotto le due finestre. Conferma dal vivo del difetto: il run `00b4ec3` di `main`
    (2026-09-18 09:11 UTC) ha portato `news.parquet` da 4.891.680 a **5.136.037 byte**, +244 kB in
    un solo run.
@@ -260,13 +270,24 @@ in questo giro.
 | Cosa | Prima | Dopo |
 |---|---|---|
 | Costante | `window_days: int = 30` (numero a mano nell'argomento) | `NEWS_RETENTION_DAYS = 14`, nome che dice cos'è |
-| Righe potate al primo run | 24 | **4.700** (su 18.705 archiviate) |
-| Dimensione a regime | 46.873 righe · ~12,3 MB | **21.874 righe · ~5,7 MB** |
-| History Git a regime | ~61 MB/giorno (~22 GB/anno) | **~29 MB/giorno** (~10,6 GB/anno) |
+| Righe potate al primo run (misurato) | 133 oltre 30 gg | **5.028** oltre 14 gg (18.705 → 13.677) |
+| File dopo la potatura | 4.891.680 byte | **3.525.759 byte** (−28%) |
+| Dimensione a regime | ~45.900 righe · ~12,0 MB | **~21.400 righe · ~5,6 MB** |
+| History Git a regime | ~60 MB/giorno (~22 GB/anno) | **~28 MB/giorno** (~10,2 GB/anno) |
 | Riga pubblicata persa | — | **nessuna**: la card legge 7 giorni, il gate 12 |
 
-Misure su `news.parquet` reale (18.705 righe · 4,89 MB · 262 byte/riga · 1.562 righe/giorno):
-righe oltre la soglia = 7.674 a 7 giorni, 5.772 a 12, **4.700 a 14**, 24 a 30.
+Misure su `news.parquet` reale (18.705 righe · 4.891.680 byte · 262 byte/riga · arco 0-32 giorni),
+con la regola del codice (`published_at < now - N giorni`): righe oltre la soglia = **7.988** a 7 giorni,
+**6.254** a 12, **5.028** a 14, **133** a 30. Ritmo: 1.531 righe/giorno negli ultimi 7 giorni, 977 negli
+ultimi 14 (la settimana 8-14 è più rada: la raccolta si è allargata di recente), 619 negli ultimi 30 —
+per il regime si usa il ritmo recente, che è quello che continuerà.
+
+**Prova che la ritenzione non toglie nulla di pubblicato.** Non è un argomento, è una misura: ho eseguito
+la potatura sull'archivio vero (18.705 → 13.677 righe), ricostruito il sito e rilanciato il gate.
+Risultato **identico** a quello sui dati non potati: `fda build` exit 0 con 373 schede · 2.364 partite ·
+7.470 giocatori · 4.124 pagine, e `verify_site` **0 problemi · 93.574 controlli** — stesso numero di
+controlli, perché nessuna card «Vita del club» e nessuna riga verificata dal [20] dipende da righe più
+vecchie di 12 giorni. Poi i dati sono stati ripristinati (`git checkout`, md5 identico: `f9840fee…`).
 
 Il valore non è libero e ora non può diventarlo per distrazione:
 `tests/test_diagnostica_fonti.py::test_la_ritenzione_delle_notizie_copre_le_finestre_di_lettura`

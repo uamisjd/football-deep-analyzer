@@ -50,9 +50,12 @@ WEATHER_HORIZON_DAYS = 7
 # la card «Vita del club» guarda 7 giorni indietro dal calcio d'inizio
 # (`MatchAnalysis.NEWS_WINDOW_DAYS`) e il gate `verify_site` [20] ne verifica 12
 # (`notizia_in_finestra(..., giorni=12)`) — quindi 14 lascia margine su entrambe.
-# Scelto dall'utente il 2026-09-18 al posto di 30: a 30 giorni il Parquet si stabilizzava a
-# ~12,3 MB e la history Git a ~61 MB/giorno (il file è committato 5 volte al giorno); a 14
-# sono ~5,7 MB e ~29 MB/giorno, senza perdere una sola riga che il sito o il gate leggano.
+# Scelto dall'utente il 2026-09-18 al posto di 30. Misurato il 2026-09-18 eseguendo la potatura
+# sull'archivio reale (18.705 righe · 4,89 MB · 262 B/riga): toglie 5.028 righe e ne lascia 13.677
+# (3,58 MB); a regime, al ritmo degli ultimi 7 giorni (1.531 righe/giorno), 14 giorni valgono
+# ~21.400 righe ≈ 5,6 MB e ~28 MB/giorno di history Git, contro le ~45.900 righe ≈ 12,0 MB e
+# ~60 MB/giorno dei 30 giorni. Nessuna riga pubblicata si perde: build e verify_site sui dati
+# potati danno lo stesso identico risultato (docs/26 §11.1).
 NEWS_RETENTION_DAYS = 14
 
 # Errori di fonte che degradano senza bloccare il run: la fonte primaria copre il dato.

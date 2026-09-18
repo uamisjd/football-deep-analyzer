@@ -324,12 +324,22 @@ def test_la_ritenzione_delle_notizie_copre_le_finestre_di_lettura():
     quelle soglie farebbe sparire righe che il sito pubblica o che il gate ricalcola, e
     il difetto si vedrebbe solo in produzione. Scelta dell'utente 2026-09-18 (docs/26 §8).
     """
+    import ast
     import inspect
+    from pathlib import Path
 
     from fda.collect import NEWS_RETENTION_DAYS, collect_news
     from fda.site.analysis import MatchAnalysis
 
-    assert NEWS_RETENTION_DAYS >= 12, "sotto i 12 giorni il gate verify_site [20] perde righe"
+    # la finestra del gate si legge dal verificatore, non da un numero riscritto qui: se un
+    # giorno cambia lì, questo test deve accorgersene invece di restare verde per abitudine
+    src = Path(__file__).resolve().parents[1] / "scripts" / "verify_site.py"
+    albero = ast.parse(src.read_text(encoding="utf-8"))
+    fn = next(n for n in ast.walk(albero)
+              if isinstance(n, ast.FunctionDef) and n.name == "notizia_in_finestra")
+    giorni_gate = fn.args.defaults[0].value  # `giorni: int = 12` nella firma
+
+    assert NEWS_RETENTION_DAYS >= giorni_gate, "sotto la finestra del gate si perdono righe verificate"
     assert NEWS_RETENTION_DAYS >= MatchAnalysis.NEWS_WINDOW_DAYS, "sotto i 7 giorni la card si svuota"
     default = inspect.signature(collect_news).parameters["window_days"].default
     assert default == NEWS_RETENTION_DAYS, "il default deve essere la costante, non un numero a mano"
