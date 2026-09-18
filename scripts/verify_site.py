@@ -951,8 +951,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                          r'(portiere|difensore|centrocampista|attaccante)</span>')
     abs_re = re.compile(r"Indisponibili \((\d+)\)")
     # `<th[^>]*>`: le celle d'intestazione portano scope="row" da P2-8; il letterale
-    # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi)
-    prev_re = re.compile(r"<th[^>]*>Precedenti \((\d+)\)</th>")
+    # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi).
+    # Da P2.4 (`docs/28` §3) la card si chiama «Precedenti» e l'etichetta della riga dice
+    # il numero dei casi: «Bilancio (15)» — il titolo non ripete più la riga.
+    prev_re = re.compile(r"<th[^>]*>Bilancio \((\d+)\)</th>")
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
                         r' · ([^<]*?) (\d+) assenti', re.DOTALL)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
@@ -2050,9 +2052,11 @@ def _testo_confrontabile(s: str) -> str:
 
 
 #: Le sezioni che l'indice della scheda partita deve saper raggiungere quando esistono nella
-#: pagina: sono le card pesanti rimaste senza ancora fino alla P1.3 (`docs/28` §2).
+#: pagina: sono le card pesanti rimaste senza ancora fino alla P1.3 (`docs/28` §2). Da P2.4
+#: «contesto» non c'è più: le due card che ne sono nate hanno ognuna il suo id e la sua voce.
 NAV_SEZIONI = ("lettura", "previsione", "scontro", "arrivi", "giocatori", "squadre", "panchina",
-               "mercato", "notizie", "contesto", "statistiche", "cronaca", "verifica")
+               "mercato", "notizie", "arbitro-meteo", "precedenti", "statistiche", "cronaca",
+               "verifica")
 
 
 def check_nav(site: Path) -> tuple[list[str], int]:

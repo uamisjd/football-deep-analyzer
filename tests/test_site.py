@@ -317,9 +317,9 @@ def test_site_build_end_to_end(tmp_path):
     # card Confronto di stagione (tabella FotMob): Inter in tabella, Monza no → lato «—», nessun evidenziato
     assert "Confronto di stagione" in post and "Punti/gara" in post
     assert "9 in 3 gare" in post and "3,00" in post and "media gol del campionato" in post
-    # il taglio usa l'ancora della card «Contesto»: la parola «Contesto» compare anche nella barra
-    # d'indice in cima alla pagina (P1.3), e tagliare lì darebbe una fetta vuota
-    cmp = post[post.find("Confronto di stagione"):post.find('id="contesto"')]
+    # il taglio usa l'ancora della card che segue il gruppo del club (da P2.4 è «arbitro-meteo»):
+    # tagliare sulla voce d'indice darebbe una fetta vuota
+    cmp = post[post.find("Confronto di stagione"):post.find('id="arbitro-meteo"')]
     assert "—</td>" in cmp and 'class="best"' not in cmp   # Monza assente: niente evidenziazione nel confronto
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
@@ -593,15 +593,76 @@ def test_indice_della_scheda_dice_i_titoli_veri(tmp_path):
     for etichetta, ancora in (("Scontro tattico", "scontro"), ("I giocatori", "giocatori"),
                               ("Vita del club", "notizie"), ("Verifica", "verifica"),
                               ("Panchina", "panchina"), ("Come arrivano", "arrivi"),
-                              ("Le due squadre", "squadre"), ("Contesto", "contesto")):
+                              ("Le due squadre", "squadre"),
+                              ("Arbitro e meteo", "arbitro-meteo"), ("Precedenti", "precedenti")):
         if f'id="{ancora}"' not in pre:       # sezione senza dati in questa gara: niente voce
             continue
         assert f'<a href="#{ancora}">{etichetta}</a>' in nav, f"voce mancante: {etichetta}"
-    for ancora in ("lettura", "squadre", "contesto", "verifica"):     # ci sono sempre
+    for ancora in ("lettura", "squadre", "arbitro-meteo", "verifica"):     # ci sono sempre
         assert f'id="{ancora}"' in pre and f'href="#{ancora}"' in nav
     assert '<h2 class="as-h2" style="grid-column:1/-1">Le due squadre</h2>' in pre
-    # il link «→ precedenti» atterra ora sulla card che li contiene, non in cima al gruppo
-    assert '<div class="card" id="contesto">' in pre
+    # da P2.4 il link «→ precedenti» ha una card con quel nome (vedi il test dedicato)
+    assert '<div class="card" id="precedenti">' in pre
+    st.close()
+
+
+def test_arbitro_meteo_e_precedenti_card_separate(tmp_path):
+    """P2.4 (docs/28 §3): «Contesto» era una card sola per tre cose che non si somigliano.
+
+    Chi dirige la gara e che tempo farà non hanno nulla in comune con la storia della sfida, e i
+    precedenti (grafico, ultimi incontri, frequenze) erano l'84% del testo del blocco: la card più
+    sbilanciata della pagina, con un titolo che non diceva né l'una né l'altra cosa. Ora sono due
+    card, ognuna col titolo di quello che contiene, e l'indice (P1.3) le nomina entrambe.
+
+    La riga della tabella non ripete più il titolo («Bilancio (15)» dice su quanti casi si regge
+    la lettura delle frequenze: è il numero che serve, ed è quello che l'invariante [5] di
+    `scripts/verify_site.py` ricalcola dall'archivio).
+    """
+    st = _seed(tmp_path)
+    # due precedenti in più per la gara futura: da tre casi in su la card pubblica il bilancio
+    # completo con il grafico a ciambella (il campione di prova ne ha uno solo)
+    st.upsert("h2h", [
+        {"match_id": 5749669, "utc": "2025-02-16T14:00:00+00:00", "league": "Serie A",
+         "home_id": 8600, "away_id": 8543, "home_goals": 1, "away_goals": 1},
+        {"match_id": 5749669, "utc": "2024-09-22T16:00:00+00:00", "league": "Serie A",
+         "home_id": 8543, "away_id": 8600, "home_goals": 0, "away_goals": 2},
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    post = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    for nome, html in (("pre", pre), ("post", post)):
+        assert 'id="contesto"' not in html, f"{nome}: la card unica «Contesto» è ancora lì"
+        assert "#contesto" not in html, f"{nome}: resta un rimando a #contesto"
+        assert "<h2>Contesto</h2>" not in html, nome
+        assert "<h2>Arbitro e meteo</h2>" in html, nome
+        assert "<h2>Precedenti</h2>" in html, nome
+        # arbitro e meteo prima, i precedenti dopo: lo stesso ordine della card che li conteneva
+        i = html.index('<div class="card" id="arbitro-meteo">')
+        j = html.index('<div class="card" id="precedenti">')
+        assert i < j, nome
+        arb, prec = html[i:j], html[j:]
+        assert "Arbitro" in arb and "Meteo" in arb, nome
+        assert "Ultimi precedenti" not in arb, f"{nome}: la storia della sfida non sta con l'arbitro"
+        assert "Bilancio" in prec and "Ultimi precedenti" in prec, nome
+        # il grafico a ciambella dei precedenti sta nella card dei precedenti (non con l'arbitro)
+        assert 'aria-label="Bilancio precedenti"' not in arb, nome
+    # la gara futura non ha ancora la designazione: il segnaposto sta nella card dell'arbitro
+    assert "da definire" in pre[pre.index('<div class="card" id="arbitro-meteo">'):pre.index('<div class="card" id="precedenti">')]
+    # la gara futura: grafico a ciambella dentro la card dei precedenti e conteggio dei casi
+    # nell'etichetta della riga — il numero che l'invariante [5] di verify_site ricalcola
+    # dall'archivio (qui lo si ricava dalla stessa tabella h2h del campione di prova)
+    hh = st.read("h2h")
+    casi = int(((hh.match_id == 5749669) & hh.home_goals.notna() & hh.away_goals.notna()).sum())
+    assert casi >= 3
+    prec = pre[pre.index('<div class="card" id="precedenti">'):]
+    assert 'aria-label="Bilancio precedenti"' in prec
+    assert f'<th scope="row">Bilancio ({casi})</th>' in prec
+    # la partita finita mostra il bilancio dell'archivio (riga «Bilancio», senza contatore)
+    assert "<h2>Precedenti</h2>" in post and "Bilancio" in post
+    # il link dei «Fatti rilevanti» punta dritto alla card dei precedenti
+    assert 'href="#precedenti" class="small" style="white-space:nowrap">→ precedenti</a>' in pre
     st.close()
 
 

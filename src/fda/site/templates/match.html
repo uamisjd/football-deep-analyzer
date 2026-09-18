@@ -46,7 +46,10 @@
   {% if c.home_bench or c.away_bench %}<a href="#panchina">Panchina</a>{% endif %}
   {% if (c.home_market or c.away_market) and c.status != 'finished' %}<a href="#mercato">Mercato</a>{% endif %}
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}<a href="#notizie">Vita del club</a>{% endif %}
-  <a href="#contesto">Contesto</a>
+  {#- P2.4 (`docs/28` §3): due voci al posto di «Contesto»: ognuna dice il titolo della card
+      che apre (invariante [33] di `scripts/verify_site.py`). -#}
+  {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}<a href="#arbitro-meteo">Arbitro e meteo</a>{% endif %}
+  {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}<a href="#precedenti">Precedenti</a>{% endif %}
   {% if c.key_stats %}<a href="#statistiche">Statistiche</a>{% endif %}
   {% if c.status == 'finished' and c.timeline %}<a href="#cronaca">Cronaca essenziale</a>{% endif %}
   <a href="#verifica">Verifica</a>
@@ -197,7 +200,7 @@
   <h2>Fatti rilevanti</h2>
   <p class="small mut">Streak, testa-a-testa e forma recente (FotMob), tradotti e filtrati. Al più cinque per partita; i testi non traducibili non vengono mostrati.</p>
   <ul class="narr">
-    {% for i in c.insights %}<li><b>{{ i.team }}</b>: {{ i.text }}{% if 'non perde' in i.text and c.h2h_pattern %} <a href="#contesto" class="small" style="white-space:nowrap">→ precedenti</a>{% endif %}</li>{% endfor %}
+    {% for i in c.insights %}<li><b>{{ i.team }}</b>: {{ i.text }}{% if 'non perde' in i.text and c.h2h_pattern %} <a href="#precedenti" class="small" style="white-space:nowrap">→ precedenti</a>{% endif %}</li>{% endfor %}
   </ul>
 </div>
 {% endif %}
@@ -354,9 +357,10 @@
 </div>
 <p class="small mut" style="margin:4px 0 0">Minuti, gol e assist di stagione sommati dalle statistiche gara; xG+xA per 90 dove la fonte li pubblica. «Titolare» = almeno metà dei minuti medi per giocatore. “Ruolo n.d.” = non ancora visto in distinta.</p>
 
-{#- `docs/28` §2 P1.3: il gruppo si chiama per quello che è (le card del club) e l'id
-    «contesto» va alla card che ha quel titolo — così il link «→ precedenti» atterra sui
-    precedenti invece che in cima al gruppo. -#}
+{#- `docs/28` §2 P1.3: il gruppo si chiama per quello che è (le card del club) — prima l'id
+    «contesto» stava sul gruppo, e il link «→ precedenti» atterrava in cima alle card del
+    club invece che sui precedenti. Da P2.4 le due cose hanno ognuna la sua card e la sua
+    ancora: «→ precedenti» va a `#precedenti`. -#}
 <div class="grid detail-card" id="club">
   {% if c.season_compare %}
   <div class="card" id="confronto">
@@ -465,19 +469,35 @@
     {% endif %}
   </div>
   {% endif %}
-  <div class="card" id="contesto">
-    <h2>Contesto</h2>
+  {#- `docs/28` §3 P2.4: «Contesto» impacchettava tre cose che non hanno nulla in comune — chi
+      dirige la gara, che tempo farà e la storia della sfida — ed era sbilanciata: i precedenti
+      (grafico, ultimi incontri, frequenze) sono l'83% del testo del blocco. Ora sono due card,
+      ognuna con il titolo di quello che contiene; l'etichetta della tabella dice il numero dei
+      casi («Bilancio (15)»), che è il dato da cui dipende la lettura delle frequenze. -#}
+  {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}
+  <div class="card" id="arbitro-meteo">
+    <h2>Arbitro e meteo</h2>
     <table>
       {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int }} gare)</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
       {% if c.weather.desc %}<tr><th scope="row">Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
-      {% if c.h2h[0] is not none and not c.h2h_pattern %}<tr><th scope="row">Precedenti</th><td>{{ c.h2h[0]|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ c.h2h[1]|it_plural('pareggio') }} · {{ c.h2h[2]|it_plural('vittoria','vittorie') }} {{ c.away_name }}</td></tr>{% endif %}
-      {% if c.h2h_pattern %}{% set hp = c.h2h_pattern %}<tr><th scope="row">Precedenti ({{ hp.n }})</th><td><span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">{{ hp.wins|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ hp.draws|it_plural('pareggio') }} · {{ hp.losses|it_plural('vittoria','vittorie') }} {{ c.away_name }} — archivio dal {{ hp.first|it_dt_full }} al {{ hp.last|it_dt_full }}<svg width="28" height="28" viewBox="0 0 32 32" style="flex:0 0 auto" role="img" aria-label="Bilancio precedenti"><circle r="12" cx="16" cy="16" fill="none" stroke="var(--line2)" stroke-width="6"/><circle r="12" cx="16" cy="16" fill="none" stroke="var(--accent)" stroke-width="6" stroke-dasharray="{{ (hp.wins/hp.n*75.4)|round(1) }} 75.4" stroke-dashoffset="18.85" transform="rotate(-90 16 16)"/><circle r="12" cx="16" cy="16" fill="none" stroke="var(--draw)" stroke-width="6" stroke-dasharray="{{ (hp.draws/hp.n*75.4)|round(1) }} 75.4" stroke-dashoffset="{{ (18.85 - hp.wins/hp.n*75.4)|round(1) }}" transform="rotate(-90 16 16)"/><circle r="12" cx="16" cy="16" fill="none" stroke="var(--lose)" stroke-width="6" stroke-dasharray="{{ (hp.losses/hp.n*75.4)|round(1) }} 75.4" stroke-dashoffset="{{ (18.85 - (hp.wins+hp.draws)/hp.n*75.4)|round(1) }}" transform="rotate(-90 16 16)"/></svg></span><br><span class="small">{{ hp.gpg|dec }} gol a gara · entrambe a segno nel {{ (hp.btts * 100)|round|int }}% · più di 2,5 gol nel {{ (hp.over25 * 100)|round|int }}%{% if hp.draw_drought is not none and hp.draw_drought > 0 %} · nessun pareggio negli ultimi {{ hp.draw_drought }}{% elif hp.draw_drought == 0 %} · l'ultimo precedente è finito in pareggio{% endif %}{% if hp.top_scores %} · risultato più frequente {{ hp.top_scores[0].score }} ({{ hp.top_scores[0].n }} {{ 'volta' if hp.top_scores[0].n == 1 else 'volte' }}){% endif %}</span>{% if hp.venue %}<br><span class="small" title="Sotto-serie dei precedenti giocati con {{ c.home_name }} di casa, come questa gara (pubblicata da 8 casi in su)">di cui con {{ c.home_name }} di casa ({{ hp.venue.n }}): {{ hp.venue.wins|it_plural('vittoria','vittorie') }} · {{ hp.venue.draws|it_plural('pareggio') }} · {{ hp.venue.losses|it_plural('sconfitta') }} · {{ hp.venue.gpg|dec }} gol a gara</span>{% endif %}<br><span class="small mut">Esiti dal punto di vista di {{ c.home_name }}. Con {{ hp.n }} casi le frequenze indicano una tendenza, non una regola.</span></td></tr>{% endif %}
     </table>
+  </div>
+  {% endif %}
+  {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}
+  <div class="card" id="precedenti">
+    <h2>Precedenti</h2>
+    {% if c.h2h_pattern or c.h2h[0] is not none %}
+    <table>
+      {% if c.h2h[0] is not none and not c.h2h_pattern %}<tr><th scope="row">Bilancio</th><td>{{ c.h2h[0]|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ c.h2h[1]|it_plural('pareggio') }} · {{ c.h2h[2]|it_plural('vittoria','vittorie') }} {{ c.away_name }}</td></tr>{% endif %}
+      {% if c.h2h_pattern %}{% set hp = c.h2h_pattern %}<tr><th scope="row">Bilancio ({{ hp.n }})</th><td><span style="display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap">{{ hp.wins|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ hp.draws|it_plural('pareggio') }} · {{ hp.losses|it_plural('vittoria','vittorie') }} {{ c.away_name }} — archivio dal {{ hp.first|it_dt_full }} al {{ hp.last|it_dt_full }}<svg width="28" height="28" viewBox="0 0 32 32" style="flex:0 0 auto" role="img" aria-label="Bilancio precedenti"><circle r="12" cx="16" cy="16" fill="none" stroke="var(--line2)" stroke-width="6"/><circle r="12" cx="16" cy="16" fill="none" stroke="var(--accent)" stroke-width="6" stroke-dasharray="{{ (hp.wins/hp.n*75.4)|round(1) }} 75.4" stroke-dashoffset="18.85" transform="rotate(-90 16 16)"/><circle r="12" cx="16" cy="16" fill="none" stroke="var(--draw)" stroke-width="6" stroke-dasharray="{{ (hp.draws/hp.n*75.4)|round(1) }} 75.4" stroke-dashoffset="{{ (18.85 - hp.wins/hp.n*75.4)|round(1) }}" transform="rotate(-90 16 16)"/><circle r="12" cx="16" cy="16" fill="none" stroke="var(--lose)" stroke-width="6" stroke-dasharray="{{ (hp.losses/hp.n*75.4)|round(1) }} 75.4" stroke-dashoffset="{{ (18.85 - (hp.wins+hp.draws)/hp.n*75.4)|round(1) }}" transform="rotate(-90 16 16)"/></svg></span><br><span class="small">{{ hp.gpg|dec }} gol a gara · entrambe a segno nel {{ (hp.btts * 100)|round|int }}% · più di 2,5 gol nel {{ (hp.over25 * 100)|round|int }}%{% if hp.draw_drought is not none and hp.draw_drought > 0 %} · nessun pareggio negli ultimi {{ hp.draw_drought }}{% elif hp.draw_drought == 0 %} · l'ultimo precedente è finito in pareggio{% endif %}{% if hp.top_scores %} · risultato più frequente {{ hp.top_scores[0].score }} ({{ hp.top_scores[0].n }} {{ 'volta' if hp.top_scores[0].n == 1 else 'volte' }}){% endif %}</span>{% if hp.venue %}<br><span class="small" title="Sotto-serie dei precedenti giocati con {{ c.home_name }} di casa, come questa gara (pubblicata da 8 casi in su)">di cui con {{ c.home_name }} di casa ({{ hp.venue.n }}): {{ hp.venue.wins|it_plural('vittoria','vittorie') }} · {{ hp.venue.draws|it_plural('pareggio') }} · {{ hp.venue.losses|it_plural('sconfitta') }} · {{ hp.venue.gpg|dec }} gol a gara</span>{% endif %}<br><span class="small mut">Esiti dal punto di vista di {{ c.home_name }}. Con {{ hp.n }} casi le frequenze indicano una tendenza, non una regola.</span></td></tr>{% endif %}
+    </table>
+    {% endif %}
     {% if c.h2h_list %}<p style="margin-top:10px"><b>Ultimi precedenti</b> <span class="small mut">(esito dal punto di vista di {{ c.home_name }})</span></p>
     <table>{% for g in c.h2h_list %}<tr><td class="mut small" style="width:92px">{{ g.date }}<br><span style="font-size:10px;color:var(--mut2)">{{ g.league }}</span></td><td class="small">{{ g.home }} <b>{{ g.score }}</b> {{ g.away }}</td><td class="r"><span class="pill {{ g.res }}" title="{{ g.home }} {{ g.score }} {{ g.away }} — esito {{ c.home_name }}">{{ g.res }}</span></td></tr>{% endfor %}</table>
     {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">{% if c.h2h_stats.n == 1 %}Nel precedente mostrato:{% else %}Nei {{ c.h2h_stats.n }} precedenti mostrati:{% endif %} <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}% dei casi.</p>{% endif %}
     {% endif %}
   </div>
+  {% endif %}
   {% if c.key_stats %}
   <div class="card" id="statistiche">
     <h2>Statistiche</h2>
