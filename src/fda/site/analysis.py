@@ -252,8 +252,11 @@ def _no_news() -> dict[str, Any]:
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
 
 
-#: Voci dell'imbuto del bollettino stampa che entrano nella riga unica, nell'ordine in cui
-#: vengono lette (la lingua per prima perché è il motivo di scarto più frequente, docs/25 §5).
+#: Voci dell'imbuto della card «Vita del club» che entrano nella riga unica quando non c'è
+#: niente da pubblicare (`docs/28` §2 P1.1). L'ordine mette per primo il cesto generico —
+#: «servizio o cronaca», cioè quello che non è notizia — e poi i motivi specifici, nello
+#: stesso ordine in cui la riga dell'imbuto li legge per esteso. Un motivo a zero non si
+#: stampa: la riga non deve suggerire scarti che non ci sono stati.
 NEWS_FUNNEL_ORDER: tuple[tuple[str, str], ...] = (
     ("scartate", "servizio o cronaca"),
     ("lingua", "in un'altra lingua"),
