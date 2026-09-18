@@ -1,5 +1,13 @@
 # STATO DEL PROGETTO (checkpoint — aggiornato a ogni turno)
 
+**Ultimo aggiornamento:** 2026-09-18 (sessione `arena/01a0b61a`, trentasettesimo giro) — **P1.4 applicata: «Verifica approfondita» chiusa e annunciata (`docs/31`).**
+
+- **Cosa cambia.** Il `<details>` con matrice dei punteggi e distribuzione dei gol non ha più `open` e il summary porta i due numeri di testa («moda X gol · mediana Y · per chi vuole controllare i numeri»). Il contenuto **resta nel DOM**. Lo script di `base.html` che riapriva la tendina sopra i 760 px è sostituito: ora **apre da sola la tendina che contiene il bersaglio di un'ancora** (il link «matrice completa ↓» atterrava su una riga chiusa). Il segno ▸/▾ è una regola CSS sola con la tendina di P1.1.
+- **Misura (66 schede pre, due build dello stesso codice).** Card: **1.886 → 119 caratteri visibili** (9,2% → 0,6% della pagina, 7,9% in tendina); DOM 1.886 → 1.911 (i due numeri nel summary). Scheda intera: **−1.767 caratteri visibili in mediana appaiata** (1.758–1.782; 66/66). Testo visibile mediano per scheda **20.577 → 18.807 (−8,6%)**. `verify_site` **97.903 controlli, 0 problemi** — invariato: il contenuto c'è, solo chiuso.
+- **Gate [offline, sandbox].** `pytest -q` **439 passed** (+1 `test_verifica_approfondita_chiusa_e_annunciata`); `ruff` pulito; `fda build` exit 0 (375/2.364/7.480); `scripts/verify_site.py` 0 problemi · 97.903 controlli; `audit_match_sections.py` exit 0. Non verificato (serve un browser): segno ▸/▾, spaziatura della card chiusa e comportamento dello script all'ancora → resta P2.8 di `docs/19`.
+- **Anteprima.** `site_preview/` (fuori dal versionamento, porta 8000) ha ora **cinque pannelli** prima/dopo: P1.1, hero e «Come arrivano» (P1.2), verifica dei numeri (P1.4) e la prova che con notizie vere la card non è cambiata.
+- **Prossimo passo.** Ultimo P1 della coda (`docs/28` §4): **P1.3** (nav con le ancore reali), poi i P2 di §3. Un intervento per turno, misura prima/dopo, push immediato; una sola PR a fine sessione (docs/00 §D).
+
 **Ultimo aggiornamento:** 2026-09-18 (sessione `arena/01a0b61a`, trentaseiesimo giro) — **P1.2 applicata: un dato di stagione, un posto (`docs/30`); anteprima prima/dopo servita in locale.**
 
 - **Cosa cambia.** L'hero non ripete più xG/gara e PPDA (restano esito, λ, Over 2,5, «entrambe a segno»); «Come arrivano» perde la riga di sintesi (medie di stagione e punti contro xPTS, già nella card della squadra) e il PPDA, e al loro posto rimanda a card squadra e «Scontro tattico»; resta la serie gara per gara con la tendenza e lo split casa/trasferta. **Nessun numero esce dalla pagina**: cambia dove sta — card squadra (valori di stagione) e «Scontro tattico» (confronto di stile).

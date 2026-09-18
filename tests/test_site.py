@@ -511,6 +511,31 @@ def test_xg_e_ppda_una_volta_sola(tmp_path):
     st.close()
 
 
+def test_verifica_approfondita_chiusa_e_annunciata(tmp_path):
+    """P1.4 (docs/28 §2): la verifica dei numeri non occupa il primo schermo.
+
+    Il `<details>` non ha più `open` (prima si apriva da solo sopra i 760 px: era il blocco dati
+    più pesante della pagina), il summary porta i due numeri di testa — moda e mediana dei gol —
+    così il lettore sa se aprirlo, e il contenuto resta nel DOM: `verify_site` e Google lo vedono.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    assert '<details class="card detail-card" id="verifica">' in h      # chiusa
+    assert 'id="verifica" open' not in h
+    summary = h.split('id="verifica">', 1)[1].split("</summary>", 1)[0]
+    assert "moda" in summary and "mediana" in summary and "per chi vuole controllare i numeri" in summary
+    assert "Matrice dei punteggi" in h                                   # il contenuto resta nel DOM
+    assert "Quanti gol, in pratica" in h
+    # il link interno «matrice completa ↓» non deve atterrare su una tendina chiusa:
+    # base.html apre da sola la tendina che contiene il bersaglio dell'ancora
+    assert "closest('details:not([open])')" in h
+    assert 'href="#verifica"' in h
+    st.close()
+
+
 def test_status_page_warns_espn_standings(tmp_path):
     """ESPN standings 403 (cronico, coperto da FotMob) → AVVISO, non ERRORE."""
     st = _seed(tmp_path, espn_cls=FakeEspnNoStandings)

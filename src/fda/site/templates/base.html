@@ -144,17 +144,22 @@
         upd();
       });
     }
-    var det=document.getElementById('verifica');
-    if(det){
-      var mq=window.matchMedia('(max-width: 760px)');
-      var apply=function(){
-        if(mq.matches) det.removeAttribute('open');
-        else det.setAttribute('open','');
-      };
-      apply();
-      if(mq.addEventListener) mq.addEventListener('change',apply);
-      else if(mq.addListener) mq.addListener(apply);
-    }
+    // Le tendine della scheda restano chiuse finché il lettore non le apre (P1.4, `docs/28` §2):
+    // prima «Verifica approfondita» si apriva da sola sopra i 760px e occupava il primo schermo.
+    // Un link interno però può puntare a un elemento che sta dentro una tendina chiusa (per
+    // esempio «matrice completa ↓»): in quel caso la tendina si apre da sola, altrimenti il
+    // lettore atterrerebbe su una riga chiusa.
+    var apri = function(){
+      var h = window.location.hash;
+      if(!h || h.length < 2) return;
+      var t = null;
+      try{ t = document.querySelector(h); }catch(e){ return; }
+      if(!t || !t.closest) return;
+      var d = t.closest('details:not([open])');
+      if(d) d.setAttribute('open','');
+    };
+    window.addEventListener('hashchange',apri);
+    apri();
   }catch(e){}
 })();
 </script>

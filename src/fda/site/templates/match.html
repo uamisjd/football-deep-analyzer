@@ -695,8 +695,12 @@
 </div>
 {% endif %}
 
-<details class="card detail-card" id="verifica" open>
-  <summary style="cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px"><h2 style="margin:0">Verifica approfondita: risultati esatti e distribuzione gol</h2><span class="mut small" style="margin-left:auto">per chi vuole controllare i numeri</span></summary>
+{#- P1.4 (`docs/28` §2): la verifica dei numeri non occupa il primo schermo, ma il summary dice
+    i due numeri di testa (moda e mediana dei gol totali) così il lettore sa se aprirla. Il
+    contenuto resta nel DOM: `verify_site` continua a leggerlo, Google pure. -#}
+<details class="card detail-card" id="verifica">
+  <summary><h2 style="margin:0">Verifica approfondita: risultati esatti e distribuzione gol</h2>
+  <span class="mut small" style="margin-left:auto">{% if c.goals %}<b>moda {{ c.goals.moda }} gol · mediana {{ c.goals.mediana }}</b> · {% endif %}per chi vuole controllare i numeri</span></summary>
   <div style="margin-top:16px;display:grid;gap:16px">
 {% if c.score_matrix %}
 {% set m = c.score_matrix %}

@@ -155,7 +155,7 @@ Panchina, Scontro tattico, I giocatori) non hanno un'ancora in nav.
 blocchi più pesanti; aggiungere `id` alle card oggi senza («Fatti rilevanti», «Come arrivano»,
 «I giocatori che decidono», «Contesto»).
 
-### P1.4 — «Verifica approfondita» aperta di default: 8,4% del testo
+### P1.4 — «Verifica approfondita» aperta di default: 8,4% del testo ✅ APPLICATA il 2026-09-18
 
 **Osservato.** Il `<details open>` contiene matrice e distribuzione dei gol, dichiarati «per chi
 vuole controllare i numeri», ed è sempre espanso: è il **blocco dati più pesante** dopo le card di
@@ -164,6 +164,19 @@ contorno.
 **Proposta.** `<details>` chiuso alla apertura, con il summary che porta i due numeri di testa
 («moda X gol · mediana Y») così il lettore sa se aprirlo. Il contenuto resta nel DOM: `verify_site`
 continua a leggerlo, Google pure.
+
+**Esito (2026-09-18, `docs/31`).** Fatta come proposto, più una cosa che il piano non diceva: lo
+script in `base.html` che **riapriva** la tendina sopra i 760 px è stato sostituito — adesso apre da
+sola la tendina che contiene il bersaglio di un'ancora (il link «matrice completa ↓» atterrava su una
+riga chiusa). Misura sulle stesse 66 schede, due build: la card passa da **1.886 a 119 caratteri
+visibili** (9,2% → 0,6% della pagina, con 7,9% in tendina), la scheda intera perde **1.767 caratteri
+visibili** in mediana (1.758–1.782, tutte e 66); il testo visibile mediano per scheda scende da
+20.577 a **18.807**, e `verify_site` resta a **97.903 controlli, 0 problemi** perché il contenuto è
+nella pagina, solo chiuso. Il segno ▸/▾ è ora una regola CSS sola con la tendina di P1.1.
+
+*Sul titolo:* dice 8,4%, la ri-misura di oggi sulla stessa card dà 9,2%. Non è un errore: la card
+è la stessa, è cambiato il **denominatore** — dopo P1.1 e P1.2 la pagina è più corta, quindi la
+stessa quantità di testo pesa di più in percentuale. Le cifre in caratteri non cambiano.
 
 ### P2.1 — Le stesse spiegazioni ripetute quattro-sei volte
 
@@ -262,9 +275,10 @@ se il peso si è spostato davvero dove serve.
 
 ## 5. Prossimo passo
 
-**P1.1 e P1.2 sono state applicate il 2026-09-18** — misure prima/dopo in
+**P1.1, P1.2 e P1.4 sono state applicate il 2026-09-18** — misure prima/dopo in
 [`docs/29`](29_p1_1_vita_del_club_riga_unica_2026-09-18.md) (3.030 → 829 caratteri visibili sulla
-card «Vita del club») e [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato di stagione ripetuto
-in 3 → 1 altri riquadri; −357 caratteri visibili per scheda). Il resto della coda resta quello di
-§4: il prossimo intervento è **P1.4** («Verifica approfondita» chiusa di default), poi **P1.3**
-(nav con le ancore reali).
+card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato di stagione ripetuto
+in 3 → 1 altri riquadri; −357 caratteri visibili per scheda) e
+[`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md) (−1.767 caratteri visibili per scheda;
+testo visibile mediano 20.577 → 18.807). Resta l'ultimo P1, **P1.3** (nav con le ancore reali), poi
+i P2 di §3.
