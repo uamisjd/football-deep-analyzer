@@ -139,6 +139,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/27_verifica_totale_sito_2026-09-18.md` | Verifica totale del sito su `index.html` e una scheda partita: quantitativo, qualitativo, ordine, precisione (misure rifatte da zero). |
 | `docs/28_scheda_partite_da_giocare_sezioni_e_ridondanze_2026-09-18.md` | **La scheda delle partite da giocare**: elenco delle sezioni con il loro peso, come migliorarle (coda P1/P2), mappa delle ridondanze misurate. |
 | `docs/29_p1_1_vita_del_club_riga_unica_2026-09-18.md` | P1.1 applicata: «Vita del club» in una riga quando non c'è nulla, con la misura prima/dopo (3.030 → 829 caratteri visibili). |
+| `docs/30_un_dato_in_un_posto_2026-09-18.md` | P1.2 applicata: xG/gara e PPDA detti in un posto solo (ripetizioni 3 → 1 riquadro, −357 caratteri visibili per scheda) e anteprima prima/dopo. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |

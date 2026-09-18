@@ -116,7 +116,7 @@ e con quali criteri». Misura prima/dopo sulle due build (stesso codice, stesso 
 (b) fatta **solo per il caso vuoto** (la nota metodologica è dentro la tendina): nelle 24 schede con
 notizie pubblicate resta visibile, ed è il seguito se la misura lo chiederà.
 
-### P1.2 — Il xG e il PPDA sono detti quattro volte
+### P1.2 — Il xG e il PPDA sono detti quattro volte ✅ APPLICATA il 2026-09-18
 
 **Osservato.** Lo stesso numero compare in: riga dell'hero, «Scontro tattico», «Come arrivano» e
 riquadro della card squadra (per squadra). Idem il PPDA (hero, «Scontro tattico», «Come arrivano»,
@@ -133,6 +133,13 @@ riquadro «Pressing · riposo»).
 i valori di stagione; «Come arrivano» perde la riga di sintesi e tiene la serie gara per gara con la
 tendenza. Ogni altro posto cita il numero con un rimando (`→ Scontro tattico`), come già fa la
 narrativa per la palla inattiva.
+
+**Esito (2026-09-18, `docs/30`).** Fatta come proposto. Misura sulle stesse 66 schede, due build:
+il dato di stagione si ripete in **mediana 1 altro riquadro** (prima 3), le occorrenze passano da
+1.039 a 489; la riga xG/PPDA dell'hero e la sintesi di «Come arrivano» spariscono da **66 schede su
+66** (il PPDA da quella card in 48 su 66); calo **appaiato** di **357 caratteri visibili per scheda**
+(188–376, tutte e 66). Lo strumento conta ora i valori canonici della card squadra (hero incluso nel
+conteggio), così il confronto prima/dopo usa la stessa definizione.
 
 ### P1.3 — La navigazione promette 4 sezioni, la pagina ne ha 21
 
@@ -255,8 +262,9 @@ se il peso si è spostato davvero dove serve.
 
 ## 5. Prossimo passo
 
-**P1.1 è stata applicata il 2026-09-18** — misure prima/dopo in [`docs/29`](29_p1_1_vita_del_club_riga_unica_2026-09-18.md)
-(3.030 → 829 caratteri visibili sulla card, 22.520 → 20.723 sull'intera scheda, `verify_site`
-0 problemi · 97.903 controlli). Il resto della coda resta quello di §4: il prossimo intervento è
-**P1.2** (xG/PPDA detti una volta sola), poi **P1.4** («Verifica approfondita» chiusa di default) e
-**P1.3** (nav con le ancore reali).
+**P1.1 e P1.2 sono state applicate il 2026-09-18** — misure prima/dopo in
+[`docs/29`](29_p1_1_vita_del_club_riga_unica_2026-09-18.md) (3.030 → 829 caratteri visibili sulla
+card «Vita del club») e [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato di stagione ripetuto
+in 3 → 1 altri riquadri; −357 caratteri visibili per scheda). Il resto della coda resta quello di
+§4: il prossimo intervento è **P1.4** («Verifica approfondita» chiusa di default), poi **P1.3**
+(nav con le ancore reali).

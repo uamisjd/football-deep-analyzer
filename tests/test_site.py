@@ -467,6 +467,50 @@ def test_vita_del_club_in_una_riga_quando_non_c_e_nulla(tmp_path):
     st.close()
 
 
+def test_xg_e_ppda_una_volta_sola(tmp_path):
+    """P1.2 (docs/28 §2): un dato, un posto — l'hero non anticipa xG/gara e PPDA, «Come arrivano»
+    non ripete le medie di stagione.
+
+    Il posto canonico dei valori di stagione è la card della squadra (più «Scontro tattico» per il
+    confronto di stile): l'hero tiene esito, λ, Over 2,5 e «entrambe a segno», che non compaiono
+    altrove. La gara sintetica serve perché il campione dei test non ha abbastanza righe Understat
+    per far comparire «Come arrivano».
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900003, 2, "Inter", "Napoli", now)])
+    st.upsert("predictions", [{
+        "match_id": 5900003, "model": "ensemble", "league_key": "ITA1",
+        "p_home": 0.5, "p_draw": 0.27, "p_away": 0.23, "lambda_home": 1.6, "lambda_away": 1.1,
+        "p_over15": 0.75, "p_over25": 0.55, "p_over35": 0.3, "p_btts": 0.52,
+        "p_1x": 0.77, "p_12": 0.73, "p_x2": 0.5, "p_home_clean_sheet": 0.3,
+        "p_away_clean_sheet": 0.2, "top_scores": "{'1-1': 0.12, '1-0': 0.1}",
+        "made_at": now, "n_train": 380, "w_dc": 0.7,
+    }])
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999001, "team_name": "Inter",
+         "date": (now - timedelta(days=7 * (4 - i))).isoformat(), "is_home": bool(i % 2),
+         "goals": 2, "goals_against": 1, "xg": 1.9 - i * 0.1, "xga": 1.0, "xpts": 2.0,
+         "pts": 3, "ppda": 9.5} for i in range(4)])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900003})
+    h = (out / "partite" / "5900003.html").read_text(encoding="utf-8")
+
+    hero = h.split('<div class="hero-model">')[1].split('<nav class="match-jump"')[0]
+    assert "xG/gara" not in hero and "PPDA" not in hero
+    assert "gol attesi" in hero and "Over 2,5" in hero and "entrambe a segno" in hero
+
+    assert h.count("xG creati / gara") == 2                    # card squadra: stagione, per squadra
+    assert "xG / gara" in h and "PPDA (↓ = più pressing)" in h  # «Scontro tattico»: il confronto
+
+    arrivo = h.split("<h2>Come arrivano</h2>", 1)[1].split("<h2>", 1)[0]
+    assert "xGA" in arrivo and arrivo.count("<tr>") >= 3        # la serie gara per gara resta
+    assert "fatti contro" not in arrivo and "a partita" not in arrivo   # niente sintesi ripetuta
+    assert "PPDA" not in arrivo
+    assert "Scontro tattico" in arrivo                          # al posto del numero, il rimando
+    st.close()
+
+
 def test_status_page_warns_espn_standings(tmp_path):
     """ESPN standings 403 (cronico, coperto da FotMob) → AVVISO, non ERRORE."""
     st = _seed(tmp_path, espn_cls=FakeEspnNoStandings)

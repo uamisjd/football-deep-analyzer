@@ -9,9 +9,11 @@ direttiva «scheda delle partite che devono giocare» (2026-09-18):
    (mediana sulle schede) e quota che sta dietro una tendina chiusa: dalla P1.1 di
    `docs/28` una parte del testo non occupa più il primo schermo, e un censimento che
    contasse solo il DOM non vedrebbe il guadagno.
-3. **Ridondanze** — in quante card diverse ricompare lo stesso dato: i valori
-   dell'hero (xG/gara, PPDA), il nome di un indisponibile, e le frasi-spiegazione
-   ripetute (sorgenti citate, «partite su 100», «stabilizzata»).
+3. **Ridondanze** — quante volte lo stesso dato ricompare altrove: i valori di
+   stagione della card squadra (xG creati/concessi per gara, PPDA) contati in quanti
+   *altri* riquadri compaiono — hero compreso, che è il posto da cui `docs/28` §2
+   (P1.2) li ha tolti —, il nome di un indisponibile, e le frasi-spiegazione ripetute
+   (sorgenti citate, «partite su 100», «stabilizzata»).
 
 Il parser è in sola libreria standard (nessuna dipendenza non dichiarata) e legge
 l'HTML generato: la stessa pagina che vede il lettore. Stampa solo riepiloghi
@@ -188,7 +190,7 @@ def main(argv: list[str] | None = None) -> int:
     totals: list[int] = []
     visibili: list[int] = []
     phrase_hits: dict[str, list[int]] = {p: [] for p in PHRASES}
-    hero_value_cards: list[int] = []
+    season_value_cards: list[int] = []
     absent_name_cards: list[int] = []
     signals: collections.Counter[str] = collections.Counter()
 
@@ -207,15 +209,23 @@ def main(argv: list[str] | None = None) -> int:
         text = main.text()
         for phrase in PHRASES:
             phrase_hits[phrase].append(text.count(phrase))
+        # P1.2 (`docs/28` §2): il posto canonico del xG/gara e del PPDA di stagione è la card
+        # della squadra. Si contano gli **altri** riquadri che ripetono quei valori — hero
+        # compreso, che è il posto da cui l'intervento li ha tolti; così il prima e il dopo
+        # si misurano con la stessa definizione.
         hero = next((n for n in main.find_all(FLOW, cls="hero-model")), None)
-        hero_text = hero.text() if hero else ""
-        values = re.findall(r"crea ([\d,]+) xG/gara", hero_text)
-        ppda = re.search(r"PPDA ([\d,]+) vs ([\d,]+)", hero_text)
-        if ppda:
-            values += list(ppda.groups())
-        for v in values:
-            pat = re.compile(r"(?<![\d,])" + re.escape(v) + r"(?![\d])")
-            hero_value_cards.append(sum(1 for _, _, _v, el in cards if pat.search(el.text())))
+        blocks = [el for _, _, _v, el in cards] + ([hero] if hero is not None else [])
+        for _, _, _v, el in cards:
+            season = el.text()
+            if "xG creati / gara" not in season:
+                continue
+            values = re.findall(r"xG creati / gara ([\d,]+)", season)
+            values += re.findall(r"xG concessi / gara ([\d,]+)", season)
+            values += re.findall(r"PPDA ([\d,]+)", season)
+            for v in values:
+                pat = re.compile(r"(?<![\d,])" + re.escape(v) + r"(?![\d])")
+                others = [b for b in blocks if b is not el and pat.search(b.text())]
+                season_value_cards.append(len(others))
         notizie = next((n for n in main.find_all(FLOW, cls=None) if n.attrs.get("id") == "notizie"),
                        None)
         if notizie is not None and not notizie.find_all(cls="news-list"):
@@ -257,10 +267,10 @@ def main(argv: list[str] | None = None) -> int:
         print(f"{phrase[:34]:36} {_median(v):>6} · {max(v):>3}  "
               f"(schede con ≥1: {sum(1 for x in v if x)}/{len(pre)})")
     print("\n=== stesso dato in più card ===")
-    if hero_value_cards:
-        dist = dict(sorted(collections.Counter(hero_value_cards).items()))
-        print(f"valore dell'hero (xG/gara, PPDA): mediana {_median(hero_value_cards)} card "
-              f"· distribuzione {dist}")
+    if season_value_cards:
+        dist = dict(sorted(collections.Counter(season_value_cards).items()))
+        print(f"valore di stagione della card squadra (xG/gara, PPDA) ripetuto in: mediana "
+              f"{_median(season_value_cards)} altri riquadri · distribuzione {dist}")
     if absent_name_cards:
         dist = dict(sorted(collections.Counter(absent_name_cards).items()))
         print(f"nome di un indisponibile: {len(absent_name_cards)} nomi · mediana "

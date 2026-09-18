@@ -22,7 +22,9 @@
     <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ p.meta.top_pct }}%</em></strong><span class="small mut" title="Differenza in punti percentuali fra le due percentuali intere stampate qui a fianco (primo e secondo esito, scala 1X2)">+{{ p.meta.margin_pp|it_plural('punto','punti') }} sul secondo — {{ p.meta.second_name }} {{ p.meta.second_pct }}% · 1 {{ hb[0] }}% · X {{ hb[1] }}% · 2 {{ hb[2] }}%</span></div>
     <div class="hero-metrics"><span class="hero-metric" title="λ casa + λ trasferta Dixon-Coles+Elo calibrate — non media xG ultime 3 (vedi 'Come arrivano'). Il totale guida Over/Under ed «entrambe a segno»"><b>{{ p.lambda_home|dec }} + {{ p.lambda_away|dec }}</b><span>gol attesi · <b>{{ p.lambda_home|dec_sum(p.lambda_away) }} totali</b></span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
     <span class="hero-signal" title="Confronto fra i due motori del modello: Dixon-Coles sui gol attesi e rating Elo (distanza sui 100 casi)">{{ p.meta.signal_label }}</span>
-    {% if c.home_xg and c.away_xg %}<div class="small mut" style="margin-top:6px">{{ c.home_name }} crea {{ c.home_xg.xg_pm|dec }} xG/gara ({{ c.home_xg.source }}) · {{ c.away_name }} {{ c.away_xg.xg_pm|dec }} · PPDA {% if c.home_xg.ppda %}{{ c.home_xg.ppda|dec(1) }}{% else %}n.d.{% endif %} vs {% if c.away_xg.ppda %}{{ c.away_xg.ppda|dec(1) }}{% else %}n.d.{% endif %}</div>{% endif %}
+    {#- P1.2 (docs/28 §2): l'hero non ripete xG/gara né PPDA — stanno nella card della squadra
+        (valori di stagione) e in «Scontro tattico» (confronto di stile della gara). Qui restano
+        esito, λ, Over 2,5 e «entrambe a segno», che non compaiono altrove. -#}
   </div>
   {% elif p %}<p class="small mut" style="margin:0">Probabilità del modello disponibili nella scheda qui sotto.</p>{% endif %}
 </div>
@@ -182,7 +184,7 @@
 {% if c.status != 'finished' and (c.home_arrival or c.away_arrival) %}
 <div class="card">
   <h2>Come arrivano</h2>
-  <p class="small mut">Le ultime gare di campionato con xG e xGA a confronto: quanto una squadra crea e quanto concede, al netto del risultato. Fonte Understat dove copre la lega, altrimenti le statistiche gara di FotMob.</p>
+  <p class="small mut">Gara per gara: quanto una squadra crea e quanto concede, al netto del risultato. Le medie di stagione sono nella card della squadra, il confronto degli stili in <a href="#scontro">Scontro tattico</a>. Fonte Understat dove copre la lega, altrimenti le statistiche gara di FotMob.</p>
   <div class="grid">
   {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
     {% set a = c[side ~ '_arrival'] %}
@@ -202,9 +204,13 @@
         </tr>
         {% endfor %}
       </table>
-      <p class="small" style="margin-top:8px">{{ a.played|it_plural('gara') }}: <b>{{ a.xg_pm|dec }} xG</b> e <b>{{ a.xga_pm|dec }} xGA</b> a partita · {{ a.pts|it_plural('punto') }} fatti contro {{ a.xpts|dec(1) }} attesi su {{ a.played }} gare ({{ (a.pts - a.xpts)|dec(1, true) }})</p>
+      {#- P1.2: qui c'era la riga di sintesi (xG/xGA a partita e punti contro xPTS): gli stessi
+          numeri stanno nella card della squadra e in «Scontro tattico». Resta la serie gara per
+          gara con la tendenza, che è l'unica cosa che questa card può dire bene. -#}
       {% if a.trend %}<p class="small mut">Direzione degli <b>xG creati</b>: <b>{{ a.trend }}</b> — {{ a.trend_recent|dec }} a gara nelle ultime 3 contro {{ a.trend_before|dec }} nelle precedenti (soglia ±{{ a.trend_threshold|dec }} xG). Valuta il gioco recente, non i punti: la riga sopra misura l'intero campione.</p>{% endif %}
-      <p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% endif %}{% if a.ppda %} · PPDA {{ a.ppda|dec(1) }} (passaggi concessi per azione difensiva: più basso = pressing più alto){% endif %}</p>
+      {#- il PPDA non si ripete qui: sta nella card della squadra e in «Scontro tattico» (P1.2);
+          se non ci sono né lo split casa/trasferta né altro, il riquadro non lascia un <p> vuoto -#}
+      {% if a.home_pm is not none or a.away_pm is not none %}<p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% endif %}</p>{% endif %}
       <p class="small mut">Fonte: {{ a.source }}. Con poche giornate giocate i valori per gara oscillano molto.</p>
       {% else %}<p class="mut small">Nessuna gara precedente con xG disponibile per questa squadra.</p>{% endif %}
     </div>
