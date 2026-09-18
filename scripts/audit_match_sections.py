@@ -122,8 +122,12 @@ def main() -> int:
             m = re.search(r'<h2>Analisi pre-partita</h2>\s*.*?<ul class="narr">(.*?)</ul>', txt, re.DOTALL)
             if m:
                 narr_rows.setdefault(lg, []).append(len(re.findall(r"<li>", m.group(1))))
-            peso[lg] = peso.get(lg, 0) + txt.count("giocatore di peso") + txt.count("giocatori di peso")
-            assenze[lg] = assenze.get(lg, 0) + len(re.findall(r"Assenze [^<]*?:", txt))
+            # P2.4 (docs/19 §2.8): la frase delle assenze è stata riscritta in italiano
+            # corrente («X deve rinunciare a N assenti, M dei quali titolari abituali: …»).
+            # Senza aggiornare questi due conteggi l'audit leggerebbe 0 su tutte le leghe.
+            peso[lg] = (peso.get(lg, 0) + txt.count("titolare abituale")
+                        + txt.count("titolari abituali"))
+            assenze[lg] = assenze.get(lg, 0) + len(re.findall(r"deve rinunciare a ", txt))
         # #14 — gerarchia delle due card figlie di «Verifica approfondita»
         k("figlie_h2", "<h2>Matrice dei punteggi</h2>" in txt)
         k("figlie_h3", "<h3>Matrice dei punteggi</h3>" in txt)

@@ -294,7 +294,10 @@ def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     assert "Beta: 5 punti nelle ultime 4 (PNVN) — andamento nella norma." in narr
     # Ala A (135' su 855 di squadra → titolare, min >= metà media) pesa anche se vale
     # 12M (sotto la vecchia soglia assoluta di 15M); Esordiente A non pesa.
-    assert any(s.startswith("Assenze Alpha: 2 (tra cui 1 giocatore di peso)") for s in narr)
+    # P2.4 (docs/19 §2.8): la frase è stata riscritta in italiano corrente — il criterio
+    # di «peso» (titolare abituale) non cambia, cambia solo come viene detto.
+    assert any(s.startswith("Alpha deve rinunciare a 2 assenti, uno dei quali titolare abituale:")
+               for s in narr), narr
 
 
 def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
@@ -707,3 +710,85 @@ def test_peso_infermeria_con_stima_stabilizzata(tmp_path):
     ala = next(p for p in ab["players"] if p["name"] == "Ala A")
     assert ala["pubblicabile"] is True and ala["contrib_p90"] == pytest.approx(0.3)
     assert ab["contrib_lost_p90"] == pytest.approx(riga["contrib_est"] + ala["contrib_est"])
+
+
+# --- P2.4: le tre frasi-macchina di narrative() riscritte in italiano (docs/19 §2.8) ---
+
+
+@pytest.mark.parametrize("diff", [-3.0, -3.1, -5.4, -9.9])
+def test_narrative_xpts_negativo_non_stampa_il_segno_meno(diff):
+    """«ha −3,0 punti rispetto agli xPTS» non è italiano: si dice «3,0 punti in meno».
+
+    Caso esplicitamente chiesto dall'audit (`diff=-3.0`). Il segno si porta nelle parole,
+    il numero resta in valore assoluto.
+    """
+    ctx = {"home_name": "Inter", "away_name": "Milan",
+           "home_xg": {"xpts": 40.0, "pts": 40.0 + diff, "played": 10}}
+    frase = next(s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s)
+    assert "punti in meno" in frase
+    assert "−" not in frase and "-" not in frase, f"segno meno rimasto nella frase: {frase}"
+    assert f"{abs(diff):.1f}".replace(".", ",") in frase
+
+
+def test_narrative_xpts_positivo_resta_esplicito():
+    """Il verso opposto deve restare distinguibile: «in più», non solo un segno."""
+    ctx = {"home_name": "Inter", "away_name": "Milan",
+           "home_xg": {"xpts": 40.0, "pts": 44.2, "played": 10}}
+    frase = next(s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s)
+    assert "punti in più" in frase and "4,2" in frase
+
+
+@pytest.mark.parametrize(("n", "titolari"), [(1, 1), (1, 0), (2, 1), (3, 3), (5, 2)])
+def test_narrative_assenze_e_una_frase_non_un_elenco_di_dati(n, titolari):
+    """«Assenze Inter: 3 — A, B, C» era un record, non una frase (1/2/5 indisponibili)."""
+    un = [{"name": f"G{i}", "value": 20_000_000} for i in range(1, n + 1)]
+    ctx = {"home_name": "Inter", "away_name": "Milan", "home_unavailable": un,
+           "home_absences": {"has_stats": True, "players": [{"starter": True}] * titolari}}
+    frase = next(s for s in MatchAnalysis.narrative(ctx) if "rinunciare" in s)
+    assert not frase.startswith("Assenze "), "tornato il formato elenco-dati"
+    assert " — " not in frase, "il trattino da record è tornato nella frase"
+    # con più nomi ci deve essere la congiunzione, non solo virgole
+    if min(n, 4) > 1:
+        assert " e G" in frase, f"manca la congiunzione fra i nomi: {frase}"
+    # il troncamento resta dichiarato
+    assert ("…" in frase) == (n > 4)
+
+
+def test_narrative_assenza_singola_non_dice_uno_dei_quali():
+    """Con un solo assente «1 assente, uno dei quali titolare» stona: va detto per esteso."""
+    ctx = {"home_name": "Inter", "away_name": "Milan",
+           "home_unavailable": [{"name": "G1", "value": 20_000_000}],
+           "home_absences": {"has_stats": True, "players": [{"starter": True}]}}
+    frase = next(s for s in MatchAnalysis.narrative(ctx) if "rinunciare" in s)
+    assert "uno dei quali" not in frase
+    assert "titolare abituale" in frase
+
+
+def test_narrative_peso_non_valutabile_resta_dichiarato():
+    """Se la fonte non ha né minuti né valori, la scheda lo dice invece di tacere."""
+    ctx = {"home_name": "Inter", "away_name": "Milan",
+           "home_unavailable": [{"name": "G1"}, {"name": "G2"}]}
+    frase = next(s for s in MatchAnalysis.narrative(ctx) if "rinunciare" in s)
+    assert "peso non valutabile" in frase
+
+
+@pytest.mark.parametrize("p", [0.60, 0.72, 0.85])
+def test_narrative_1x2_usa_le_frequenze_naturali_e_non_dice_nettamente(p):
+    """A 60% il favorito perde 4 volte su 10: «nettamente favorito» è più forte del dato."""
+    ctx = {"home_name": "Inter", "away_name": "Milan",
+           "prediction": {"p_home": p, "p_draw": (1 - p) / 2, "p_away": (1 - p) / 2,
+                          "lambda_home": 1.4, "lambda_away": 1.1, "p_over25": 0.55}}
+    frase = MatchAnalysis.narrative(ctx)[0]
+    assert "nettamente" not in frase
+    assert "su 100 partite così" in frase
+    assert f"{round(p * 100)} finiscono" in frase
+
+
+def test_elenco_it_mette_la_congiunzione_prima_dell_ultimo_nome():
+    """È la differenza fra una frase e un elenco separato da virgole."""
+    from fda.site.analysis import _elenco_it
+
+    assert _elenco_it(["A"]) == "A"
+    assert _elenco_it(["A", "B"]) == "A e B"
+    assert _elenco_it(["A", "B", "C"]) == "A, B e C"
+    assert _elenco_it([]) == ""
