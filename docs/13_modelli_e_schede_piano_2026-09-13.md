@@ -1049,3 +1049,20 @@ Il playbook del prossimo agente sta in cima a `docs/STATO.md` (trentunesimo giro
 `BRIEFING_NUOVA_SESSIONE.md` §4 punto 0.
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+## Deroga al flusso di merge (2026-09-18, PR #54)
+
+La regola D riserva il merge all'utente. L'utente ha scritto «ok fai il merge e prepara il
+nuovo agente su cosa bisogna fare»: in deroga, il merge di **PR #54** (branch
+`arena/01a0b4ad-football-deep-analyzer` → `main`: **P1.11**, griglia pre-registrata nel
+laboratorio — `Candidate.grid`, `grid_dichiarata`/`n_tentativi` in `model_lab.parquet`,
+regola in `docs/00` §D, STATO giro 32) è eseguito **dall'agente** dopo la verifica prescritta:
+check `test` **SUCCESS**, PR **MERGEABLE · CLEAN**, `git status --porcelain` vuoto e
+`git log origin/main..HEAD` con i soli 3 commit della PR. Merge commit **`1f12f90`** su `main`.
+
+Nello stesso turno l'utente ha dato una **direttiva nuova** (registrata in `docs/00` §D e nel
+briefing): le sessioni future lavorano a **PR ricche** — più interventi della coda verificati
+sul branch, gate pieni e una sola PR — invece di una PR per ogni piccolo blocco. Il playbook
+del prossimo agente sta in cima a `docs/STATO.md` (trentaduesimo giro).
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
