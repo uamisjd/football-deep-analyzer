@@ -51,7 +51,11 @@ from .dc_grid import GRID_SIZE, MIN_LAMBDA, clamp_rho_many, grid_markets_many, t
 
 log = logging.getLogger(__name__)
 
-#: griglia di ricerca del moltiplicatore delle λ (1,00 = nessuna correzione)
+#: griglia di ricerca del moltiplicatore delle λ (1,00 = nessuna correzione).
+#: **Non è la griglia che sceglie il valore pubblicato** (P1.12, `docs/19` §1.7): il
+#: moltiplicatore attivo viene da :func:`moment_scale`, che è continuo e limitato da
+#: :data:`SCALE_BOUNDS`. Questa griglia serve solo allo stimatore di confronto
+#: (:func:`_best_params`), la cui scelta finisce nella metrica ``confronto_scale_griglia``.
 LAMBDA_SCALE_GRID: tuple[float, ...] = tuple(round(float(x), 3) for x in np.arange(0.90, 1.031, 0.02))
 #: griglia di ricerca dello spostamento di ρ (0,00 = ρ stimata dal modello)
 RHO_SHIFT_GRID: tuple[float, ...] = (-0.06, -0.04, -0.02, 0.0, 0.02)
@@ -72,6 +76,11 @@ FIT_WINDOW_DAYS = 730
 #: limiti di sicurezza del moltiplicatore: una correzione oltre questi valori significa che
 #: è cambiato il modello, non che va corretta la griglia (meglio identità + avviso).
 SCALE_BOUNDS: tuple[float, float] = (0.85, 1.05)
+
+
+def _it(x: float) -> str:
+    """Numero con la virgola decimale italiana (regola `00` §E: l'utente legge in italiano)."""
+    return f"{float(x):.2f}".replace(".", ",")
 
 
 @dataclass(frozen=True)
@@ -96,6 +105,33 @@ class Calibration:
     def is_identity(self) -> bool:
         return abs(self.lambda_scale - 1.0) < 1e-9 and abs(self.rho_shift) < 1e-9
 
+    @property
+    def scale_domain(self) -> tuple[float, float]:
+        """Intervallo **realmente** esplorato per il moltiplicatore (P1.12, `docs/19` §1.7).
+
+        Lo stimatore in produzione è ``momenti``: il valore non è scelto su
+        :data:`LAMBDA_SCALE_GRID` ma calcolato come rapporto gol osservati / gol attesi e
+        poi limitato a :data:`SCALE_BOUNDS` → l'intervallo esplorato **sono i bounds**.
+        Solo con lo stimatore ``griglia`` l'intervallo è quello della griglia.
+        """
+        if str(self.estimator) == "griglia" and LAMBDA_SCALE_GRID:
+            return (float(min(LAMBDA_SCALE_GRID)), float(max(LAMBDA_SCALE_GRID)))
+        return (float(SCALE_BOUNDS[0]), float(SCALE_BOUNDS[1]))
+
+    @property
+    def scale_claim(self) -> str:
+        """Frase pubblicabile che dichiara *come* è stato scelto il moltiplicatore.
+
+        È il «claim ridotto» di P1.12: dice il metodo e l'intervallo veri, senza
+        affermare una ricerca su griglia che per lo stimatore dei momenti non c'è stata.
+        """
+        lo, hi = self.scale_domain
+        if str(self.estimator) == "griglia":
+            return (f"scelto su griglia {_it(min(LAMBDA_SCALE_GRID))}–{_it(max(LAMBDA_SCALE_GRID))} "
+                    f"(passo {_it(0.02)})")
+        return (f"stimato dai momenti (media dei gol osservati), limitato a "
+                f"{_it(lo)}–{_it(hi)}")
+
     def apply(self, lambda_home: float, lambda_away: float, rho: float | None) -> tuple[float, float, float]:
         """λ e ρ corrette; ρ resta nei bound matematici del τ (mai una griglia negativa)."""
         lh = max(float(lambda_home) * float(self.lambda_scale), MIN_LAMBDA)
@@ -119,6 +155,11 @@ class Calibration:
                                 "fitted_at": self.fitted_at, "corpus": self.corpus,
                                 "version": self.version, "estimator": self.estimator,
                                 "window_days": self.window_days}
+        # P1.12 (`docs/19` §1.7): l'intervallo esplorato viaggia col parametro, così un
+        # lettore dello store sa su quale dominio è stato scelto senza rileggere il codice.
+        lo, hi = self.scale_domain
+        flat["scale_grid_min"] = round(lo, 6)
+        flat["scale_grid_max"] = round(hi, 6)
         flat.update({f"m_{k}": round(float(v), 6) for k, v in self.metrics.items()})
         return flat
 
