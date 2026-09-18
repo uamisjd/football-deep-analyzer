@@ -91,6 +91,17 @@ jobs:
           set -euo pipefail
           python scripts/verify_site.py --site site --data data/processed 2>&1 | tee verify.log | tail -20
 
+      # Parità fra le schede pre-partita (direttiva utente 2026-09-19: «ogni partita deve avere
+      # la stessa alta qualità e quantità»): struttura (gli stessi id di card), indice (le stesse
+      # voci) e quantità di testo devono coincidere su **ogni** scheda pre-partita. Una guardia
+      # che fa sparire una card su una pagina sola passava tutti i gate senza essere vista
+      # («Clima del club», 59 schede su 60, scoperta misurando): ora ferma il run prima del
+      # commit dei dati.
+      - name: Parità delle schede pre-partita
+        run: |
+          set -euo pipefail
+          python scripts/parita_schede.py site 2>&1 | tee parita.log | tail -20
+
       - name: Commit dei dati aggiornati
         run: |
           git config user.name "fda-bot"

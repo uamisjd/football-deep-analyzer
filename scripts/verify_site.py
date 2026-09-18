@@ -1794,8 +1794,12 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
     # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
-    # con le stesse soglie; se una squadra ha segnali la card deve esserci.
+    # con le stesse soglie; se una squadra ha segnali la card deve esserci. Da P2.2 (`docs/28`
+    # §3) la card c'è **sempre** sulle schede pre-partita: due squadre senza segnali non devono
+    # farla sparire (il lettore non distinguerebbe «clima tranquillo» da «dato non raccolto»),
+    # e in quel caso la pagina lo dice riga per riga. Il controllo verifica le due direzioni.
     n_mood = 0
+    vuota = ("Nessun segnale anomalo nei dati raccolti: clima normale.")
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
         if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
@@ -1805,17 +1809,19 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         kickoff = pd.Timestamp(fr.utc_kickoff)
         rows_h = ma19.club_mood(int(pg.stem), int(fr.home_id), str(fr.home_name), kickoff)
         rows_a = ma19.club_mood(int(pg.stem), int(fr.away_id), str(fr.away_name), kickoff)
-        if rows_h or rows_a:
-            n_mood += 1
-            if 'id="clima"' not in html:
-                fails.append(f"{pg.name}: segnali clima presenti ma card assente")
-                continue
-            for r in rows_h + rows_a:
-                checks += 1
-                if r["text"] not in txt:
-                    fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
-        elif 'id="clima"' in html:
-            fails.append(f"{pg.name}: card clima senza segnali calcolati")
+        n_mood += 1
+        if 'id="clima"' not in html:
+            fails.append(f"{pg.name}: card clima assente (deve esserci su ogni scheda pre-partita)")
+            continue
+        for r in rows_h + rows_a:
+            checks += 1
+            if r["text"] not in txt:
+                fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
+        senza = (0 if rows_h else 1) + (0 if rows_a else 1)
+        checks += 1
+        if txt.count(vuota) != senza:
+            fails.append(f"{pg.name}: {senza} squadre senza segnali ma la riga «clima normale» "
+                         f"compare {txt.count(vuota)} volte")
     print(f"[21] pagine con clima del club riconciliate: {n_mood}")
 
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla

@@ -666,6 +666,64 @@ def test_arbitro_meteo_e_precedenti_card_separate(tmp_path):
     st.close()
 
 
+def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
+    """P2.2 (`docs/28` §3): le assenze non si raccontano quattro volte, e nessuna card sparisce.
+
+    Tre cose verificate sulle due schede campione:
+    * la frase della narrativa non elenca i nomi (la tabella dell'infermeria è la fonte unica) e
+      porta il link `→ Infermeria` **della squadra giusta** (`#infermeria-home` / `-away`);
+    * l'avviso «il migliore della lista è indisponibile» non ripete motivo e rientro (stanno
+      nella riga della stessa persona in infermeria) ma ci manda;
+    * «Clima del club» esiste anche quando nessuna delle due squadre ha segnali: il silenzio non
+      deve far sparire la sezione (una scheda su 60 la perdeva).
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    # l'ancora dell'infermeria esiste per entrambe le squadre (tabella o riga «nessuno fuori»)
+    assert 'id="infermeria-home"' in pre and 'id="infermeria-away"' in pre
+    # la narrativa: nessun nome di assente, ma il rimando alla tabella
+    narr = pre.split('<ul class="narr">', 1)[1].split("</ul>", 1)[0]
+    for riga in re.findall(r"<li>(.*?)</li>", narr):
+        if "deve rinunciare a" not in riga:
+            continue
+        assert "«Indisponibili»" in riga
+        lato = "home" if "infermeria-home" in riga else "away"
+        assert f'href="#infermeria-{lato}"' in riga, riga
+        # il nome con cui la frase comincia è quello della squadra di quel lato
+        squadra = "Udinese" if lato == "home" else "Lazio"
+        assert riga.startswith(squadra) or f">{squadra}<" in riga, riga
+        # e nessuno degli indisponibili della tabella compare nella frase
+        cella = pre.split('id="infermeria-' + lato, 1)[1].split("</table>", 1)[0]
+        nomi = re.findall(r"<tr[^>]*>\s*<td><b>([^<]+)</b>", cella)
+        assert not any(n in riga for n in nomi), (riga, nomi)
+
+    # ogni rimando dentro la narrativa ha la sua ancora in pagina (il gate l'ha trovato rotto
+    # sulle schede post-partita: lì la tabella dell'infermeria non esiste, perché la fonte
+    # riporta le assenze una volta su due e la pagina non può dire «nessuno fuori»)
+    post = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    for nome, html in (("pre", pre), ("post", post)):
+        for ancora in re.findall(r'<li>.*?href="#([^"]+)".*?</li>', html, re.DOTALL):
+            assert f'id="{ancora}"' in html, f"{nome}: il link #{ancora} non ha un bersaglio"
+    # e a gara finita i nomi restano nella frase (la tabella non c'è)
+    if "deve rinunciare a" in post:
+        assert 'href="#infermeria-' not in post
+    # «Clima del club» c'è anche senza segnali: la riga per squadra lo dice
+    assert '<div class="card" id="clima">' in pre
+    assert "Nessun segnale anomalo nei dati raccolti: clima normale." in pre
+
+    # l'avviso dentro «I giocatori che decidono»: motivo e rientro non si ripetono, si linkano
+    gioc = pre.split('<div class="card" id="giocatori">', 1)[1]
+    if "è indisponibile" in gioc:
+        avviso = next(r for r in re.findall(r"<p class=\"small warn\"[^>]*>(.*?)</p>", gioc, re.DOTALL)
+                      if "è indisponibile" in r)
+        assert "Infermeria" in avviso and 'href="#infermeria-' in avviso
+        assert "infortunio" not in avviso, avviso      # il motivo sta nella tabella
+    st.close()
+
+
 def test_verifica_approfondita_chiusa_e_annunciata(tmp_path):
     """P1.4 (docs/28 §2): la verifica dei numeri non occupa il primo schermo.
 

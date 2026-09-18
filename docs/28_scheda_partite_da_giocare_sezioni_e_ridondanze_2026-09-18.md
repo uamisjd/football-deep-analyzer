@@ -212,7 +212,7 @@ in mediana appaiata (73–111, tutte e 66). Le sorgenti citate 8-14 volte **non*
 restano una decisione (docs/20 §3). Il gate **[32]** ha corretto la prima stesura della legenda
 (`<b>◇</b>` isolato = «cella senza numero»): riscritta in prosa.
 
-### P2.2 — Le assenze sono raccontate in quattro modi
+### P2.2 — Le assenze sono raccontate in quattro modi ✅ APPLICATA il 2026-09-19
 
 **Misura.** 653 nomi di indisponibili misurati; ciascuno compare in **mediana 2 card** (max 15). Le
 quattro sedi: narrativa (riga «Assenze…»), tabella «Indisponibili» con impatto, stato dentro «I
@@ -222,6 +222,22 @@ migliore della lista è indisponibile c'è anche un avviso dedicato.
 **Proposta.** Tabella = fonte unica. La narrativa cita «vedi Infermeria ↓» senza ripetere i nomi;
 «I giocatori che decidono» lascia il solo marcatore di stato senza ripetere il motivo; «Clima» tiene
 la soglia aggregata (4 assenti / 2 titolari / 0,5 xG+xA in meno) senza elencare.
+
+**Esito (2026-09-19, `docs/35`).** Fatta come proposto, più una cosa che la misura ha aggiunto: la
+frase della narrativa non elenca più i nomi (129 → **0** sulle 60 schede, mediana 2 per scheda) e
+manda alla tabella con il link «→ Infermeria» (60/60), che atterra sull'infermeria della squadra
+giusta grazie a due ancore nuove (`#infermeria-home`, `#infermeria-away`); l'avviso «il migliore
+della lista è indisponibile» non ripete motivo e rientro; «Clima del club» **non sparisce più**
+quando entrambe le squadre sono tranquille (era 59 schede su 60: l'unica differenza di struttura
+fra le schede pre-partita). **A gara finita i nomi restano nella frase**: lì la tabella non esiste
+(la fonte riporta le assenze una volta su due) e la narrativa è l'unico posto dove compaiono.
+
+Su richiesta esplicita dell'utente («ogni partita deve avere la stessa alta qualità e quantità») la
+parità è diventata un gate: `scripts/parita_schede.py` confronta le schede pre-partita fra loro —
+stessi id di card, stesso indice, nessuna sezione sotto un quarto della sua mediana di peso — ed
+esce 1 se una scheda si discosta; gira anche in CI prima del commit dei dati. Prima differenza
+trovata: `clima`, su Alverca–Rio Ave. Misura appaiata (60 schede): struttura 59/60 → **60/60**,
+«Clima del club» 59 → **60**, frase 96 → 90 caratteri (i nomi non si leggono due volte).
 
 ### P2.3 — Card di solo testo senza un grafico
 
@@ -299,7 +315,7 @@ etichette V/N/P; i tooltip di accessibilità su barre e matrici (invarianti di `
 | 2 | P1.2 hero senza xG/PPDA, un solo posto per dato | mediana da 3 card a 1-2 |
 | 3 | P1.4 «Verifica approfondita» chiusa, summary con i due numeri | 1.883 car. fuori dal primo schermo |
 | 4 | P1.3 nav con ancore reali | 6 blocchi pesanti raggiungibili |
-| 5 | P2.1 ✅ · P2.4 ✅ · P2.2-P2.3 · P2.5 (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta |
+| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 · P2.5 (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta e il gate `parita_schede` |
 
 Ogni intervento va rifatto passare da `fda build` + `verify_site.py` + `scripts/audit_match_sections.py`
 e rimisurato con `scripts/prematch_sections.py`: la quota di testo per sezione è il numero che dice
@@ -315,4 +331,4 @@ card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato
 in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
 (verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
 (indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
-visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)**. Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). **In coda**, in ordine di peso: **P2.2** (assenze raccontate in quattro modi), P2.3 (micro-visivi), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione).
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`). **In coda**, in ordine di peso: **P2.3** (micro-visivi: barra del percentile, quartili del primo gol, sparkline delle fasce storiche), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione). ~~P2.2~~ (assenze raccontate in quattro modi), P2.3 (micro-visivi), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione).

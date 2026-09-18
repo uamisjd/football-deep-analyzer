@@ -3790,8 +3790,6 @@ class MatchAnalysis:
                 # Lautaro, Barella, Calhanoglu» è un formato elenco-dati, non una frase.
                 # Si scrive in italiano corrente, con la congiunzione prima dell'ultimo nome.
                 # Il criterio di «peso» NON cambia: resta «titolare abituale» (docs/20 §13).
-                names = _elenco_it([u["name"] for u in un[:4]])
-                coda = "…" if len(un) > 4 else ""
                 quanti = it_plural(len(un), "assente")
                 if heavy:
                     # con un solo assente «1 assente, uno dei quali titolare» stona:
@@ -3806,7 +3804,24 @@ class MatchAnalysis:
                     peso = " (peso non valutabile: fonte senza minuti né valori di mercato)"
                 else:
                     peso = ""
-                s.append(f"{name} deve rinunciare a {quanti}{peso}: {names}{coda}.")
+                # P2.2 (`docs/28` §3): i nomi e l'impatto stanno nella tabella dell'infermeria
+                # della squadra (minuti, gol+assist, xG+xA per 90 stabilizzato, motivo e
+                # rientro); ripeterne qui i primi quattro era la stessa informazione due volte,
+                # e la seconda meno informata della prima. La frase tiene quello che la tabella
+                # non dice in una riga: *quanto* pesa l'assenza — quanti, quanti titolari
+                # abituali, quanta produzione offensiva manca — e manda al dettaglio.
+                #
+                # Solo pre-partita, però: a gara finita la tabella dell'infermeria **non c'è**
+                # (la fonte riporta le assenze una volta su due, quindi la pagina non può
+                # distinguere «nessuno fuori» da «non raccolto»: vedi il commento nel template).
+                # Lì la narrativa resta l'unico posto dove i nomi compaiono, e li tiene.
+                if ctx.get("status") == "finished":
+                    elenco = _elenco_it([u["name"] for u in un[:4]])
+                    coda = "…" if len(un) > 4 else ""
+                    s.append(f"{name} deve rinunciare a {quanti}{peso}: {elenco}{coda}.")
+                else:
+                    s.append(f"{name} deve rinunciare a {quanti}{peso} — nomi e impatto in "
+                             f"«Indisponibili».")
             rest = ctx.get(f"{side}_rest")
             if rest is not None and rest <= 3:
                 cup = ctx.get(f"{side}_rest_cup")

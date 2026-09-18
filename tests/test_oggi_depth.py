@@ -7,6 +7,8 @@ casa attuale) sono inchiodate da asserzioni e non da un controllo a occhio sul s
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -296,8 +298,10 @@ def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     # 12M (sotto la vecchia soglia assoluta di 15M); Esordiente A non pesa.
     # P2.4 (docs/19 §2.8): la frase è stata riscritta in italiano corrente — il criterio
     # di «peso» (titolare abituale) non cambia, cambia solo come viene detto.
-    assert any(s.startswith("Alpha deve rinunciare a 2 assenti, uno dei quali titolare abituale:")
-               for s in narr), narr
+    # P2.2: la frase tiene il peso e non ripete più i nomi (sono nella tabella dell'infermeria)
+    frase_assenze = next(s for s in narr if "deve rinunciare a" in s)
+    assert frase_assenze.startswith("Alpha deve rinunciare a 2 assenti, uno dei quali titolare abituale —")
+    assert "Ala A" not in frase_assenze and "Esordiente A" not in frase_assenze
 
 
 def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
@@ -739,19 +743,32 @@ def test_narrative_xpts_positivo_resta_esplicito():
 
 
 @pytest.mark.parametrize(("n", "titolari"), [(1, 1), (1, 0), (2, 1), (3, 3), (5, 2)])
-def test_narrative_assenze_e_una_frase_non_un_elenco_di_dati(n, titolari):
-    """«Assenze Inter: 3 — A, B, C» era un record, non una frase (1/2/5 indisponibili)."""
+def test_narrative_assenze_non_ripete_i_nomi_della_tabella(n, titolari):
+    """P2.2 (`docs/28` §3): i nomi degli assenti stanno in un posto solo, la tabella.
+
+    Prima la frase ne elencava fino a quattro (con la congiunzione italiana e il troncamento a
+    «…»): le stesse persone tornavano nella tabella dell'infermeria con minuti, gol+assist,
+    xG+xA per 90, motivo e rientro — più informazione di quanta ne desse la frase. Adesso la
+    frase tiene il *peso* (quanti, quanti titolari abituali) e manda alla tabella, che è la
+    fonte unica; l'ancora del link la mette il template (test_site).
+    """
     un = [{"name": f"G{i}", "value": 20_000_000} for i in range(1, n + 1)]
     ctx = {"home_name": "Inter", "away_name": "Milan", "home_unavailable": un,
            "home_absences": {"has_stats": True, "players": [{"starter": True}] * titolari}}
     frase = next(s for s in MatchAnalysis.narrative(ctx) if "rinunciare" in s)
     assert not frase.startswith("Assenze "), "tornato il formato elenco-dati"
-    assert " — " not in frase, "il trattino da record è tornato nella frase"
-    # con più nomi ci deve essere la congiunzione, non solo virgole
-    if min(n, 4) > 1:
-        assert " e G" in frase, f"manca la congiunzione fra i nomi: {frase}"
-    # il troncamento resta dichiarato
-    assert ("…" in frase) == (n > 4)
+    # il trattino da record («Napoli: 3 — A, B, C») resta vietato: dopo il numero non si
+    # elencano nomi. Il trattino come segno di prosa («… titolare abituale — nomi e impatto in
+    # «Indisponibili»») è un'altra cosa, e adesso è quello che separa il peso dal rimando.
+    assert not re.search(r"\d\s+—\s+[A-ZÀ-Ý]", frase), frase
+    # nessun nome nella frase: la tabella li elenca tutti, con l'impatto di ognuno
+    assert not any(f"G{i}" in frase for i in range(1, n + 1)), frase
+    assert frase.endswith("— nomi e impatto in «Indisponibili»."), frase
+    # il peso resta dichiarato: quanti sono e quanti titolari abituali
+    atteso = f"{n} assente" if n == 1 else f"{n} assenti"
+    assert atteso in frase
+    if titolari:
+        assert "titolare abituale" in frase or "titolari abituali" in frase
 
 
 def test_narrative_assenza_singola_non_dice_uno_dei_quali():
