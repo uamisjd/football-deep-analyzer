@@ -318,8 +318,8 @@ def _return_it(s: str | None) -> str | None:
 
 
 def _it2(v: float) -> str:
-    """3.5 → '3,50' (virgola decimale italiana)."""
-    return f"{float(v):.2f}".replace(".", ",")
+    """3.5 → '3,50' (virgola decimale italiana). Alias di :func:`fda.site.fmt.dec`."""
+    return dec(v, 2)
 
 
 # Fatti FotMob (`insights`): testi inglesi a template. Si traducono SOLO i pattern
@@ -1971,9 +1971,7 @@ class MatchAnalysis:
         return {"titolo": titolo,
                 "testo": (f"{nome} {dove}: {esito} in {it_plural(n, 'gara')} "
                           f"({it_plural(punti, 'punto', 'punti')} su {3 * n}, "
-                          # virgola italiana: è l'unico :.2f del file senza .replace(".", ",")
-                          # → pubblicava «2.33 a gara» (52 occorrenze su 29 schede, audit 18/09)
-                          f"{punti / n:.2f}".replace(".", ",") + " a gara).")}
+                          f"{_it2(punti / n)} a gara).")}
 
     def _sapere_bomber(self, match_id: int, team_id: int, nome: str,
                        kickoff: datetime) -> dict[str, str] | None:
@@ -3154,8 +3152,9 @@ class MatchAnalysis:
     def physical_stats(self, match_id: int, home_id: int, away_id: int) -> dict[str, Any] | None:
         """Dati fisici: distanza, sprint, metri in sprint, giocatore più veloce.
 
-        FotMob li pubblica solo per una parte delle partite (**30** in archivio): la card
-        compare solo quando i dati ci sono, senza stime al posto dei numeri mancanti.
+        FotMob li pubblica solo per una parte delle partite (la copertura cresce con
+        l'archivio e non è fissa): la card compare solo quando i dati ci sono, senza
+        stime al posto dei numeri mancanti.
         """
         keys = ("physical_metrics_distance_covered", "physical_metrics_number_of_sprints",
                 "physical_metrics_sprinting", "physical_metrics_topspeed")
@@ -3548,7 +3547,7 @@ class MatchAnalysis:
 
         h_att, h_def = ratios(h)
         a_att, a_def = ratios(a)
-        fmt = lambda v: f"{v:.2f}".replace(".", ",")
+        fmt = _it2
         if h_att * a_def >= a_att * h_def:
             duel = (f"duello chiave: attacco {home_name} ({fmt(h_att)}× la media gol della lega) "
                     f"contro difesa {away_name} ({fmt(a_def)}× la media gol subiti): il lato più "

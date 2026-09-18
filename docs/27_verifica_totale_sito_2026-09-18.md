@@ -196,10 +196,8 @@ lascio qui per tracciabilità, barrati.
 
 1. ~~**`docs/preview/*.png` disallineati dal CSS.**~~ **CHIUSO (§7.1).**
 2. ~~**`ruff`: 172 segnalazioni.**~~ **CHIUSO (§7.2): ora 0.**
-3. **Docstring datata**: `analysis.py:3132` dice «**30** partite in archivio» per i dati fisici;
-   misurato oggi sono **40** partite (1.236 righe giocatore, 20 squadre).
-4. **`analysis.py:1958` era l'unico** `:.2f` senza virgola su 10 occorrenze nel file: vale la
-   pena di un helper unico invece di 10 `.replace(".", ",")` ripetuti.
+3. ~~**Docstring datata** (`analysis.py` dati fisici, «30 partite»).~~ **CHIUSO (§7.4).**
+4. ~~**`:.2f` senza virgola / `.replace(".", ",")` ripetuti.**~~ **CHIUSO (§7.4): 0 `:.2f` residui.**
 5. **Non verificabile dal sandbox**: resa visiva reale in un browser (Lighthouse, paint,
    comportamento a 375 px). Nel sandbox non c'è un browser; la verifica visiva qui è
    strutturale e sui token. Il sito è servito in preview Arena per il controllo a vista.
@@ -246,6 +244,17 @@ lascio qui per tracciabilità, barrati.
 | `fda build` | **exit 0** (375 schede / 2.364 partite / 7.466 giocatori) |
 | `verify_site.py` | **exit 0 · 97.872 controlli + 186.054 attributi** |
 
+### 7.4 — Chiusi anche i punti 3 e 4
+
+- **Punto 3 (docstring).** `analysis.py` (dati fisici) diceva «**30** partite in archivio»: un
+  numero che invecchia da solo. Ora la docstring dichiara che la copertura FotMob *non è fissa*
+  e cresce con l'archivio, senza un numero destinato a diventare falso.
+- **Punto 4 (helper unico).** Tutti i `:.2f` di `analysis.py` passano ora da un solo
+  implementazione: `_it2()` è un alias di `fmt.dec(v, 2)`, e i due punti che facevano
+  `f"{x:.2f}".replace(".", ",")` a mano (il bilancio punti/gara e il lambda dello scontro
+  tattico) usano `_it2`. Misurato: **0 `:.2f` residui** nel file. Nessuna stringa pubblicata
+  cambia (verify_site identico, 97.872).
+
 ---
 
 ## 6. Verdetto
@@ -259,6 +268,6 @@ lascio qui per tracciabilità, barrati.
 | precisione | **migliorata in questo giro** | 344 stringhe sbagliate corrette + 4 punti ciechi del verificatore chiusi |
 | profondità | **alta** | 22–30 sezioni per scheda, 7 leghe alla pari, catena della probabilità tracciata passo per passo |
 
-**Prossimo passo:** i punti aperti rimasti in §5 (3, 4, 5, 6). I più piccoli sono 3 (docstring
-30→40) e 4 (un helper unico per la virgola invece di 10 `.replace(".", ",")`); 5 richiede un
-browser reale, 6 è un limite del sandbox.
+**Prossimo passo:** dei punti di §5 restano aperti solo 5 (resa in un browser reale: serve un
+browser, assente nel sandbox) e 6 (clone shallow: limite del sandbox). Tutti gli interventi sul
+codice sono chiusi (§7).
