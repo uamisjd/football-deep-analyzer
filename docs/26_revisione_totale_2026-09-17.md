@@ -291,8 +291,11 @@ vecchie di 12 giorni. Poi i dati sono stati ripristinati (`git checkout`, md5 id
 
 Il valore non è libero e ora non può diventarlo per distrazione:
 `tests/test_diagnostica_fonti.py::test_la_ritenzione_delle_notizie_copre_le_finestre_di_lettura`
-impone `NEWS_RETENTION_DAYS >= 12` (gate) e `>= NEWS_WINDOW_DAYS` (card), e che il default di
-`collect_news` **sia** la costante e non un numero riscritto a mano.
+impone `NEWS_RETENTION_DAYS >=` la finestra del gate e `>= NEWS_WINDOW_DAYS` (card), e che il
+default di `collect_news` **sia** la costante e non un numero riscritto a mano. La finestra del gate
+non è un numero copiato nel test: viene letta da `scripts/verify_site.py` con `ast` (default di
+`notizia_in_finestra`), quindi se un giorno si allarga il test se ne accorge — controprova: portando
+quel default a 20 il test **fallisce**.
 
 ### 11.2 Font auto-ospitati
 
