@@ -420,6 +420,53 @@ def test_site_build_end_to_end(tmp_path):
     st.close()
 
 
+def test_vita_del_club_in_una_riga_quando_non_c_e_nulla(tmp_path):
+    """P1.1 (docs/28 §2): senza titoli pubblicabili la card «Vita del club» dice il fatto in
+    una riga e mette i conteggi in una tendina.
+
+    Prima, su 42 schede su 66, la card più pesante della pagina (3.054 caratteri mediani, il
+    99% prosa metodologica) serviva a dire che non c'era nulla. I numeri non escono dalla
+    pagina — il verificatore `[20]` li rilegge nella tendina — cambia solo dove stanno.
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    pre = fx[fx.match_id == 5749669].iloc[0]
+    ko = pd.Timestamp(pre.utc_kickoff)
+    ko = ko.tz_localize("UTC") if ko.tzinfo is None else ko.tz_convert("UTC")
+    titoli = [
+        (int(pre.home_id), "Come acquistare i biglietti per Udinese-Lazio: prezzi e informazioni",
+         "https://esempio.it/1"),
+        (int(pre.home_id), "Udinese, la conferenza stampa di domani: orari e diretta",
+         "https://esempio.it/2"),
+        (int(pre.away_id), "Lazio, dove vederla in tv e streaming", "https://esempio.it/3"),
+    ]
+    st.write("news", pd.DataFrame([
+        {"team_id": tid, "published_at": ko - pd.Timedelta(days=1), "title": t, "url": u,
+         "source": "Corriere", "description": ""} for tid, t, u in titoli]))
+
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    html = (out / "partite/5749669.html").read_text(encoding="utf-8")
+
+    assert "Nessun titolo pubblicabile su Udinese e Lazio negli ultimi 7 giorni" in html
+    assert "3 titoli esaminati e scartati con criterio" in html
+    # la tendina c'è, e l'imbuto per squadra (i numeri del verificatore [20]) è dentro di lei
+    inizio = html.find('id="notizie"')
+    assert inizio != -1 and '<details class="news-more">' in html[inizio:]
+    dentro = html[html.find('<details class="news-more">', inizio):]
+    assert "Niente che possa spostare qualcosa" in dentro
+    assert "Fonte: Google News RSS per squadra" in dentro
+    # sopra la tendina resta la riga (più gli eventuali «Da sapere»): l'imbuto per squadra no
+    visibile = re.sub(r"<[^>]+>", " ", html[inizio:html.find('<details class="news-more">', inizio)])
+    visibile = re.sub(r"\s+", " ", visibile).strip()
+    assert '<p style="margin:12px 0 6px"><b>' not in visibile
+    assert "Niente che possa spostare qualcosa" not in visibile
+    assert len(visibile) < 900, f"la card visibile è ancora lunga: {len(visibile)} caratteri"
+    assert visibile.startswith('id="notizie"> Vita del club Nessun titolo pubblicabile su '
+                               "Udinese e Lazio")
+    st.close()
+
+
 def test_status_page_warns_espn_standings(tmp_path):
     """ESPN standings 403 (cronico, coperto da FotMob) → AVVISO, non ERRORE."""
     st = _seed(tmp_path, espn_cls=FakeEspnNoStandings)

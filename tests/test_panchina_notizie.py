@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from fda.site.analysis import MatchAnalysis, news_subjects
+from fda.site.analysis import MatchAnalysis, news_quiet_line, news_subjects
 from fda.sources.news import classify_news, clean_text, keyword_score, news_value, parse_rss
 from fda.store import Store
 
@@ -768,3 +768,55 @@ def test_da_sapere_tetto_righe(tmp_path):
     sapere = an.news_sapere(99, 1, "Roma", 2, "Napoli", KO("2026-09-21 18:00"))
     assert len(sapere) <= an.SAPERE_MAX
     st.close()
+
+
+def _bollettino(**kw):
+    """Bollettino della card con tutte le chiavi dell'imbuto, come le produce `team_news`."""
+    d = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
+         "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0, "vecchie": 0,
+         "pertinenti": 0, "lingua": 0, "finestra": 7, "limite": 3, "categoria_limite": 2,
+         "riserva_limite": 2}
+    d.update(kw)
+    return d
+
+
+def test_riga_unica_quando_nessuna_squadra_ha_titoli_pubblicabili():
+    """P1.1 (docs/28 §2): la card «Vita del club» dice il fatto in una riga sola.
+
+    I conteggi restano tutti — sono la somma dell'imbuto delle due colonne — ma i motivi a
+    zero non si nominano: la riga non deve suggerire scarti che non ci sono stati.
+    """
+    quieta = news_quiet_line(
+        _bollettino(esaminate=20, scartate=12, annunci=5, piatti=3),
+        _bollettino(esaminate=7, scartate=6, lingua=1),
+        "Roma", "Inter")
+    assert quieta is not None
+    assert quieta["riga"].startswith("Nessun titolo pubblicabile su Roma e Inter negli ultimi 7 giorni")
+    assert "27 titoli esaminati e scartati con criterio" in quieta["riga"]
+    assert "18 servizio o cronaca" in quieta["riga"]      # 12 + 6
+    assert "5 annunci o logistica" in quieta["riga"]
+    assert "1 in un'altra lingua" in quieta["riga"]
+    assert "su un'altra squadra" not in quieta["riga"]    # conteggio a zero: non si stampa
+    assert quieta["esaminate"] == 27
+
+
+def test_riga_unica_non_scatta_se_una_squadra_ha_qualcosa():
+    """Con una voce pubblicata (o in riserva) la card resta completa, colonna per colonna."""
+    voce = {"title": "Roma, ricorso respinto: la multa resta", "url": "https://esempio.it/1"}
+    assert news_quiet_line(_bollettino(esaminate=1, notizie=[voce]), _bollettino(),
+                           "Roma", "Inter") is None
+    assert news_quiet_line(_bollettino(), _bollettino(riserva=[voce]), "Roma", "Inter") is None
+
+
+def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
+    """Nessun titolo in finestra: la riga dice anche quanti ne sono stati guardati oltre."""
+    quieta = news_quiet_line(_bollettino(vecchie=2), _bollettino(vecchie=1), "Roma", "Inter")
+    assert "Nessun titolo in lingua italiana raccolto su Roma e Inter negli ultimi 7 giorni" \
+        in quieta["riga"]
+    assert "3 titoli più vecchi oltre la finestra" in quieta["riga"]
+
+    solo_uno = news_quiet_line(_bollettino(vecchie=1), _bollettino(), "Roma", "Inter")
+    assert "1 titolo più vecchio oltre la finestra" in solo_uno["riga"]
+
+    niente = news_quiet_line(_bollettino(), _bollettino(), "Roma", "Inter")
+    assert niente["riga"].endswith("negli ultimi 7 giorni.")

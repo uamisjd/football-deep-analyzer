@@ -19,6 +19,12 @@
 
 ## 0. Metodo e limiti
 
+> **Aggiornamento del 2026-09-18 (dopo P1.1, `docs/29`).** Il censimento distingue ora **testo
+> visibile senza aprire le tendine** e **testo dietro una tendina chiusa**: la colonna «% testo»
+> delle tabelle sotto misurava il DOM, e una parte del testo (P1.1, poi P1.4) non sta più nel primo
+> schermo. Dove i due numeri differiscono è indicato nel documento; la misura aggiornata si legge
+> con `.venv/bin/python -m scripts.prematch_sections` (due colonne: «% visibile», «% tendina»).
+
 | passo | comando | esito |
 |---|---|---|
 | build | `.venv/bin/fda build` | exit 0 · 375 schede (66 pre, 309 post) · 3m30s |
@@ -80,7 +86,7 @@ Le proposte sono ordinate per impatto misurato. **Non** ricomprendono ciò che `
 applicato il 2026-09-15 (catena a 4 passi, fonte per riga, margine = differenza degli interi,
 «coprono X partite su 100», formato unico xPTS, forma in tutte le leghe…): quello è già dentro.
 
-### P1.1 — Il peso della scheda è sulle notizie, non sul calcio
+### P1.1 — Il peso della scheda è sulle notizie, non sul calcio ✅ APPLICATA il 2026-09-18
 
 **Osservato.** Le tre card «di contorno» pesano più di tutta l'analisi numerica messa insieme:
 Vita del club **13,6%** + Mercato **9,9%** + Panchina e posta in gioco **7,9%** = **31,4%** del testo
@@ -102,6 +108,13 @@ riga («Nessun titolo pubblicabile negli ultimi N giorni su X e Y») con la spie
 («Come leggiamo i dati», in coda o in `info.html`) e lasciare nelle card solo il dato con il suo
 tooltip. Effetto atteso misurato a valle, non stimato a priori: -2.500 caratteri sulle 42 schede
 senza notizie, -30/40% del testo delle card di contorno sulle altre.
+
+**Esito (2026-09-18, `docs/29`).** (a) fatta: riga unica + `<details>` «Che cosa è stato esaminato,
+e con quali criteri». Misura prima/dopo sulle due build (stesso codice, stesso dati): card visibile
+**3.030 → 829 caratteri** (mediana sulle 42 schede), −73%; testo visibile dell'intera scheda
+22.520 → **20.723** (−8,0%); DOM della card 3.030 → 3.354 (la riga si aggiunge, nulla si toglie).
+(b) fatta **solo per il caso vuoto** (la nota metodologica è dentro la tendina): nelle 24 schede con
+notizie pubblicate resta visibile, ed è il seguito se la misura lo chiederà.
 
 ### P1.2 — Il xG e il PPDA sono detti quattro volte
 
@@ -242,6 +255,8 @@ se il peso si è spostato davvero dove serve.
 
 ## 5. Prossimo passo
 
-Questo documento è **un'istruttoria: in questo turno nessuna pagina del sito è stata modificata.**
-La coda è pronta e misurabile; il primo intervento consigliato è **P1.1** (empty-state notizie), da
-solo, con la misura prima/dopo in `docs/28` §4. Decidere se procedere in quest'ordine o cambiarlo.
+**P1.1 è stata applicata il 2026-09-18** — misure prima/dopo in [`docs/29`](29_p1_1_vita_del_club_riga_unica_2026-09-18.md)
+(3.030 → 829 caratteri visibili sulla card, 22.520 → 20.723 sull'intera scheda, `verify_site`
+0 problemi · 97.903 controlli). Il resto della coda resta quello di §4: il prossimo intervento è
+**P1.2** (xG/PPDA detti una volta sola), poi **P1.4** («Verifica approfondita» chiusa di default) e
+**P1.3** (nav con le ancore reali).

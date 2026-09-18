@@ -252,6 +252,74 @@ def _no_news() -> dict[str, Any]:
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
 
 
+#: Voci dell'imbuto del bollettino stampa che entrano nella riga unica, nell'ordine in cui
+#: vengono lette (la lingua per prima perché è il motivo di scarto più frequente, docs/25 §5).
+NEWS_FUNNEL_ORDER: tuple[tuple[str, str], ...] = (
+    ("scartate", "servizio o cronaca"),
+    ("lingua", "in un'altra lingua"),
+    ("annunci", "annunci o logistica"),
+    ("piatti", "non spostano nulla"),
+    ("altre", "su un'altra squadra"),
+    ("doppioni", "già raccontati da un'altra voce"),
+    ("oltre", "oltre il limite dei tre"),
+)
+
+
+def news_quiet_line(home: dict[str, Any], away: dict[str, Any], home_name: str,
+                    away_name: str) -> dict[str, Any] | None:
+    """Una riga sola quando **nessuna** delle due squadre ha un titolo pubblicabile.
+
+    Perché esiste (misurato il 2026-09-18, `docs/28` §2 P1.1): su **42 schede su 66** la card
+    «Vita del club» non aveva nulla da pubblicare e restava comunque il blocco più pesante
+    della pagina — 3.054 caratteri mediani, di cui il **99%** prosa metodologica — mentre
+    tutta l'analisi numerica stava in un decimo del testo. Qui si costruisce il fatto in una
+    riga («nessun titolo pubblicabile: N esaminati e scartati, con i motivi») e i conteggi
+    restano tutti: il template li mostra in una tendina, insieme ai criteri. Nessun numero
+    viene tolto dalla pagina, cambia solo *dove* sta: nel primo schermo il risultato, sotto
+    il lavoro fatto per arrivarci.
+
+    Ritorna ``None`` quando una delle due squadre ha qualcosa da pubblicare (o in riserva):
+    in quel caso la card resta quella completa, colonna per colonna.
+
+    I conteggi sono gli stessi che il verificatore ricalcola con :meth:`MatchAnalysis.team_news`
+    (``scripts/verify_site.py [20]``): la riga non introduce numeri nuovi, somma quelli
+    dell'imbuto già pubblicato per squadra.
+    """
+    def _vuoto(nw: dict[str, Any]) -> bool:
+        return not nw.get("notizie") and not nw.get("riserva")
+
+    if not (_vuoto(home) and _vuoto(away)):
+        return None
+
+    def _somma(chiave: str) -> int:
+        return int(home.get(chiave) or 0) + int(away.get(chiave) or 0)
+
+    esaminate = _somma("esaminate")
+    vecchie = _somma("vecchie")
+    finestra = int(home.get("finestra") or away.get("finestra") or 0)
+    giorni = it_plural(finestra, "giorno")
+    squadre = f"{home_name} e {away_name}"
+    if not esaminate:
+        riga = f"Nessun titolo in lingua italiana raccolto su {squadre} negli ultimi {giorni}"
+        if vecchie:
+            riga += (f" ({it_plural(vecchie, 'titolo più vecchio', 'titoli più vecchi')} oltre la "
+                     "finestra: guardati e lasciati fuori)")
+        riga += "."
+    else:
+        motivi = [f"{_somma(chiave)} {etichetta}" for chiave, etichetta in NEWS_FUNNEL_ORDER
+                  if _somma(chiave)]
+        esam = it_plural(esaminate, "titolo esaminato", "titoli esaminati")
+        scartati = "scartato" if esaminate == 1 else "scartati"
+        riga = (f"Nessun titolo pubblicabile su {squadre} negli ultimi {giorni}: {esam} e "
+                f"{scartati} con criterio — {' · '.join(motivi)}")
+        if vecchie:
+            riga += f" · {it_plural(vecchie, 'troppo vecchio', 'troppo vecchi')}"
+        riga += "."
+    return {"riga": riga, "esaminate": esaminate, "vecchie": vecchie, "finestra": finestra,
+            "motivi": [{"chiave": chiave, "etichetta": etichetta, "n": _somma(chiave)}
+                       for chiave, etichetta in NEWS_FUNNEL_ORDER if _somma(chiave)]}
+
+
 def news_freshness(hours: float) -> float:
     """Punteggio di freschezza di una notizia (docs/24 §3.5).
 
@@ -3919,6 +3987,11 @@ class MatchAnalysis:
             ctx["keepers"] = self.keeper_stats(match_id, home_id, away_id)
             ctx["physical"] = self.physical_stats(match_id, home_id, away_id)
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
+        # riga unica della card «Vita del club» quando non c'è nulla da pubblicare (docs/28 §2
+        # P1.1): costruita qui perché è un fatto della partita (due squadre), non di una colonna
+        ctx["news_quiet"] = (news_quiet_line(ctx["home_news"], ctx["away_news"],
+                                             f["home_name"], f["away_name"])
+                             if status != "finished" else None)
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
         ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])
