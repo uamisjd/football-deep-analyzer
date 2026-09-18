@@ -327,3 +327,36 @@ def test_pannelli_svg_autoconsistenti() -> None:
     invisibili = [c for c in tratteggio & interni if contrasto(c, canvas) < 1.3]
     assert not invisibili, f"tratteggio del campo illeggibile anche come contesto: {invisibili}"
     assert contorno & interni, "il contorno dei marcatori non è più del colore del canvas: verificare"
+
+
+# --- P2.2 (docs/19 §4): i bordi seguono il tema come i colori di testo ---
+
+#: bordi con colore proprio **voluto**, verificati altrove: la barra 1X2 ha sfondi
+#: identici nei due temi di proposito (vedi test_barra_1x2_stop_gradiente).
+ECCEZIONI_BORDI = (".bar", ".brand", "header{background")
+
+
+def test_nessun_bordo_hardcoded_che_ignori_il_tema() -> None:
+    """Un bordo scritto a mano resta uguale nei due temi: è il difetto trovato in P2.2.
+
+    Caso reale corretto in questo giro: una seconda regola `header{...}` in fondo al file
+    sovrascriveva il bordo con `#263142`, cioè il valore del tema **scuro**. Nel tema
+    chiaro (`--line: #d0d8e6`) il bordo dell'header restava quindi scuro.
+    """
+    colpevoli = []
+    for m in re.finditer(r"([^{}@]+)\{([^{}]*)\}", _css_senza_token(_css())):
+        sel = re.sub(r"\s+", " ", m.group(1)).strip()
+        if any(sel.startswith(e) for e in ECCEZIONI_BORDI):
+            continue
+        for hard in re.finditer(r"border(?:-(?:top|right|bottom|left))?:\s*[^;{}]*?(#[0-9a-fA-F]{3,8})",
+                                m.group(2)):
+            colpevoli.append(f"{sel} → {hard.group(1)}")
+    assert not colpevoli, ("bordi hard-coded (restano uguali nei due temi):\n  "
+                           + "\n  ".join(colpevoli))
+
+
+def test_header_non_e_ridefinito_con_un_bordo_fuori_tema() -> None:
+    """Regressione puntuale: `header` non deve tornare a forzare un colore di bordo."""
+    for m in re.finditer(r"(?m)^header\{([^}]*)\}", _css()):
+        assert not re.search(r"border[^;]*#[0-9a-fA-F]{3,8}", m.group(1)), \
+            "header ha di nuovo un bordo hard-coded invece di var(--line)"
