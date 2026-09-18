@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import logging
 import time
+from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -60,6 +61,13 @@ class Candidate:
     kind: str                                    # goals | rating | blend | production
     family: str
     params: dict[str, Any] = field(default_factory=dict)
+    #: griglia PRE-REGISTRATA dei valori provati per l'iperparametro che questo candidato
+    #: cerca: si dichiara qui, nel codice, **prima** del run (regola di `docs/00` §D, P1.11 —
+    #: `docs/19` §1.4) e finisce in `model_lab.parquet` nelle colonne `grid_dichiarata` e
+    #: `n_tentativi`. Senza questa, «IC95<0» si ottiene anche solo accorciando la griglia
+    #: al punto giusto (caso reale: lo stesso γ-sharpening passa con griglia [0,94; 1,12]
+    #: e non passa con [1,00; 1,40] — `docs/19` §1.3).
+    grid: tuple[float, ...] = ()
 
     @property
     def xi(self) -> float:
@@ -67,19 +75,22 @@ class Candidate:
 
 
 #: insieme predefinito: il modello in produzione, i suoi iperparametri critici, le famiglie
-#: di verosimiglianza alternative e i sistemi di rating puri.
+#: di verosimiglianza alternative e i sistemi di rating puri. Le varianti che cercano un
+#: iperparametro ne dichiarano la **griglia pre-registrata** (`grid`, P1.11): l'insieme dei
+#: valori provati in questo candidato set, valore di riferimento compreso — chi legge il
+#: verdetto sa quanti tentativi lo precedono, non solo chi ha vinto.
 CANDIDATES: tuple[Candidate, ...] = (
     Candidate(BASELINE, "DC+Elo in produzione (w 0,7, gol attesi invariati)", "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7}),
     Candidate("dc_puro", "Dixon-Coles senza Elo", "goals", "dixon_coles", {"xi": 0.0018, "shrink": 8.0}),
     Candidate("dc_xi10", "Dixon-Coles ξ 0,0010 (memoria lunga)", "goals", "dixon_coles",
-              {"xi": 0.0010, "shrink": 8.0}),
+              {"xi": 0.0010, "shrink": 8.0}, grid=(0.0010, 0.0018, 0.0030)),
     Candidate("dc_xi30", "Dixon-Coles ξ 0,0030 (memoria corta)", "goals", "dixon_coles",
-              {"xi": 0.0030, "shrink": 8.0}),
+              {"xi": 0.0030, "shrink": 8.0}, grid=(0.0010, 0.0018, 0.0030)),
     Candidate("dc_no_shrink", "Dixon-Coles senza shrinkage", "goals", "dixon_coles",
-              {"xi": 0.0018, "shrink": 0.0}),
+              {"xi": 0.0018, "shrink": 0.0}, grid=(0.0, 8.0, 16.0)),
     Candidate("dc_shrink16", "Dixon-Coles shrinkage 16", "goals", "dixon_coles",
-              {"xi": 0.0018, "shrink": 16.0}),
+              {"xi": 0.0018, "shrink": 16.0}, grid=(0.0, 8.0, 16.0)),
     Candidate("poisson", "Poisson indipendente", "goals", "poisson"),
     Candidate("biv_poisson", "Poisson bivariata", "goals", "bivariate_poisson"),
     Candidate("neg_binomial", "Binomiale negativa", "goals", "negative_binomial"),
@@ -88,9 +99,9 @@ CANDIDATES: tuple[Candidate, ...] = (
     Candidate("elo", "Elo puro (k 20, HFA 60)", "rating", "elo"),
     Candidate("pi_ratings", "Pi-ratings (Constantinou-Fenton)", "rating", "pi"),
     Candidate("mix_50", "Miscela di griglie DC+Elo 50/50", "blend", "dixon_coles",
-              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}),
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}, grid=(0.5, 0.7, 0.85)),
     Candidate("mix_85", "Miscela di griglie DC+Elo 85/15", "blend", "dixon_coles",
-              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}),
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}, grid=(0.5, 0.7, 0.85)),
     # ricetta **precedente** (fino al 2026-09-13): due λ libere cercate da ``goal_expectancy``
     # per riprodurre l'1X2 mediato. È la baseline contro cui il tilt è stato misurato e poi
     # promosso; tenerla fra i candidati rende ripetibile il confronto anche dopo il cambio.
@@ -98,14 +109,18 @@ CANDIDATES: tuple[Candidate, ...] = (
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "mode": "inverti"}),
     # il peso della media pesata in produzione (0,7) non è mai stato misurato: ecco 0,5 e 0,85
     Candidate("prod_w50", "Produzione con peso DC 0,50", "production", "dixon_coles",
-              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}),
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.5}, grid=(0.5, 0.7, 0.85)),
     Candidate("prod_w85", "Produzione con peso DC 0,85", "production", "dixon_coles",
-              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}),
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.85}, grid=(0.5, 0.7, 0.85)),
     # iperparametri Elo: k e vantaggio del campo sono quelli di default di penaltyblog, mai tarati
-    Candidate("elo_k10", "Elo k 10 (rating lenti)", "rating", "elo", {"k": 10.0, "hfa": 60.0}),
-    Candidate("elo_k40", "Elo k 40 (rating reattivi)", "rating", "elo", {"k": 40.0, "hfa": 60.0}),
-    Candidate("elo_hfa40", "Elo vantaggio casa 40", "rating", "elo", {"k": 20.0, "hfa": 40.0}),
-    Candidate("elo_hfa80", "Elo vantaggio casa 80", "rating", "elo", {"k": 20.0, "hfa": 80.0}),
+    Candidate("elo_k10", "Elo k 10 (rating lenti)", "rating", "elo", {"k": 10.0, "hfa": 60.0},
+              grid=(10.0, 20.0, 40.0)),
+    Candidate("elo_k40", "Elo k 40 (rating reattivi)", "rating", "elo", {"k": 40.0, "hfa": 60.0},
+              grid=(10.0, 20.0, 40.0)),
+    Candidate("elo_hfa40", "Elo vantaggio casa 40", "rating", "elo", {"k": 20.0, "hfa": 40.0},
+              grid=(40.0, 60.0, 80.0)),
+    Candidate("elo_hfa80", "Elo vantaggio casa 80", "rating", "elo", {"k": 20.0, "hfa": 80.0},
+              grid=(40.0, 60.0, 80.0)),
 )
 
 
@@ -273,6 +288,11 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
     cutoff = d.iloc[min_train].normalize()
     last = d.max()
     rows: list[dict[str, Any]] = []
+    # P1.11 (docs/19 §1.4): ogni riga porta la griglia pre-registrata del candidato e il
+    # numero di candidati della stessa famiglia provati in questo run — così il riepilogo
+    # dichiara quanti tentativi precedono un eventuale «IC95<0», non solo chi ha vinto
+    n_per_famiglia = Counter(c.family for c in candidates)
+    griglia_dichiarata = {c.key: "|".join(map(str, c.grid)) for c in candidates}
     # per candidato: [gol osservati, λ totali grezze, gare] sulle finestre già valutate
     acc: dict[str, list[float]] = {c.key: [0.0, 0.0, 0] for c in candidates}
     windows = 0
@@ -322,7 +342,9 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
                     a[1] += lam_raw
                     a[2] += 1
                 rows.append({**obs, "candidate": cand.key, "label": cand.label, "kind": cand.kind,
-                             "family": cand.family, **row})
+                             "family": cand.family,
+                             "grid_dichiarata": griglia_dichiarata.get(cand.key, ""),
+                             "n_tentativi": int(n_per_famiglia.get(cand.family, 1)), **row})
     return rows
 
 
@@ -481,6 +503,23 @@ def _apply_calibration(row: dict[str, Any], cal: Calibration) -> dict[str, Any]:
 
 
 # --------------------------------------------------------------------------- metriche
+def _meta_candidato(g: pd.DataFrame, col: str, default: Any) -> Any:
+    """Valore per candidato dalle righe del laboratorio; default se la colonna manca."""
+    return g[col].iloc[0] if col in g.columns else default
+
+
+def _tentativi_dichiarati(rows: pd.DataFrame) -> Counter:
+    """Candidati per famiglia presenti nelle righe: ripiego quando manca ``n_tentativi``."""
+    fam = {c: str(g["family"].iloc[0]) for c, g in rows.groupby("candidate")}
+    return Counter(fam.values())
+
+
+def _n_tentativi(g: pd.DataFrame, famiglia: str, contatore: Counter) -> int:
+    """Tentativi della famiglia: dalla colonna del run, altrimenti contati dalle righe."""
+    v = _meta_candidato(g, "n_tentativi", None)
+    return int(v) if v is not None and pd.notna(v) else int(contatore.get(famiglia, 1))
+
+
 def _rps_rows(probs: np.ndarray, outcome: np.ndarray) -> np.ndarray:
     onehot = np.eye(3)[np.asarray(outcome, dtype=int)]
     p = np.asarray(probs, dtype=float)
@@ -529,6 +568,7 @@ def summarize(rows: pd.DataFrame, baseline: str = BASELINE, draws: int = 2000) -
     if baseline not in wide:
         baseline = str(sorted(wide)[0])
     ref = wide[baseline]
+    tentativi_per_fam = _tentativi_dichiarati(rows)
     out: list[dict[str, Any]] = []
     for cand, g in wide.items():
         common = g.index.intersection(ref.index)
@@ -537,9 +577,14 @@ def summarize(rows: pd.DataFrame, baseline: str = BASELINE, draws: int = 2000) -
         gg, rr = g.loc[common], ref.loc[common]
         probs = gg[["p_home", "p_draw", "p_away"]].to_numpy(float)
         oc = gg["outcome"].to_numpy(int)
+        famiglia = str(gg["family"].iloc[0])
         row: dict[str, Any] = {
             "candidate": cand, "label": str(gg["label"].iloc[0]), "kind": str(gg["kind"].iloc[0]),
-            "family": str(gg["family"].iloc[0]), "n": int(len(common)),
+            "family": famiglia, "n": int(len(common)),
+            # P1.11: la griglia pre-registrata e i tentativi della famiglia accompagnano
+            # ogni verdetto (docs/00 §D): il confronto onesto è fra griglie dichiarate
+            "grid_dichiarata": str(_meta_candidato(gg, "grid_dichiarata", "") or ""),
+            "n_tentativi": _n_tentativi(gg, famiglia, tentativi_per_fam),
             "leagues": int(pd.Series([i[1] for i in common]).nunique()),
             "rps": float(_rps_rows(probs, oc).mean()),
             "logloss": float(_logloss_rows(probs, oc).mean()),
@@ -585,14 +630,18 @@ def per_league(rows: pd.DataFrame) -> pd.DataFrame:
     """RPS per candidato e per lega: un modello può essere buono in media e cattivo dove serve."""
     if rows.empty:
         return pd.DataFrame()
+    tentativi_per_fam = _tentativi_dichiarati(rows)
     recs = []
     for (cand, lg), g in rows.groupby(["candidate", "league_key"]):
         probs = g[["p_home", "p_draw", "p_away"]].to_numpy(float)
         oc = g["outcome"].to_numpy(int)
+        famiglia = str(g["family"].iloc[0])
         recs.append({"candidate": cand, "league_key": lg, "n": int(len(g)),
                      "rps": float(_rps_rows(probs, oc).mean()),
                      "logloss": float(_logloss_rows(probs, oc).mean()),
-                     "hit": float((probs.argmax(1) == oc).mean())})
+                     "hit": float((probs.argmax(1) == oc).mean()),
+                     "grid_dichiarata": str(_meta_candidato(g, "grid_dichiarata", "") or ""),
+                     "n_tentativi": _n_tentativi(g, famiglia, tentativi_per_fam)})
     return pd.DataFrame(recs).sort_values(["league_key", "rps"]).reset_index(drop=True)
 
 

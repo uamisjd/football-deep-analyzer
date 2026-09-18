@@ -91,6 +91,77 @@ def test_candidates_registry_is_unique_and_has_the_baseline():
         assert c.kind in {"goals", "rating", "blend", "production"} and c.label and c.family
 
 
+def test_le_griglie_degli_iperparametri_sono_pre_registrate():
+    """P1.11 (docs/19 §1.4): chi cerca un iperparametro dichiara la griglia nel codice.
+
+    La griglia contiene **tutti** i valori provati nell'insieme dei candidati (valore di
+    riferimento compreso) ed è ordinata: senza pre-registrazione «IC95<0» si ottiene anche
+    solo accorciando la griglia al punto giusto. I candidati a parametri fissi — produzione,
+    riferimenti e famiglie alternative — non cercano nulla e non dichiarano nulla.
+    """
+    varianti = {"dc_xi10", "dc_xi30", "dc_no_shrink", "dc_shrink16", "mix_50", "mix_85",
+                "prod_w50", "prod_w85", "elo_k10", "elo_k40", "elo_hfa40", "elo_hfa80"}
+    fissi = {"dc_elo_prod", "dc_elo_ge", "dc_puro", "poisson", "biv_poisson", "neg_binomial",
+             "zero_inflated", "weibull_copula", "elo", "pi_ratings"}
+    keys = {c.key: c for c in CANDIDATES}
+    assert varianti | fissi <= set(keys), "insieme dei candidati cambiato: aggiornare il test"
+    for key in varianti:
+        c = keys[key]
+        assert c.grid, f"{key}: variante di iperparametro senza griglia pre-registrata"
+        assert list(c.grid) == sorted(set(c.grid)), f"{key}: griglia non ordinata o con doppioni"
+        # il valore provato dal candidato sta nella griglia dichiarata
+        assert any(float(v) in c.grid for v in c.params.values()), \
+            f"{key}: il valore in params non è fra quelli dichiarati in grid"
+    for key in fissi:
+        assert keys[key].grid == (), f"{key}: a parametri fissi non dichiara griglie"
+
+
+def test_walk_forward_dichiara_griglia_e_numero_di_tentativi(monkeypatch):
+    """Ogni riga del laboratorio porta griglia pre-registrata e tentativi della famiglia (P1.11)."""
+    monkeypatch.setattr(lab, "fit_goals", lambda train, cand: SpyGoals(train))
+    cands = (Candidate("elo_k10", "Elo k 10", "rating", "elo", {"k": 10.0, "hfa": 60.0},
+                       grid=(10.0, 20.0, 40.0)),
+             Candidate("elo_k40", "Elo k 40", "rating", "elo", {"k": 40.0, "hfa": 60.0},
+                       grid=(10.0, 20.0, 40.0)),
+             Candidate("spy", "Modello spia", "goals", "poisson"))
+    rows = walk_forward(synthetic_hist(), cands, step_days=28, min_train=60, max_windows=4)
+    assert not rows.empty
+    elo = rows[rows["candidate"] != "spy"]
+    spy = rows[rows["candidate"] == "spy"]
+    assert (elo["n_tentativi"] == 2).all()          # due candidati Elo provati in questo run
+    assert set(elo["grid_dichiarata"]) == {"10.0|20.0|40.0"}
+    assert (spy["n_tentativi"] == 1).all() and (spy["grid_dichiarata"] == "").all()
+    # il riepilogo e la tabella per lega pubblicano le stesse informazioni (model_lab.parquet)
+    tab = summarize(rows, draws=100)
+    assert {"grid_dichiarata", "n_tentativi"} <= set(tab.columns)
+    t = tab.set_index("candidate")
+    assert t.loc["elo_k10", "n_tentativi"] == 2 and t.loc["elo_k40", "n_tentativi"] == 2
+    assert t.loc["elo_k10", "grid_dichiarata"] == "10.0|20.0|40.0"
+    assert t.loc["spy", "n_tentativi"] == 1 and t.loc["spy", "grid_dichiarata"] == ""
+    per = per_league(rows)
+    assert {"grid_dichiarata", "n_tentativi"} <= set(per.columns)
+    per_elo = per[per["candidate"].isin(["elo_k10", "elo_k40"])]
+    assert (per_elo["n_tentativi"] == 2).all()
+    assert (per_elo["grid_dichiarata"] == "10.0|20.0|40.0").all()
+
+
+def test_summarize_senza_colonne_p11_conta_i_tentativi_dalle_righe():
+    """Righe costruite a mano (test): n_tentativi si conta dalle righe, griglia resta vuota."""
+    rng = np.random.default_rng(7)
+    n = 200
+    outcomes = rng.choice([0, 1, 2], size=n, p=[0.44, 0.26, 0.30])
+    good = np.tile([0.44, 0.26, 0.30], (n, 1)) + rng.normal(0, 0.02, (n, 3))
+    good = np.clip(good, 0.01, 0.95)
+    good = good / good.sum(1, keepdims=True)
+    bad = np.tile([1 / 3, 1 / 3, 1 / 3], (n, 1))
+    rows = _rows({BASELINE: bad, "migliore": good}, outcomes)     # entrambi family "poisson"
+    assert "n_tentativi" not in rows.columns
+    tab = summarize(rows, baseline=BASELINE, draws=100)
+    assert {"grid_dichiarata", "n_tentativi"} <= set(tab.columns)
+    assert (tab["n_tentativi"] == 2).all()
+    assert (tab["grid_dichiarata"] == "").all()
+
+
 def test_mix_grids_stays_a_valid_distribution_between_the_two_components():
     lh, la, rho = 1.7, 1.1, -0.06
     ga = tau_grid(lh, la, rho, size=lab.GRID_SIZE)
