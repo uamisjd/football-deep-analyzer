@@ -8,6 +8,14 @@
 #
 # Il risultato è una PR, non un commit su main: il merge lo fa sempre chi mantiene il
 # progetto (docs/00, regola D).
+#
+# Permesso necessario (oltre a `pull-requests: write` qui sotto): in
+# Settings → Actions → General → Workflow permissions va spuntato
+# «Allow GitHub Actions to create and approve pull requests». Senza quello
+# `gh pr create` esce 1 con un errore GraphQL. Il vecchio `|| echo` lo
+# mascherava e il run restava verde: misurato sul run 35340877847 (verde
+# 11:42:15Z, commit del bot `7550c74` alle 11:42:10Z) mentre la PR #52 è
+# stata aperta a mano da uamisjd alle 12:10:57Z.
 name: font-locali
 on:
   workflow_dispatch:
@@ -48,15 +56,33 @@ jobs:
           fi
           git commit -m "Font locali: Sora e Inter serviti dal sito (docs/26 §8)"
           git push -f origin font-locali
-          gh pr create \
+          # Distingue «PR già aperta» da un errore vero. `gh pr create` esce 1
+          # in entrambi i casi: l'`|| echo` li trattava tutti come successo.
+          printf '%s\n' \
+            'Generata da `font-locali` (workflow_dispatch).' \
+            '' \
+            'Sora e Inter vengono serviti da `assets/fonts/` invece che da `fonts.googleapis.com`:' \
+            '8.252 richieste esterne in meno a ogni giro di build, nessuna visita segnalata a un' \
+            'server terzo, nessun salto tipografico. I caratteri sono invariati e restano sotto' \
+            'SIL Open Font License 1.1 (`LICENSE.txt` accanto ai file).' \
+            '' \
+            'Dal prossimo `fda build` il template linka il CSS locale; finché questa PR non è' \
+            'unita il sito continua a caricarli da Google, senza rotture.' \
+            > /tmp/font-pr-body.md
+          set +e
+          out=$(gh pr create \
             --title "Font locali: Sora e Inter serviti dal sito" \
-            --body "Generata da \`font-locali\` (workflow_dispatch).
-
-          Sora e Inter vengono serviti da \`assets/fonts/\` invece che da \`fonts.googleapis.com\`:
-          8.252 richieste esterne in meno a ogni giro di build, nessuna visita segnalata a un
-          server terzo, nessun salto tipografico. I caratteri sono invariati e restano sotto
-          SIL Open Font License 1.1 (\`LICENSE.txt\` accanto ai file).
-
-          Dal prossimo \`fda build\` il template linka il CSS locale; finché questa PR non è
-          unita il sito continua a caricarli da Google, senza rotture." \
-            || echo "Una PR su font-locali è già aperta: il ramo è stato aggiornato."
+            --body-file /tmp/font-pr-body.md 2>&1)
+          rc=$?
+          set -e
+          printf '%s\n' "$out"
+          if [ "$rc" -eq 0 ]; then
+            exit 0
+          fi
+          if printf '%s\n' "$out" | grep -qiE 'already exists'; then
+            echo "Una PR su font-locali è già aperta: il ramo è stato aggiornato."
+            exit 0
+          fi
+          echo "gh pr create è fallito e non è «PR già aperta»." >&2
+          echo "Causa più comune: in Settings → Actions → General manca «Allow GitHub Actions to create and approve pull requests»." >&2
+          exit 1

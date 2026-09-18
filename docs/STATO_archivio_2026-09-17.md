@@ -1,13 +1,47 @@
-# ARCHIVIO STATO — giri dal ventiduesimo al ventiseiesimo (2026-09-16 / 2026-09-17)
+# ARCHIVIO STATO — giri dal ventiduesimo al ventottesimo (2026-09-16 / 2026-09-17)
 
-> Archiviato il 2026-09-17 per la **regola A5** di `docs/00_regole_di_lavoro.md`
-> («ogni 10 giri, o quando `STATO.md` supera ~80k, archiviare i giri più vecchi e
-> tenere in `STATO.md` solo gli ultimi 3 + link»): con il ventinovesimo giro il file
-> era arrivato a 8 voci e 80 kB. In `STATO.md` restano i giri **27-29**; qui sotto il
-> testo integro dei giri **22-26**, senza riscritture. I giri 13-21 sono in
+> Archiviato il 2026-09-17 (giri 22-26) e il 2026-09-18 (giri 27-28) per la **regola A5**
+> di `docs/00_regole_di_lavoro.md` («ogni 10 giri, o quando `STATO.md` supera ~80k,
+> archiviare i giri più vecchi e tenere in `STATO.md` solo gli ultimi 3 + link»).
+> In `STATO.md` restano i giri **29-31**. Qui sotto il testo integro dei giri **22-28**,
+> senza riscritture. I giri 13-21 sono in
 > [`STATO_archivio_2026-09-16.md`](STATO_archivio_2026-09-16.md).
 
 ---
+
+**Ultimo aggiornamento:** 2026-09-17 (sessione `arena/01a0afc8`, ventottesimo giro) — **Revisione completa richiesta dall'utente («perché non è in lingua italiana? … rivedi e rileggiti tutto»): trovato e corretto il difetto vero — la card «Vita del club» pubblicava titoli in sei lingue — e chiuso il buco di copertura che la correzione apriva.** Documento: [`docs/25`](25_revisione_lingua_e_parita_2026-09-17.md).
+- **Cosa non andava (misurato, non presunto):** il filtro che doveva garantire l'italiano (`is_italian_news`) era una **lista nera di ~230 parole**: un titolo era italiano se non conteneva quelle parole. Sulle **161 voci pubblicate** il 17/09 nelle schede, **61 (37,9%) non erano in italiano** — olandese, tedesco, portoghese, francese, spagnolo, inglese: «Trainerwechsel bei Leverkusen-Gegner», «Petrasso: «Limpámos a nossa imagem»», «Nottingham Forest stadium expansion plans approved». Il portale dichiarava «titoli in lingua italiana» e pubblicava sei lingue. Nessun controllo lo vedeva perché `verify_site` [20] **chiamava la stessa funzione** che aveva scelto le voci: ricertificava, non verificava.
+- **Interventi:**
+  1. `src/fda/sources/news.py`: `is_italian_news()` a **due stadi** — veto lessicale invariato **più** rilevamento statistico con `langdetect` (puro Python, offline, nessuna chiave, seed fisso per la ripetibilità) su titolo+estratto; con meno di 6 parole o con il rilevatore dubbio decide la grammatica italiana. `langdetect` aggiunto a `pyproject.toml`.
+  2. `src/fda/site/analysis.py` + `templates/match.html`: due fatti **in italiano, dai nostri dati**, per la parità fra le 7 leghe — **«Dentro le mura» / «Lontano da casa»** (bilancio della squadra nel ruolo in cui gioca, da 3 gare in su) e **«L'uomo gol»** (miglior marcatore del campionato, con l'indisponibilità dichiarata). Il footer della card non dichiara più ESPN fra le fonti pubblicate: **le notizie ESPN sono in inglese** (1 riga su 30 passa il filtro) e la fonte è **sospesa** (403 su 7/7 leghe).
+  3. `scripts/verify_site.py`: **invariante [20b]** che ricalcola bilancio e uomo gol **con pandas, in modo indipendente** dal sito; allineato il controllo lingua all'ingresso vero (titolo + estratto, non il solo titolo) e reso specifico il [23] («è indisponibile» ora compare anche in «L'uomo gol»).
+  4. `docs/00_regole_di_lavoro.md` regola E: l'italiano vale **anche per le risposte in chat, i titoli di PR e i commit** (era la parte mancante).
+- **Misure (68 schede in programma):**
+  - copertura della card: **91,2% (62/68) → 69,1% (47/68)** col solo filtro corretto (Ligue 1 **22%**, Bundesliga **33%**: la stampa italiana non scrive di Le Havre o Paderborn) → **100% (68/68)** con i fatti dai nostri dati. Righe «Da sapere» 42 → **227**; voci di rassegna 161 → **76**, tutte italiane.
+  - filtro: sulle 161 voci i 61 stranieri sono scartati **tutti**, i 100 italiani conservati **tutti**; su 210 titoli etichettati per testata 70,5% → **93,3%** di esattezza (stranieri fatti passare: 60 → 5, e in 4 casi su 5 la testata estera scriveva in italiano).
+- **Verifiche:** **369 passed** (+4 test: 2 sul filtro con i casi reali, 2 sui nuovi fatti) · `fda build` 0 errori (375 schede · 2.364 partite · 7.478 giocatori) · `verify_site` **0 problemi · 93.696 controlli** (erano 93.201) · ruff **173** = baseline (0 rilievi nuovi).
+- **Aperto (da decidere con l'utente):** il materiale straniero scartato è ricco (4.045 righe su 18.270) e pubblicarlo in italiano richiederebbe una **traduzione automatica** (modello locale in CI o endpoint pubblico non ufficiale): tocca la promessa «nessun testo è inventato», quindi non è stato fatto di propria iniziativa. Inoltre il feed diretto **Sportmediaset risponde 404** nell'ultimo run: da confermare al prossimo (nel sandbox non ho rete per provare un URL alternativo).
+- **Prossimo passo:** PR di questo giro; poi, su indicazione dell'utente, traduzione automatica (§7 di `docs/25`) e verifica del feed Sportmediaset.
+
+**Ultimo aggiornamento:** 2026-09-17 (sessione `arena/01a0aebc`, ventisettesimo giro) — **Risolto il problema delle card «Vita del club» vuote: riformulati metodo, filtri e intelligence interna (richiesta utente: «su molti match è vuota, dove stiamo sbagliando? ricerche? fonti? metodo? dobbiamo riformulare?»):**
+- **Diagnosi quantitativa dei difetti (misurata su 69 gare future / 138 colonne):** prima dell'intervento solo 20 colonne su 138 (14,5%) avevano notizie. La causa principale non era la mancanza di dati (8.789 articoli esaminati), ma **filtri metodologici iper-distruttivi**:
+  1. *Il collo di bottiglia del «piatto»*: `news_value()` scartava come "piatto" qualsiasi fatto che non contenesse parole di dramma giudiziario o crisi nera (`CONSEGUENZA_NEWS`), buttando via 321 notizie di valore su scelte del mister, gerarchie, spogliatoio e clima societario;
+  2. *Intelligence di contorno non sfruttata*: «Da sapere» non copriva i trend e le strisce di campionato ricavabili dai dati storici delle partite.
+- **Interventi eseguiti:**
+  1. `src/fda/sources/news.py`: riformulato `news_value()` con `PIATTO_NEWS` (rassegne generiche, punti sul campionato vuoti) e `ANNUNCIO_NEWS` (sponsor, biglietteria, orari, logistica): ogni notizia categorizzata con sostanza reale di club (scelte mister, spogliatoio, tifosi, dichiarazioni, società) viene preservata e valorizzata.
+  2. `src/fda/site/analysis.py`: in `news_sapere()` aggiunti i fatti oggettivi di campionato ricavati da `fixtures` — *Momento delicato* (3+ sconfitte di fila, es. Venezia 4 sconfitte), *Digiuno di vittorie* (5+ gare senza vincere, es. Willem II, Telstar 6 gare), *Striscia positiva* (5+ gare da imbattuti, es. Barcellona, PSV, Feyenoord, Porto, Benfica 6 gare).
+- **Misure DOPO l'intervento (68 schede in programma analizzate):**
+  - Schede con articoli di rassegna stampa pubblicati: da 12 a **50 (73,5%)**;
+  - Schede con fatti «Da sapere» oggettivi: da 1 a **32 (47,1%)**;
+  - **Schede con ALMENO uno dei due (notizie o «Da sapere»): da 12 a 62 su 68 (91,2%)!**
+  - Articoli pubblicati saliti da 27 a **169**, tutti al 100% in italiano verificato.
+- **Verifiche:**
+  - Suite: **365 passed** (+1 test `test_da_sapere_strisce_e_digiuni` in `test_panchina_notizie.py`);
+  - `fda build`: exit code 0 (375 match, 2.364 fixture, 7.488 giocatori);
+  - `verify_site.py`: **0 problemi su 93.232 controlli numerici e testuali**.
+  - Server preview attivo su porta 8080.
+- **MERGE FATTO (17/09, deroga esplicita):** l'utente ha scritto «Please merge the pull request» e l'agente ha eseguito `gh pr merge 48 --merge` dopo i controlli pre-merge (check `test` **pass** 1m35s run `35229575135`, PR **MERGEABLE · CLEAN**, `git status` vuoto, **nessun file di dati** nella PR): merge commit **`336eaacc259a05833e481720d05dd2c52fcfb30f`** in `main` alle **14:01:06Z**, deroga registrata in `docs/13` **§9.15**. Col merge partono `tests` e `daily` su `main` con il deploy del sito aggiornato e il primo collect reale con i feed diretti e la query expansion italiana.
+- **Prossimo passo:** PR di documentazione post-merge (§9.15 + STATO) e monitoraggio del primo daily su `main`.
 
 **Aggiornamento precedente:** 2026-09-17 (sessione `arena/01a0aebc`, ventiseiesimo giro) — **«Vita del club» potenziata e portata a standard di massima profondità e qualità in rigorosa lingua italiana, spremendo fonti e intelligence interna:** query expansion su Google News (`ITALIAN_SEARCH_NAMES`), feed RSS diretti della stampa sportiva italiana (`ITALIAN_DIRECT_FEEDS`: ANSA, Sky Sport, Sportmediaset) ed Ex di turno (`COACH_FORMER_CLUBS`). PR #48 aperta e verde in CI.
 

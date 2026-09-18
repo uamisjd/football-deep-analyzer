@@ -313,3 +313,61 @@ non possono essere scaricati dal sandbox dell'agente (Google irraggiungibile, mi
 La logica di riscrittura del CSS è una funzione pura con lo scaricatore passato come argomento
 (`riscrivi_css(testo, scarica)`), quindi è coperta dai test **senza rete**; i sette test di
 `tests/test_font_locali.py` provano entrambi gli stati del template e i due rami di `--check`.
+
+## 12. Esito in produzione (2026-09-18, dopo il merge)
+
+Le due PR sono in `main`. I numeri qui sotto sono letti dai commit dati e da
+`source_status`, non ripresi dalla stima di §11.
+
+### 12.1 Potatura a 14 giorni — primo daily post-merge di PR #51
+
+Merge **`0a2a2f8`** alle 11:08:07Z. Il daily partito col push (run **`35338118021`**)
+ha committato i dati in **`daba341`** alle 11:23 UTC. La riga `news:NEWS` di
+`source_status` scritta alle 11:11:00Z dichiara **`potate 5192`**. Il file:
+
+| Commit | Quando | Righe | Byte |
+|---|---|---|---|
+| `00b4ec3` (ultimo daily *prima* del merge) | 09:11 UTC | 19.841 | 5.136.037 |
+| `daba341` (primo daily *dopo* il merge) | 11:23 UTC | 14.824 | **3.747.043** |
+| `3fc5ced` (daily dopo i font) | 12:30 UTC | 14.951 | 3.777.609 |
+
+Il netto è −5.017 righe / −1.388.994 byte: le 5.192 potate meno le righe nuove
+dell'`upsert` (`salvate 4097` nello stesso imbuto). Il run delle 12:30 dichiara
+`potate 6`: il tetto è in vigore, non si sta più accumulando. Lo scarto fra le
+5.028 misurate offline su un archivio fermo (§11.1) e le 5.192 in produzione è
+il rumore di due ore di raccolta in più (il file era già salito a 19.841 righe
+alle 09:11).
+
+### 12.2 Font auto-ospitati — PR #52 e sito pubblicato
+
+Merge **`66afcd9`** alle 12:15:14Z (merge dell'utente, regola D). Nel repository:
+**9** file `.woff2` per **255.952 byte** (250 KiB), `fonts.css` 12.140 byte con
+**0** URL `https://` (percorsi relativi). Il CSS pubblicato su Pages
+(`…/assets/fonts/fonts.css`) è lo stesso. L'HTML grezzo di Pages non è
+raggiungibile dal sandbox (TLS EOF verso `github.io`, come da briefing §7);
+sul sito l'utente ha contato **0** `fonts.googleapis.com`, **1**
+`assets/fonts/fonts.css`, **9** woff2 · 250 kB serviti.
+
+### 12.3 Difetto del workflow `font-locali.yml`
+
+Il passo «Apri la PR» finiva con `gh pr create … || echo "Una PR su font-locali
+è già aperta"`. `gh pr create` esce 1 **sia** se la PR esiste già **sia** per un
+errore vero (permesso, rete, GraphQL): l'`|| echo` li trattava tutti come
+successo.
+
+Misura: il run **`35340877847`** (11:41:29–11:42:15Z) è uscito **verde**;
+`github-actions[bot]` ha committato `7550c74` alle 11:42:10Z; la PR **#52** è
+stata aperta **a mano da uamisjd alle 12:10:57Z** (`author` della PR = utente,
+non il bot). Causa: in Settings → Actions → General mancava «Allow GitHub
+Actions to create and approve pull requests» — il 403 è stato inghiottito.
+
+Correzione (stessa sessione `arena/01a0b48c`): si cattura l'uscita di
+`gh pr create`; se contiene `already exists` si esce 0, altrimenti si stampa la
+causa più comune e si esce 1.
+
+### Prossimo passo
+
+P1.11 di `docs/19` §4 (griglia pre-registrata nel laboratorio), poi P1.12 e
+P1.15; in coda anche Sportmediaset 404 (`docs/25` §5), traduzione del materiale
+straniero scartato (`docs/25` §7), pulizia ruff (100 auto-fix su 173) come PR
+separata, divergenza `match_info`/`fixtures` su `5868067` (§9).
