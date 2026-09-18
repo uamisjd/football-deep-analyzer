@@ -1,6 +1,7 @@
 import json
 from datetime import date
 from pathlib import Path
+from typing import ClassVar
 
 import pandas as pd
 
@@ -48,7 +49,7 @@ def _remap_ids(obj, mapping):
 
 class FakeFotMob(FotMobClient):
     # partita campione (Inter 8636 - Napoli 9875) → squadre del calendario campione
-    TEAM_MAP = {5749645: ("8636", "6504"), 5749669: ("8600", "8543")}
+    TEAM_MAP: ClassVar[dict[int, tuple[str, str]]] = {5749645: ("8636", "6504"), 5749669: ("8600", "8543")}
 
     def fixtures_raw(self, league_id, season_str=None):
         return _load("fotmob_fixtures_sample.json")

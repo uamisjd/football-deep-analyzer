@@ -1,7 +1,7 @@
 """Test offline del client Open-Meteo (parser sulla risposta campione)."""
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from fda.sources.openmeteo import OpenMeteoClient
@@ -23,7 +23,7 @@ class _FakeHttp:
 def test_forecast_nearest_hour():
     client = OpenMeteoClient(client=_FakeHttp((FIX / "openmeteo_forecast_sample.json").read_text()))
     # calcio d'inizio 18:45 → l'ora più vicina è 19:00 (21°C, pioggia 60%, "pioggia debole")
-    fc = client.forecast(41.93, 12.45, datetime(2026, 9, 9, 18, 45, tzinfo=timezone.utc))
+    fc = client.forecast(41.93, 12.45, datetime(2026, 9, 9, 18, 45, tzinfo=UTC))
     assert fc["temp_c"] == 21.0
     assert fc["precip_prob"] == 60.0
     assert fc["desc"] == "pioggia debole"
@@ -32,7 +32,7 @@ def test_forecast_nearest_hour():
 
 def test_forecast_exact_hour():
     client = OpenMeteoClient(client=_FakeHttp((FIX / "openmeteo_forecast_sample.json").read_text()))
-    fc = client.forecast(41.93, 12.45, datetime(2026, 9, 9, 18, 0, tzinfo=timezone.utc))
+    fc = client.forecast(41.93, 12.45, datetime(2026, 9, 9, 18, 0, tzinfo=UTC))
     assert fc["hour"] == "2026-09-09T18:00" and fc["temp_c"] == 22.5
 
 
@@ -44,7 +44,7 @@ def test_forecast_empty_response():
             return {}
 
     client = OpenMeteoClient(client=_Empty())
-    assert client.forecast(41.93, 12.45, datetime(2026, 9, 9, 18, 0, tzinfo=timezone.utc)) is None
+    assert client.forecast(41.93, 12.45, datetime(2026, 9, 9, 18, 0, tzinfo=UTC)) is None
 
 
 def test_wmo_translation_and_nearest_index():

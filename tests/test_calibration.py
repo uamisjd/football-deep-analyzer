@@ -6,10 +6,25 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fda.models.calibration import (BRIER_WEIGHT, FIT_WINDOW_DAYS, LAMBDA_SCALE_GRID, MIN_ROWS,
-                                    SCALE_BOUNDS, Calibration, evaluate, fit, from_store,
-                                    moment_scale)
-from fda.models.dc_grid import GRID_SIZE, grid_markets_many, probability_grid, tau_grid, tau_grid_many
+from fda.models.calibration import (
+    BRIER_WEIGHT,
+    FIT_WINDOW_DAYS,
+    LAMBDA_SCALE_GRID,
+    MIN_ROWS,
+    SCALE_BOUNDS,
+    Calibration,
+    evaluate,
+    fit,
+    from_store,
+    moment_scale,
+)
+from fda.models.dc_grid import (
+    GRID_SIZE,
+    grid_markets_many,
+    probability_grid,
+    tau_grid,
+    tau_grid_many,
+)
 from fda.models.predict import _grid_markets, calibrated_prediction, wilson_interval
 from fda.store import Store
 
@@ -124,7 +139,7 @@ def test_fit_on_production_backtest_fixes_the_measured_bias():
     assert abs(after["bias_lambda"]) < abs(before["bias_lambda"]) / 2
     # il pareggio resta dentro l'intervallo di Wilson 95% dell'osservato, prima e dopo
     n = int(before["n"])
-    k = int(round(before["pareggio_osservato"] * n))
+    k = round(before["pareggio_osservato"] * n)
     lo, hi = wilson_interval(k, n)
     assert lo <= before["pareggio_previsto"] <= hi
     assert lo <= after["pareggio_previsto"] <= hi

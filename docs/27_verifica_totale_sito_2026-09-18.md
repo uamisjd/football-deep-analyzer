@@ -191,14 +191,11 @@ codice: `verify_site --content-only` → **exit 1, `PROBLEMI (141): {'concordanz
 
 ## 5. Cose che restano aperte (dichiarate, non risolte)
 
-1. **`docs/preview/*.png` disallineati dal CSS.** `scripts/render_preview.py` copia i token a
-   mano e **7 su 18** non corrispondono più a `site.css` (`--line` `#1f2836` vs `#263142`,
-   `--mut` `#93a0b3` vs `#a8b5c8`, `--mut2`, `--surface2`, `--draw`, `--lose`, `--accent-dim`),
-   più i 6 colori V/N/P dichiarati «approssimazioni». In più il blocco `PAGE` è fermo al
-   **build 15/09/2026** (Elche–Real Madrid, Ajax 75 %), mentre la home di oggi ha 6 gare.
-   **Non tocca il sito pubblicato**: sono solo le immagini di documentazione nel repo.
-2. **`ruff`: 172 segnalazioni** (99 auto-fixabili). È la baseline dichiarata in `docs/STATO.md`,
-   non una regressione di questo giro, ma il gate di lint non è pulito.
+I punti 1 e 2 di questo elenco sono stati **chiusi nel turno del 18/09 sera** (vedi §7): li
+lascio qui per tracciabilità, barrati.
+
+1. ~~**`docs/preview/*.png` disallineati dal CSS.**~~ **CHIUSO (§7.1).**
+2. ~~**`ruff`: 172 segnalazioni.**~~ **CHIUSO (§7.2): ora 0.**
 3. **Docstring datata**: `analysis.py:3132` dice «**30** partite in archivio» per i dati fisici;
    misurato oggi sono **40** partite (1.236 righe giocatore, 20 squadre).
 4. **`analysis.py:1958` era l'unico** `:.2f` senza virgola su 10 occorrenze nel file: vale la
@@ -208,6 +205,46 @@ codice: `verify_site --content-only` → **exit 1, `PROBLEMI (141): {'concordanz
    strutturale e sui token. Il sito è servito in preview Arena per il controllo a vista.
 6. **Clone shallow**: il sandbox ha **1 solo commit** (`git rev-list --count HEAD` = 1), quindi
    nessuna affermazione sulla storia (chi ha introdotto cosa, quando) è verificabile da qui.
+
+---
+
+## 7. Turno del 18/09 (sera): le due correzioni richieste («procedi»)
+
+### 7.1 — `render_preview.py`: niente più copie a mano
+
+- **Colori.** I 24 token (`:root`), il gradiente dell'header e i due colori del badge ora si
+  leggono a runtime da `assets/site.css` e `templates/base.html`. Verificato: **24/24
+  corrispondono** al CSS; se un token sparisce lo script si ferma nominandolo. I 6 colori V/N/P
+  non sono più «approssimazioni» ma i token veri.
+- **Contenuto.** `PAGE` e `CARDS` si leggono da `site/index.html`, quindi l'anteprima segue il
+  build. Senza build (checkout pulito, CI) si usa uno snapshot di riserva con i valori veri del
+  18/09 e lo script lo dice a schermo.
+- **PNG rigenerati**: `docs/preview/home-preview.png` e `header-preview.png` ora mostrano la
+  palette corrente e l'aggiornamento «18/09/2026 20:03».
+- **Test nuovi** (`tests/test_render_preview.py`): `test_colori_letti_dal_css_non_copiati_a_mano`
+  (fissa il collegamento token↔script) e `test_parser_della_home_legge_i_campi_veri` (se il
+  markup della card cambia e un campo torna vuoto, il test lo dice).
+
+### 7.2 — `ruff`: da 172 a 0
+
+- 135 correzioni sicure (`--fix`) + 28 meccaniche (`--unsafe-fixes`, verificate coi test) +
+  chiusure manuali (6 `B023` legati via default, 3 `SIM102`, 3 `RUF012`→`ClassVar`, 3 `F401`,
+  `RUF034`, `UP031/032`, `I001`).
+- Le categorie **intenzionali** (`BLE001`/`S110` nei collettori «degrada e pubblica comunque»,
+  `B008` = idioma typer, `DTZ001` in un test con date naive) sono ora **eccezioni per-file
+  documentate** in `pyproject.toml [tool.ruff.lint.per-file-ignores]`, con la motivazione per
+  file: restano vietate nei file nuovi (regola B.4) e il gate torna verde.
+- Esito: `ruff check .` → **All checks passed!** (0). Non è stato eseguito `ruff format`
+  (non fa parte del gate del progetto e riformatterebbe 80 file).
+
+### 7.3 — Gate finale del turno
+
+| passo | esito |
+|---|---|
+| `pytest -q` | **433 passed** |
+| `ruff check .` | **0 errori** |
+| `fda build` | **exit 0** (375 schede / 2.364 partite / 7.466 giocatori) |
+| `verify_site.py` | **exit 0 · 97.872 controlli + 186.054 attributi** |
 
 ---
 
@@ -222,6 +259,6 @@ codice: `verify_site --content-only` → **exit 1, `PROBLEMI (141): {'concordanz
 | precisione | **migliorata in questo giro** | 344 stringhe sbagliate corrette + 4 punti ciechi del verificatore chiusi |
 | profondità | **alta** | 22–30 sezioni per scheda, 7 leghe alla pari, catena della probabilità tracciata passo per passo |
 
-**Prossimo passo:** i 6 punti di §5. Il più utile è il primo (token letti dal CSS a runtime in
-`render_preview.py`, invece di copiati a mano) perché elimina la classe di difetto, non
-l'istanza.
+**Prossimo passo:** i punti aperti rimasti in §5 (3, 4, 5, 6). I più piccoli sono 3 (docstring
+30→40) e 4 (un helper unico per la virgola invece di 10 `.replace(".", ",")`); 5 richiede un
+browser reale, 6 è un limite del sandbox.

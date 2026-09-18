@@ -46,8 +46,8 @@ def test_detail_window_days_single_source():
     from typing import Any
 
     from fda import config
-    from fda.collect import collect_league
     from fda.cli import collect_cmd
+    from fda.collect import collect_league
 
     w = config.DETAIL_WINDOW_DAYS
     assert w == 7  # il valore atteso oggi; la costante è l'unica cosa da cambiare

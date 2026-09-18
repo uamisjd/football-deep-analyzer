@@ -14,7 +14,7 @@ payload, entrambe «OK», zero righe salvate e nessuna spiegazione leggibile):
 from __future__ import annotations
 
 import json
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import requests
@@ -23,8 +23,7 @@ from fda.collect import CollectReport, collect_news, collect_transfers
 from fda.config import league
 from fda.diagnostics import MAX_DETAIL, MAX_DIGEST, bump, digest, key_names, shape_of
 from fda.sources.fotmob import FotMobClient
-from fda.sources.news import (ESPN_NEWS, GOOGLE_RSS, google_news_params,
-                               parse_espn_news, parse_rss)
+from fda.sources.news import ESPN_NEWS, GOOGLE_RSS, google_news_params, parse_espn_news, parse_rss
 from fda.store import Store
 
 RSS_VUOTO = ('<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel>'
@@ -96,12 +95,12 @@ def test_shape_of_espone_solo_nomi_di_campo():
 
 def test_digest_e_detail_hanno_un_tetto():
     assert len(digest("x" * 500)) <= MAX_DIGEST
-    assert len(CollectReport(league="X", run_at=datetime.now(timezone.utc)).details) == 0
+    assert len(CollectReport(league="X", run_at=datetime.now(UTC)).details) == 0
 
 
 # ---- 4) righe + motivo in source_status ------------------------------------------------------
 def test_as_status_rows_porta_righe_motivo_e_firma():
-    rep = CollectReport(league="NEWS", run_at=datetime.now(timezone.utc))
+    rep = CollectReport(league="NEWS", run_at=datetime.now(UTC))
     rep.requests = {"news": 3, "espn": 1}
     rep.errors = ["espn news ITA1: SourceError: HTTP 403"]
     rep.note("news", rows=0, detail_text="f" * 300, digest_text="g" * 300)

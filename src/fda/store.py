@@ -11,8 +11,9 @@ Scelte:
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import duckdb
 import pandas as pd
@@ -133,7 +134,7 @@ class Store:
             # stesso minuto condividono la chiave), si fondono solo le righe identiche
             merged = merged.drop_duplicates()
             self.write(table, merged)
-            return int(len(new))
+            return len(new)
         if old.empty or not keys:
             merged = pd.concat([old, new], ignore_index=True) if not old.empty else new
         else:
@@ -152,7 +153,7 @@ class Store:
         if keys:
             merged = merged.drop_duplicates(subset=keys, keep="last")
         self.write(table, merged)
-        return int(len(new))
+        return len(new)
 
     # ---- DuckDB ----------------------------------------------------------------------------
     @property

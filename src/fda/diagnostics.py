@@ -57,11 +57,11 @@ def key_names(obj: Any, limit: int = MAX_KEYS) -> list[str]:
     """
     names: list[str] = []
     if isinstance(obj, dict):
-        names = [str(k) for k in obj.keys()]
+        names = [str(k) for k in obj]
     elif isinstance(obj, list):
         for element in obj:
             if isinstance(element, dict):
-                names = [str(k) for k in element.keys()]
+                names = [str(k) for k in element]
                 break
     return [n for n in names if FIELD_NAME.match(n) and len(n) <= FIELD_MAX_LEN][:limit]
 

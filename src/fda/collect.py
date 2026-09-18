@@ -16,16 +16,18 @@ from __future__ import annotations
 import logging
 import re
 import traceback
-from dataclasses import dataclass, field, asdict
-from datetime import date, datetime, timedelta, timezone
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import asdict, dataclass, field
+from datetime import UTC, date, datetime, timedelta
+from typing import Any
 
 import pandas as pd
 
 from .backoff import sospensione
 from .config import DETAIL_WINDOW_DAYS, League, cups, leagues, season_start_year
 from .diagnostics import MAX_DETAIL, MAX_DIGEST, detail, digest, shape_of
-from .sources.espn import EspnClient, to_dicts as espn_dicts
+from .sources.espn import EspnClient
+from .sources.espn import to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
 from .sources.news import (
     ITALIAN_DIRECT_FEEDS,
@@ -35,7 +37,8 @@ from .sources.news import (
     parse_espn_news,
 )
 from .sources.openmeteo import OpenMeteoClient
-from .sources.understat import UnderstatClient, to_dicts as us_dicts
+from .sources.understat import UnderstatClient
+from .sources.understat import to_dicts as us_dicts
 from .store import Store
 from .teams import canonical
 
@@ -149,7 +152,7 @@ def collect_league(
     openmeteo: OpenMeteoClient | None = None,
     today: date | None = None,
 ) -> CollectReport:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     today = today or now.date()
     report = CollectReport(league=lg.key, run_at=now)
     fm = fotmob or FotMobClient()
@@ -170,8 +173,8 @@ def collect_league(
         report.fixtures = store.upsert("fixtures", [asdict(f) for f in fixtures])
 
         # 2) dettagli partite nella finestra ----------------------------------------------
-        lo = datetime.combine(today - timedelta(days=past_days), datetime.min.time(), timezone.utc)
-        hi = datetime.combine(today + timedelta(days=future_days), datetime.max.time(), timezone.utc)
+        lo = datetime.combine(today - timedelta(days=past_days), datetime.min.time(), UTC)
+        hi = datetime.combine(today + timedelta(days=future_days), datetime.max.time(), UTC)
         window = [f for f in fixtures if f.utc_kickoff and lo <= f.utc_kickoff <= hi
                   and f.status != "cancelled"]
         already = set()
@@ -402,7 +405,7 @@ def collect_cups(store: Store, fotmob: FotMobClient | None = None) -> CollectRep
     quelli veri. Le coppe restano fuori da modelli e schede proprie (perimetro deciso):
     qui si raccoglie solo il calendario.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     report = CollectReport(league="CUPS", run_at=now)
     fm = fotmob or FotMobClient()
     fm0 = fm.http.mark()
@@ -447,7 +450,7 @@ def collect_news(store: Store, keys: list[str] | None = None,
     come le altre: se Google non è raggiungibile il run continua e ``source_status`` mostra
     l'avviso; la card degrada a segnaposto onesto.
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     report = CollectReport(league="NEWS", run_at=now)
     nc = news or NewsClient()
     ec = espn or EspnClient()
@@ -521,7 +524,7 @@ def collect_news(store: Store, keys: list[str] | None = None,
             continue
         ts = pd.Timestamp(pa)
         if ts.tzinfo is None:
-            ts = ts.tz_localize(timezone.utc)
+            ts = ts.tz_localize(UTC)
         if ts >= cut:
             fresh.append(r)
         else:
@@ -580,7 +583,7 @@ def collect_transfers(store: Store, fotmob: FotMobClient | None = None) -> Colle
     sezione `transfers` non è documentato: se le righe raccolte sono zero il conteggio
     nel log di Actions lo rende visibile al primo run (mai dati inventati).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     report = CollectReport(league="TRANSFERS", run_at=now)
     fm = fotmob or FotMobClient()
     fm0 = fm.http.mark()

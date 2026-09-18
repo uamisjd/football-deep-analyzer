@@ -142,8 +142,8 @@ def test_match_grid_uses_the_published_calibration():
     import warnings
 
     from fda.models.calibration import Calibration
-    from fda.models.season_sim import _match_grid
     from fda.models.predict import DixonColesModel, EloModel
+    from fda.models.season_sim import _match_grid
 
     warnings.filterwarnings("ignore")
     hist = _synthetic_hist()

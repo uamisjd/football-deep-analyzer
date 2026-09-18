@@ -38,7 +38,7 @@ def probe_openmeteo(client: Any, now: datetime) -> dict[str, Any]:
     quando = now + timedelta(hours=24)
     try:
         fc = client.forecast(PROBE_LAT, PROBE_LON, quando)
-    except Exception as exc:  # noqa: BLE001 — una sonda rotta è un esito, non un crash
+    except Exception as exc:
         return {"probe": "openmeteo", "ok": False,
                 "detail": f"errore: {type(exc).__name__}: {str(exc)[:120]}"}
     if not fc:
@@ -69,7 +69,7 @@ def esegui(now: datetime | None = None, probes: dict[str, Callable[[datetime], d
     for nome in sorted(probes):
         try:
             esito = probes[nome](now)
-        except Exception as exc:  # noqa: BLE001 — idem: l'esito negativo va registrato
+        except Exception as exc:
             esito = {"probe": nome, "ok": False, "detail": f"errore: {type(exc).__name__}: {exc}"}
         righe.append({"run_at": now, "probe": str(esito.get("probe", nome)),
                       "ok": bool(esito.get("ok")), "detail": str(esito.get("detail", ""))[:200]})

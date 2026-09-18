@@ -1,6 +1,7 @@
-from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
+import itertools
 import re
+from datetime import UTC, date, datetime, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -38,7 +39,7 @@ def _seed(tmp_path, espn_cls=FakeEspn):
                    fotmob=FakeFotMobPre(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(), espn=espn_cls(),
                    today=date(2026, 9, 6))
     # sposta le partite campione attorno a "oggi" così finiscono nelle pagine
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     fx = st.read("fixtures")
     fx.loc[fx.match_id == 5749645, "utc_kickoff"] = now - timedelta(days=1)
     fx.loc[fx.match_id == 5749669, "utc_kickoff"] = now + timedelta(days=1)
@@ -787,7 +788,7 @@ def test_build_indexes_calendario_completo(tmp_path):
     a ridosso della gara): la riga deve dirlo, non mostrare buchi o link rotti.
     """
     st = _seed(tmp_path)
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     st.upsert("fixtures", [_fixture_lontana(5900001, 40, "Roma", "Fiorentina", now),
                            _fixture_lontana(5900002, 75, "Napoli", "Bologna", now)])
     st.upsert("predictions", [{"match_id": 5900001, "model": "ensemble", "league_key": "ITA1",
@@ -968,7 +969,7 @@ def test_a11y_strutturale(tmp_path):
         # il link punta all'ancora del main
         assert 'href="#main"' in h
         livelli = [int(x) for x in re.findall(r"<h([1-6])[\s>]", h)]
-        salti = [(a, b) for a, b in zip(livelli, livelli[1:]) if b - a > 1]
+        salti = [(a, b) for a, b in itertools.pairwise(livelli) if b - a > 1]
         assert not salti, f"{pg.name}: salto di livello {salti[:3]}"
         th = re.findall(r"<th\b[^>]*>", h)
         senza = [t for t in th if "scope=" not in t]

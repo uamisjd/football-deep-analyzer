@@ -286,7 +286,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
 # questa invariante impedisce che torni muto.
 STATUS_ROW = re.compile(
     r'<tr><td>([^<]+)</td><td class="mut">([^<]*)</td><td class="r">([^<]*)</td>'
-    r'<td class="r">([^<]*)</td><td>(.*?)</td></tr>', re.S)
+    r'<td class="r">([^<]*)</td><td>(.*?)</td></tr>', re.DOTALL)
 
 
 def check_status(site: Path) -> tuple[list[str], int]:
@@ -326,11 +326,11 @@ def check_status(site: Path) -> tuple[list[str], int]:
 # lettore qui non ha contesto, quindi un arrotondamento sbagliato non sarebbe riconoscibile.
 CAL_ROW = re.compile(
     r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)">(.*?)</div>',
-    re.S)
+    re.DOTALL)
 CAL_PCT = re.compile(r'<span class="cal-p"[^>]*aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%"[^>]*>(.*?)</span>')
 CAL_MONTH = re.compile(
     r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
-    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.S)
+    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.DOTALL)
 MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
            "settembre", "ottobre", "novembre", "dicembre"]
 
@@ -389,7 +389,7 @@ def check_calendar(site: Path) -> tuple[list[str], int]:
         righe_totali += len(righe)
 
         for m in righe:
-            classi, lega, stato, corpo = m.groups()
+            classi, _lega, stato, corpo = m.groups()
             checks += 1
             if "cal-fav-" not in classi and "senza previsione" not in corpo:
                 fails.append(f"{rel}: riga di calendario senza esito preferito né «senza previsione»")
@@ -731,10 +731,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         sc = re.match(r"\s*(\d+)-(\d+)", rows[-1][1])
         hg, ag = (int(sc.group(1)), int(sc.group(2))) if sc else (0, 0)
         row = mi[mi.match_id == int(pg.stem)]
-        if not row.empty and pd.notna(row.iloc[0]["home_goals"]):
-            if (hg, ag) != (int(row.iloc[0]["home_goals"]), int(row.iloc[0]["away_goals"])):
-                fails.append(f"{pg.name}: in-play finisce {hg}-{ag}, risultato "
-                             f"{int(row.iloc[0]['home_goals'])}-{int(row.iloc[0]['away_goals'])}")
+        if not row.empty and pd.notna(row.iloc[0]["home_goals"]) and \
+                (hg, ag) != (int(row.iloc[0]["home_goals"]), int(row.iloc[0]["away_goals"])):
+            fails.append(f"{pg.name}: in-play finisce {hg}-{ag}, risultato "
+                         f"{int(row.iloc[0]['home_goals'])}-{int(row.iloc[0]['away_goals'])}")
     print(f"[2] pagine con probabilità in-play verificate: {n_wp}")
 
     # 3) accuratezza: RPS ricalcolato in modo indipendente dalla pagina
@@ -798,11 +798,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             return float(re.sub(r"<[^>]+>", "", txt).replace(".", "").replace(",", ".").rstrip("%"))
 
         righe = 0
-        for row in re.findall(r"<tr><td>.*?</tr>", acc_path.read_text(encoding="utf-8"), re.S):
+        for row in re.findall(r"<tr><td>.*?</tr>", acc_path.read_text(encoding="utf-8"), re.DOTALL):
             mi = re.search(r'<td class="r mut">(\d+,\d+)\s*[–-]\s*(\d+,\d+)%</td>', row)
             if not mi:
                 continue
-            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.S)
+            cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.DOTALL)
             lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
             kn = re.search(r"\((\d+)/(\d+)\)", row)
             if kn and len(cells) >= 7:                # riga di mercato: k/n esplicito, 9-10 celle
@@ -812,7 +812,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             else:                                     # nessuna k/n pubblicata: k ≈ osservato × n
                 n = int(_n(cells[1]))
                 prev, obs = _n(cells[2]), _n(cells[3])
-                k = int(round(obs * n / 100.0))
+                k = round(obs * n / 100.0)
             lo, hi = wilson_interval(k, n)
             checks += 1
             righe += 1
@@ -864,7 +864,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 print(f"[8] backtest: {len(bt)} gare fuori campione, RPS pagina {rps_bt} = ricalcolato {mine:.4f}")
 
             def _num(pattern: str, what: str) -> float | None:
-                m = re.search(pattern, card, re.S)
+                m = re.search(pattern, card, re.DOTALL)
                 if not m:
                     fails.append(f"accuratezza.html: {what} non pubblicato nella card backtest")
                     return None
@@ -953,7 +953,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi)
     prev_re = re.compile(r"<th[^>]*>Precedenti \((\d+)\)</th>")
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
-                        r' · ([^<]*?) (\d+) assenti', re.S)
+                        r' · ([^<]*?) (\d+) assenti', re.DOTALL)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
     un_count: dict[tuple[int, int], int] = {}
     if not lineup.empty:
@@ -1140,7 +1140,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         # </div></div>: altrimenti l'ultima colonna resta fuori e il confronto salta proprio
         # quella. Difetto rimasto nascosto finché la coda era sempre vuota (0 punti): con la
         # calibrazione a momenti alcune partite hanno punti anche nella colonna «7+».
-        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)\n\s*</div>', html, re.S)
+        dp = re.search(r'<div class="goalgrid dotplot"[^>]*>(.*?)\n\s*</div>', html, re.DOTALL)
         if not dp:
             fails.append(f"{pg.name}: dotplot dei gol non trovato")
         else:
@@ -1222,7 +1222,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # correzione della concordanza toglieva copertura invece di essere verificata (18/09/2026).
     hero_re = re.compile(r'<strong>([^<]*)<em>(\d+)%</em>.*?'
                          r'\+(\d+(?:,\d+)?) (punti|punto) sul secondo — (.*?) (\d+)%'
-                         r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.S)
+                         r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.DOTALL)
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
         m = hero_re.search(html)
@@ -1380,7 +1380,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             lam_here = _disp_sum(float(row.lambda_home.iloc[0]), float(row.lambda_away.iloc[0]))
             dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
             dist = dist[np.isfinite(dist)]
-            n_exp = int(len(dist))
+            n_exp = len(dist)
             checks += 1
             n_pos += 1
             here_t, pct_t, n_t, lg_t, mean_t, med_t = m.groups()
@@ -1388,7 +1388,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: gol attesi {here_t} vs somma delle λ stampate "
                              f"{_stamp_it(lam_here)}")
             below = float((dist < lam_here).mean())
-            if int(pct_t) != int(round(below * 100)):
+            if int(pct_t) != round(below * 100):
                 fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
             if int(n_t) != n_exp:
                 fails.append(f"{pg.name}: partite di lega {n_t} vs {n_exp} in predictions")
@@ -1414,12 +1414,12 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_fg = int(ev_df[ev_df.type == "Goal"].match_id.nunique())
             fg_re = re.compile(
                 r"su (\d+(?:\.\d+)*) gol nelle\s*(\d+(?:\.\d+)*) partite di questa stagione \(7 leghe\), il "
-                r"(\d+,\d)% cade nel 1° tempo", re.S)
+                r"(\d+,\d)% cade nel 1° tempo", re.DOTALL)
             qq_re = re.compile(
                 r"la metà centrale dei primi gol cade fra\s*(dopo il 90'|\d+')\s*e\s*"
                 r"(dopo il 90'|\d+')\s*e la mediana è\s*(dopo il 90'|\d+')\. "
                 r"Pari senza gol al riposo: <b>(\d+,\d)%</b>;\s*zero gol su novanta minuti: "
-                r"(\d+,\d)%\.", re.S)
+                r"(\d+,\d)%\.", re.DOTALL)
             n_q = 0
             for pg in pages:
                 html = pg.read_text(encoding="utf-8")
@@ -1435,7 +1435,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 r1_f, r2_f = s_fg * lam_fg / 45.0, (1.0 - s_fg) * lam_fg / 45.0
                 s_ht_f = float(np.exp(-r1_f * 45.0))
 
-                def _qexp(p: float) -> float | None:
+                # r1_f/r2_f/s_ht_f legati via default: la chiusura è usata nella stessa
+                    # iterazione, ma così B023 non segnala il late-binding (ruff, pulizia 18/09)
+                def _qexp(p: float, r1_f: float = r1_f, r2_f: float = r2_f,
+                          s_ht_f: float = s_ht_f) -> float | None:
                     tail = 1.0 - p
                     t = (-np.log(tail) / r1_f) if tail >= s_ht_f else \
                         (45.0 + (-np.log(tail) - r1_f * 45.0) / r2_f)
@@ -1455,7 +1458,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 # la frase stampa «fra q1 e q3 e la mediana è q2»: riordino i gruppi
                 labels = {0.25: m_q.group(1), 0.75: m_q.group(2), 0.50: m_q.group(3)}
                 for p, t in qs.items():
-                    atteso = "dopo il 90'" if t is None else f"{int(round(t))}'"
+                    atteso = "dopo il 90'" if t is None else f"{round(t)}'"
                     n_q += 1
                     if labels[p] != atteso:
                         fails.append(f"{pg.name}: quartile p={p} primo gol «{labels[p]}» vs modello «{atteso}»")
@@ -1560,9 +1563,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     checks += 1
                     if coach[0] not in txt:
                         fails.append(f"{pg.name}: panchina senza il coach {coach[0]} dei Parquet")
-                    if coach[1] is not None:
-                        if "panchina nuova" not in txt or str(coach[1]) not in txt:
-                            fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
+                    if coach[1] is not None and \
+                            ("panchina nuova" not in txt or str(coach[1]) not in txt):
+                        fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
                 if sr is not None and 'id="panchina"' in html:
                     checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
@@ -1570,9 +1573,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         raw_top = getattr(sr, "p_top4", None)
                     raw_n = getattr(sr, "top_n", None)
                     top_n = 4 if raw_n is None or pd.isna(raw_n) else int(raw_n)
-                    pt = int(round(float(sr.p_title) * 100))
-                    pe = None if raw_top is None or pd.isna(raw_top) else int(round(float(raw_top) * 100))
-                    pr = int(round(float(sr.p_rel) * 100))
+                    pt = round(float(sr.p_title) * 100)
+                    pe = None if raw_top is None or pd.isna(raw_top) else round(float(raw_top) * 100)
+                    pr = round(float(sr.p_rel) * 100)
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
                     if atteso not in txt or f"salvezza {pr}%" not in txt:

@@ -8,7 +8,7 @@ fallback: se FotMob ha già il meteo, quello resta la fonte primaria.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from ..config import source
@@ -40,8 +40,8 @@ class OpenMeteoClient:
     def forecast(self, lat: float, lon: float, when: datetime) -> dict[str, Any] | None:
         """Previsione all'ora più vicina a `when`: ``{temp_c, precip_prob, desc, code, hour}``."""
         if when.tzinfo is None:
-            when = when.replace(tzinfo=timezone.utc)
-        target = when.astimezone(timezone.utc).replace(tzinfo=None)  # confronto su UTC naive
+            when = when.replace(tzinfo=UTC)
+        target = when.astimezone(UTC).replace(tzinfo=None)  # confronto su UTC naive
         params = {
             "latitude": lat, "longitude": lon,
             "hourly": "temperature_2m,precipitation_probability,weather_code",

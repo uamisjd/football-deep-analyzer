@@ -1,23 +1,29 @@
 """Genera i PNG di anteprima dell'header e della home di CalcioMetro.
 
-Disegna con Pillow (nessuna libreria di sistema né browser richiesti) usando i valori
-reali del design system e i **dati veri del build 15/09/2026** (le due schede finite
-della giornata: Rayo Vallecano–Espanyol e Ajax–Willem II, come pubblicate su
-``site/index.html``). Così chi apre ``docs/preview/`` vede il layout corrente, non il
-design del 09/09 (audit Q6, docs/21 P2-8b).
+Disegna con Pillow (nessuna libreria di sistema né browser richiesti). **Niente è copiato a
+mano** (revisione del 18/09/2026, `docs/27` §5.1):
+
+- i **colori** si leggono a runtime da ``assets/site.css`` (token ``:root`` e gradiente
+  dell'header) e da ``templates/base.html`` (badge del logo nell'SVG data-URI). Prima erano
+  una copia manuale con la nota «se il CSS cambia, cambiare anche questi»: misurato allora,
+  **7 token su 18 divergevano** dal CSS e i PNG versionati mostravano una palette che il sito
+  non usava più. Se un token sparisce lo script si ferma nominandolo.
+- il **contenuto** (titolo, riepilogo, due schede) si legge da ``site/index.html``, quindi
+  l'anteprima segue il build invece di invecchiare. Senza build si usa uno snapshot di
+  riserva — i valori veri del 18/09/2026 — e lo dice a schermo.
 
 Salva in due posti:
 - ``site/``            (per l'URL del server di preview; il build la rigenera — non persistente)
 - ``docs/preview/``    (versionato: è la copia ufficiale)
 
 I vecchi SVG ``home-preview.svg``/``header-preview.svg`` sono stati ritirati: erano un
-mock vettoriale disegnato a mano che aveva derivato dal sito reale (questo script è
-invece l'unica fonte dei PNG, coi token del CSS copiati uno a uno). Uso:
+mock vettoriale disegnato a mano che aveva derivato dal sito reale. Uso:
 ``python scripts/render_preview.py [--out DIR]`` (default: site/ + docs/preview/).
 """
 from __future__ import annotations
 
 import argparse
+import re
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -28,70 +34,197 @@ PREVIEW_DIR = REPO_ROOT / "docs" / "preview"
 FONT_DIR = "/tmp/sora"
 DEJAVU = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
 DEJAVU_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-# token del tema scuro (base.html :root) — se il CSS cambia, cambiare anche questi
-BG = (12, 17, 24)          # --bg #0c1118
-SURFACE = (19, 26, 36)     # --surface #131a24
-LINE = (31, 40, 54)        # --line #1f2836
-TXT = (233, 238, 246)      # --txt #e9eef6
-TXT2 = (196, 206, 220)     # --txt2 #c4cedc
-MUT = (147, 160, 179)      # --mut #93a0b3
-MUT2 = (108, 122, 141)     # --mut2 #6c7a8d
-CALCIO = (46, 229, 157)    # --brand-a #2ee59d
-METRO = (231, 178, 60)     # --brand-b #e7b23c
-ACCENT = (40, 200, 147)    # --accent #28c893
-ACCENT_DIM = (17, 44, 36)  # --accent-dim (approssimazione dal CSS)
-ON_ACCENT = (6, 35, 26)    # --on-accent #06231a
-WIN = (40, 200, 147)       # --win
-DRAW = (127, 138, 160)     # --draw
-LOSE = (224, 96, 90)       # --lose
-AMBER = (230, 179, 74)     # --amber
-SURFACE2 = (23, 31, 43)    # --surface2
-SURFACE3 = (33, 44, 58)    # --surface3 #212c3a
-HEADER_TOP = (14, 20, 29)
-HEADER_BOT = (11, 16, 23)
-BADGE = (18, 32, 46)
-BADGE_STROKE = (47, 65, 88)
-# forme recenti (.form-dot V/N/P): approssimazioni dei token --v-*/--n-*/--p-* del tema scuro
-V_BG, V_FG = (17, 52, 39), (93, 224, 160)
-N_BG, N_FG = (40, 46, 58), (196, 206, 220)
-P_BG, P_FG = (58, 28, 29), (240, 128, 122)
+# --- colori: letti dal CSS e dai template, NON copiati a mano ---------------------------------
+# Fino al 18/09/2026 qui c'era una copia manuale dei token con l'istruzione «se il CSS cambia,
+# cambiare anche questi». Misurato allora: **7 token su 18 divergevano** da site.css
+# (--line #1f2836 vs #263142, --mut #93a0b3 vs #a8b5c8, --mut2, --surface2, --draw, --lose,
+# --accent-dim), più i 6 colori V/N/P dichiarati «approssimazioni»: le immagini versionate in
+# docs/preview/ mostravano una palette che il sito non usa più. Leggendo i valori a runtime la
+# divergenza diventa strutturalmente impossibile, e se un token sparisce lo script si ferma con
+# un messaggio che nomina il token invece di disegnare un colore inventato.
+CSS = REPO_ROOT / "src" / "fda" / "site" / "assets" / "site.css"
+BASE_HTML = REPO_ROOT / "src" / "fda" / "site" / "templates" / "base.html"
 
-# i valori veri della home del build 15/09/2026 (site/index.html): una gara in corso
-# (Elche–Real Madrid, con infermeria) e una finita col favorito netto (Ajax 75%, 5–1)
-PAGE = {
-    "title": "Partite di oggi — martedì 15 settembre 2026",
+
+def _hex_rgb(v: str) -> tuple[int, int, int]:
+    h = v.lstrip("#")
+    if len(h) == 3:
+        h = "".join(c * 2 for c in h)
+    return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+
+
+def _css_tokens() -> dict[str, tuple[int, int, int]]:
+    """Token del tema scuro: il blocco `:root{...}` di site.css, così com'è."""
+    blocco = CSS.read_text(encoding="utf-8").split(":root{", 1)[1].split("\n}", 1)[0]
+    return {k: _hex_rgb(v) for k, v in re.findall(r"(--[\w-]+)\s*:\s*(#[0-9a-fA-F]{3,8})", blocco)}
+
+
+def _tok(d: dict[str, tuple[int, int, int]], nome: str) -> tuple[int, int, int]:
+    if nome not in d:
+        raise SystemExit(f"render_preview: il token {nome} non è più in {CSS.name} — "
+                         f"aggiornare lo script invece di disegnare un colore a caso")
+    return d[nome]
+
+
+_T = _css_tokens()
+
+BG = _tok(_T, "--bg")
+SURFACE = _tok(_T, "--surface")
+LINE = _tok(_T, "--line")
+TXT = _tok(_T, "--txt")
+TXT2 = _tok(_T, "--txt2")
+MUT = _tok(_T, "--mut")
+MUT2 = _tok(_T, "--mut2")
+CALCIO = _tok(_T, "--brand-a")
+METRO = _tok(_T, "--brand-b")
+ACCENT = _tok(_T, "--accent")
+ACCENT_DIM = _tok(_T, "--accent-dim")
+ON_ACCENT = _tok(_T, "--on-accent")
+WIN = _tok(_T, "--win")
+DRAW = _tok(_T, "--draw")
+LOSE = _tok(_T, "--lose")
+AMBER = _tok(_T, "--amber")
+SURFACE2 = _tok(_T, "--surface2")
+SURFACE3 = _tok(_T, "--surface3")
+# forme recenti (.form-dot V/N/P): token veri del tema scuro, non più approssimazioni
+V_BG, V_FG = _tok(_T, "--v-bg"), _tok(_T, "--v-fg")
+N_BG, N_FG = _tok(_T, "--n-bg"), _tok(_T, "--n-fg")
+P_BG, P_FG = _tok(_T, "--p-bg"), _tok(_T, "--p-fg")
+
+# gradiente dell'header: non è un token, sta nella regola `header{background:linear-gradient(...)}`
+_GRAD = re.search(r"header\{background:linear-gradient\(180deg,(#[0-9a-fA-F]{3,8}),(#[0-9a-fA-F]{3,8})\)",
+                  CSS.read_text(encoding="utf-8"))
+if not _GRAD:
+    raise SystemExit(f"render_preview: gradiente dell'header non trovato in {CSS.name}")
+HEADER_TOP, HEADER_BOT = _hex_rgb(_GRAD.group(1)), _hex_rgb(_GRAD.group(2))
+
+# badge del logo: è nell'SVG data-URI di base.html (fill/stroke url-encoded come %23xxxxxx)
+_BADGE = re.search(r"fill='%23([0-9a-fA-F]{6})' stroke='%23([0-9a-fA-F]{6})'",
+                   BASE_HTML.read_text(encoding="utf-8"))
+if not _BADGE:
+    raise SystemExit(f"render_preview: colori del badge non trovati in {BASE_HTML.name}")
+BADGE, BADGE_STROKE = _hex_rgb("#" + _BADGE.group(1)), _hex_rgb("#" + _BADGE.group(2))
+
+# --- contenuto della home ---------------------------------------------------------------------
+# Anche qui la copia manuale invecchiava: il blocco PAGE/CARDS era fermo al build 15/09/2026
+# (Elche–Real Madrid, Ajax 75 %) mentre la home pubblicata ne mostrava altre. Ora i valori si
+# leggono da `site/index.html` quando c'è, cioè l'anteprima segue il build; lo snapshot qui
+# sotto resta solo come riserva per un checkout senza build (e il test lo dichiara).
+def _strip(s: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", s)).strip()
+
+
+# Riserva usata solo quando `site/index.html` non esiste (checkout pulito, CI): sono i valori
+# veri del build 18/09/2026, non un esempio inventato. Con un build presente non vengono letti.
+PAGE_FALLBACK = {
+    "title": "Partite di oggi — venerdì 18 settembre 2026",
     "subtitle": "Il quadro della giornata, poi il dettaglio verificabile di ogni partita.",
-    "summary": [("4", "partite"), ("2", "campionati"), ("4/4", "con modello"),
-                ("1", "in corso"), ("3", "terminate")],
+    "summary": [("6", "partite"), ("6", "campionati"), ("6/6", "con modello"),
+                ("20:00", "prossimo calcio d'inizio")],
     "summary_note": "Dati e probabilità sono quelli dell'ultimo aggiornamento indicato in alto.",
-    "day": "martedì 15 settembre 2026",
-    "updated": "15/09/2026 23:32 (ora italiana)",
+    "day": "venerdì 18 settembre 2026",
+    "updated": "18/09/2026 20:03 (ora italiana)",
 }
-
-CARDS = [
-    {"status": "In corso", "dot": LOSE, "kickoff": "21:30", "league": "LaLiga",
-     "home": "Elche", "home_rank": "20ª · 2 pt", "away": "Real Madrid", "away_rank": "2ª · 15 pt",
-     "score": "0–2", "score_note": "calcio d'inizio",
-     "fav": "Real Madrid", "pct": 59, "note": "favorito · +37 punti sul secondo (Pareggio 22%)",
-     "bar": (19, 22, 59),
-     "signal": "✓ DC ed Elo sullo stesso preferito (Real Madrid): DC 56,9% · Elo 63,8% · distanza 6,9 punti",
+CARDS_FALLBACK: list[dict] = [
+    {"status": "In programma", "dot": ACCENT, "kickoff": "20:00", "league": "Eredivisie",
+     "home": "FC Groningen", "home_rank": "9ª · 8 pt", "away": "PEC Zwolle", "away_rank": "16ª · 4 pt",
+     "score": "vs", "score_note": "calcio d'inizio",
+     "fav": "FC Groningen", "pct": 54, "note": "favorito · +29 punti sul secondo (Pareggio 25%)",
+     "bar": (54, 25, 21),
+     "signal": "✓ DC ed Elo sullo stesso preferito (FC Groningen): DC 54,6% · Elo 53,4% · distanza 1,2 punti",
      "signal_tone": "agree",
-     "foot": "Gol attesi 1,09 + 2,04 (3,13 totali) · Over 2,5 61% (61 su 100 con 3+ gol)",
-     "form_home": (["N", "P", "P", "P", "N"], "2 pt"), "form_away": (["V", "V", "V", "P", "V"], "12 pt"),
-     "facts": ["Infermeria Elche 2 assenti · Real Madrid 3 assenti", "Meteo sereno · 24°C",
-               "Arbitro Jesús Gil Manzano · 5,0 gialli/gara", "Precedenti 13: 0-3-10 (3,5 gol/gara)"]},
-    {"status": "Terminata", "dot": MUT2, "kickoff": "20:00", "league": "Eredivisie",
-     "home": "Ajax", "home_rank": "4ª · 13 pt", "away": "Willem II", "away_rank": "17ª · 2 pt",
-     "score": "5–1", "score_note": "finale",
-     "fav": "Ajax", "pct": 75, "note": "favorito · +58 punti sul secondo (Pareggio 17%)",
-     "bar": (75, 17, 8),
-     "signal": "✓ DC ed Elo sullo stesso preferito (Ajax): DC 72,2% · Elo 78,2% · distanza 6,0 punti",
+     "foot": "Modello Gol attesi 1,99 + 1,21 (3,20 totali) · Over 2,5 62% (62 su 100 con 3+ gol)",
+     "form_home": (["V", "P", "P", "N", "N"], "5 pt"), "form_away": (["P", "V", "P", "N", "P"], "4 pt"),
+     "facts": ["Meteo nuvoloso · 16°C", "Arbitro Martin van den Kerkhof · 2,2 gialli/gara",
+               "Precedenti 27 precedenti: 11-7-9 (2,1 gol/gara)"]},
+    {"status": "In programma", "dot": ACCENT, "kickoff": "20:30", "league": "Bundesliga",
+     "home": "Bayern München", "home_rank": "4ª · 7 pt", "away": "Union Berlin", "away_rank": "16ª · 1 pt",
+     "score": "vs", "score_note": "calcio d'inizio",
+     "fav": "Bayern München", "pct": 84, "note": "favorito · +73 punti sul secondo (Pareggio 11%)",
+     "bar": (84, 11, 5),
+     "signal": "✓ DC ed Elo sullo stesso preferito (Bayern München): DC 81,6% · Elo 86,6% · distanza 5,0 punti",
      "signal_tone": "agree",
-     "foot": "Gol attesi 2,58 + 0,80 (3,38 totali) · Over 2,5 66% (66 su 100 con 3+ gol)",
-     "form_home": (["V", "N", "V", "P", "V"], "10 pt"), "form_away": (["P", "P", "N", "P", "N"], "2 pt"),
-     "facts": ["Meteo per lo più nuvoloso · 19°C", "Arbitro Allard Lindhout · 2,8 gialli/gara",
-               "Precedenti 23: 19-2-2 (3,5 gol/gara)"]},
+     "foot": "Modello Gol attesi 3,14 + 0,71 (3,85 totali) · Over 2,5 74% (74 su 100 con 3+ gol)",
+     "form_home": (["V", "N", "V"], "7 pt"), "form_away": (["N", "P", "P"], "1 pt"),
+     "facts": ["Meteo parzialmente nuvoloso · 19°C", "Arbitro Benjamin Brand · 3,7 gialli/gara",
+               "Precedenti 15 precedenti: 10-5-0 (3,3 gol/gara)"]},
 ]
+
+
+def _from_site_index(path: Path) -> tuple[dict, list[dict]] | None:
+    """PAGE e CARDS letti dalla home generata. None se il sito non è stato costruito."""
+    if not path.exists():
+        return None
+    h = path.read_text(encoding="utf-8")
+
+    def g(pat: str, s: str, default: str = "") -> str:
+        m = re.search(pat, s, re.DOTALL)
+        return m.group(1) if m else default
+
+    summary = [(_strip(a), _strip(b)) for a, b in
+               re.findall(r'<div class="overview-metric[^"]*"><strong>(.*?)</strong>'
+                          r'<span>(.*?)</span>', h, re.DOTALL)][:5]
+    page = {
+        "title": _strip(g(r"<h1>(.*?)</h1>", h)),
+        "subtitle": _strip(g(r'<p class="mut page-subtitle">(.*?)</p>', h)),
+        "summary": summary or PAGE_FALLBACK["summary"],
+        "summary_note": _strip(g(r'<span class="mut">(.*?)</span>', h)),
+        "day": _strip(g(r'<div class="day-heading"><h2[^>]*>(.*?)</h2>', h)),
+        "updated": _strip(g(r"aggiornato\s*([^<]*)", h)),
+    }
+    if not page["title"]:
+        return None
+
+    punti = {"live": LOSE, "paused": AMBER, "scheduled": ACCENT,
+             "finished": MUT2, "postponed": AMBER}
+    cards = []
+    for blk in re.findall(r'<article class="match-card".*?</article>', h, re.DOTALL)[:2]:
+        # le icone sono SVG: tolti prima, così i <span> dei fatti non hanno figli inattesi
+        blk = re.sub(r"<svg.*?</svg>", "", blk, flags=re.DOTALL)
+        m = re.search(r'data-status="(\w+)"', blk)
+        st = m.group(1) if m else "scheduled"
+        forms = []
+        for blocco_forma, punti_forma in re.findall(
+                r'<span class="form-line"(.*?)<span class="fact-value">(.*?)</span>', blk, re.DOTALL)[:2]:
+            forms.append(([d for d in re.findall(r'class="form-dot (\w)"', blocco_forma)],
+                          _strip(punti_forma)))
+        bar = re.findall(r'<span class="[hda]" style="width:(\d+)%">', blk)
+        sig = re.search(r'<div class="signal signal-(\w+)"[^>]*>(.*?)</div>', blk, re.DOTALL)
+        proj = re.search(r'<div class="projection-copy">.*?<strong>(.*?)\s*'
+                         r'<span class="projection-p">(\d+)%</span></strong>', blk, re.DOTALL)
+        facts = [_strip(x) for x in re.findall(
+            r'<span class="fact"[^>]*>((?:\s*<span[^>]*>[^<]*</span>)+)\s*</span>', blk, re.DOTALL)]
+        cards.append({
+            "status": _strip(g(r'<span class="status[^"]*">\s*<span class="status-dot"[^>]*></span>'
+                               r'\s*(.*?)</span>', blk)),
+            "dot": punti.get(st, MUT2),
+            "kickoff": _strip(g(r'class="kickoff">(.*?)</time>', blk)),
+            "league": _strip(g(r'<span class="tag">(.*?)</span>', blk)),
+            "home": _strip(g(r'home-team">\s*<a[^>]*>(.*?)</a>', blk)),
+            "home_rank": _strip(g(r'home-team">.*?<span class="team-rank">(.*?)</span>', blk)),
+            "away": _strip(g(r'away-team">\s*<a[^>]*>(.*?)</a>', blk)),
+            "away_rank": _strip(g(r'away-team">.*?<span class="team-rank">(.*?)</span>', blk)),
+            "score": _strip(g(r'<div class="match-score">\s*<strong>(.*?)</strong>', blk)),
+            "score_note": _strip(g(r'<div class="match-score">.*?<span>(.*?)</span>', blk)),
+            "fav": _strip(proj.group(1)) if proj else "",
+            "pct": int(proj.group(2)) if proj else 0,
+            "note": _strip(g(r'<span class="projection-note">(.*?)</span>', blk)),
+            "bar": tuple(int(x) for x in bar[:3]) if len(bar) == 3 else (0, 0, 0),
+            "signal": _strip(sig.group(2)) if sig else "",
+            "signal_tone": sig.group(1) if sig else "agree",
+            "foot": _strip(g(r'<div class="model-foot"[^>]*>(.*?)</div>', blk)),
+            "form_home": forms[0] if forms else ([], ""),
+            "form_away": forms[1] if len(forms) > 1 else ([], ""),
+            "facts": [f for f in facts if f][:4],
+        })
+    return (page, cards) if cards else None
+
+
+_letti = _from_site_index(REPO_ROOT / "site" / "index.html")
+PAGE, CARDS = _letti if _letti else (PAGE_FALLBACK, CARDS_FALLBACK)
+if not _letti:
+    print("render_preview: site/index.html non trovato — uso lo snapshot di riserva "
+          "(esegui `fda build` per un'anteprima sul build corrente)")
 
 
 def font(path: str, size: int) -> ImageFont.FreeTypeFont:

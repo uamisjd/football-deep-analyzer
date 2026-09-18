@@ -1,10 +1,10 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from fda.site.audit import audit_match
 
 
 def _ctx(days, **values):
-    c = {"match_id": 1, "utc_kickoff": datetime.now(timezone.utc) + timedelta(days=days)}
+    c = {"match_id": 1, "utc_kickoff": datetime.now(UTC) + timedelta(days=days)}
     c.update(values)
     return c
 

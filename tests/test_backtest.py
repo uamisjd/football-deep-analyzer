@@ -134,7 +134,7 @@ def test_backtest_summary_metrics_are_recomputed_independently():
     assert all(c["n"] == n for c in s["calib"])
     # Over 1,5 dichiarato 75% su esiti 2-0/1-1/0-2: osservato ben sotto → fuori intervallo
     o15 = next(m for m in s["markets"] if m["label"] == "Over 1,5 gol")
-    lo, hi = wilson_interval(int(round(o15["obs"] * o15["n"])), o15["n"])
+    lo, hi = wilson_interval(round(o15["obs"] * o15["n"]), o15["n"])
     assert o15["outside"] is bool(not (lo <= o15["prev"] <= hi))
     for m in s["markets"]:
         assert abs(m["delta"] - (m["brier"] - m["brier_base"])) < 1e-12

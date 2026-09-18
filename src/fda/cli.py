@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC
 
 import typer
 from rich.console import Console
@@ -217,7 +218,7 @@ def predict_cmd(
     lontana mostra il modello e i segnaposto onesti per ciò che la fonte non ha ancora pubblicato.
     """
     import warnings
-    from datetime import datetime, timedelta, timezone
+    from datetime import datetime, timedelta
 
     import pandas as pd
 
@@ -232,7 +233,7 @@ def predict_cmd(
     store = Store()
     hc = HistoryClient()
     fixtures = store.read("fixtures")
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     yr = season_start_year()
     cal = from_store(store)
     if not cal.is_identity:
@@ -289,7 +290,7 @@ def predict_cmd(
 @app.command("simulate")
 def simulate_cmd(
     # stesso stile degli altri comandi (typer richiede la chiamata nel default)
-    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     sims: int = typer.Option(10000, help="Numero di stagioni simulate per lega"),
     seasons_back: int = typer.Option(3, help="Stagioni storiche oltre a quella corrente"),
 ) -> None:
@@ -313,7 +314,7 @@ def simulate_cmd(
 
 @app.command("backtest")
 def backtest_cmd(
-    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     seasons_back: int = typer.Option(3, help="Stagioni storiche da scaricare oltre a quella corrente"),
     step_days: int = typer.Option(14, help="Ampiezza della finestra di valutazione, in giorni"),
     min_train: int = typer.Option(200, help="Partite minime di storico prima di iniziare a valutare"),
@@ -408,7 +409,7 @@ def calibrate_cmd(
 
 @app.command("lab")
 def lab_cmd(
-    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),  # noqa: B008
+    league_keys: list[str] = typer.Argument(None, help="Es. ITA1 ENG1 (vuoto = tutti)"),
     seasons_back: int = typer.Option(3, help="Stagioni storiche oltre a quella corrente"),
     step_days: int = typer.Option(28, help="Ampiezza della finestra di valutazione, in giorni"),
     min_train: int = typer.Option(600, help="Partite minime di storico prima di valutare"),
@@ -451,7 +452,7 @@ def lab_cmd(
                     h["league_key"] = lg.key
                     frames.append(h)
                     console.print(f"{lg.name}: {len(h)} gare di storico")
-            except Exception as exc:  # noqa: BLE001 — una lega senza storico non ferma il laboratorio
+            except Exception as exc:
                 console.print(f"[yellow]{lg.name}: storico saltato ({type(exc).__name__}: {exc})[/yellow]")
         hist_all = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if hist_all.empty:
@@ -469,7 +470,7 @@ def lab_cmd(
             store.close()
             return
     console.print(f"candidati: {len(wanted)} · finestre di {step_days} giorni · min_train {min_train}"
-                  f" · calibrazione {'λ×%.2f ρ%+.2f' % (cal.lambda_scale, cal.rho_shift) if not cal.is_identity else 'identità'}")
+                  f" · calibrazione {f'λ×{cal.lambda_scale:.2f} ρ{cal.rho_shift:+.2f}' if not cal.is_identity else 'identità'}")
     rows = lab.walk_forward(hist_all, wanted, step_days=step_days, min_train=min_train,
                             calibration=cal, max_windows=max_windows or None,
                             self_calibrate=self_calibrate)
@@ -593,8 +594,6 @@ def daily_cmd(
     ``mercati-monitor`` → ``simulate`` → ``build``. Con ``--skip-predict`` restano
     ``collect`` e ``build``.
     """
-    from typer.testing import CliRunner  # noqa: F401  (import di controllo)
-
     # DETAIL_WINDOW_DAYS: i dettagli (incluse le coordinate stadio) sono raccolti per l'intera
     # finestra "prossime", così il meteo previsionale Open-Meteo può colmare il vuoto FotMob.
     collect_cmd(league_keys=league_keys, past_days=3, future_days=DETAIL_WINDOW_DAYS,
@@ -602,7 +601,7 @@ def daily_cmd(
     if not skip_predict:
         try:  # calibrazione della griglia dal backtest del run precedente (solo dati passati)
             calibrate_cmd()
-        except Exception as exc:  # noqa: BLE001 — senza calibrazione si pubblica il modello grezzo
+        except Exception as exc:
             console.print(f"[red]calibrate fallito: {exc}[/red]")
         try:  # tutto il calendario: zero richieste in più, il modello usa solo storico e squadre
             predict_cmd(league_keys=league_keys, seasons_back=3, days_ahead=0)
@@ -610,11 +609,11 @@ def daily_cmd(
             console.print(f"[red]predict fallito: {exc}[/red]")
         try:  # backtest fuori campione: campione ampio per leggere la calibrazione senza rumore
             backtest_cmd(league_keys=league_keys, seasons_back=3, step_days=14, min_train=200)
-        except Exception as exc:  # noqa: BLE001 — il backtest non deve bloccare il sito
+        except Exception as exc:
             console.print(f"[red]backtest fallito: {exc}[/red]")
         try:  # monitoraggio mercati binari sul backtest appena rigenerato (docs/21 P3-b)
             mercati_monitor_cmd()
-        except Exception as exc:  # noqa: BLE001 — il monitoraggio non deve bloccare il sito
+        except Exception as exc:
             console.print(f"[red]mercati-monitor fallito: {exc}[/red]")
         try:  # Monte Carlo stagione: fallisce in isolato, il sito esce comunque
             from .models.season_sim import simulate_all
@@ -623,6 +622,6 @@ def daily_cmd(
             store = Store()
             simulate_all(league_keys or None, store=store, n_sims=10000)
             store.close()
-        except Exception as exc:  # noqa: BLE001 — la simulazione non deve bloccare il sito
+        except Exception as exc:
             console.print(f"[red]simulate fallito: {exc}[/red]")
     build_cmd()
