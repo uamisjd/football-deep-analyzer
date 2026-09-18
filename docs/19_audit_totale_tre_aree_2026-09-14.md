@@ -407,7 +407,7 @@ perché una sessione futura non perda tempo a ritestarlo.
 
 ---
 
-## 1.4 [P1] Difetto del protocollo: la griglia degli iperparametri non è pre-registrata
+## 1.4 [P1] ✅ **FATTO 2026-09-18** — Difetto del protocollo: la griglia degli iperparametri non è pre-registrata
 
 **Osservato.** Lo stesso identico esperimento (§1.3) **passa** i criteri di `docs/00 §D`
 (IC95 interamente negativo + 6/7 leghe) se la griglia si ferma a 1,12 e **non li passa** se arriva
@@ -448,6 +448,15 @@ stessa famiglia provati nella stessa run. Regola da scrivere in `docs/00 §D`:
 **Verifica.** `fda lab` produce `model_lab.parquet` con le colonne `grid_dichiarata` e `n_tentativi`
 popolate per tutti i candidati; `scripts/verdetto_lab.py` stampa quanti tentativi hanno preceduto
 la promozione.
+
+**Chiusura (2026-09-18, giro 32 di `STATO.md`).** `Candidate.grid` pre-registrata in `lab.py`
+(griglie dichiarate anche per le varianti già esistenti: ξ (0,0010-0,0030), shrink (0-16),
+w DC (0,5-0,85), k Elo (10-40), HFA (40-80), valore di riferimento compreso), colonne
+`grid_dichiarata`/`n_tentativi` marziate da `walk_forward` e pubblicate da `summarize()` e
+`per_league()` in `model_lab.parquet` (i run precedenti restano con le loro colonne, il verdetto
+li stampa come «n/d»), regola scritta in `docs/00` §D, `verdetto_lab.py` stampa tentativi e
+griglia accanto al verdetto (anche il ramo PROMUOVERE, con avviso se la griglia manca).
+Suite 388 passed (+3), ruff 173 = baseline.
 
 ---
 
@@ -2446,7 +2455,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P1.8 | ✅ **FATTO** (2026-09-16, `docs/22` §1) — il difetto era di **formattazione**, non di calcolo: 48/165 schede pubblicavano una doppia chance che contraddice l'1X2 stampato. Ora i tre valori sono la somma di due dei tre numeri della barra + `_assert_dc_coerente()` in `ensemble()`/`calibrated_prediction()` + invariante `verify_site [30]` | `predict.py`, `match.html`, `verify_site.py` | basso |
 | P1.9 | ✅ **FATTO** (2026-09-16, `docs/22` §3; **corretto** lo stesso giorno in `docs/23` §3 — il gate in CI ha trovato due difetti: la riga sospesa contava le richieste dello scoreboard e una sonda fallita riapriva la fonte, 5× il costo dichiarato; **esteso** lo stesso giorno in `docs/23` §5 allo **scoreboard**, l'unica fase ESPN ancora fuori dal backoff: misurato 403 su **7/7 leghe** e mai una riga di dati, 35 richieste/giorno per 0 righe + 7 righe rosse in *Stato fonti*) — ESPN 403 da **76 run consecutivi** (14 richieste/run): `src/fda/backoff.py` con stato derivato da `source_status`, pausa e sonda ogni 4 run, pill **SOSPESO** in *Stato fonti*, invariante `[28]` estesa | `backoff.py`, `collect.py`, `status.html` | basso |
 | P1.10 | ✅ **FATTO** (2026-09-16, `docs/22` §4) — motivo delle 0 chiamate già pubblicato nel giro 16; aggiunta la **sonda settimanale reale** (`scripts/probe_fonti.py` + passo nel workflow `lab`, esito in `source_probe.parquet` e in *Stato fonti* con la data; oltre 14 giorni la pagina dichiara «sonda ferma») | `probe_fonti.py`, `lab.yml`, `status.html` | basso |
-| P1.11 | Griglia pre-registrata nel laboratorio (`Candidate.grid`, `n_tentativi`) | `lab.py`, `docs/00 §D` | basso |
+| P1.11 | ✅ **FATTO** (2026-09-18, giro 32 di `STATO.md`) — `Candidate.grid` pre-registrata in `lab.py` (griglie dichiarate anche per le varianti esistenti: ξ, shrink, w, k, HFA), colonne `grid_dichiarata`/`n_tentativi` in `summarize()`/`per_league()` → `model_lab.parquet`, regola in `docs/00` §D, `verdetto_lab.py` stampa i tentativi | `lab.py`, `docs/00 §D` | chiuso |
 | P1.12 | Griglia di calibrazione allineata ai bounds (o claim ridotto in `info.html`) | `calibration.py` | **alto** se si rifa il fit → preferire il claim ridotto |
 | P1.13 | ✅ **FATTO** (2026-09-16, `docs/21` §19.6) — skip-link + footer h3→h2; scope e main già coperti (P2-8a); test strutturale | | `base.html` + ~15 template | medio (esteso) |
 | P1.14 | ✅ **FATTO** (2026-09-16, `docs/23`) — `shrink_rate()` unitario in `src/fda/site/rates.py` (media dei pari e peso `k` = 0,25 × mediana del denominatore, **misurati dal run**), regola di pubblicazione (≥270′ grezzo · 90-270′ grezzo + ◎ stima · <90′ solo ◇ stima), percentili sulla stima, `p90_shrunk()` morto eliminato. Il turno ha anche chiuso **due difetti nuovi**: le **quote** (passaggi %, duelli %) pubblicate come rate per 90 con il tooltip «89,2%/90′» e il `◇` che poteva restare vuoto in `match.html`. Invariante nuova **`[32]`** (schede giocatore + schede partita) | `rates.py` (nuovo), `players.py`, `verify_site.py`, template | chiuso |
