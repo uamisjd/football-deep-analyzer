@@ -121,6 +121,32 @@ CANDIDATES: tuple[Candidate, ...] = (
               grid=(40.0, 60.0, 80.0)),
     Candidate("elo_hfa80", "Elo vantaggio casa 80", "rating", "elo", {"k": 20.0, "hfa": 80.0},
               grid=(40.0, 60.0, 80.0)),
+    # P2.9 (docs/19 §1.3) — γ-sharpening del rapporto delle λ: candidato **già respinto**,
+    # tenuto nel set perché il verdetto sia riproducibile invece che sepolto in un documento.
+    # La griglia dichiarata è quella ONESTA [1,00 … 1,40]: con la griglia corta [0,94; 1,12]
+    # lo stesso esperimento «passava» il protocollo. È il caso che ha motivato la regola
+    # P1.11 (`docs/00` §D): si dichiara prima, così il confronto è fra griglie, non fra esiti.
+    Candidate("gamma_112", "γ-sharpening 1,12 sul rapporto λ (respinto, docs/19 §1.3)",
+              "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "gamma": 1.12},
+              grid=(1.00, 1.08, 1.12, 1.20, 1.24, 1.32, 1.40)),
+    Candidate("gamma_124", "γ-sharpening 1,24 sul rapporto λ (ottimo della griglia onesta)",
+              "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "gamma": 1.24},
+              grid=(1.00, 1.08, 1.12, 1.20, 1.24, 1.32, 1.40)),
+    # P2.10 (docs/19 §1.2) — temperatura sul vettore 1X2: il modello è sotto-confidente sui
+    # decili alti (0,728 previsto contro 0,799 osservato). τ>1 concentra senza cambiare
+    # l'argmax. Griglia pre-registrata e simmetrica attorno a 1,00, così il candidato può
+    # anche **peggiorare**: una griglia solo-sopra-1 presupporrebbe la conclusione.
+    Candidate("tau_090", "Temperatura 1X2 τ 0,90 (appiattisce)", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 0.90},
+              grid=(0.90, 1.00, 1.10, 1.20, 1.30)),
+    Candidate("tau_110", "Temperatura 1X2 τ 1,10 (concentra)", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 1.10},
+              grid=(0.90, 1.00, 1.10, 1.20, 1.30)),
+    Candidate("tau_120", "Temperatura 1X2 τ 1,20 (concentra molto)", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 1.20},
+              grid=(0.90, 1.00, 1.10, 1.20, 1.30)),
 )
 
 
@@ -384,9 +410,15 @@ def _predict_candidate(cand: Candidate, fitted: Any, all_fitted: dict[str, Any],
         # ``ensemble``: **lo stesso codice del sito**, così il laboratorio misura esattamente
         # ciò che verrebbe pubblicato, non una reimplementazione che le assomiglia
         if cand.kind == "production" or cand.params.get("mode") == "tilt":
-            out = ensemble(dc, e, w_dc=w, mode=str(cand.params.get("mode", ENSEMBLE_MODE))) if e else dc
+            mode = str(cand.params.get("mode", ENSEMBLE_MODE))
+            if mode in ("gamma", "temperatura"):        # post-processi: la ricetta resta il tilt
+                mode = ENSEMBLE_MODE
+            out = ensemble(dc, e, w_dc=w, mode=mode) if e else dc
             lh, la = float(out["lambda_home"]), float(out["lambda_away"])
             rho = float(out.get("dc_rho", 0.0) or 0.0)
+            # P2.9: γ-sharpening del rapporto delle λ, a totale invariato (docs/19 §1.3)
+            if "gamma" in cand.params:
+                lh, la = sharpen_lambda_ratio(lh, la, float(cand.params["gamma"]))
             # fedele alla produzione: una sola griglia (quella pubblicata) per 1X2 e mercati
             row = _row_from_grid(tau_grid(lh, la, rho, size=GRID_SIZE), lh, la, rho)
         else:
@@ -399,7 +431,14 @@ def _predict_candidate(cand: Candidate, fitted: Any, all_fitted: dict[str, Any],
             # la superficie qui è la miscela: va corretta nel livello senza essere sostituita
             # da una griglia DC (vedi _apply_grid_level)
             return _apply_grid_level(_row_from_grid(grid, lh, la, rho), grid, cal)
-        return _apply_calibration(row, cal)
+        row = _apply_calibration(row, cal)
+        # P2.10 (docs/19 §1.2): la temperatura si applica **dopo** la calibrazione, perché
+        # _apply_calibration ricostruisce la riga dalla griglia e cancellerebbe il ritocco.
+        # Tocca solo l'1X2: i mercati sui gol restano quelli della matrice (limite dichiarato).
+        if "tau" in cand.params:
+            row["p_home"], row["p_draw"], row["p_away"] = recalibrate_1x2(
+                row["p_home"], row["p_draw"], row["p_away"], float(cand.params["tau"]))
+        return row
 
     # famiglia sui gol
     if isinstance(fitted, DixonColesModel):
@@ -489,6 +528,58 @@ def _apply_grid_level(row: dict[str, Any], grid: np.ndarray, cal: Calibration) -
 def _row_from_grid(grid: np.ndarray, lh: float, la: float, rho: float) -> dict[str, Any]:
     m = grid_markets_many(np.asarray(grid, dtype=float)[None, :, :])
     return {k: float(v[0]) for k, v in m.items()} | {"lambda_home": lh, "lambda_away": la, "rho": rho}
+
+
+def sharpen_lambda_ratio(lh: float, la: float, gamma: float) -> tuple[float, float]:
+    """γ-sharpening sul **rapporto** delle λ, a totale dei gol invariato (P2.9).
+
+    Ipotesi di `docs/19` §1.3: il modello è troppo piatto sui decili alti (assegna 0,728
+    dove si osserva 0,799), quindi esporre λ_home/λ_away a γ>1 dovrebbe concentrare le code
+    senza cambiare il livello dei gol (che la calibrazione ha già centrato).
+
+    **Candidato già testato e RESPINTO**: il guadagno RPS dipende dalla griglia
+    (−0,000457 con [0,94; 1,12] → passerebbe; −0,000417 con IC [−0,001037; +0,000203] e
+    4/7 leghe con [1,00; 1,40] → non passa) e si paga con Brier mercati gol +0,00014 e
+    pareggio 25,20% contro 25,6% osservato. Resta qui, con la **griglia larga**
+    pre-registrata, perché una sessione futura non lo ritesti da capo (P2.9).
+    """
+    g = float(gamma)
+    a, b = float(lh), float(la)
+    total = a + b
+    if not np.isfinite(total) or total <= 0 or g == 1.0:
+        return a, b
+    ratio = a / b if b > 1e-9 else float("inf")
+    if not np.isfinite(ratio):
+        return a, b
+    r2 = ratio ** g
+    a2 = total * r2 / (1.0 + r2)
+    return float(a2), float(total - a2)
+
+
+def recalibrate_1x2(p_home: float, p_draw: float, p_away: float,
+                    tau: float) -> tuple[float, float, float]:
+    """Riscalatura di temperatura sul vettore 1X2 (P2.10, `docs/19` §1.2).
+
+    ``tau>1`` concentra, ``tau<1`` appiattisce. L'argmax è invariante, quindi l'esito
+    indicato non cambia mai: si muove solo quanta massa il modello mette sul favorito —
+    esattamente il difetto misurato nei decili alti (−0,071 sul decimo decile).
+
+    Limite dichiarato: agisce **solo** sul vettore 1X2, non sulla matrice dei punteggi,
+    quindi i mercati derivati (Over/Under, BTTS, porte inviolate) restano quelli della
+    griglia. È il motivo per cui è un candidato del laboratorio e non un passo di
+    produzione: adottarlo significherebbe rompere la coerenza «una sola matrice» che il
+    progetto mantiene (vedi la docstring di `calibration.py`).
+    """
+    v = np.clip(np.asarray([p_home, p_draw, p_away], dtype=float), 1e-9, 1.0)
+    t = float(tau)
+    if t == 1.0 or not np.isfinite(t):
+        return float(v[0]), float(v[1]), float(v[2])
+    q = np.power(v, t)
+    s = float(q.sum())
+    if s <= 0 or not np.isfinite(s):
+        return float(v[0]), float(v[1]), float(v[2])
+    q = q / s
+    return float(q[0]), float(q[1]), float(q[2])
 
 
 def _apply_calibration(row: dict[str, Any], cal: Calibration) -> dict[str, Any]:

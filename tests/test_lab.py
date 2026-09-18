@@ -426,3 +426,95 @@ def test_con_calibrazione_attiva_la_miscela_resta_diversa_dal_dc():
     assert mix["p_home"] + mix["p_draw"] + mix["p_away"] == pytest.approx(1.0, abs=1e-9)
     # le λ pubblicate descrivono la griglia pubblicata, non quella di un altro candidato
     assert mix["lambda_home"] == pytest.approx(mix["lambda_home_raw"] * 0.9135, rel=0.15)
+
+
+# --- P2.9 / P2.10: candidati del laboratorio con griglia pre-registrata (docs/19 §1.2-§1.4) ---
+
+
+def test_gamma_sharpening_non_cambia_il_totale_dei_gol():
+    """P2.9: γ agisce sul **rapporto** delle λ, il livello dei gol resta quello calibrato."""
+    lh, la = 1.8, 0.9
+    for gamma in (1.0, 1.12, 1.24, 1.40):
+        a, b = lab.sharpen_lambda_ratio(lh, la, gamma)
+        assert a + b == pytest.approx(lh + la, abs=1e-9), "il totale dei gol deve restare invariato"
+    # γ>1 concentra: il rapporto si allontana da 1, il favorito diventa più favorito
+    a, b = lab.sharpen_lambda_ratio(lh, la, 1.24)
+    assert a / b > lh / la
+    # γ=1 è esattamente l'identità (nessun ritocco silenzioso della produzione)
+    assert lab.sharpen_lambda_ratio(lh, la, 1.0) == (lh, la)
+
+
+def test_temperatura_1x2_normalizza_e_non_cambia_l_esito_indicato():
+    """P2.10: τ sposta massa sul favorito ma l'argmax è invariante (docs/19 §1.2)."""
+    p = (0.50, 0.28, 0.22)
+    for tau in (0.90, 1.0, 1.10, 1.30):
+        q = lab.recalibrate_1x2(*p, tau)
+        assert sum(q) == pytest.approx(1.0, abs=1e-9), "il vettore deve restare una distribuzione"
+        assert q.index(max(q)) == 0, "la temperatura non deve cambiare l'esito indicato"
+    assert lab.recalibrate_1x2(*p, 1.0) == pytest.approx(p, abs=1e-12)
+    # τ>1 concentra sul favorito, τ<1 appiattisce: è il verso del difetto misurato nei decili
+    assert lab.recalibrate_1x2(*p, 1.20)[0] > p[0]
+    assert lab.recalibrate_1x2(*p, 0.90)[0] < p[0]
+
+
+def test_i_candidati_p29_p210_dichiarano_una_griglia_che_contiene_il_valore_provato():
+    """Regola P1.11 (`docs/00` §D): niente candidato che cerca un iperparametro senza griglia."""
+    nuovi = {c.key: c for c in CANDIDATES
+             if "gamma" in c.params or "tau" in c.params}
+    assert set(nuovi) == {"gamma_112", "gamma_124", "tau_090", "tau_110", "tau_120"}
+    for cand in nuovi.values():
+        assert cand.grid, f"{cand.key} senza griglia pre-registrata"
+        valore = cand.params.get("gamma", cand.params.get("tau"))
+        assert valore in cand.grid, f"{cand.key}: il valore provato non è nella griglia dichiarata"
+        assert tuple(sorted(cand.grid)) == tuple(cand.grid), f"{cand.key}: griglia non ordinata"
+
+
+def test_la_griglia_gamma_e_quella_onesta_non_quella_che_faceva_passare_il_candidato():
+    """Il cuore di P2.9: con [0,94; 1,12] il candidato «passava», con [1,00; 1,40] no.
+
+    La griglia dichiarata deve essere quella larga, altrimenti si ri-registra proprio il
+    difetto di protocollo che P1.11 esiste per impedire (`docs/19` §1.3 e §1.4).
+    """
+    gamma = next(c for c in CANDIDATES if c.key == "gamma_112")
+    assert max(gamma.grid) == pytest.approx(1.40), "griglia troncata: tornerebbe il difetto di §1.3"
+    assert min(gamma.grid) == pytest.approx(1.00)
+    assert 1.24 in gamma.grid, "l'ottimo della griglia onesta deve essere fra i valori dichiarati"
+
+
+def test_la_griglia_tau_e_simmetrica_e_ammette_il_peggioramento():
+    """Una griglia solo sopra 1,00 presupporrebbe la conclusione invece di misurarla."""
+    tau = next(c for c in CANDIDATES if c.key == "tau_110")
+    assert min(tau.grid) < 1.0 < max(tau.grid), "la griglia deve poter dire anche «peggiora»"
+    assert 1.0 in tau.grid, "il valore di riferimento (nessun ritocco) deve essere nella griglia"
+
+
+def test_i_nuovi_candidati_girano_nel_walk_forward_e_portano_la_griglia_nelle_righe():
+    """Prova end-to-end: i candidati nuovi producono righe valide e marcate (P1.11)."""
+    cands = tuple(c for c in CANDIDATES if c.key in {BASELINE, "gamma_124", "tau_120"})
+    rows = walk_forward(synthetic_hist(), cands, step_days=28, min_train=60, max_windows=3)
+    assert not rows.empty
+    for key in ("gamma_124", "tau_120"):
+        sub = rows[rows["candidate"] == key]
+        assert not sub.empty, f"{key} non ha prodotto righe"
+        assert (sub["grid_dichiarata"].str.len() > 0).all(), f"{key} senza griglia nelle righe"
+        # le probabilità restano una distribuzione valida dopo il post-processo
+        tot = sub[["p_home", "p_draw", "p_away"]].sum(axis=1)
+        assert np.allclose(tot, 1.0, atol=1e-6), f"{key}: 1X2 non normalizzato"
+    # la temperatura tocca l'1X2 ma NON i mercati sui gol (limite dichiarato in docstring)
+    base = rows[rows["candidate"] == BASELINE].reset_index(drop=True)
+    tau = rows[rows["candidate"] == "tau_120"].reset_index(drop=True)
+    assert np.allclose(base["p_over25"], tau["p_over25"], atol=1e-9), \
+        "τ non deve muovere i mercati derivati dalla matrice"
+    assert not np.allclose(base["p_home"], tau["p_home"], atol=1e-6), "τ=1,20 deve muovere l'1X2"
+
+
+def test_il_gamma_non_tocca_i_gol_attesi_totali_nel_walk_forward():
+    """Controprova end-to-end di P2.9: stesso totale λ della produzione, forma diversa."""
+    cands = tuple(c for c in CANDIDATES if c.key in {BASELINE, "gamma_124"})
+    rows = walk_forward(synthetic_hist(), cands, step_days=28, min_train=60, max_windows=3)
+    base = rows[rows["candidate"] == BASELINE].reset_index(drop=True)
+    gam = rows[rows["candidate"] == "gamma_124"].reset_index(drop=True)
+    assert np.allclose(base["lambda_home"] + base["lambda_away"],
+                       gam["lambda_home"] + gam["lambda_away"], atol=1e-6), \
+        "il γ-sharpening deve lasciare invariato il totale dei gol attesi"
+    assert not np.allclose(base["lambda_home"], gam["lambda_home"], atol=1e-6)
