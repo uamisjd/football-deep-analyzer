@@ -232,7 +232,7 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 .day-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:6px 2px 10px;border-bottom:1px solid var(--line)}
 .day-heading h2{margin:0}
 .day-count{color:var(--mut);font-size:12px;font-weight:600}
-.match-card{display:block;margin:10px 0 0;padding:14px 14px 14px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;transition:border-color .14s,background .14s,transform .14s; content-visibility:auto; contain-intrinsic-size: 280px}
+.match-card{display:block;margin:10px 0 0;padding:14px 14px 14px;background:var(--bg2);border:1px solid var(--line);border-radius:12px;transition:border-color .14s,background .14s,transform .14s; content-visibility:auto; contain-intrinsic-size: auto 280px}
 .match-card:hover{background:var(--surface2);border-color:var(--line2);transform:translateY(-1px)}
 .match-card[hidden],.day-group[hidden]{display:none}
 .match-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
