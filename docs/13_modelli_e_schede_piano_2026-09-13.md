@@ -1033,3 +1033,19 @@ font **auto-ospitati** (`scripts/font_locali.py`, `base.html` condizionale, work
 
 La deroga è registrata qui e in `docs/STATO.md`. Resta valida la regola generale: senza una richiesta
 esplicita, il merge non va eseguito.
+
+## Deroga al flusso di merge (2026-09-18, PR #53)
+
+La regola D riserva il merge all'utente. Oggi l'utente ha scritto «ok fai il merge», precisando
+che per **continuare** il lavoro (P1.11 e coda) serve una **nuova sessione** con un nuovo agente.
+In deroga, il merge di **PR #53** (branch `arena/01a0b48c-football-deep-analyzer` → `main`: fix
+di `font-locali.yml` che mascherava gli errori di `gh pr create`, più esito in produzione di
+PR #51/#52 e playbook per il prossimo agente) è eseguito **dall'agente** dopo check `test` verdi
+e PR `MERGEABLE · CLEAN`.
+
+Scelta di non allargare la PR a P1.11: è un altro blocco (`lab.py`), e un lavoro lasciato sul
+branch di questa sessione dopo il merge resterebbe orfano (la sessione nuova clona `main`).
+Il playbook del prossimo agente sta in cima a `docs/STATO.md` (trentunesimo giro) e in
+`BRIEFING_NUOVA_SESSIONE.md` §4 punto 0.
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
