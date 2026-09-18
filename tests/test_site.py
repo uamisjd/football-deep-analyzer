@@ -317,7 +317,9 @@ def test_site_build_end_to_end(tmp_path):
     # card Confronto di stagione (tabella FotMob): Inter in tabella, Monza no → lato «—», nessun evidenziato
     assert "Confronto di stagione" in post and "Punti/gara" in post
     assert "9 in 3 gare" in post and "3,00" in post and "media gol del campionato" in post
-    cmp = post[post.find("Confronto di stagione"):post.find("Contesto")]
+    # il taglio usa l'ancora della card «Contesto»: la parola «Contesto» compare anche nella barra
+    # d'indice in cima alla pagina (P1.3), e tagliare lì darebbe una fetta vuota
+    cmp = post[post.find("Confronto di stagione"):post.find('id="contesto"')]
     assert "—</td>" in cmp and 'class="best"' not in cmp   # Monza assente: niente evidenziazione nel confronto
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
@@ -508,6 +510,51 @@ def test_xg_e_ppda_una_volta_sola(tmp_path):
     assert "fatti contro" not in arrivo and "a partita" not in arrivo   # niente sintesi ripetuta
     assert "PPDA" not in arrivo
     assert "Scontro tattico" in arrivo                          # al posto del numero, il rimando
+    st.close()
+
+
+def test_indice_della_scheda_dice_i_titoli_veri(tmp_path):
+    """P1.3 (docs/28 §2): le voci dell'indice dicono il titolo della sezione che aprono.
+
+    Prima erano quattro e una sola azzeccava: «Dati e contesto» atterrava su «Confronto di
+    stagione», «Squadre» sul nome di una squadra, «Post-partita» su «Il prossimo impegno»; le card
+    più pesanti (Scontro tattico, I giocatori, Mercato, Panchina, Vita del club, Verifica) non
+    avevano un'ancora. Qui si verifica la corrispondenza voce → titolo sulle due schede campione,
+    con la stessa regola dell'invariante [33] di `verify_site`.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+
+    for nome in ("5749669", "5749645"):
+        html = (out / "partite" / f"{nome}.html").read_text(encoding="utf-8")
+        nav = html.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+        voci = re.findall(r'<a href="#([^"]+)">([^<]+)</a>', nav)
+        assert len(voci) >= 8, f"{nome}: indice troppo corto ({len(voci)} voci)"
+        for ancora, etichetta in voci:
+            assert f'id="{ancora}"' in html, f"{nome}: indice → #{ancora}, sezione assente"
+            i = html.index(f'id="{ancora}"')
+            titolo = re.sub(r"<[^>]+>", " ", html[html.index("<h2", i):html.index("</h2>", i)])
+            titolo = re.sub(r"\s+", " ", titolo).strip().lower()
+            assert titolo.startswith(etichetta.lower()), f"{nome}: «{etichetta}» → «{titolo}»"
+
+    # le sezioni che erano irraggiungibili hanno un'ancora e una voce: se la sezione c'è nella
+    # pagina, la voce dell'indice c'è (il caso «Mercato» qui non ha dati: il campione di prova
+    # non ha movimenti, e in quel caso la pagina non ha la sezione né la voce)
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    nav = pre.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+    for etichetta, ancora in (("Scontro tattico", "scontro"), ("I giocatori", "giocatori"),
+                              ("Vita del club", "notizie"), ("Verifica", "verifica"),
+                              ("Panchina", "panchina"), ("Come arrivano", "arrivi"),
+                              ("Le due squadre", "squadre"), ("Contesto", "contesto")):
+        if f'id="{ancora}"' not in pre:       # sezione senza dati in questa gara: niente voce
+            continue
+        assert f'<a href="#{ancora}">{etichetta}</a>' in nav, f"voce mancante: {etichetta}"
+    for ancora in ("lettura", "squadre", "contesto", "verifica"):     # ci sono sempre
+        assert f'id="{ancora}"' in pre and f'href="#{ancora}"' in nav
+    assert '<h2 class="as-h2" style="grid-column:1/-1">Le due squadre</h2>' in pre
+    # il link «→ precedenti» atterra ora sulla card che li contiene, non in cima al gruppo
+    assert '<div class="card" id="contesto">' in pre
     st.close()
 
 

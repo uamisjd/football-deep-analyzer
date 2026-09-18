@@ -116,7 +116,7 @@ def leaf_cards(root: Node) -> list[tuple[str, int, int, Node]]:
     """Card-foglia: elemento di flusso con un h2 dentro, che non ne contiene altre.
 
     È la stessa definizione usata per il censimento: ogni blocco titolato una volta
-    sola, così una griglia (``#squadre``, ``#contesto``) non viene contata due volte.
+    sola, così una griglia (``#squadre``, ``#club``) non viene contata due volte.
 
     Ogni card torna come ``(titolo, caratteri_nel_DOM, caratteri_visibili, nodo)``.
     """

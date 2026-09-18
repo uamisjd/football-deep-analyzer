@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+import unicodedata
 from collections import Counter
 from html import unescape as html_unescape
 from html.parser import HTMLParser
@@ -2035,6 +2036,66 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+#: L'indice della scheda partita (`match-jump`) e il titolo della sezione che ogni voce apre.
+NAV_LINK = re.compile(r'<a href="(#[^"]+)">([^<]+)</a>')
+NAV_HEAD = re.compile(r"<h([23])[^>]*>(.*?)</h\1>", re.DOTALL)
+
+
+def _testo_confrontabile(s: str) -> str:
+    """Testo per confrontare etichetta e titolo: senza tag, minuscolo, senza accenti."""
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = unicodedata.normalize("NFKD", html_unescape(s))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+#: Le sezioni che l'indice della scheda partita deve saper raggiungere quando esistono nella
+#: pagina: sono le card pesanti rimaste senza ancora fino alla P1.3 (`docs/28` §2).
+NAV_SEZIONI = ("lettura", "previsione", "scontro", "arrivi", "giocatori", "squadre", "panchina",
+               "mercato", "notizie", "contesto", "statistiche", "cronaca", "verifica")
+
+
+def check_nav(site: Path) -> tuple[list[str], int]:
+    """[33] L'indice della scheda partita: ogni voce dice il titolo della sezione che apre.
+
+    Fino alla P1.3 (`docs/28` §2) la barra prometteva quattro voci e ne azzeccava una: «Dati e
+    contesto» atterrava su «Confronto di stagione» e le card più pesanti non avevano ancora. Ora
+    l'etichetta è l'inizio del titolo della sezione di destinazione, e questa invariante lo
+    ricalcola su ogni scheda: un'etichetta che invecchia (o una sezione che sparisce) fa fallire
+    il gate invece di mentire al lettore.
+    """
+    partite = site / "partite"
+    if not partite.is_dir():
+        return [], 0
+    fails: list[str] = []
+    checks = 0
+    for page in sorted(partite.glob("*.html")):
+        raw = page.read_text(encoding="utf-8")
+        if 'class="match-jump"' not in raw:
+            continue
+        nav = raw.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+        for href, etichetta in NAV_LINK.findall(nav):
+            checks += 1
+            pos = raw.find(f'id="{href[1:]}"')
+            if pos < 0:
+                fails.append(f"{page.name}: indice → {href}, sezione assente dalla pagina")
+                continue
+            testa = NAV_HEAD.search(raw, pos)
+            if not testa:
+                fails.append(f"{page.name}: indice → {href}, sezione senza titolo h2/h3")
+                continue
+            titolo = _testo_confrontabile(testa.group(2))
+            if not titolo.startswith(_testo_confrontabile(etichetta)):
+                fails.append(f"{page.name}: indice «{etichetta}» → sezione «{titolo[:48]}»")
+        # e l'altra direzione: una sezione pesante che c'è deve essere raggiungibile dall'indice
+        for ancora in NAV_SEZIONI:
+            if f'id="{ancora}"' in raw and f'href="#{ancora}"' not in nav:
+                checks += 1
+                fails.append(f"{page.name}: sezione «{ancora}» presente ma fuori dall'indice")
+    print(f"[33] voci dell'indice della scheda partita verificate: {checks}")
+    return fails, checks
+
+
 def check_assets(site: Path) -> tuple[list[str], int]:
     """[29] CSS esterno (docs/19 P0.5): link giusto in ogni pagina, zero <style> inline.
 
@@ -2180,6 +2241,9 @@ def main() -> int:
     stato, stato_checks = check_status(site)
     fails += stato
     checks += stato_checks
+    nav, nav_checks = check_nav(site)
+    fails += nav
+    checks += nav_checks
     stime, stime_checks = check_stime(site)
     fails += stime
     checks += stime_checks

@@ -141,7 +141,7 @@ il dato di stagione si ripete in **mediana 1 altro riquadro** (prima 3), le occo
 (188–376, tutte e 66). Lo strumento conta ora i valori canonici della card squadra (hero incluso nel
 conteggio), così il confronto prima/dopo usa la stessa definizione.
 
-### P1.3 — La navigazione promette 4 sezioni, la pagina ne ha 21
+### P1.3 — La navigazione promette 4 sezioni, la pagina ne ha 21 ✅ APPLICATA il 2026-09-18
 
 **Osservato.** `match-jump` ha quattro link: «Sintesi · Previsione · Dati e contesto · Squadre». Le
 etichette non corrispondono ai titoli: «Dati e contesto» punta a `#contesto`, che comincia con
@@ -154,6 +154,19 @@ Panchina, Scontro tattico, I giocatori) non hanno un'ancora in nav.
 **Proposta.** Mini-indice (anche sticky su mobile) con i titoli reali, o `match-jump` esteso ai 6
 blocchi più pesanti; aggiungere `id` alle card oggi senza («Fatti rilevanti», «Come arrivano»,
 «I giocatori che decidono», «Contesto»).
+
+**Esito (2026-09-18, `docs/32`).** Fatta estendendo la barra ai titoli reali (non solo ai 6 più
+pesanti): pre-partita **4 → 11 voci**, tutte che dicono l'inizio del titolo della sezione che aprono
+(prima **66 voci corrette su 264**, una per scheda); post-partita 3 → 7 (prima 0 su 36). Ancore
+aggiunte a «Fatti rilevanti», «Come arrivano», «I giocatori che decidono», «Contesto»,
+«Statistiche», «Cronaca essenziale»; titolo al gruppo delle due squadre (`Le due squadre`) e al
+gruppo delle card del club, che smette di chiamarsi `#contesto` (ora `#club`) perché
+l'id «contesto» va alla card che ha quel nome — così «→ precedenti» atterra sui precedenti.
+**Le sei card più pesanti passano da 0 su 6 a 6 su 6 raggiungibili**; le card con un'ancora in
+indice, per scheda, da 1 a 9 su 20. Nuova invariante **[33]** in `verify_site` (2.987 voci
+verificate, in entrambe le direzioni: voce → titolo e sezione presente → voce presente): i controlli
+salgono da 97.903 a **100.890**. Costo: **+97 caratteri** di testo visibile per scheda (l'indice è
+testo nuovo). Il censimento delle card non cambia.
 
 ### P1.4 — «Verifica approfondita» aperta di default: 8,4% del testo ✅ APPLICATA il 2026-09-18
 
@@ -275,10 +288,12 @@ se il peso si è spostato davvero dove serve.
 
 ## 5. Prossimo passo
 
-**P1.1, P1.2 e P1.4 sono state applicate il 2026-09-18** — misure prima/dopo in
+**Tutti e quattro i P1 sono stati applicati il 2026-09-18** — misure prima/dopo in
 [`docs/29`](29_p1_1_vita_del_club_riga_unica_2026-09-18.md) (3.030 → 829 caratteri visibili sulla
 card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato di stagione ripetuto
-in 3 → 1 altri riquadri; −357 caratteri visibili per scheda) e
-[`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md) (−1.767 caratteri visibili per scheda;
-testo visibile mediano 20.577 → 18.807). Resta l'ultimo P1, **P1.3** (nav con le ancore reali), poi
-i P2 di §3.
+in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
+(verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
+(indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)**. In coda restano i
+**P2** di §3, in ordine di peso: P2.1 (legenda unica delle stime stabilizzate), P2.4 (separare
+«Contesto»), P2.2 (assenze in un posto solo), P2.3, P2.5, P2.6.
