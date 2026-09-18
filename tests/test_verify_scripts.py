@@ -329,3 +329,58 @@ def test_verify_site_quote_non_dichiarate_come_rate_per_90(tmp_path):
         '<td class="r"><span title="33,3%/90′">33,3%</span></td></tr>', encoding="utf-8")
     fails, _ = vs.check_stime(site)
     assert fails and any("37′ giocati" in f for f in fails)
+
+
+# --- [11e] presidio sul peso delle pagine (docs/19 §3.10) ---
+
+
+def _load_verify_site():
+    p = Path(__file__).parent.parent / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def test_il_tetto_sul_peso_delle_pagine_esiste_ed_e_quello_dichiarato():
+    """`docs/19` §3.10 dava questo presidio per esistente: non c'era (verificato su main)."""
+    vsite = _load_verify_site()
+    assert vsite.MAX_PAGE_KB == 900
+    # prossime.html contiene di proposito l'intero calendario: eccezione dichiarata, non
+    # un tetto alzato per tutti (che renderebbe il controllo inutile sulle altre pagine)
+    assert vsite.PAGINE_FUORI_TETTO["prossime.html"] > vsite.MAX_PAGE_KB
+
+
+def test_una_pagina_oltre_il_tetto_viene_segnalata(tmp_path):
+    """La regressione da intercettare: una pagina che gonfia senza che nessuno se ne accorga."""
+    vsite = _load_verify_site()
+    (tmp_path / "leggera.html").write_text("<html>ok</html>", encoding="utf-8")
+    (tmp_path / "pesante.html").write_text("<html>" + "x" * (901 * 1024) + "</html>",
+                                           encoding="utf-8")
+    fails, checks = vsite.check_page_weight(tmp_path)
+    assert checks == 2, "ogni pagina deve contare come un controllo"
+    assert len(fails) == 1
+    assert fails[0].startswith("pesante.html: pagina di ")
+    # il riepilogo raggruppa per la prima parola dopo «: »: deve essere una categoria,
+    # non una cifra (altrimenti il sommario elenca un numero diverso per ogni pagina)
+    assert fails[0].split(": ", 1)[1].split(" ")[0] == "pagina"
+
+
+def test_l_eccezione_dichiarata_non_viene_segnalata(tmp_path):
+    """`prossime.html` sta sopra 900 KB per scelta: non deve produrre un falso allarme."""
+    vsite = _load_verify_site()
+    (tmp_path / "prossime.html").write_text("<html>" + "x" * (1000 * 1024) + "</html>",
+                                            encoding="utf-8")
+    fails, checks = vsite.check_page_weight(tmp_path)
+    assert checks == 1
+    assert fails == []
+
+
+def test_anche_l_eccezione_ha_un_tetto(tmp_path):
+    """L'eccezione non è un permesso di crescere all'infinito: oltre il suo tetto, fallisce."""
+    vsite = _load_verify_site()
+    oltre = vsite.PAGINE_FUORI_TETTO["prossime.html"] + 10
+    (tmp_path / "prossime.html").write_text("<html>" + "x" * (oltre * 1024) + "</html>",
+                                            encoding="utf-8")
+    fails, _ = vsite.check_page_weight(tmp_path)
+    assert len(fails) == 1 and "prossime.html" in fails[0]

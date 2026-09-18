@@ -285,6 +285,43 @@ MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio
            "settembre", "ottobre", "novembre", "dicembre"]
 
 
+#: tetto al peso di una singola pagina HTML. `docs/19` §3.10 lo cita come presidio già
+#: esistente («il blocco [11e] con MAX_PAGE_KB = 900 intercetta la regressione»), ma il
+#: controllo non c'era: verificato su `main` e sul branch, `MAX_PAGE_KB` non compariva in
+#: nessun punto di questo script. Il valore 900 KB è quello dichiarato dall'audit e resta
+#: ampio rispetto alla pagina più pesante misurata (`prossime.html`, ~1,45 MB → vedi sotto).
+MAX_PAGE_KB = 900
+#: `prossime.html` contiene di proposito l'intero calendario di stagione (1.988 partite in
+#: righe compatte, paginate per mese con <details> e fuori dal layout quando chiuse). È
+#: sopra il tetto e lo resta finché non si decide la paginazione per URL (P2.7, oggi **non**
+#: giustificata: la finestra dettagliata è di 66 card contro le ~250 della soglia). Si
+#: dichiara l'eccezione con il suo tetto, invece di alzare il limite per tutti.
+PAGINE_FUORI_TETTO = {"prossime.html": 1800}
+
+
+def check_page_weight(site: Path) -> tuple[list[str], int]:
+    """[11e] Peso delle pagine: nessuna pagina cresce oltre il tetto senza che si sappia.
+
+    Perché serve (`docs/19` §3.10): una pagina che gonfia è la regressione di prestazioni
+    più facile da introdurre e la più difficile da vedere in una code review — il diff
+    mostra dieci righe di template, non i megabyte che ne escono. Il controllo è sul
+    prodotto finito, cioè sull'unica cosa che l'utente scarica davvero.
+    """
+    fails: list[str] = []
+    checks = 0
+    for page in sorted(site.rglob("*.html")):
+        rel = str(page.relative_to(site))
+        kb = page.stat().st_size / 1024
+        tetto = PAGINE_FUORI_TETTO.get(rel, MAX_PAGE_KB)
+        checks += 1
+        if kb > tetto:
+            # il riepilogo raggruppa per la prima parola dopo «: », quindi la frase inizia
+            # con una parola-categoria («pagina») e non con la cifra, altrimenti il
+            # sommario diventa un elenco di numeri diversi uno per pagina.
+            fails.append(f"{rel}: pagina di {kb:.0f} KB oltre il tetto di {tetto} KB")
+    return fails, checks
+
+
 def check_calendar(site: Path) -> tuple[list[str], int]:
     """[11] Calendario completo: righe coerenti, 1X2 che somma 100, mesi dichiarati correttamente."""
     fails: list[str] = []
@@ -2067,6 +2104,9 @@ def main() -> int:
     print(f"pagine analizzate: {pages}")
     calendario, checks = check_calendar(site)
     fails += calendario
+    peso, peso_checks = check_page_weight(site)
+    fails += peso
+    checks += peso_checks
     barre, bar_checks = check_bars(site)
     fails += barre
     checks += bar_checks

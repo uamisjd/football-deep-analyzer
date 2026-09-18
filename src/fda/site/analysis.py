@@ -101,6 +101,21 @@ def _f(x: Any, nd: int = 2) -> str:
     return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}".replace(".", ",")
 
 
+def _elenco_it(items: list[str], max_items: int = 4) -> str:
+    """Elenco in italiano corrente: «A», «A e B», «A, B e C» (P2.4, `docs/19` §2.8).
+
+    La congiunzione prima dell'ultimo nome è ciò che distingue una frase da un elenco di
+    dati separati da virgole. Se i nomi mostrati sono già stati troncati a ``max_items``
+    il chiamante aggiunge «…»: qui non si inventa nulla sul resto.
+    """
+    nomi = [str(x) for x in items if str(x).strip()]
+    if not nomi:
+        return ""
+    if len(nomi) == 1:
+        return nomi[0]
+    return f"{', '.join(nomi[:-1])} e {nomi[-1]}"
+
+
 _DECIMAL_TEXT = re.compile(r"^\d+\.\d+$")
 
 
@@ -3602,9 +3617,17 @@ class MatchAnalysis:
             if top_key == "X":
                 s.append(f"Il pareggio è l'esito più probabile ({_pct(pf)}), ma resta una gara aperta.")
             elif pf >= 0.60:
-                s.append(f"Il modello vede {top_name} nettamente favorito ({_pct(pf)}).")
+                # P2.4 (docs/19 §2.8): «nettamente favorito» al 60% è più forte del dato —
+                # a quella probabilità il favorito perde comunque 4 volte su 10, e contraddice
+                # la cura dichiarata in prediction_meta(). Si pubblica la **frequenza naturale**
+                # («su 100 partite così, N finiscono in quel modo»), formato che la letteratura
+                # sulla comunicazione del rischio indica come meglio compreso delle percentuali
+                # ed è già la filosofia del dotplot dei gol.
+                s.append(f"Il modello indica {top_name} come esito più probabile ({_pct(pf)}): "
+                         f"su 100 partite così, {round(pf * 100)} finiscono in quel modo.")
             elif pf >= 0.45:
-                s.append(f"Il modello indica {top_name} favorito ({_pct(pf)}), ma con margine contenuto.")
+                s.append(f"Il modello indica {top_name} ({_pct(pf)}), "
+                         f"con margine contenuto sul secondo esito.")
             else:
                 s.append(f"Partita equilibrata secondo il modello: {h} {_pct(p['p_home'])}, pareggio "
                          f"{_pct(p['p_draw'])}, {a} {_pct(p['p_away'])}.")
@@ -3648,12 +3671,16 @@ class MatchAnalysis:
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
+                # P2.4 (docs/19 §2.8): `dec(diff, plus=True)` con valore negativo produceva
+                # «ha -3,0 punti rispetto agli xPTS» — in italiano si dice «ha 3,0 punti in
+                # meno». Il segno si porta nelle parole, non davanti al numero: il valore
+                # assoluto va in cifre e il verso nella frase.
                 if diff >= 3:
-                    s.append(f"{name} ha raccolto {dec(diff, 1, plus=True)} punti rispetto agli xPTS: rendimento "
-                             f"sopra la qualità del gioco prodotto, possibile regressione.")
+                    s.append(f"{name} ha raccolto {_f(diff, 1)} punti in più di quanto dica l'xPTS: "
+                             f"rendimento sopra la qualità del gioco prodotto, regressione possibile.")
                 elif diff <= -3:
-                    s.append(f"{name} ha {dec(diff, 1, plus=True)} punti rispetto agli xPTS: sta rendendo meno di "
-                             f"quanto crea, segnale di sottovalutazione.")
+                    s.append(f"{name} ha {_f(-diff, 1)} punti in meno di quanto dica l'xPTS: "
+                             f"rende meno di ciò che crea, segnale di sottovalutazione.")
             un = ctx.get(f"{side}_unavailable") or []
             if un:
                 # «Giocatore di peso» = titolare abituale (minuti >= metà della media squadra):
@@ -3666,13 +3693,27 @@ class MatchAnalysis:
                     heavy = [p for p in ab["players"] if p.get("starter")]
                 else:
                     heavy = [u for u in un if u.get("value") and u["value"] >= 15_000_000]
-                names = ", ".join(u["name"] for u in un[:4])
-                extra = (" (tra cui 1 giocatore di peso)" if len(heavy) == 1
-                         else f" (tra cui {len(heavy)} giocatori di peso)") if heavy else ""
-                if not heavy and not (ab and ab.get("has_stats")) \
-                        and all(not u.get("value") for u in un):
-                    extra = " (peso non valutabile: fonte senza minuti né valori di mercato)"
-                s.append(f"Assenze {name}: {len(un)}{extra} — {names}{'…' if len(un) > 4 else ''}.")
+                # P2.4 (docs/19 §2.8): «Assenze Inter: 3 (tra cui 2 giocatori di peso) —
+                # Lautaro, Barella, Calhanoglu» è un formato elenco-dati, non una frase.
+                # Si scrive in italiano corrente, con la congiunzione prima dell'ultimo nome.
+                # Il criterio di «peso» NON cambia: resta «titolare abituale» (docs/20 §13).
+                names = _elenco_it([u["name"] for u in un[:4]])
+                coda = "…" if len(un) > 4 else ""
+                quanti = it_plural(len(un), "assente")
+                if heavy:
+                    # con un solo assente «1 assente, uno dei quali titolare» stona:
+                    # l'unico indisponibile È il titolare, e la frase lo dice per esteso.
+                    if len(un) == 1:
+                        peso = ", titolare abituale"
+                    elif len(heavy) == 1:
+                        peso = ", uno dei quali titolare abituale"
+                    else:
+                        peso = f", {len(heavy)} dei quali titolari abituali"
+                elif not (ab and ab.get("has_stats")) and all(not u.get("value") for u in un):
+                    peso = " (peso non valutabile: fonte senza minuti né valori di mercato)"
+                else:
+                    peso = ""
+                s.append(f"{name} deve rinunciare a {quanti}{peso}: {names}{coda}.")
             rest = ctx.get(f"{side}_rest")
             if rest is not None and rest <= 3:
                 cup = ctx.get(f"{side}_rest_cup")

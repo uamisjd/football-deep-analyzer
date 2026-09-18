@@ -920,6 +920,9 @@ class SiteBuilder:
                 "lambda_scale": cal.lambda_scale,
                 "rho_shift": cal.rho_shift,
                 "estimator": cal.estimator,
+                # P1.12 (`docs/19` §1.7): claim ridotto ma vero su come è scelto λ×m —
+                # lo stimatore in produzione è continuo (momenti), non una griglia.
+                "scale_claim": cal.scale_claim,
                 "window_days": cal.window_days,
                 "n_fit": cal.n_fit if hasattr(cal, 'n_fit') else None,
                 "is_identity": cal.is_identity,

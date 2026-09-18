@@ -96,12 +96,46 @@
   const league = toolbar.querySelector('[data-league-filter]');
   let status = 'all';
   let raf = 0;
+  let timer = 0;
   let queryLower = '';
+  const statusAliases = {scheduled:['scheduled','postponed','suspended','cancelled','abandoned']};
+  // P1.15 (docs/19 §3.10): i badge contano i bucket di stato su TUTTE le card e non
+  // dipendono né dalla ricerca né dalla lega → sono costanti. Prima venivano ricalcolati
+  // dentro applyNow(), cioè a ogni frame di digitazione: con 1.987 card e 5 bottoni erano
+  // 9.935 confronti per frame, l'83% del lavoro totale. Ora si contano una volta sola.
+  const statusCounts = (() => {
+    const tally = Object.create(null);
+    for (const card of cards) {
+      const s = card.dataset.status;
+      tally[s] = (tally[s] || 0) + 1;
+    }
+    const counts = Object.create(null);
+    toolbar.querySelectorAll('[data-status-filter]').forEach(btn => {
+      const bucket = btn.dataset.statusFilter;
+      if (!bucket || bucket === 'all') return;
+      const alias = statusAliases[bucket] || [bucket];
+      counts[bucket] = alias.reduce((n, key) => n + (tally[key] || 0), 0);
+    });
+    return counts;
+  })();
+
+  function updateBadges() {
+    toolbar.querySelectorAll('[data-status-filter]').forEach(btn => {
+      const bucket = btn.dataset.statusFilter;
+      if (!bucket || bucket === 'all') return;
+      const n = statusCounts[bucket] || 0;
+      let badge = btn.querySelector('.filter-count');
+      if (!badge) { badge = document.createElement('span'); badge.className='filter-count'; badge.style.cssText='margin-left:4px;opacity:.7;font-weight:700;min-width:28px;display:inline-block;text-align:left'; btn.appendChild(badge); }
+      badge.textContent = n ? `(${n})` : '';
+      btn.hidden = false;
+      // nascondi bottone Pausa se 0 e non attivo (meno rumore)
+      if (bucket === 'paused' && n === 0 && status !== 'paused') btn.hidden = true;
+    });
+  }
 
   function applyNow() {
     const leagueValue = league?.value || 'all';
     let visible = 0;
-    const statusAliases = {scheduled:['scheduled','postponed','suspended','cancelled','abandoned']};
     for (const card of cards) {
       let okStatus = false;
       if (status === 'all') okStatus = true;
@@ -120,20 +154,6 @@
       if (empty) empty.hidden = shown === 0 && group.querySelectorAll('[data-match-card]').length > 0;
     }
     if (result) result.textContent = `${visible} ${visible === 1 ? 'partita' : 'partite'}`;
-    // badge sui bottoni di stato (conta bucket non filtrato, alias inclusi)
-    toolbar.querySelectorAll('[data-status-filter]').forEach(btn => {
-      const bucket = btn.dataset.statusFilter;
-      if (bucket && bucket !== 'all') {
-        const alias = statusAliases[bucket] || [bucket];
-        const n = cards.filter(c => alias.includes(c.dataset.status)).length;
-        let badge = btn.querySelector('.filter-count');
-        if (!badge) { badge = document.createElement('span'); badge.className='filter-count'; badge.style.cssText='margin-left:4px;opacity:.7;font-weight:700;min-width:28px;display:inline-block;text-align:left'; btn.appendChild(badge); }
-        badge.textContent = n ? `(${n})` : '';
-        btn.hidden = false;
-        // nascondi bottone Pausa se 0 e non attivo (meno rumore)
-        if (bucket === 'paused' && n === 0 && status !== 'paused') btn.hidden = true;
-      }
-    });
   }
 
   function scheduleApply() {
@@ -145,15 +165,26 @@
     button.addEventListener('click', () => {
       status = button.dataset.statusFilter;
       toolbar.querySelectorAll('[data-status-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
+      // il click è un gesto singolo e deliberato: nessun debounce, risposta immediata
       scheduleApply();
+      updateBadges();
     });
   });
+  // P1.15 (docs/19 §3.10): debounce 120 ms sulla ricerca. Digitando «juventus» il filtro
+  // girava 8 volte su 1.987 card; ora gira una volta sola, 120 ms dopo l'ultimo tasto.
+  // Sotto i 120 ms la digitazione resta fluida e la lista non "salta" a ogni lettera.
   search?.addEventListener('input', () => {
     queryLower = (search.value || '').trim().toLocaleLowerCase('it-IT');
-    scheduleApply();
+    clearTimeout(timer);
+    timer = setTimeout(scheduleApply, 120);
+  });
+  // Invio: l'utente vuole il risultato adesso, non fra 120 ms
+  search?.addEventListener('keydown', event => {
+    if (event.key === 'Enter') { event.preventDefault(); clearTimeout(timer); scheduleApply(); }
   });
   league?.addEventListener('change', scheduleApply);
   applyNow();
+  updateBadges();
 })();
 </script>
 {% endblock %}

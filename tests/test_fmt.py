@@ -6,6 +6,7 @@ regola generale: **un numero derivato pubblicato si calcola su ciò che è pubbl
 """
 
 import numpy as np
+import pytest
 
 from fda.site.fmt import dec, dec_sum, displayed, displayed_sum
 
@@ -57,3 +58,50 @@ def test_displayed_e_la_cifra_stampata_da_dec():
     rng = np.random.default_rng(7)
     for v in list(rng.uniform(0, 10, size=500)) + [0.0, 100.0, 1.005, 2.675]:
         assert f"{displayed(v):.2f}" == f"{v:.2f}"
+
+
+# --- P2.6: pct_triple senza import pesanti nel corpo della funzione (docs/19 §4) ---
+
+
+def test_pct_triple_non_importa_numpy_dentro_la_funzione():
+    """L'import stava nel corpo: veniva eseguito a ogni card renderizzata (P2.6).
+
+    Su 3 elementi `sorted` è stabile per definizione e dà lo stesso ordine di
+    `np.argsort(kind="stable")`, quindi numpy qui era una dipendenza inutile in un
+    percorso caldo. Il test inchioda la proprietà, non l'implementazione.
+    """
+    import inspect
+
+    from fda.site import fmt
+
+    corpo = inspect.getsource(fmt.pct_triple)
+    assert "import numpy" not in corpo, "numpy è tornato dentro pct_triple (percorso caldo)"
+    assert "import matplotlib" not in corpo, "matplotlib non deve entrare in fmt.pct_triple"
+
+
+def test_pct_triple_resta_stabile_sul_tie_break_1x2():
+    """A parità di resto la precedenza deve restare (1, X, 2): è l'ordine pubblicato."""
+    from fda.site.fmt import pct_triple
+
+    # tre resti identici: il punto mancante va al primo in ordine (1), non a caso
+    assert pct_triple((1 / 3, 1 / 3, 1 / 3)) == [34, 33, 33]
+    # con nd=1 la somma è esatta *in unità intere di 0,1*; la divisione finale per 10
+    # reintroduce il floating point (33,4+33,3+33,3 = 99,99999999999999), quindi si
+    # confronta con tolleranza. È il motivo per cui il lavoro è fatto in interi.
+    assert sum(pct_triple((1 / 3, 1 / 3, 1 / 3), 1)) == pytest.approx(100.0, abs=1e-9)
+
+
+@pytest.mark.parametrize("nd", [0, 1])
+def test_pct_triple_somma_esatta_su_molti_vettori_casuali(nd):
+    """Proprietà pubblicata: le barre 1X2 devono chiudere esattamente il 100%."""
+    import random
+
+    from fda.site.fmt import pct_triple
+
+    rng = random.Random(12345)
+    for _ in range(3000):
+        a, b, c = rng.random(), rng.random(), rng.random()
+        s = a + b + c
+        out = pct_triple((a / s, b / s, c / s), nd)
+        assert sum(out) == pytest.approx(100.0, abs=1e-9)
+        assert all(v >= 0 for v in out), "nessuna percentuale negativa"

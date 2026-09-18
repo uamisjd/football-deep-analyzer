@@ -12,6 +12,7 @@
     <p class="small" style="background:rgba(80,200,120,.12);border:1px solid rgba(80,200,120,.25);padding:8px 10px;border-radius:8px">
       <b>Calibrazione attiva:</b> λ×{{ cal.lambda_scale|dec(3) }} · ρ{{ cal.rho_shift|dec(2, true) }}
       {% if cal.estimator %}({{ cal.estimator }}, {% if cal.window_days %}{{ cal.window_days }} giorni{% else %}tutto lo storico{% endif %}{% if cal.n_fit %}, {{ cal.n_fit|it_num }} gare{% endif %}){% endif %}
+      {% if cal.scale_claim %}<br><span class="mut">Moltiplicatore {{ cal.scale_claim }}.</span>{% endif %}
       — corregge la distorsione dei gol attesi misurata fuori campione: bias λ
       {% if cal.bias_prima is not none %}{{ cal.bias_prima|dec(2, true) }} →
       {{ cal.bias_dopo|dec(2, true) }} gol{% else %}(stimato al prossimo backtest){% endif %}
@@ -31,7 +32,7 @@
     <p style="margin-top:8px" class="small"><b>Limiti di sicurezza sulle λ:</b> λ≤4,0 per squadra e totale ≤5,5 (e comunque fra il 70% e il 135% del modello gol) applicati <b>dopo</b> la calibrazione, cioè sui gol attesi che leggi: evitano previsioni assurde tipo 8,4 gol (Barcellona-Racing Santander, ricetta precedente). Oggi toccano lo 0,05% delle partite (1 su 2.071) perché il totale dei gol non viene più gonfiato.</p>
     <p style="margin-top:8px" class="small">Ogni cambio di ricetta passa dal laboratorio: 22 candidati confrontati walk-forward con bootstrap 95% — si cambia modello solo se l'intervallo è interamente negativo <b>e</b> il vantaggio vale in almeno 5 leghe su 7 ({{ lab_rows }} righe in <code>model_lab.parquet</code>).</p>
     <p style="margin-top:12px">L'accuratezza è pubblicata in <a href="accuratezza.html">Accuratezza</a> con <b>RPS</b> (0=perfetto, 0,25≈casuale con frequenze medie, 0,19-0,20 bookmaker) e <b>Brier</b> (errore quadratico, più basso meglio) rispetto a una base naive 45/27/28. Δ negativo = batte la base. Intervalli Wilson 95% distinguono rumore da segnale.</p>
-    <p class="small" style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:10px">La <b>calibrazione</b> (λ×1,04 su 4.760 gare, 730 gg) <b>non migliora l'1X2</b> in walk-forward (RPS 0,20009→0,19992, entro il rumore) ma azzera il bias dei gol (+0,24→+0,02) e centra il pareggio (23,9%→25,7% vs 25,6% reale): il guadagno è sul <b>Brier mercati gol</b> 0,20646→0,20516, non sull'hit-rate (62,4%→62,8% è arrotondamento).</p>
+    <p class="small" style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin-top:10px">La <b>calibrazione</b> (λ×1,04 su 4.760 gare, 730 gg; il moltiplicatore è <b>stimato dai momenti</b> e limitato a 0,85–1,05, non cercato su una griglia) <b>non migliora l'1X2</b> in walk-forward (RPS 0,20009→0,19992, entro il rumore) ma azzera il bias dei gol (+0,24→+0,02) e centra il pareggio (23,9%→25,7% vs 25,6% reale): il guadagno è sul <b>Brier mercati gol</b> 0,20646→0,20516, non sull'hit-rate (62,4%→62,8% è arrotondamento).</p>
   </div>
   <div class="card">
     <h2>Le fonti (gratuite)</h2>

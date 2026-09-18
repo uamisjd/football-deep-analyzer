@@ -7,6 +7,8 @@ usano queste funzioni, così la formattazione è definita in un solo posto.
 
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 # nomi estesi per le date pronte all'uso (erano in build.py: spostati qui perché anche
@@ -141,8 +143,6 @@ def pct_triple(p: tuple[float, float, float], nd: int = 0) -> list[float]:
     >>> pct_triple((0.61, 0.2424, 0.1476), 1)
     [61.0, 24.2, 14.8]
     """
-    import math
-    import numpy as np  # type: ignore
     nd = int(nd)
     unit = 10 ** nd
     raw = [float(v) * 100.0 * unit for v in p]
@@ -150,15 +150,18 @@ def pct_triple(p: tuple[float, float, float], nd: int = 0) -> list[float]:
     resto = 100 * unit - sum(base)
     if resto:
         residuals = [r - f for r, f in zip(raw, base)]
+        # ordinamento stabile su 3 elementi: `sorted` in Python è stabile per definizione,
+        # quindi a parità di resto la precedenza resta (1, X, 2) esattamente come con
+        # `np.argsort(kind="stable")`. Su tre valori non serve numpy (P2.6, docs/19 §4):
+        # l'import stava dentro la funzione, che è chiamata una volta per card.
         if resto > 0:
-            # maggiori prima; a parità di resto l'ordine stabile lascia la precedenza a (1, X, 2)
-            order = np.argsort([-r for r in residuals], kind="stable")
+            order = sorted(range(3), key=lambda i: -residuals[i])   # maggiori prima
             passo = 1
         else:
-            order = np.argsort(residuals, kind="stable")   # minori prima, stessa precedenza
+            order = sorted(range(3), key=lambda i: residuals[i])    # minori prima
             passo = -1
         for i in range(abs(resto)):
-            base[int(order[i % 3])] += passo
+            base[order[i % 3]] += passo
     if nd == 0:
         return base
     return [b / unit for b in base]

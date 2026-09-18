@@ -6,8 +6,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from fda.models.calibration import (BRIER_WEIGHT, FIT_WINDOW_DAYS, MIN_ROWS, Calibration,
-                                    evaluate, fit, from_store, moment_scale)
+from fda.models.calibration import (BRIER_WEIGHT, FIT_WINDOW_DAYS, LAMBDA_SCALE_GRID, MIN_ROWS,
+                                    SCALE_BOUNDS, Calibration, evaluate, fit, from_store,
+                                    moment_scale)
 from fda.models.dc_grid import GRID_SIZE, grid_markets_many, probability_grid, tau_grid, tau_grid_many
 from fda.models.predict import _grid_markets, calibrated_prediction, wilson_interval
 from fda.store import Store
@@ -316,3 +317,49 @@ def test_n_fit_dichiara_le_gare_usate_per_la_stima_non_il_campione():
     assert f"{int(cal.metrics['campione_n'])} gare" in cal.corpus
     assert f"stimati su {cal.n_fit} gare" in cal.corpus
     assert cal.estimator == "momenti" and cal.window_days == FIT_WINDOW_DAYS
+
+
+# --- P1.12: il claim pubblicato sul moltiplicatore dice il vero (docs/19 §1.7) ------------
+
+
+def test_dominio_del_moltiplicatore_e_quello_dei_bounds_con_lo_stimatore_dei_momenti():
+    """Lo stimatore in produzione è continuo: l'intervallo esplorato sono i bounds.
+
+    L'audit `docs/19` §1.7 sospettava un claim «più forte dei dati» perché il valore
+    pubblicato (λ×1,0401) è **fuori** da ``LAMBDA_SCALE_GRID`` (0,90…1,02). Misurato qui:
+    non è un difetto, è che la griglia **non sceglie** il valore in produzione — lo sceglie
+    :func:`moment_scale`, limitato da ``SCALE_BOUNDS``. Il claim deve dire questo.
+    """
+    cal = Calibration(lambda_scale=1.0401, estimator="momenti")
+    assert cal.scale_domain == (SCALE_BOUNDS[0], SCALE_BOUNDS[1])
+    # il valore realmente pubblicato è dentro il dominio dichiarato: nessun claim fuori misura
+    assert cal.scale_domain[0] <= cal.lambda_scale <= cal.scale_domain[1]
+    # ...e sarebbe stato fuori dal dominio della griglia, che infatti non è quello usato
+    assert not (min(LAMBDA_SCALE_GRID) <= cal.lambda_scale <= max(LAMBDA_SCALE_GRID))
+
+
+def test_il_claim_non_dichiara_una_griglia_quando_lo_stimatore_e_dei_momenti():
+    """Niente «scelto su griglia» se la griglia non ha scelto nulla (claim ridotto, P1.12)."""
+    claim = Calibration(lambda_scale=1.0401, estimator="momenti").scale_claim
+    assert "momenti" in claim
+    assert "0,85" in claim and "1,05" in claim      # virgola decimale italiana (regola 00 §E)
+    assert "griglia" not in claim
+    # e col vero stimatore a griglia il claim cambia, dichiarando la griglia reale
+    claim_grid = Calibration(lambda_scale=1.02, estimator="griglia").scale_claim
+    assert "griglia" in claim_grid and "0,90" in claim_grid and "1,02" in claim_grid
+
+
+def test_lo_store_registra_il_dominio_esplorato_del_moltiplicatore():
+    """`docs/19` §1.7 chiede di documentare l'intervallo esplorato nello store."""
+    row = Calibration(lambda_scale=1.0401, estimator="momenti").as_row()
+    assert row["scale_grid_min"] == SCALE_BOUNDS[0]
+    assert row["scale_grid_max"] == SCALE_BOUNDS[1]
+    assert row["scale_grid_min"] <= row["lambda_scale"] <= row["scale_grid_max"]
+
+
+def test_il_fit_reale_resta_dentro_il_dominio_che_dichiara():
+    """Invariante di sicurezza: il parametro pubblicato non esce mai dal dominio dichiarato."""
+    cal = fit(sample_backtest(n=2600, scale_true=1 / 0.94))
+    lo, hi = cal.scale_domain
+    assert lo <= cal.lambda_scale <= hi
+    assert cal.as_row()["scale_grid_max"] == hi
