@@ -1211,7 +1211,9 @@ class MatchAnalysis:
                         )
                 else:
                     gap_eur = None
-                parts = [f"{rank}º con {pts} punti"]
+                # concordanza: «1º con 1 punti» non è italiano; due righe più sopra lo stesso
+                # file concordava già «1 punto / 2 punti dal Nº posto» (audit 18/09/2026)
+                parts = [f"{rank}º con {it_plural(pts, 'punto', 'punti')}"]
                 if gap_rel:
                     parts.append(gap_rel)
                 if gap_eur:
@@ -1316,7 +1318,11 @@ class MatchAnalysis:
                    or (ab.get("contrib_lost_p90") or 0) >= self.MOOD_ABSENT_CONTRIB):
             bits = [f"infermeria pesante: {ab['n']} assenti"]
             if ab["starters_out"]:
-                bits.append(f"di cui {ab['starters_out']} titolari abituali")
+                # concordanza: con un solo titolare «di cui 1 titolari abituali» non è italiano
+                # (25 occorrenze su 22 schede, audit 18/09). it_plural è lo stesso helper che
+                # match.html:284 e _sapere_assenze usano già per la stessa frase.
+                bits.append("di cui " + it_plural(ab["starters_out"], "titolare abituale",
+                                                  "titolari abituali"))
             if ab.get("contrib_lost_p90"):
                 bits.append(f"≈ {str(round(ab['contrib_lost_p90'], 1)).replace('.', ',')} "
                             f"xG+xA a partita in meno")
@@ -1955,7 +1961,9 @@ class MatchAnalysis:
         return {"titolo": titolo,
                 "testo": (f"{nome} {dove}: {esito} in {it_plural(n, 'gara')} "
                           f"({it_plural(punti, 'punto', 'punti')} su {3 * n}, "
-                          f"{punti / n:.2f} a gara).")}
+                          # virgola italiana: è l'unico :.2f del file senza .replace(".", ",")
+                          # → pubblicava «2.33 a gara» (52 occorrenze su 29 schede, audit 18/09)
+                          f"{punti / n:.2f}".replace(".", ",") + " a gara).")}
 
     def _sapere_bomber(self, match_id: int, team_id: int, nome: str,
                        kickoff: datetime) -> dict[str, str] | None:
@@ -2008,8 +2016,12 @@ class MatchAnalysis:
                                 & (self.lineup.player_id == pid)]
             if not fuori.empty:
                 tipo = str(fuori.iloc[0].get("unavailability_type") or "").strip().lower()
+                # unavailability_it() è lo stesso traduttore usato dalle righe 2529 e 3569:
+                # qui era l'unico punto a stampare il valore grezzo della fonte, e a schermo
+                # usciva «(injury)» / «(suspension)» in inglese (8 occorrenze, audit 18/09).
                 testo += (", che però è indisponibile per questa gara"
-                          + (f" ({tipo})" if tipo in ("injury", "suspension") else ""))
+                          + (f" ({unavailability_it(tipo)})"
+                             if tipo in ("injury", "suspension") else ""))
         return {"titolo": "L'uomo gol", "testo": testo + "."}
 
     def _news_branch(self, row: dict[str, Any]) -> str:
@@ -3667,7 +3679,8 @@ class MatchAnalysis:
                     giudizio = "in difficoltà"
                 else:
                     giudizio = "andamento nella norma"
-                s.append(f"{name}: {pts} punti nelle ultime {len(f)} ({seq}) — {giudizio}.")
+                s.append(f"{name}: {it_plural(pts, 'punto', 'punti')} nelle ultime "
+                         f"{len(f)} ({seq}) — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]

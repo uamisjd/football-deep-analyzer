@@ -130,8 +130,24 @@ ENGLISH = re.compile(
 # concordanza: «1 rossi», «1 gare», «1 vittorie»…
 # Non intercettare il finale «,1 gialli» di un decimale (es. 3,1 gialli/gara):
 # si cerca un vero contatore intero all'inizio della parola.
-AGREEMENT = re.compile(r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti)\b")
+# Sostantivi aggiunti il 18/09/2026: la lista originale non conteneva «punti» né
+# «titolari», cioè le uniche due forme davvero sbagliate allora in linea
+# («+1 punti sul secondo», 56× su 43 pagine; «di cui 1 titolari abituali», 25× su 22).
+# Misurato sull'estensione: 81 occorrenze intercettate, 0 falsi positivi. Il verso opposto
+# («2 punto») NON è presidiato: l'unico candidato trovato era «Schalke 04 giocatore»,
+# nome di squadra seguito da un'intestazione di tabella — un falso positivo certo.
+AGREEMENT = re.compile(
+    r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
+    r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
+    r"giocatori|campionati|cartellini|allenatori)\b")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
+# Attributi che un lettore di schermo pronuncia: il testo lì dentro è a tutti gli effetti
+# testo nostro, ma i controlli di lingua giravano solo sul testo visibile (audit 18/09/2026).
+# Misurato su quella dimensione allora scoperta: 30 «1 punti» negli aria-label della forma e
+# 124 «9.0 rigori totali» (float dove serve un intero) nei tooltip dell'arbitro. Vanno raccolti
+# dentro il parser, non con una regex sul grezzo: così restano fuori i title dei link della
+# card notizie, che sono titoli di stampa citati verbatim (stessa ragione del testo).
+ATTR_LEGGIBILI = ("aria-label", "title", "alt", "placeholder")
 
 
 class Text(HTMLParser):
@@ -141,6 +157,13 @@ class Text(HTMLParser):
     brani sono della stampa, pubblicati **verbatim** per scelta documentata (docs/21 P1-5
     e footer della card stessa) — i controlli su decimali/inglese/concordanza valgono per
     il testo NOSTRO, non per le citazioni delle testate. I link della card li verifica [20].
+
+    **Eccezione ``class="sapere"`` (audit 18/09/2026).** I blocchi «Da sapere · …» vivono
+    dentro quella stessa card ma sono **frasi generate da noi**, non citazioni: escludendo
+    l'intera card l'esclusione era troppo larga e il nostro testo usciva dai controlli di
+    lingua. Risultato misurato: «4 punti su 9, 1.33 a gara» (decimale col punto, 52
+    occorrenze su 29 schede) passava indisturbato perché nessun controllo lo leggeva.
+    Gli elementi marcati ``sapere`` sono quindi riammessi anche dentro la card.
     """
 
     def __init__(self) -> None:
@@ -151,6 +174,9 @@ class Text(HTMLParser):
         self.skip = 0
         self.news_tag: str | None = None
         self.news_depth = 0
+        self.sapere_tag: str | None = None
+        self.sapere_depth = 0
+        self.readable_attrs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
         if tag in ("style", "script", "head", "svg"):
@@ -159,6 +185,12 @@ class Text(HTMLParser):
             self.news_tag, self.news_depth = tag, 1
         elif self.news_tag == tag:
             self.news_depth += 1
+        # «Da sapere»: testo nostro dentro la card delle notizie → va ricontrollato (vedi docstring)
+        if self.sapere_depth == 0 and any(
+                k == "class" and v and "sapere" in str(v).split() for k, v in attrs):
+            self.sapere_tag, self.sapere_depth = tag, 1
+        elif self.sapere_tag == tag:
+            self.sapere_depth += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
         for k, v in attrs:
@@ -166,6 +198,8 @@ class Text(HTMLParser):
                 self.ids.add(v)
             if tag == "a" and k == "href" and v:
                 self.hrefs.append(v)
+            if k in ATTR_LEGGIBILI and v and (self.news_depth == 0 or self.sapere_depth > 0):
+                self.readable_attrs.append(str(v))
 
     def handle_endtag(self, tag: str) -> None:
         if tag in ("style", "script", "head", "svg") and self.skip:
@@ -174,9 +208,13 @@ class Text(HTMLParser):
             self.news_depth -= 1
             if self.news_depth <= 0:
                 self.news_tag, self.news_depth = None, 0
+        if self.sapere_tag == tag:
+            self.sapere_depth -= 1
+            if self.sapere_depth <= 0:
+                self.sapere_tag, self.sapere_depth = None, 0
 
     def handle_data(self, data: str) -> None:
-        if not self.skip and self.news_depth == 0:
+        if not self.skip and (self.news_depth == 0 or self.sapere_depth > 0):
             self.parts.append(data)
 
 
@@ -185,6 +223,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
     fails: list[str] = []
     pages = sorted(site.rglob("*.html"))
     n_th = 0
+    n_attr = 0
     for page in pages:
         rel = str(page.relative_to(site))
         raw = page.read_text(encoding="utf-8")
@@ -209,6 +248,16 @@ def check_pages(site: Path) -> tuple[list[str], int]:
         for m in AGREEMENT.finditer(text):
             fails.append(f"{rel}: concordanza {m.group(0)!r}")
 
+        # stessa terna di controlli sugli attributi pronunciati dai lettori di schermo
+        for attr in parser.readable_attrs:
+            n_attr += 1
+            for m in DECIMAL_POINT.finditer(attr):
+                fails.append(f"{rel}: decimale col punto in attributo {m.group(0)!r}")
+            for m in ENGLISH.finditer(attr):
+                fails.append(f"{rel}: inglese in attributo {m.group(0)!r}")
+            for m in AGREEMENT.finditer(attr):
+                fails.append(f"{rel}: concordanza in attributo {m.group(0)!r}")
+
         for href in parser.hrefs:
             if href.startswith(("http://", "https://", "mailto:")):
                 continue
@@ -227,6 +276,7 @@ def check_pages(site: Path) -> tuple[list[str], int]:
                 if fragment not in target_ids:
                     fails.append(f"{rel}: ancora interna mancante {href}")
     print(f"[27] celle <th> con scope verificate: {n_th}")
+    print(f"[27b] attributi leggibili (aria-label/title/alt) verificati: {n_attr}")
     return fails, len(pages)
 
 
@@ -1167,18 +1217,25 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     #     interi stampati vicini («+25 punti» tra 51% e 26%), e primo/secondo sono davvero
     #     i due esiti più probabili della triade; i λ sono «+», non un trattino
     n_margini = 0
+    # «punto|punti», non solo «punti»: con la sola forma plurale le 4 schede con margine 1
+    # non corrispondevano e venivano saltate in silenzio (`if not m: continue`), cioè la
+    # correzione della concordanza toglieva copertura invece di essere verificata (18/09/2026).
     hero_re = re.compile(r'<strong>([^<]*)<em>(\d+)%</em>.*?'
-                         r'\+(\d+(?:,\d+)?) punti sul secondo — (.*?) (\d+)%'
+                         r'\+(\d+(?:,\d+)?) (punti|punto) sul secondo — (.*?) (\d+)%'
                          r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.S)
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
         m = hero_re.search(html)
         if not m:
             continue
-        top_v, margine, second_v = int(m.group(2)), float(m.group(3).replace(",", ".")), int(m.group(5))
-        pcts = sorted((int(m.group(6)), int(m.group(7)), int(m.group(8))), reverse=True)
+        top_v, margine, second_v = int(m.group(2)), float(m.group(3).replace(",", ".")), int(m.group(6))
+        pcts = sorted((int(m.group(7)), int(m.group(8)), int(m.group(9))), reverse=True)
         checks += 1
         n_margini += 1
+        # la concordanza è ora verificata, non solo tollerata
+        attesa = "punto" if int(margine) == 1 else "punti"
+        if m.group(4) != attesa:
+            fails.append(f"{pg.name}: «+{margine:g} {m.group(4)} sul secondo», voleva «{attesa}»")
         if (top_v - second_v) != int(margine):
             fails.append(f"{pg.name}: margine +{margine:g} punti con {top_v}% e {second_v}% stampati")
         if (top_v, second_v) != (pcts[0], pcts[1]):
@@ -1592,7 +1649,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                             f"{s} {'sconfitta' if s == 1 else 'sconfitte'} in "
                             f"{n} {'gara' if n == 1 else 'gare'} "
                             f"({punti} {'punto' if punti == 1 else 'punti'} su {3 * n}, "
-                            f"{punti / n:.2f} a gara).")
+                            # virgola italiana, ricostruita qui a mano di proposito: questo è
+                            # un ricalcolo INDIPENDENTE (docs/25 §4). Fino al 18/09/2026 qui
+                            # c'era lo stesso `:.2f` col punto del sito, cioè verificatore e
+                            # generatore concordavano sull'errore e nessuno dei due lo vedeva.
+                            f"{punti / n:.2f}".replace(".", ",") + " a gara).")
                     if riga not in testo_card:
                         fails.append(f"{pg.name}: bilancio {'casa' if in_casa else 'trasferta'} "
                                      f"di {tname[:20]} assente o diverso dal ricalcolo")
