@@ -513,6 +513,53 @@ def test_xg_e_ppda_una_volta_sola(tmp_path):
     st.close()
 
 
+def test_legenda_stabilizzata_una_volta_sola(tmp_path):
+    """P2.1 (docs/28 §3): la spiegazione della stima stabilizzata si dà una volta sola.
+
+    Compariva in ogni card squadra (nota «Soglia di minutaggio: … ◎ stima stabilizzata …») e in
+    ogni riga dell'infermeria: 4 volte per scheda. Ora la legenda sta nel primo punto d'uso — la
+    testata di «I giocatori che decidono» — e altrove resta il marcatore ◎ col tooltip del caso
+    specifico (media dei pari, peso k, numerosità), che è ciò che rende la stima verificabile.
+    """
+    st = _seed(tmp_path)
+    # la stagione dei giocatori della gara futura: senza player_stats la sezione «I giocatori che
+    # decidono» (e con lei la legenda) non si stampa, e il test non proverebbe niente
+    st.upsert("player_stats", [
+        {"match_id": m, "team_id": tid, "player_id": pid, "player_name": nome, "key": chiave,
+         "value": valore, "total": None}
+        for m in (5749669,)      # la gara delle due squadre del campione
+        for tid, pid, nome in ((8600, 111, "A1"), (8600, 112, "A2"), (8600, 113, "A3"),
+                               (8543, 211, "B1"), (8543, 212, "B2"), (8543, 213, "B3"))
+        for chiave, valore in (("minutes_played", 300.0), ("expected_goals", 2.0),
+                               ("expected_assists", 1.0))
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+
+    for nome, pre in (("5749669", True), ("5749645", False)):
+        html = (out / "partite" / f"{nome}.html").read_text(encoding="utf-8")
+        corpo = html.split('<main id="main">', 1)[1]
+        assert corpo.count("stabilizzat") <= 2, f"{nome}: «stabilizzat» {corpo.count('stabilizzat')} volte"
+        if not pre:
+            continue          # a gara conclusa la sezione dei giocatori decisivi non si stampa"
+        # la legenda c'è, una volta, e spiega entrambi i marcatori
+        assert corpo.count("◎ è la <b>stima stabilizzata</b>") == 1
+        assert "◇ significa che sotto i 90′ la rata grezza non si pubblica" in corpo
+        # la nota della card squadra resta, ma solo col dato (soglia e numerosità); nelle gare
+        # del campione di prova può mancare del tutto (nessun giocatore sopra soglia)
+        if "Soglia di minutaggio:" in corpo:
+            nota = corpo.split("Soglia di minutaggio:", 1)[1].split("</p>", 1)[0]
+            assert "minuti" in nota and "in classifica" in nota
+            assert "stabilizzat" not in nota
+        # il tooltip di riga porta il caso specifico, non la spiegazione del metodo (nel campione
+        # di prova può non esserci nessuna riga con la stima: la riga compare dal vero Understat)
+        titoli = re.findall(r'title="◎ Stima stabilizzata — ([^"]*)"', corpo)
+        for t in titoli:
+            assert "media dei pari" in t and "peso k=" in t and "n=" in t
+        assert "Stima stabilizzata (media dei pari e peso misurati" not in corpo  # la frase ripetuta
+    st.close()
+
+
 def test_indice_della_scheda_dice_i_titoli_veri(tmp_path):
     """P1.3 (docs/28 §2): le voci dell'indice dicono il titolo della sezione che aprono.
 

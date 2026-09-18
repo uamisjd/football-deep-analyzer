@@ -142,6 +142,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/30_un_dato_in_un_posto_2026-09-18.md` | P1.2 applicata: xG/gara e PPDA detti in un posto solo (ripetizioni 3 → 1 riquadro, −357 caratteri visibili per scheda) e anteprima prima/dopo. |
 | `docs/31_verifica_approfondita_chiusa_2026-09-18.md` | P1.4 applicata: la verifica dei numeri (matrice e distribuzione dei gol) chiusa e annunciata dai due numeri di testa; −1.767 caratteri visibili per scheda, testo visibile mediano 20.577 → 18.807. |
 | `docs/32_indice_della_scheda_2026-09-18.md` | P1.3 applicata: l'indice della scheda dice i titoli veri (4 → 11 voci, 0/6 → 6/6 card pesanti raggiungibili) e invariante [33] in `verify_site`; coda P1 di `docs/28` §4 esaurita. |
+| `docs/33_stima_stabilizzata_legenda_2026-09-18.md` | P2.1 applicata: la stima stabilizzata si spiega una volta sola (4 → 1 occorrenze per scheda, −111 caratteri visibili); il gate [32] ha corretto la prima stesura della legenda. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |

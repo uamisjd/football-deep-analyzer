@@ -191,7 +191,7 @@ nella pagina, solo chiuso. Il segno ▸/▾ è ora una regola CSS sola con la te
 è la stessa, è cambiato il **denominatore** — dopo P1.1 e P1.2 la pagina è più corta, quindi la
 stessa quantità di testo pesa di più in percentuale. Le cifre in caratteri non cambiano.
 
-### P2.1 — Le stesse spiegazioni ripetute quattro-sei volte
+### P2.1 — Le stesse spiegazioni ripetute quattro-sei volte ✅ APPLICATA il 2026-09-18
 
 **Misura** (occorrenze mediane per scheda): «stabilizzata / stima stabilizzata» **4**, «partite su
 100» **6**, «Understat» **8**, «FotMob» **8** (fino a 14), «football-data.co.uk» 1, «non media delle
@@ -201,6 +201,16 @@ ultime 3» 1.
 riga dichiara la sua fonte). Il rumore è la spiegazione della stima stabilizzata ripetuta in ogni
 tabella: va spiegata **una volta** (legenda nel primo punto d'uso) e poi richiamata con ◎/◇ nel
 tooltip.
+
+**Esito (2026-09-18, `docs/33`).** Fatta come proposto: la legenda dei due marcatori sta **una volta
+sola**, nella testata di «I giocatori che decidono» (primo punto d'uso), le card squadra tengono solo
+il dato («Soglia di minutaggio: N minuti · M giocatori in classifica») e ogni valore stabilizzato
+porta il tooltip del **caso specifico** (media dei pari, peso k, numerosità); nell'infermeria il
+totale prende il marcatore ◎ invece della parentesi «(stima stabilizzata)». Misura sulle stesse 66
+schede, due build: «stabilizzat» **4 → 1** per scheda (max 4 → 1), testo visibile **−111 caratteri**
+in mediana appaiata (73–111, tutte e 66). Le sorgenti citate 8-14 volte **non** sono state toccate:
+restano una decisione (docs/20 §3). Il gate **[32]** ha corretto la prima stesura della legenda
+(`<b>◇</b>` isolato = «cella senza numero»): riscritta in prosa.
 
 ### P2.2 — Le assenze sono raccontate in quattro modi
 
@@ -288,12 +298,12 @@ se il peso si è spostato davvero dove serve.
 
 ## 5. Prossimo passo
 
-**Tutti e quattro i P1 sono stati applicati il 2026-09-18** — misure prima/dopo in
+**Il 2026-09-18 sono stati applicati i quattro P1 e il primo P2 (P2.1)** — misure prima/dopo in
 [`docs/29`](29_p1_1_vita_del_club_riga_unica_2026-09-18.md) (3.030 → 829 caratteri visibili sulla
 card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato di stagione ripetuto
 in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
 (verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
 (indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
-visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)**. In coda restano i
-**P2** di §3, in ordine di peso: P2.1 (legenda unica delle stime stabilizzate), P2.4 (separare
-«Contesto»), P2.2 (assenze in un posto solo), P2.3, P2.5, P2.6.
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)**. In coda restano i **P2** di §3, in ordine di peso: **P2.4** (separare «Contesto»), **P2.2** (assenze
+raccontate in quattro modi), P2.3 (micro-visivi), P2.5 (badge forma nell'hero), P2.6 (quote assenti =
+decisione). P2.1 è stata applicata (`docs/33`): legenda unica, 4 → 1 occorrenze per scheda.
