@@ -1,0 +1,4 @@
+Sora e Inter — SIL Open Font License 1.1 (https://scripts.sil.org/OFL)
+
+Questi file sono ridistribuiti invariati con il progetto football-deep-analyzer, come la
+licenza consente, insieme a questa nota. Nessun carattere è stato modificato.
