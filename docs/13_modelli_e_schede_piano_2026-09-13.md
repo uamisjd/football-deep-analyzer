@@ -1014,3 +1014,22 @@ in deroga a quella regola, il merge di **PR #50** (commit `cab20ec` e `4053e5c`,
 
 La deroga è registrata qui e in `docs/STATO.md`, come prescritto per le eccezioni alla regola D.
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+## Deroga al flusso di merge (2026-09-18)
+
+La regola D di `docs/00_regole_di_lavoro.md` stabilisce che **il merge delle pull request lo fa
+sempre l'utente**. Oggi l'utente ha chiesto esplicitamente «Please merge the pull request»: in
+deroga a quella regola, il merge di **PR #51** (branch `arena/01a0b0ab-football-deep-analyzer` →
+`main`) è stato eseguito **dall'agente**, con la CI verde (`test pass`) e la PR in stato
+`MERGEABLE · CLEAN`.
+
+Contenuto della PR: la revisione totale del 2026-09-17 (`docs/26`) — potatura dell'archivio notizie
+promessa e non implementata, `site.css` assente dalla wheel, anteprima che scriveva in `site/`,
+`fda.duckdb` derivato ma versionato — più le decisioni prese dall'utente il 2026-09-18 e applicate
+nella stessa PR: ritenzione delle notizie a **14 giorni** (`NEWS_RETENTION_DAYS` in `collect.py`) e
+font **auto-ospitati** (`scripts/font_locali.py`, `base.html` condizionale, workflow
+`font-locali.yml`). Verifiche al merge: **385 test**, ruff 173 = baseline, `fda build` exit 0,
+`verify_site` **0 problemi · 93.574 controlli** (identico sui dati potati), `merge-tree` senza conflitti.
+
+La deroga è registrata qui e in `docs/STATO.md`. Resta valida la regola generale: senza una richiesta
+esplicita, il merge non va eseguito.

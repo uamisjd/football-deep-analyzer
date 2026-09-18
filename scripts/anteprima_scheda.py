@@ -1,8 +1,15 @@
-"""Anteprima locale delle nuove sezioni della scheda (non tocca data/processed).
+"""Anteprima locale delle nuove sezioni della scheda (non tocca data/processed né site/).
 
 Copia lo store in /tmp/preview_data, applica la calibrazione salvata alle previsioni già
 pubblicate (le λ/ρ grezze sono nella riga, quindi il risultato è lo stesso che produrrebbe
-`fda predict` con la calibrazione attiva) e rigenera il sito per ispezione visiva.
+`fda predict` con la calibrazione attiva) e rigenera il sito **in `site_preview/`**.
+
+Perché non in ``site/`` (corretto il 2026-09-17): ``site/`` è l'output di ``fda build``,
+quello che il workflow ``daily`` carica su GitHub Pages. Questo script lo svuotava e lo
+riscriveva: interrotto a metà (timeout, Ctrl-C) lasciava il sito pubblicato con poche
+centinaia di pagine su 4.100 — successo davvero durante la revisione del 2026-09-17, dove
+un'anteprima fermata a 120 s ha lasciato 135 pagine e il successivo ``fda build`` le ha
+dovute rifare. L'anteprima è un artefatto di ispezione e resta in una directory sua.
 """
 from __future__ import annotations
 
@@ -13,6 +20,8 @@ import pandas as pd
 
 SRC = Path("data/processed")
 DST = Path("/tmp/preview_data")
+#: output dell'anteprima: mai la directory pubblicata (`site/`), vedi docstring
+PREVIEW_DIR = Path("site_preview")
 
 shutil.rmtree(DST, ignore_errors=True)
 DST.mkdir(parents=True)
@@ -74,8 +83,8 @@ for rec in pred.to_dict("records"):
 print(f"previsioni con λ riportate entro i limiti di sicurezza: {limitate}")
 store.upsert("predictions", pd.DataFrame(rows))
 
-from fda.site.build import SITE_DIR, SiteBuilder                  # noqa: E402
+from fda.site.build import SiteBuilder                          # noqa: E402
 
-res = SiteBuilder(store=store).build()
-print("sito di anteprima in", SITE_DIR, res)
+res = SiteBuilder(store=store, out_dir=PREVIEW_DIR).build()
+print("sito di anteprima in", PREVIEW_DIR.resolve(), res)
 store.close()

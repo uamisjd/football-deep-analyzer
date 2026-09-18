@@ -44,6 +44,20 @@ log = logging.getLogger(__name__)
 # Orizzonte del meteo previsionale Open-Meteo (giorni futuri coperti come fallback).
 WEATHER_HORIZON_DAYS = 7
 
+# Ritenzione dell'archivio notizie, in giorni. È insieme la finestra di accettazione delle
+# righe in arrivo e l'età oltre la quale le righe archiviate vengono potate (docs/26 §2 e §8).
+# Il valore non è arbitrario: deve coprire le **due** finestre che leggono questa tabella —
+# la card «Vita del club» guarda 7 giorni indietro dal calcio d'inizio
+# (`MatchAnalysis.NEWS_WINDOW_DAYS`) e il gate `verify_site` [20] ne verifica 12
+# (`notizia_in_finestra(..., giorni=12)`) — quindi 14 lascia margine su entrambe.
+# Scelto dall'utente il 2026-09-18 al posto di 30. Misurato il 2026-09-18 eseguendo la potatura
+# sull'archivio reale (18.705 righe · 4,89 MB · 262 B/riga): toglie 5.028 righe e ne lascia 13.677
+# (3,58 MB); a regime, al ritmo degli ultimi 7 giorni (1.531 righe/giorno), 14 giorni valgono
+# ~21.400 righe ≈ 5,6 MB e ~28 MB/giorno di history Git, contro le ~45.900 righe ≈ 12,0 MB e
+# ~60 MB/giorno dei 30 giorni. Nessuna riga pubblicata si perde: build e verify_site sui dati
+# potati danno lo stesso identico risultato (docs/26 §11.1).
+NEWS_RETENTION_DAYS = 14
+
 # Errori di fonte che degradano senza bloccare il run: la fonte primaria copre il dato.
 _WARN_NON_BLOCCANTE = ("espn standings", "espn news", "espn scoreboard")
 
@@ -421,16 +435,17 @@ def collect_news(store: Store, keys: list[str] | None = None,
                  news: NewsClient | None = None,
                  fotmob: FotMobClient | None = None,
                  espn: EspnClient | None = None,
-                 window_days: int = 30) -> CollectReport:
+                 window_days: int = NEWS_RETENTION_DAYS) -> CollectReport:
     """Notizie per squadra (docs/21, P1-5): Google News RSS + ESPN news di lega.
 
     Una o due richieste RSS per squadra della stagione (cache 12 h: i run successivi allo
     stesso giorno non ridownloadano): l'edizione italiana e, per i campionati stranieri,
     l'edizione locale — è quella che porta il materiale di vita del club che la stampa
     italiana non raccoglie (docs/24 §3.5). Più una JSON ESPN per campionato. Le righe
-    vecchie oltre ``window_days`` vengono potate: la card legge 7 giorni, il resto è peso
-    morto nel Parquet. Fonte isolata come le altre: se Google non è raggiungibile il run
-    continua e ``source_status`` mostra l'avviso; la card degrada a segnaposto onesto.
+    vecchie oltre ``window_days`` vengono potate **dall'archivio**, non solo scartate in
+    arrivo: senza quel passo il Parquet cresceva senza limite (docs/26 §2). Fonte isolata
+    come le altre: se Google non è raggiungibile il run continua e ``source_status`` mostra
+    l'avviso; la card degrada a segnaposto onesto.
     """
     now = datetime.now(timezone.utc)
     report = CollectReport(league="NEWS", run_at=now)
@@ -512,6 +527,25 @@ def collect_news(store: Store, keys: list[str] | None = None,
         else:
             fuori_finestra += 1
     stored = store.upsert("news", fresh) if fresh else 0
+    # Potatura dell'archivio. La docstring di questa funzione la promette dal 2026-09-12
+    # («le righe vecchie oltre ``window_days`` vengono potate») ma il passo non era
+    # implementato: ``cut`` filtrava solo le righe **in arrivo**, così ``news.parquet``
+    # cresceva a ogni run senza limite. Misurato il 2026-09-17 su dati reali: 18.705 righe
+    # / 4,9 MB e +1.562 righe/giorno (0,41 MB/giorno) → il limite GitHub di 100 MB per
+    # singolo file arrivava in ~230 giorni, con 5 run al giorno che ne riscrivono il blob
+    # nella storia del repository. ``window_days`` (vedi ``NEWS_RETENTION_DAYS``) copre le
+    # due finestre che leggono la tabella — 7 giorni la card, 12 il gate — e il numero di
+    # righe potate è dichiarato nell'imbuto di *Stato fonti* invece di restare invisibile.
+    potate = 0
+    archivio = store.read("news")
+    if not archivio.empty and "published_at" in archivio.columns:
+        eta = pd.to_datetime(archivio["published_at"], utc=True, errors="coerce")
+        # NaT (riga senza data) non è «più vecchia di cut»: resta, non si butta un dato
+        # solo perché non se ne conosce l'età
+        tieni = archivio[~(eta < cut)]
+        potate = int(len(archivio) - len(tieni))
+        if potate:
+            store.write("news", tieni)
     report.requests = {"news": nc.http.mark() - nc0,
                        "espn": ec.http.mark() - ec0}
     report.note("news", rows=stored,
@@ -519,7 +553,8 @@ def collect_news(store: Store, keys: list[str] | None = None,
                                    f"articoli {diag.get('items', 0)}",
                                    f"corpi non RSS {diag.get('parse_error', 0)}",
                                    f"in finestra {len(fresh)}", f"fuori finestra {fuori_finestra}",
-                                   f"senza data {senza_data}", f"salvate {stored}"),
+                                   f"senza data {senza_data}", f"salvate {stored}",
+                                   f"potate {potate}"),
                 digest_text=digest(f"rss: byte {diag.get('bytes', 0)}",
                                    f"item {diag.get('items', 0)}",
                                    f"parse_error {diag.get('parse_error', 0)}",

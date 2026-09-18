@@ -69,6 +69,12 @@ Ogni chiamata è limitata (≤1 richiesta/secondo verso FotMob) e ciò che è gi
 
 **3. Il database.** Tutto finisce in un file DuckDB (`data/fda.duckdb`) più file Parquet, salvati nel repository stesso: così lo storico cresce gratis e ogni esecuzione "vede" cosa è cambiato rispetto alla precedente (quando è uscita una formazione, come si sono mosse le quote, quando è stato annunciato un infortunio).
 
+> **Correzione del 2026-09-17 (docs/26 §4).** Il percorso reale è `data/processed/fda.duckdb`
+> e quel file **non** è versionato: è una vista derivata dai Parquet che `Store.refresh_views`
+> ricrea in pochi secondi. Restava committato perché `.gitignore` non lo escludeva: un binario
+> riscritto a ogni run (5 al giorno) nella history senza aggiungere informazione. I Parquet
+> restano versionati, che è ciò che questa decisione voleva garantire.
+
 **4. Modelli e analisi.** Con i dati aggiornati si ricalcolano: Dixon-Coles (probabilità 1-X-2, risultati esatti, Over/Under, BTTS), Elo, modello su xG, ensemble calibrato; per ogni partita delle prossime 72 ore si genera un **report pre-partita in italiano** (forza, forma, xG, assenze pesate, diffidati, arbitro, riposo/viaggi, meteo, H2H, quote vs modello, notizie); per ogni partita finita un **report post-partita** (xG, shot map, momentum, prestazioni, cosa ha detto il modello). Ogni previsione viene salvata e poi valutata: la pagina "Accuratezza" è aggiornata automaticamente.
 
 **5. Il sito.** Un generatore produce pagine HTML statiche (Oggi · Partita · Squadra · Giocatore · Campionato · Previsioni & Accuratezza · Quote · Stato fonti) pubblicate su **GitHub Pages** (gratis, sempre acceso, nessun server). URL del tipo `https://uamisjd.github.io/football-deep-analyzer/`. Poiché il repository è pubblico, il sito è raggiungibile da chi conosce l'indirizzo: per l'uso personale basta non divulgarlo; se vorrai una protezione vera, la via gratuita è Cloudflare Pages + Cloudflare Access (login con la tua email), documentata in una fase successiva.

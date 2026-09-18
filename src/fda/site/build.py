@@ -158,6 +158,20 @@ def it_date_full(ts, tz) -> str:
     return f"{t.day:02d}/{t.month:02d}/{t.year}"
 
 
+def font_locali_presenti(assets: Path | None = None) -> bool:
+    """True se i font auto-ospitati sono stati scaricati (``scripts/font_locali.py``).
+
+    Il sito non deve dipendere da ``fonts.googleapis.com`` a runtime (docs/26 §8), ma i
+    file dei font **non** sono nel repository finché qualcuno non li scarica: dal sandbox
+    dell'agente Google non è raggiungibile (misurato 2026-09-17: ``curl`` → 000), quindi
+    il passo è esplicito e riproducibile. Finché mancano, ``base.html`` continua a linkare
+    Google invece di pubblicare pagine senza caratteri.
+    """
+    base = assets or (Path(__file__).parent / "assets")
+    css = base / "fonts" / "fonts.css"
+    return css.exists() and bool(list((base / "fonts").glob("*.woff2")))
+
+
 class SiteBuilder:
     def __init__(self, store: Store | None = None, out_dir: Path | None = None) -> None:
         self.store = store or Store()
@@ -202,6 +216,17 @@ class SiteBuilder:
         out = self.out / "assets" / "site.css"
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(css, encoding="utf-8")
+        # Font auto-ospitati (docs/26 §8): se ``scripts/font_locali.py`` è stato eseguito i
+        # woff2 vengono copiati accanto alla CSS e il template linka il CSS locale invece di
+        # ``fonts.googleapis.com``. Se mancano non si inventa nulla: resta Google.
+        if font_locali_presenti():
+            dst = self.out / "assets" / "fonts"
+            if dst.exists():
+                shutil.rmtree(dst)
+            shutil.copytree(Path(__file__).parent / "assets" / "fonts", dst)
+            self.env.globals["font_css"] = True
+        else:
+            self.env.globals["font_css"] = False
         self._assets_done = True
 
     # ---- helpers ------------------------------------------------------------------------------
