@@ -307,3 +307,49 @@ del materiale straniero (decisione dell'utente, `docs/25` §7), quote dei bookma
 2. Subito dopo, in una PR propria perché verificabile solo dal vivo: **l'avviso sul `daily` rosso**
    (coda 1) e la decisione sul **feed Sportmediaset** (coda 2).
 3. Lunedì 21/09: controllo della prima sonda dei fallback (coda 3).
+
+---
+
+## 6. Come provare l'allerta senza aspettare un guasto (interruttore `prova_allerta`)
+
+**Problema (voce 1b del §4).** L'allerta è in produzione dal 19/09 e ha già chiuso il suo primo
+ciclo (il passo «Segnala ripristino» gira verde a ogni run), ma il **ramo di guasto** — quello che
+apre la issue — non è mai stato esercitato: la sua condizione è
+`failure() && github.ref_name == ramo predefinito`, quindi non è riproducibile da un branch, e
+`gh issue list --state all` restituisce **0 issue**.
+
+**Interruttore.** `daily.yml` ha un input `workflow_dispatch` in più:
+
+```yaml
+prova_allerta:
+  description: "Fallisce di proposito a fine run, per provare l'apertura della issue di guasto"
+  type: boolean
+  default: false
+```
+
+e un passo che fallisce **solo** quando quell'input è vero, **dopo** il commit dei dati e **dopo**
+aver impacchettato il sito per Pages:
+
+```yaml
+- name: "Prova dell'allerta (solo su dispatch — fallimento deliberato)"
+  if: ${{ github.event_name == 'workflow_dispatch' && inputs.prova_allerta }}
+  run: |
+    echo "::warning::fallimento deliberato richiesto da «prova_allerta» …"
+    exit 1
+```
+
+**Perché lì.** Il fallimento arriva quando il lavoro utile è già fatto: nessun dato raccolto va
+perso (il commit è stato fatto), il sito pubblicato resta quello del run precedente (il job
+`deploy` non parte), e la issue si apre con la diagnostica completa perché i log
+(`run.log`, `verify.log`, `parita.log`, `resa375.log`) esistono tutti.
+
+**Come si usa.**
+
+```bash
+gh workflow run daily.yml --ref main -f prova_allerta=true
+```
+
+Effetto atteso: run rosso, issue «🚨 Fallimento run giornaliero (daily)» aperta con link, commit e
+estratti di log; al primo run verde successivo la issue si chiude da sola con il commento di
+ripristino. È l'unico modo di verificare il presidio prima del guasto vero: il 19/09 la sua
+assenza è costata **14h27m** di sito fermo senza un avviso.

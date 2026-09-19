@@ -649,6 +649,8 @@ class SiteBuilder:
         base_freqs = outcome_freqs(self.store.read("history"))
         key_of = {lg.name: lg.key for lg in leagues()}
         summary, recent, calib, markets = [], [], [], []
+        copertura = None          # copertura del campione valutato (docs/44 §4)
+        lead_stats = None         # anticipo misurato delle previsioni valutate (docs/44 §3)
         if not preds.empty:
             fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id"]]
             # la previsione valida è l'ultima fatta PRIMA del calcio d'inizio
@@ -767,6 +769,31 @@ class SiteBuilder:
                     lead_buckets = []
                     import logging
                     logging.getLogger(__name__).debug("RPS per anticipo saltato: %s", exc)
+                # Anticipo misurato (docs/44 §3): la previsione di ogni gara viene **rifatta** a
+                # ogni run (una sola riga per `match_id`), quindi quella valutata è sempre
+                # l'ultima prima del calcio d'inizio e i bucket oltre le 24 ore restano vuoti
+                # per costruzione. Senza questi numeri la pagina prometteva «se la qualità
+                # peggiora con l'anticipo, lo vedremo qui», che oggi non è misurabile.
+                lead_stats = None
+                if "_lead_days" in p.columns:
+                    _ld = p["_lead_days"].dropna()
+                    if not _ld.empty:
+                        lead_stats = {"n": len(_ld), "mean": float(_ld.mean()),
+                                      "min": float(_ld.min()), "max": float(_ld.max()),
+                                      "oltre_24h": int((_ld > 1).sum()),
+                                      "bucket_pieni": len(lead_buckets)}
+        # Copertura del campione (docs/44 §4): quante gare finite sono state valutate e
+        # quante no, col motivo. Senza questa riga «120 gare valutate» sembra dire «tutte
+        # le gare giocate», mentre sono 120 su 331.
+        copertura = None
+        if not preds.empty:
+            _prima = pd.to_datetime(preds["made_at"], utc=True, errors="coerce").min()
+            _senza = fin[~fin["match_id"].isin(p["match_id"])] if not p.empty else fin
+            _ko = pd.to_datetime(_senza["utc_kickoff"], utc=True, errors="coerce")
+            _prec = int((_ko < _prima).sum()) if pd.notna(_prima) else 0
+            copertura = {"finite": len(fin), "valutate": int(len(p) if not p.empty else 0),
+                         "precedenti": _prec, "senza": int(len(_senza) - _prec),
+                         "prima_prev": _prima}
         # backtest cronologico fuori campione (tabella prodotta da `fda backtest`): la card
         # compare solo se esiste, come le sezioni condizionate alla disponibilità della fonte
         bt_rows = self.store.read("backtest")
@@ -784,6 +811,7 @@ class SiteBuilder:
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
                      markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
                      composizione=composizione if 'composizione' in locals() else {},
+                     copertura=copertura, lead_stats=lead_stats if 'lead_stats' in locals() else None,
                      model_version=MODEL_VERSION)
 
     def build_status(self) -> None:

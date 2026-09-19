@@ -31,6 +31,10 @@ on:
         description: "Salta i modelli"
         type: boolean
         default: false
+      prova_allerta:
+        description: "Fallisce di proposito a fine run, per provare l'apertura della issue di guasto (docs/41 §6)"
+        type: boolean
+        default: false
 
 # Un solo run alla volta: evita conflitti sui commit dei dati
 concurrency:
@@ -147,6 +151,21 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
+      # Prova dell'allerta (`docs/41` §4 voce 1b, `docs/41` §6). Il ramo di guasto
+      # dell'allerta non si può esercitare da un branch — la condizione del passo è
+      # `failure() && ref_name == ramo predefinito` — e non ha senso scoprire se funziona
+      # al primo guasto vero (il 19/09 il sito è rimasto fermo 14h27m in silenzio).
+      # Con questo interruttore il run arriva in fondo (dati raccolti, sito generato e
+      # impacchettato) e fallisce **solo** all'ultimo passo: nessun dato viene perso
+      # (il commit è già stato fatto), il sito pubblicato resta quello del run precedente
+      # e la issue si apre con la diagnostica completa dei log. Il run verde successivo
+      # la chiude da solo, com'è già successo in produzione il 19/09.
+      - name: "Prova dell'allerta (solo su dispatch — fallimento deliberato)"
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.prova_allerta }}
+        run: |
+          echo "::warning::fallimento deliberato richiesto da «prova_allerta»: serve solo a verificare l'apertura della issue di guasto"
+          exit 1
 
       # Allerta automatica su guasto/ripristino (docs/41 §4, P1.1):
       # - se il run è verde, chiude in automatico eventuali issue di guasto aperte;

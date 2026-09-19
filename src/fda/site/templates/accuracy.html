@@ -23,6 +23,15 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   15-20 gare al giorno — può divergere dal backtest fuori campione qui sotto, che valuta
   <b>solo</b> la ricetta corrente su migliaia di gare.</p>
 {% endif %}
+{% if copertura and copertura.finite %}
+<p class="small mut">Copertura: <b>{{ copertura.valutate|it_num }}</b> {{ 'gara valutata' if copertura.valutate == 1 else 'gare valutate' }} su
+  <b>{{ copertura.finite|it_num }}</b> finite in stagione{% if copertura.precedenti %}:
+  {{ copertura.precedenti|it_num }} {{ 'gara è precedente' if copertura.precedenti == 1 else 'gare sono precedenti' }} alla prima
+  previsione registrata ({{ copertura.prima_prev|it_utc }}){% endif %}{% if copertura.senza %} e
+  {{ copertura.senza|it_num }} {{ 'gara' if copertura.senza == 1 else 'gare' }} non
+  {{ 'aveva' if copertura.senza == 1 else 'avevano' }} una previsione salvata prima del calcio d'inizio{% endif %}.
+  Nessuna di quelle escluse entra nei numeri qui sopra: una previsione fatta dopo la partita non è una previsione.</p>
+{% endif %}
 </div>
 {% if markets %}
 <div class="card"><h2>Accuratezza per mercato</h2>
@@ -97,11 +106,20 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 {% endif %}
 {% if lead_buckets %}
 <div class="card"><h2>RPS per anticipo</h2>
-<p class="small mut">Quanto prima è stata fatta la previsione? Ora misurabile perché Tappa 1 prevede <b>tutto il calendario</b> (chiave <code>(match_id,model)</code> unica, <code>made_at</code> vs <code>utc_kickoff</code>). Se la qualità peggiora con l'anticipo, lo vedremo qui.</p>
+<p class="small mut">Quanto prima è stata fatta la previsione? «Anticipo medio» è la distanza fra l'ora della previsione
+  valutata e il calcio d'inizio{% if lead_stats %}: oggi <b>{{ lead_stats.mean|dec(1) }} giorni</b> su
+  {{ lead_stats.n|it_num }} {{ 'gara' if lead_stats.n == 1 else 'gare' }} (min {{ lead_stats.min|dec(1) }},
+  max {{ lead_stats.max|dec(1) }}){% endif %}.</p>
 <div class="tablewrap"><table><tr><th scope="col">Anticipo</th><th scope="col" class="r">Gare</th><th scope="col" class="r">RPS medio</th><th scope="col" class="r">Esito azzeccato</th><th scope="col" class="r">Anticipo medio</th></tr>
 {% for b in lead_buckets %}<tr><td>{{ b.label }}</td><td class="r">{{ b.n }}</td><td class="r">{{ b.rps|dec(4) }}</td><td class="r">{{ (b.hit*100)|round|int }}%</td><td class="r">{{ b.lead_mean|dec(1) }} giorni</td></tr>{% endfor %}
 </table></div>
-<p class="small mut">Bucket: 0–7 giorni (scheda completa con forma/classifica/assenze), 8–14, 15–30, 31–60, 61+ (solo modello, dettagli non ancora pubblicati dalla fonte). Con poche gare per bucket i valori sono indicativi: servono ~30 gare per lettura stabile.</p>
+<p class="small mut"><b>Perché i bucket oltre il primo sono vuoti.</b> La chiave <code>(match_id, model)</code> è unica e la
+  previsione di ogni gara viene <b>rifatta a ogni run</b> (5 al giorno): ne resta una sola, l'ultima, cioè
+  quella delle ~2 ore prima del calcio d'inizio. Per costruzione non esiste una previsione «vecchia di 10 giorni»
+  da valutare, quindi da questa tabella <b>non</b> si può leggere se la qualità peggiora con l'anticipo:
+  serve conservare lo storico delle previsioni (una riga per run), che oggi non c'è. Finché resta così, la
+  tabella dice una cosa sola e vera: l'anticipo con cui il modello ha parlato, gara per gara.
+  Con poche gare per bucket i valori sono indicativi: servono ~30 gare per lettura stabile.</p>
 </div>
 {% endif %}
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>

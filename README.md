@@ -23,7 +23,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/25_revisione_lingua_e_parita_2026-09-17.md`](docs/25_revisione_lingua_e_parita_2026-09-17.md) — revisione completa del portale: il filtro che pubblicava titoli stranieri come italiani e la parità fra le 7 leghe.
 - [`docs/26_revisione_totale_2026-09-17.md`](docs/26_revisione_totale_2026-09-17.md) — **revisione totale del progetto**: cosa è stato riverificato, i difetti trovati (potatura delle notizie, CSS fuori dalla wheel, anteprima che sovrascriveva il sito, DuckDB derivato versionato) e le decisioni aperte.
 
-> L'**indice completo** dei 31 file di `docs/` (con l'albero del codice e i workflow) è nel briefing, sezione 6.
+> L'**indice completo** dei 49 file di `docs/` (43 documenti numerati + briefing + `STATO.md` + 4 archivi; con l'albero del codice e i workflow) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 

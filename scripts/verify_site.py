@@ -2590,6 +2590,32 @@ def check_didascalie_punteggio(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# Importi di mercato azzerati dall'arrotondamento (docs/43 §3). Il difetto misurato il
+# 2026-09-19: `giocatore.html` divideva per un milione e poi applicava `it_num`, che non
+# ha decimali → ogni valore sotto i 500.000 € diventava «€0M» su **845** schede, con
+# 1.589 valori reali fra 0 e 500.000 € (minimo 73.728 €) e nessun valore nullo nella
+# fonte. Non è un controllo matematico: rilegge la pagina come la legge il lettore e
+# vieta la **forma** in cui uno zero falso si presenta.
+IMPORTO_AZZERATO = ("€0M", "≈ 0 M€")
+
+
+def check_importi_mercato(site: Path) -> tuple[list[str], int]:
+    """[38] nessun importo di mercato pubblicato come zero dall'arrotondamento."""
+    fails: list[str] = []
+    checks = 0
+    for pg in sorted(site.rglob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        checks += 1
+        for forma in IMPORTO_AZZERATO:
+            if forma in html:
+                i = html.find(forma)
+                contesto = re.sub(r"\s+", " ", html[max(0, i - 90):i + 40]).strip()
+                fails.append(f"{pg.relative_to(site)}: importo pubblicato come «{forma}» "
+                             f"(un valore di mercato non è mai zero) — …{contesto}…")
+    print(f"[38] pagine senza importi azzerati dall'arrotondamento: {checks}")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -2633,6 +2659,9 @@ def main() -> int:
     didascalie, didascalie_checks = check_didascalie_punteggio(site)
     fails += didascalie
     checks += didascalie_checks
+    importi, importi_checks = check_importi_mercato(site)
+    fails += importi
+    checks += importi_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
