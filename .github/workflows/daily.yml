@@ -41,6 +41,7 @@ permissions:
   contents: write     # per committare data/processed
   pages: write        # per pubblicare il sito
   id-token: write     # richiesto da deploy-pages
+  issues: write       # per aprire/aggiornare/chiudere issue di allerta sul daily (docs/41 §4, P1.1)
 
 jobs:
   run:
@@ -146,6 +147,21 @@ jobs:
         uses: actions/upload-pages-artifact@v5
         with:
           path: site
+
+      # Allerta automatica su guasto/ripristino (docs/41 §4, P1.1):
+      # - se il run è verde, chiude in automatico eventuali issue di guasto aperte;
+      # - se il run è rosso, apre una issue dettagliata con link, commit ed estratti di log o vi aggiunge un commento.
+      - name: Segnala ripristino (chiude eventuale issue di guasto aperta)
+        if: success() && github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/ci_alert.py on-success
+
+      - name: Segnala fallimento (apre o aggiorna issue di guasto)
+        if: failure() && github.ref_name == github.event.repository.default_branch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: python scripts/ci_alert.py on-failure
 
   deploy:
     needs: run
