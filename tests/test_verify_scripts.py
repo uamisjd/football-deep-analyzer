@@ -94,12 +94,25 @@ def test_verify_site_content_checks(tmp_path):
     assert pages == 2 and fails == []        # i separatori di migliaia non sono decimali col punto
 
     (site / "rotta.html").write_text(
-        '<a href="mancante.html">x</a><p>1 gare · nan · 1.69 · RegularPlay · clean sheet</p>', encoding="utf-8")
+        '<a href="mancante.html">x</a><p>1 gare · nan · 1.69 · RegularPlay · clean sheet</p>'
+        # le sei forme dell'hotfix concordanza (docs/40): il gate deve fermarle tutte, anche
+        # dentro un attributo pronunciato dal lettore di schermo
+        '<p>1 assenti · 1 titolari · 1 giocatori · 1 partite · 1 giorni · 1 gara finita</p>'
+        '<span aria-label="nelle ultime 1 partite">forma</span>', encoding="utf-8")
     fails, pages = vs.check_pages(site)
     kinds = {f.split(": ", 1)[1] for f in fails if f.startswith("rotta.html")}
     assert pages == 3
     assert any("collegamento interno mancante" in k for k in kinds)
     assert any("concordanza '1 gare'" in k for k in kinds)
+    assert any("concordanza '1 assenti'" in k for k in kinds)
+    assert any("concordanza '1 titolari'" in k for k in kinds)
+    assert any("concordanza '1 giocatori'" in k for k in kinds)
+    assert any("concordanza '1 giorni'" in k for k in kinds)
+    # «1 partite» sia nel testo sia nell'aria-label (gli attributi sono una dimensione presidiata)
+    assert any("concordanza '1 partite'" in k for k in kinds)
+    assert any("concordanza in attributo '1 partite'" in k for k in kinds)
+    # il singolare corretto non è un problema: «1 gara finita» passa
+    assert not any("'1 gara finita'" in k for k in kinds)
     assert any("residuo 'nan'" in k for k in kinds)
     assert any("decimale col punto '1.69'" in k for k in kinds)
     assert any("inglese" in k for k in kinds)

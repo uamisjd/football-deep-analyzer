@@ -565,6 +565,50 @@ def test_clima_infermeria_concordanza_titolari(mood_analysis, monkeypatch):
         assert not any("1 titolari" in t for t in testi), testi
 
 
+def test_concordanza_uno_assente_giorno_gara(mood_analysis, monkeypatch):
+    """«1 assente», «un solo giorno», «in 1 gara»: i tre contatori che possono valere 1.
+
+    Il gate ``verify_site`` del 19/09/2026 ha fermato il daily su
+    ``partite/5749682.html: concordanza '1 assenti'``. La soglia della riga «infermeria
+    pesante» **non** è il numero di assenti: bastano 2 titolari abituali fuori **o** 0,5
+    xG+xA a gara in meno, quindi la riga scatta anche con un solo indisponibile — un
+    giocatore che da solo porta via mezza occasione a partita — e la frase stampava il
+    plurale. Gli altri due punti della stessa classe (un giorno di riposo, la prima
+    giornata di campionato) erano raggiungibili allo stesso modo e non erano ancora passati
+    dai dati (docs/40 §1, punti 1-3).
+    """
+    def peso(n_assenti, titolari):
+        def _f(self, match_id, team_id):
+            # ``starters_out`` è contato **dentro** gli ``n`` assenti: con n=1 la soglia che
+            # fa scattare la riga è il contributo (0,5 xG+xA/gara), non i titolari
+            return {"n": n_assenti, "starters_out": titolari, "contrib_lost_p90": 0.9}
+        return _f
+
+    testi: list[str] = []
+    for n, titolari, attesa in ((1, 1, "infermeria pesante: 1 assente,"),
+                                (4, 2, "infermeria pesante: 4 assenti,")):
+        monkeypatch.setattr(MatchAnalysis, "absences_weight", peso(n, titolari))
+        testi = [r["text"] for r in mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))]
+        assert any(attesa in t for t in testi), (n, testi)
+    assert not any("1 assenti" in t for t in testi), testi
+
+    # narrativa: la soglia del segnale è ≤3 giorni, quindi il caso 1 esiste
+    base = {"home_name": "Inter", "away_name": "Milan"}
+    assert next(s for s in MatchAnalysis.narrative({**base, "home_rest": 1})
+                if "riposo" in s) == "Inter gioca dopo un solo giorno di riposo."
+    assert next(s for s in MatchAnalysis.narrative({**base, "home_rest": 3})
+                if "riposo" in s) == "Inter gioca dopo soli 3 giorni di riposo."
+
+    # confronto di stagione: alla prima giornata ``played`` vale 1
+    cmp = mood_analysis.season_compare(
+        {"rank": 3, "played": 1, "points": 3, "goals_for": 2, "goals_against": 0,
+         "goal_diff": 2, "wins": 1, "draws": 0, "losses": 0},
+        {"rank": 9, "played": 4, "points": 5, "goals_for": 4, "goals_against": 4,
+         "goal_diff": 0, "wins": 1, "draws": 2, "losses": 1})
+    punti = next(r for r in cmp["rows"] if r["label"] == "Punti")
+    assert punti["h"] == "3 in 1 gara" and punti["a"] == "5 in 4 gare"
+
+
 def test_google_news_params_italian_search_names():
     """Le query di Google News per club esteri usano i nomi comuni della stampa italiana."""
     from fda.sources.news import google_news_params

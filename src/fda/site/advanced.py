@@ -16,6 +16,7 @@ import pandas as pd
 from ..models.dc_grid import tau_grid
 from .fmt import dec as _dec
 from .fmt import int_it as _int_it
+from .fmt import it_plural as _it_plural
 
 # Situazioni FotMob → italiano (valori reali in shots.parquet, 2026-09-11).
 SITUATION_IT = {
@@ -458,6 +459,23 @@ def shot_quality(shots: pd.DataFrame, team_id: int) -> dict[str, Any] | None:
     }
 
 
+def _n_gare(v, singolare: str = "gara", plurale: str = "gare") -> str:
+    """Contatore di gare concordato: 1 → «1 gara», 4 → «4 gare».
+
+    Perché non basta :func:`fda.site.fmt.it_plural`: i tooltip dello «Scontro tattico»
+    dichiarano su quante gare è calcolata la media, e quando il dato manca il valore è il
+    trattino «—», non un numero — quello va passato attraverso tale e quale (seguito dal
+    plurale, come prima). Con una sola gara in archivio (prima giornata, o una neopromossa
+    con un solo turno raccolto) le due frasi stampavano «su 1 gare» e «1 gare finite»
+    (docs/40 §1, punti 4 e 5).
+    """
+    try:
+        n = int(float(v))
+    except (TypeError, ValueError):
+        return f"{v} {plurale}"
+    return _it_plural(n, singolare, plurale)
+
+
 def _quota_split(side: dict[str, Any]) -> tuple[float | None, float | None]:
     """Quote xG azione / palle inattive (somma 100) da un'unica fonte — mai sommabili a un
     totale calcolato da un'altra fonte (docs/20 §4): è l'unica scomposizione coerente
@@ -501,11 +519,11 @@ def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
         """Fonte esplicita per lato della stessa riga: qui (e solo qui) le due colonne
         possono venire da fornitori diversi."""
         hsrc, asrc = hs.get("source") or "n.d.", as_.get("source") or "n.d."
-        hn, an = hs.get("played") or "—", as_.get("played") or "—"
+        hn, an = _n_gare(hs.get("played") or "—"), _n_gare(as_.get("played") or "—")
         if hsrc == asrc:
-            return f"{base}, media stagionale {hsrc} su {hn} gare"
-        return (f"{base}, media stagionale: colonna a sinistra {hsrc} su {hn} gare, "
-                f"colonna a destra {asrc} su {an} gare — i due fornitori non sono identici")
+            return f"{base}, media stagionale {hsrc} su {hn}"
+        return (f"{base}, media stagionale: colonna a sinistra {hsrc} su {hn}, "
+                f"colonna a destra {asrc} su {an} — i due fornitori non sono identici")
 
     add("Gol attesi (λ)", pred.get("lambda_home"), pred.get("lambda_away"), True,
         help="Media Poisson Dixon-Coles+Elo calibrata, non media delle ultime gare")
@@ -525,7 +543,7 @@ def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
                 return "n.d."
             n = side.get("split_played") or "—"
             return (f"{_dec(side['open_pm'], 2)} + {_dec(side['set_pm'], 2)} xG a gara "
-                    f"(FotMob, {n} gare finite)")
+                    f"(FotMob, {_n_gare(n, 'gara finita', 'gare finite')})")
         return (f"Quota del totale xG della squadra, unica fonte FotMob: le due quote sommano "
                 f"sempre 100 e NON si sommano alla riga «xG / gara» se quella viene da "
                 f"Understat. Valori a gara — sinistra {_one(h, qo_h, qs_h)}, "

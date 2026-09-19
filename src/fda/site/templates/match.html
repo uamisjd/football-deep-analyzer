@@ -345,7 +345,7 @@
     <div class="squadra-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px">
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG creati / gara</div>
-        <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xg_pm|dec }} <span class="mut small" style="font:600 11px var(--font-body)">({{ xg.source }}, {{ xg.played }} gare)</span></div>
+        <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xg_pm|dec }} <span class="mut small" style="font:600 11px var(--font-body)">({{ xg.source }}, {{ xg.played|it_plural('gara') }})</span></div>
 
       </div>
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
@@ -356,7 +356,7 @@
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xPTS vs punti reali</div>
         <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">{% if xg.xpts is not none and xg.pts is not none %}{{ xg.xpts|dec(1) }} <span class="mut">vs</span> {{ xg.pts }}{% set _d = xg.pts - xg.xpts %} <span class="{% if _d >= 2 %}good{% elif _d <= -2 %}warn{% else %}mut{% endif %}" title="{% if _d >= 2 %}Sopra atteso: possibile regressione{% elif _d <= -2 %}Sotto atteso: sottovalutata{% else %}In linea con la qualità del gioco{% endif %}">({{ _d|dec(1, true) }})</span>{% else %}—{% endif %}</div>
-        <div class="mut small" style="font-size:11px">{{ xg.played }} gare · {% if xg.xpts is not none and xg.pts is not none %}{% set _d = xg.pts - xg.xpts %}{% if _d >= 2 %}sopra atteso{% elif _d <= -2 %}sotto atteso{% else %}in linea{% endif %}{% else %}n.d.{% endif %}</div>
+        <div class="mut small" style="font-size:11px">{{ xg.played|it_plural('gara') }} · {% if xg.xpts is not none and xg.pts is not none %}{% set _d = xg.pts - xg.xpts %}{% if _d >= 2 %}sopra atteso{% elif _d <= -2 %}sotto atteso{% else %}in linea{% endif %}{% else %}n.d.{% endif %}</div>
       </div>
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pressing · riposo</div>
@@ -396,7 +396,7 @@
         </li>
         {% endfor %}
       </ol>
-      {% if stt|length != 11 %}<p class="small mut" style="margin-top:6px">La fonte elenca {{ stt|length }} titolari: distinta non definitiva.</p>{% endif %}
+      {% if stt|length != 11 %}<p class="small mut" style="margin-top:6px">La fonte elenca {{ stt|length|it_plural('titolare') }}: distinta non definitiva.</p>{% endif %}
     {% endif %}
   </div>
 {% endfor %}
@@ -529,7 +529,7 @@
   <div class="card" id="arbitro-meteo">
     <h2>Arbitro e meteo</h2>
     <div class="tablewrap"><table>
-      {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int }} gare)</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
+      {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int|it_plural('gara') }})</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
       {% if c.weather.desc %}<tr><th scope="row">Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
     </table></div>
   </div>
@@ -598,7 +598,7 @@
   <div class="tablewrap"><table>
     <tr><th scope="col" class="mut small">squadra</th><th scope="col" class="r" style="width:110px">distanza</th><th scope="col" class="r" style="width:80px">sprint</th><th scope="col" class="r" style="width:130px">metri in sprint</th><th scope="col" class="r" style="width:170px">più veloce</th></tr>
     {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}{% set f = c.physical[side] %}
-    <tr><td>{{ name }} <span class="mut small">({{ f.players }} giocatori)</span></td>
+    <tr><td>{{ name }} <span class="mut small">({{ f.players|it_plural('giocatore') }})</span></td>
       <td class="r">{{ f.km|dec(1) }} km</td><td class="r">{{ f.sprints }}</td><td class="r">{{ f.sprint_m|it_num }} m</td>
       <td class="r">{{ f.fastest }} <span class="mut small">{{ f.topspeed|dec(1) }} km/h</span></td></tr>
     {% endfor %}

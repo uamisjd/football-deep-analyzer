@@ -1445,7 +1445,12 @@ class MatchAnalysis:
         if ab and (ab["n"] >= self.MOOD_ABSENT_N
                    or ab["starters_out"] >= self.MOOD_ABSENT_STARTERS
                    or (ab.get("contrib_lost_p90") or 0) >= self.MOOD_ABSENT_CONTRIB):
-            bits = [f"infermeria pesante: {ab['n']} assenti"]
+            # concordanza: la soglia di questa riga NON è il numero di assenti (bastano 2
+            # titolari abituali fuori, o 0,5 xG+xA/gara in meno), quindi con un solo
+            # indisponibile la frase stampava «infermeria pesante: 1 assenti» — il gate
+            # verify_site del 19/09/2026 l'ha fermata su partite/5749682.html. È lo stesso
+            # helper usato due righe sotto per «di cui 1 titolare abituale».
+            bits = ["infermeria pesante: " + it_plural(ab["n"], "assente")]
             if ab["starters_out"]:
                 # concordanza: con un solo titolare «di cui 1 titolari abituali» non è italiano
                 # (25 occorrenze su 22 schede, audit 18/09). it_plural è lo stesso helper che
@@ -2584,7 +2589,10 @@ class MatchAnalysis:
                 pts, gf, ga = float(st["points"]), float(st["goals_for"]), float(st["goals_against"])
                 return {"rank": int(st["rank"]), "p": p, "ppg": pts / p, "gf_pg": gf / p,
                         "ga_pg": ga / p, "diff": int(st["goal_diff"]),
-                        "pts_s": f"{pts:.0f} in {p:.0f} gare", "wdl": f"{int(st['wins'])}-{int(st['draws'])}-{int(st['losses'])}"}
+                        # concordanza: alla prima giornata ``played`` è 1 e la riga dei punti
+                        # stampava «3 in 1 gare» (docs/40 §1, punto 2)
+                        "pts_s": f"{pts:.0f} in {it_plural(p, 'gara')}",
+                        "wdl": f"{int(st['wins'])}-{int(st['draws'])}-{int(st['losses'])}"}
 
             dash = "—"
             h, a = side(home_st), side(away_st)
@@ -3877,7 +3885,11 @@ class MatchAnalysis:
             if rest is not None and rest <= 3:
                 cup = ctx.get(f"{side}_rest_cup")
                 tail = f", con un turno di {cup} in mezzo" if cup else ""
-                s.append(f"{name} gioca dopo soli {rest} giorni di riposo{tail}.")
+                # concordanza: con un giorno solo «dopo soli 1 giorni di riposo» non è
+                # italiano, e nemmeno «soli 1 giorno» (l'aggettivo resta plurale) — la forma
+                # corretta è «dopo un solo giorno di riposo» (docs/40 §1, punto 3)
+                riposo = "un solo giorno" if rest == 1 else f"soli {rest} giorni"
+                s.append(f"{name} gioca dopo {riposo} di riposo{tail}.")
         ref = ctx.get("referee")
         if ref and ref.get("name"):
             y, ly = ref.get("yellows"), ref.get("league_yellows")
