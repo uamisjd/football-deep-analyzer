@@ -217,6 +217,51 @@ hero di una gara in corso → «1–0 · in corso · calcio d'inizio 15:00»; `a
 **0** numeri ≥ 1000 senza separatore (prima: 4 forme diverse); pagine che violano `[14]` esteso
 → **0** (prima della correzione: **165**).
 
+### 3.7 GitHub ricollegato: i commit della sessione sono sul branch (secondo giro)
+
+Nel primo giro il push era bloccato dal token scaduto (`gh auth status` → `authentication failed`,
+`git push` → `could not read Username for 'https://github.com': terminal prompts are disabled`,
+`gh api user` → `401 Bad credentials`) e il lavoro era stato consegnato in `handover/` secondo la
+regola A8bis. Dopo l'intervento dell'utente: `gh auth status` → `✓ Logged in to github.com as
+arena-ai-coding-agent[bot] (GH_TOKEN)`, `git push origin arena/01a0ba12-football-deep-analyzer` →
+`fd03015..9bbc055`. La CI `tests` è verde su entrambi gli sha (`gh run list --branch
+arena/01a0ba12-…`: run `35451417391` su `fd03015`, run `35453307792` su `9bbc055`). `handover/`
+resta come copia di riserva.
+
+### 3.8 Archiviazione di `docs/STATO.md` (regola A5, coda P2.5)
+
+`docs/STATO.md` era a **118.900 byte** con **18** giri «Ultimo aggiornamento»: sopra la soglia di
+~80 kB della regola A5, già dichiarata come punto aperto in `docs/40` §9.3. Fatto: i giri **30-45**
+sono in `docs/STATO_archivio_2026-09-19.md` (**61.120 byte**, testo integro, senza riscritture), in
+`STATO.md` restano gli ultimi 3 giri e il link — **61.422 byte**, sotto la soglia. Verifica riga
+per riga contro il testo pubblicato su GitHub (`git show HEAD:docs/STATO.md`): **271** righe non
+vuote originali, **270** presenti tra `STATO.md` e l'archivio; l'unica non coperta è la riga «Giri
+archiviati (regola A5)», sostituita dalla versione col link nuovo. Le sei sezioni permanenti
+(`## Fatto`, `## In corso`, `## Nota`, `## Prossimo passo`, `## Decisioni aperte`,
+`## Direttive utente persistenti`) sono intatte.
+
+*Nota di metodo:* la prima esecuzione dello script di archiviazione è caduta a metà
+(`ValueError: not enough values to unpack`) **dopo** aver già riscritto `STATO.md`: il giro 45 era
+uscito da `STATO.md` senza entrare nell'archivio. Recuperato da `git show HEAD:docs/STATO.md` e
+reinserito; la verifica riga per riga qui sopra è il controllo che lo dimostra. Chi riscrive un
+registro in più passi deve verificare il risultato prima di considerarlo chiuso.
+
+### 3.9 Il test di render coi contatori a 1 (`docs/40` §8, coda P2.6)
+
+`docs/40` §8 chiedeva «un test di render che costruisca le card con i contatori a 1 e verifichi la
+formattazione (oggi il minimo osservato è `n=104` e la soglia dei mille non è mai stata
+attraversata in produzione)». Nuovo file `tests/test_numeri_pubblicati.py`, 3 test:
+
+* `int_it` come fonte unica della formattazione: 5836 → «5.836», 1000 → «1.000», 999 → «999»,
+  356 → «356», 1 → «1», `57000.0` → «57.000» (nel parquet gli interi arrivano float), `None` →
+  vuoto e non uno zero inventato;
+* il render con **una sola gara valutata** (lo seed dei test di sito): «1 gara valutata» e non
+  «1 gare», la riga di riepilogo «Tutti» espone la cardinalità `1`, la calibrazione resta un
+  rapporto `(k/1)` leggibile, nessun numero a quattro cifre senza separatore;
+* il morso del §3.5: `check_numbers` rilegge sia «2494/5836» sia «2.494/5.836» senza andare in
+  `ValueError`.
+
+`pytest tests/test_numeri_pubblicati.py -q` → **3 passed in 3.91s**.
 
 ---
 
@@ -239,11 +284,10 @@ hero di una gara in corso → «1–0 · in corso · calcio d'inizio 15:00»; `a
 
 **P2 — qualità e manutenzione**
 
-5. **Archiviazione di `STATO.md`**: misurato **114.175 byte** contro la soglia ~80 kB della regola
-   A5 (17 giri). Da fare: giri vecchi in `docs/STATO_archivio_2026-09-19.md`.
-6. **Test di render coi contatori a 1** (`docs/40` §8): la classe «1 assente / 1 gara / 1 giorno»
-   è chiusa nei generatori e nei template, ma non esiste ancora un test che costruisca una pagina
-   con i contatori a 1 (oggi i dati versionati hanno minimo 2, quindi il sito non lo esercita).
+5. ~~**Archiviazione di `STATO.md`**~~ — **fatta** (§3.8): 118.900 → **61.422 byte**, i giri 30-45
+   in `docs/STATO_archivio_2026-09-19.md`, verifica riga per riga senza perdite.
+6. ~~**Test di render coi contatori a 1**~~ (`docs/40` §8) — **fatto** (§3.9): nuovo
+   `tests/test_numeri_pubblicati.py`, 3 test, 3 passed.
 7. **Ritardo dei run schedulati** (§1.3, media 3,12 h): non è un difetto nostro ma di GitHub
    Actions. Se l'utente vuole più freschezza le opzioni sono più cron (costo: più run) o accettare
    il ritardo dichiarato in testa alla pagina. **Decisione dell'utente**, non dell'agente.
@@ -255,8 +299,9 @@ del materiale straniero (decisione dell'utente, `docs/25` §7), quote dei bookma
 
 ## 5. Prossimo passo
 
-1. Le correzioni di §3 sono committate e pushate sul branch `arena/01a0ba12-…`: i gate pieni sono
-   in `STATO.md`. Quando l'utente dà il via, una sola PR (regola «PR ricca», `docs/00` §D).
+1. Le correzioni di §3 sono committate e **pushate** sul branch `arena/01a0ba12-…` (`fd03015..9bbc055`,
+   §3.7) con la CI `tests` verde. Quando l'utente dà il via, una sola PR (regola «PR ricca»,
+   `docs/00` §D) contenente i difetti di §3.1-§3.6, l'archiviazione di §3.8 e il test di §3.9.
 2. Subito dopo, in una PR propria perché verificabile solo dal vivo: **l'avviso sul `daily` rosso**
    (coda 1) e la decisione sul **feed Sportmediaset** (coda 2).
 3. Lunedì 21/09: controllo della prima sonda dei fallback (coda 3).
