@@ -666,6 +666,81 @@ def test_arbitro_meteo_e_precedenti_card_separate(tmp_path):
     st.close()
 
 
+def test_p23_tre_card_di_testo_hanno_il_loro_micro_visivo(tmp_path):
+    """P2.3 (`docs/28` §3): le tre card di sola prosa hanno un grafico, e il grafico dice gli
+    stessi numeri della prosa.
+
+    Serve una fixture più ricca del solito: la scala di lega vuole ≥30 partite previste nello
+    stesso campionato, la fascia storica vuole il backtest, il primo gol vuole gli eventi. Le
+    tre condizioni sono seminati qui perché senza dati le card non esistono (e senza card non
+    c'è niente da verificare).
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    # 40 partite ITA1 previste dal modello (scala di lega) con λ totali diversi
+    st.upsert("predictions", [
+        {"match_id": 700000 + i, "league_key": "ITA1", "home": "A", "away": "B",
+         "model": "ensemble", "p_home": 0.4, "p_draw": 0.3, "p_away": 0.3,
+         "lambda_home": 1.0 + i / 25, "lambda_away": 1.0 + (39 - i) / 25,
+         "made_at": now - timedelta(days=3), "n_train": 380}
+        for i in range(40)])
+    # backtest: 150 gare per ognuna delle cinque fasce (il favorito di questa gara è al 37%,
+    # quindi la fascia «fino al 40%» è quella segnata «questa»)
+    righe = []
+    for fav in (0.36, 0.45, 0.55, 0.65, 0.85):
+        for i in range(150):
+            righe.append({"match_id": 800000 + len(righe), "p_home": fav, "p_draw": (1 - fav) / 2,
+                          "p_away": (1 - fav) / 2, "outcome": 0 if i % 2 else 1,
+                          "league_key": "ITA1", "made_at": now - timedelta(days=400)})
+    st.upsert("backtest", righe)
+    # eventi: 120 gol in 100 partite, primo gol distribuito fra i due tempi
+    st.upsert("events", [
+        {"match_id": 900000 + i, "team_id": 8600, "player_id": 1, "type": "Goal",
+         "minute": float(5 + (i * 7) % 85), "minute_added": None, "period": "FirstHalf"}
+        for i in range(120)])
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    # 1) scala di lega: barra con aria-label, segno e tacca
+    assert 'id="posizione-lega"' in h
+    # la fetta si ferma alla card successiva: `class="gb"` compare anche nel dotplot
+    barra = h.split('id="posizione-lega"', 1)[1].split('<div class="card', 1)[0]
+    assert 'class="track" role="img" aria-label="Gol attesi totali' in barra
+    assert 'class="fill"' in barra and 'class="pin"' in barra and 'class="tick soft"' in barra
+    # il numero sul segno è quello della frase («I 2,47 gol attesi totali in testa alla scheda»)
+    valore = re.search(r"I ([\d,]+) gol attesi totali in testa alla scheda", barra).group(1)
+    assert 'class="mark"' in barra
+    assert f">{valore}</span>" in barra.split('class="mark"')[1][:60]
+
+    # 2) primo gol: distribuzione osservata + banda del modello
+    assert 'id="primo-gol"' in h
+    # la fetta si ferma alla card successiva: `class="gb"` compare anche nel dotplot
+    fg = h.split('id="primo-gol"', 1)[1].split('<div class="card', 1)[0]
+    assert 'class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol' in fg
+    assert fg.count('class="gb"') == 6, "sei quarti d'ora"
+    assert 'class="bandbar" role="img"' in fg and 'class="band"' in fg and 'class="med"' in fg
+    # le percentuali delle barre sono numeri interi e sommano ~100 (partite con almeno un gol)
+    perc = [int(x) for x in re.findall(r'<span class="v">(\d+)%</span>', fg)]
+    assert len(perc) == 6 and 95 <= sum(perc) <= 105, perc
+
+    # 3) fasce storiche: una barra per fascia, con l'intervallo e la tacca della previsione
+    assert 'id="fascia-storica"' in h
+    # la fetta si ferma alla card successiva: `class="gb"` compare anche nel dotplot
+    fs = h.split('id="fascia-storica"', 1)[1].split('<div class="card', 1)[0]
+    assert fs.count('class="wl" role="img"') == 5, "una barra per fascia"
+    assert fs.count('class="ic"') == 5 and fs.count('class="p"') == 5
+    # l'aria-label di ogni barra porta i tre numeri della riga
+    for m in re.finditer(r'class="wl" role="img" aria-label="Fascia ([^"]+)"', fs):
+        assert "media prevista" in m.group(1) and "poi uscito" in m.group(1)
+        assert "intervallo di confidenza" in m.group(1)
+    # e i tre valori grafici sono in percentuale 0–100
+    for stile in re.findall(r'class="(?:fill|ic|p)" style="[^"]*?([\d.]+)%', fs):
+        assert 0.0 <= float(stile) <= 100.0, stile
+    st.close()
+
+
 def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
     """P2.2 (`docs/28` §3): le assenze non si raccontano quattro volte, e nessuna card sparisce.
 

@@ -132,13 +132,14 @@
   <h2>Quando il favorito aveva questa forza</h2>
   <p class="small mut">Com'è poi andata, per ogni fascia di pronostico, nelle {{ fr.n_tot|it_num }} partite del backtest fuori campione (2020→2026, 7 leghe, nessun risultato visto a priori). La riga segnata è la fascia di QUESTA partita (favorito {{ (fr.fav*100)|dec(1) }}%). <b>Frequenza passata, non promessa</b>: l'intervallo di confidenza al 95% dice quanto la frequenza è precisa con quella numerosità.</p>
   <table>
-    <tr><th scope="col">Favorito</th><th scope="col" class="r">partite</th><th scope="col" class="r">media prevista</th><th scope="col" class="r">poi uscito</th><th scope="col" class="r">IC 95%</th></tr>
+    <tr><th scope="col">Favorito</th><th scope="col" class="r">partite</th><th scope="col" class="r">media prevista</th><th scope="col" class="r">poi uscito</th><th scope="col" class="r">IC 95%</th><th scope="col" class="c" title="Barra = intervallo di confidenza 95%, riempimento = frequenza osservata, tacca arancione = media prevista">previsto → uscito</th></tr>
     {% for r in fr.rows %}<tr{% if r.current %} style="outline:1.5px solid var(--accent);outline-offset:-1.5px" title="Fascia di questa partita"{% endif %}>
       <td>{{ r.label }}{% if r.current %} <span class="tag" style="font-size:10px;padding:1px 6px">questa</span>{% endif %}</td>
       <td class="r">{{ r.n|it_num }}</td>
       <td class="r">{{ (r.pred_mean*100)|dec(1) }}%</td>
       <td class="r"><b>{{ (r.obs*100)|dec(1) }}%</b></td>
-      <td class="r mut small">{{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%</td></tr>{% endfor %}
+      <td class="r mut small">{{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%</td>
+      <td class="c" style="width:150px"><span class="wl" role="img" aria-label="Fascia {{ r.label }}: {{ r.n|it_num }} gare, media prevista {{ (r.pred_mean*100)|dec(1) }} per cento, poi uscito {{ (r.obs*100)|dec(1) }} per cento, intervallo di confidenza da {{ (r.wil_lo*100)|dec(1) }} a {{ (r.wil_hi*100)|dec(1) }} per cento"><span class="fill" style="width:{{ (r.obs*100)|round(1) }}%"></span><span class="ic" style="left:{{ (r.wil_lo*100)|round(1) }}%;width:{{ ((r.wil_hi-r.wil_lo)*100)|round(1) }}%"></span><span class="p" style="left:{{ (r.pred_mean*100)|round(1) }}%"></span></span></td></tr>{% endfor %}
   </table>
   <p class="small mut" style="margin-top:8px"> {% for r in fr.rows %}{% if r.current %}Su partite come questa il favorito è poi uscito nel <b>{{ (r.obs*100)|dec(1) }}%</b> delle {{ r.n|it_num }} gare di riferimento (IC 95% {{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%).{% endif %}{% endfor %}</p>
 </div>
@@ -154,6 +155,21 @@
   (media di lega {{ lp.mean|dec(1) }}, mediana {{ lp.median|dec(1) }}): questa gara è <b>{{ lp.label }}</b>.
   Il confronto conta solo partite del proprio campionato — la stessa cifra in campionati diversi vale diversamente —
   e si aggiorna con l'avanzare della stagione, perché ordina quantità previste, non giudizi.</p>
+  {#- P2.3 (`docs/28` §3): la card era di solo testo. La barra mette il numero di questa partita
+      sulla scala del campionato: riempimento = percentile pubblicato in prosa, tacca grigia =
+      mediana di lega, tacca arancione = media. Gli estremi sono il 2° e il 98° percentile, non
+      il minimo e il massimo: le code schiaccerebbero tutto al centro. -#}
+  {% if lp.viz %}<div class="viz">
+    <p class="cap">Questa partita sulla scala di {{ lp.league }}</p>
+    <div class="track" role="img" aria-label="Gol attesi totali {{ lp.here|dec(2) }}, più alti del {{ lp_pct }} per cento delle {{ lp.n }} partite di {{ lp.league }} previste dal modello. Scala dal 2° al 98° percentile: da {{ lp.viz.lo|dec(1) }} a {{ lp.viz.hi|dec(1) }} gol. Mediana di lega {{ lp.median|dec(1) }}, media {{ lp.mean|dec(1) }}">
+      <span class="fill" style="width:{{ lp.viz.pct }}%"></span>
+      <span class="tick soft" style="left:{{ lp.viz.med_pct }}%" title="mediana di {{ lp.league }}: {{ lp.median|dec(1) }} gol"></span>
+      <span class="tick" style="left:{{ lp.viz.mean_pct }}%" title="media di {{ lp.league }}: {{ lp.mean|dec(1) }} gol"></span>
+      <span class="pin" style="left:{{ lp.viz.pct }}%"></span>
+      <span class="mark" style="left:{{ lp.viz.pct }}%">{{ lp.here|dec(2) }}</span>
+    </div>
+    <div class="axis"><span>{{ lp.viz.lo|dec(1) }} · più chiusa</span><span>mediana {{ lp.median|dec(1) }} · media {{ lp.mean|dec(1) }}</span><span>più aperta · {{ lp.viz.hi|dec(1) }}</span></div>
+  </div>{% endif %}
 </div>
 {% endif %}
 
@@ -170,6 +186,23 @@
   {% if fg.q[1][1] is not none %}{{ fg.q[1][1]|round|int }}'{% else %}dopo il 90'{% endif %}. Pari senza gol al riposo: <b>{{ (fg.s_ht*100)|dec(1) }}%</b>;
   zero gol su novanta minuti: {{ (fg.zero*100)|dec(1) }}%. I minuti oltre il 90° non esistono in queste misure:
   un quartile oltre il fischio finale viene scritto «dopo il 90'».</p>
+  {#- P2.3 (`docs/28` §3): due righe sovrapposte sullo stesso asse 0–90. Sopra la distribuzione
+      **osservata** dei primi gol nella stagione (quarti d'ora, {{ fg.n_first }} partite in cui un
+      gol è arrivato: gli stessi eventi da cui è misurata la quota di 1° tempo), sotto la banda
+      **del modello** per questa partita (dal 25° al 75° percentile, tacca sulla mediana).
+      Le due righe sono fonti diverse e l'etichetta lo dice: una è storia, l'altra è previsione. -#}
+  <div class="viz">
+    <p class="cap">Com'è andata davvero: quarto d'ora del primo gol ({{ fg.n_first|it_num }} partite con almeno un gol)</p>
+    <div class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol nella stagione: {% for b in fg.bins %}{{ b.label }} {{ b.per100 }} per cento{% if not loop.last %}, {% endif %}{% endfor %}">
+      {% for b in fg.bins %}<div class="gb"><span class="v">{{ b.per100 }}%</span><span class="fill" style="height:{{ b.h }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
+    </div>
+    <p class="cap" style="margin:14px 0 7px">Questa partita, dal modello: metà centrale dei primi gol</p>
+    <div class="bandbar" role="img" aria-label="Questa partita: la metà centrale dei primi gol cade fra {{ fg.q[0][1]|round|int ~ "'" if fg.q[0][1] is not none else "dopo il 90'" }} e {{ fg.q[2][1]|round|int ~ "'" if fg.q[2][1] is not none else "dopo il 90'" }}, mediana {{ fg.q[1][1]|round|int ~ "'" if fg.q[1][1] is not none else "dopo il 90'" }}; pari senza gol al riposo {{ (fg.s_ht*100)|dec(1) }} per cento">
+      <span class="band" style="left:{{ fg.band.from }}%;width:{{ (fg.band.to - fg.band.from)|round(2) }}%"></span>
+      <span class="med" style="left:{{ fg.band.med }}%"></span>
+    </div>
+    <div class="axis"><span>0'</span><span>15'</span><span>30'</span><span>45'</span><span>60'</span><span>75'</span><span>90'</span></div>
+  </div>
 </div>
 {% endif %}
 

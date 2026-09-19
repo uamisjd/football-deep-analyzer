@@ -239,7 +239,7 @@ esce 1 se una scheda si discosta; gira anche in CI prima del commit dei dati. Pr
 trovata: `clima`, su Alverca–Rio Ave. Misura appaiata (60 schede): struttura 59/60 → **60/60**,
 «Clima del club» 59 → **60**, frase 96 → 90 caratteri (i nomi non si leggono due volte).
 
-### P2.3 — Card di solo testo senza un grafico
+### P2.3 — Card di solo testo senza un grafico ✅ APPLICATA il 2026-09-19
 
 **Misura** (caratteri mediani, tutte prosa): «Dove si colloca questa partita» 493, «Quando arriva il
 primo gol» 566, «Quando il favorito aveva questa forza» 755, «Analisi pre-partita» 737.
@@ -247,6 +247,21 @@ primo gol» 566, «Quando il favorito aveva questa forza» 755, «Analisi pre-pa
 **Proposta.** Un micro-visivo per card dove il dato esiste già: barra del percentile (posizione in
 lega), distribuzione del primo gol (quartili), sparkline delle fasce del backtest. Il precedente in
 casa sono matrice e distribuzione dei gol, già fatte bene.
+
+**Esito (2026-09-19, `docs/36`).** Fatta come proposto, con due differenze. Le fasce del backtest non
+sono una sparkline ma una **barra «previsto → uscito»** per fascia, con l'intervallo di confidenza al
+95% (Wilson), il riempimento fino all'uscita osservata e la tacca sulla previsione media: così le due
+percentuali si confrontano senza farle a mente. La barra della scala di lega usa il **2°–98°
+percentile** come estremi (con minimo e massimo le code schiacciano la posizione al centro) e si
+spegne da sola se il campionato ha una scala piatta (< 0,2 gol fra 2° e 98°); la card del primo gol
+ha due righe sullo stesso asse 0–90 — la distribuzione **osservata** dei primi gol della stagione
+(6 quarti d'ora, dagli stessi eventi che misurano la quota di 1° tempo) e la banda **del modello**
+per questa gara (25°–75°, tacca sulla mediana). Nessun numero nuovo: le tre card avevano già i dati
+in prosa. Misura appaiata (60 schede pre-partita, `2d3cf27` → codice attuale): disegni **0/60 →
+60/60** su tutte e tre le card (fasce storiche: 5 barre su 5), testo visibile +106 / +228 / +18
+caratteri mediani (didascalie, assi e descrizioni per screen reader), parità `parita_schede` exit 0
+su 60/60 schede. `verify_site` esteso: **[15]**, **[16]** e **[17]** ora ricontano dalle sorgenti
+anche i valori grafici.
 
 ### P2.4 — «Contesto» impacchetta tre cose diverse ✅ APPLICATA il 2026-09-19
 
@@ -315,7 +330,7 @@ etichette V/N/P; i tooltip di accessibilità su barre e matrici (invarianti di `
 | 2 | P1.2 hero senza xG/PPDA, un solo posto per dato | mediana da 3 card a 1-2 |
 | 3 | P1.4 «Verifica approfondita» chiusa, summary con i due numeri | 1.883 car. fuori dal primo schermo |
 | 4 | P1.3 nav con ancore reali | 6 blocchi pesanti raggiungibili |
-| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 · P2.5 (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta e il gate `parita_schede` |
+| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta e il gate `parita_schede` |
 
 Ogni intervento va rifatto passare da `fda build` + `verify_site.py` + `scripts/audit_match_sections.py`
 e rimisurato con `scripts/prematch_sections.py`: la quota di testo per sezione è il numero che dice
@@ -331,4 +346,4 @@ card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato
 in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
 (verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
 (indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
-visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`). **In coda**, in ordine di peso: **P2.3** (micro-visivi: barra del percentile, quartili del primo gol, sparkline delle fasce storiche), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione). ~~P2.2~~ (assenze raccontate in quattro modi), P2.3 (micro-visivi), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione).
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). **In coda**, in ordine di peso: **P2.5** (badge forma nell'hero), P2.6 (quote assenti = decisione), P2.8 (rese in browser). ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione).

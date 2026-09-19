@@ -8,6 +8,7 @@ Jinja2 rendono in HTML.
 from __future__ import annotations
 
 import ast
+import itertools
 import re
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -880,10 +881,40 @@ class MatchAnalysis:
                 t = 45.0 + (-np.log(tail) - r1 * 45.0) / r2
             return None if t > 90.0 else float(t)
 
-        return {"q": [(p, _q(p)) for p in (0.25, 0.50, 0.75)],
+        # P2.3 (`docs/28` §3): la card era di solo testo. Il micro-visivo è una distribuzione
+        # **osservata** (quando è arrivato il primo gol nella stagione, in quarti d'ora) più la
+        # banda del modello per QUESTA partita: due cose diverse, etichettate come tali. I
+        # conteggi vengono dagli stessi eventi di `s`, quindi il lettore può rifarli.
+        first = g.dropna(subset=["minute"]).groupby("match_id").minute.min().clip(lower=1)
+        n_first = len(first)
+        confini = (0, 15, 30, 45, 60, 75, 10_000)
+        etichette = ("1–15'", "16–30'", "31–45'", "46–60'", "61–75'", "76–90'")
+        conteggi = [int(((first > lo) & (first <= hi)).sum())
+                    for lo, hi in itertools.pairwise(confini)]
+        massimo = max(conteggi) or 1
+        bins = [{"label": lab, "n": c,
+                 "per100": round(100.0 * c / n_first) if n_first else 0,
+                 "h": round(100.0 * c / massimo)}
+                for lab, c in zip(etichette, conteggi)]
+        # quante partite degli stessi eventi sono finite 0-0 (osservato, non modello)
+        n_partite_eventi = int(self.events.match_id.nunique())
+        senza_gol = (1.0 - n_first / n_partite_eventi) if n_partite_eventi else None
+        q = [(p, _q(p)) for p in (0.25, 0.50, 0.75)]
+
+        def _pct(t: float | None) -> float:
+            """Posizione sulla scala 0–90 dell'asse del grafico (oltre il 90' = fondo scala)."""
+            return 100.0 if t is None else round(min(100.0, 100.0 * t / 90.0), 2)
+
+        return {"q": q,
                 "s_half": s, "s_ht": s_ht, "lam": lam_tot,
                 "n_goals": len(g), "n_matches": int(g.match_id.nunique()),
-                "zero": float(np.exp(-lam_tot))}
+                "zero": float(np.exp(-lam_tot)),
+                "bins": bins, "n_first": n_first,
+                "senza_gol_oss": senza_gol,
+                "band": {"from": _pct(q[0][1]), "to": _pct(q[2][1]), "med": _pct(q[1][1]),
+                         "q1_oltre": q[0][1] is None, "q3_oltre": q[2][1] is None,
+                         "med_oltre": q[1][1] is None},
+                "fmt": {0.25: "25°", 0.50: "50°", 0.75: "75°"}}
 
     # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
     def league_goals_percentile(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -917,8 +948,25 @@ class MatchAnalysis:
         else:
             label = "nella media del campionato"
         name = {x.key: x.name for x in leagues()}.get(str(lg), str(lg))
+        # P2.3 (`docs/28` §3): la barra della posizione. La scala va dal 2° al 98° percentile
+        # della distribuzione di lega (gli estremi veri sono code che schiaccerebbero tutto al
+        # centro), il riempimento è il percentile già pubblicato in prosa e la tacca è la
+        # mediana di lega: si vede a colpo d'occhio da che parte sta questa partita.
+        lo_q, hi_q = float(tot.quantile(0.02)), float(tot.quantile(0.98))
+        med = float(tot.median())
+
+        def _pos(v: float) -> float:
+            return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
+
+        # La barra è un extra della card, non la card: se la distribuzione di lega è troppo
+        # stretta (nessuno spazio fra 2° e 98° percentile) il grafico non direbbe nulla e la
+        # card resta com'era — la frase, che è il contenuto, non sparisce mai per un grafico.
+        viz = ({"lo": round(lo_q, 2), "hi": round(hi_q, 2), "pct": _pos(here),
+                "med_pct": _pos(med), "mean_pct": _pos(float(tot.mean()))}
+               if hi_q - lo_q >= 0.2 else None)
         return {"here": here, "n": n, "below": below, "mean": float(tot.mean()),
-                "median": float(tot.median()), "label": label, "league": name, "league_key": str(lg)}
+                "median": med, "label": label, "league": name, "league_key": str(lg),
+                "viz": viz}
 
     # ---- fascia storica del pronostico (backtest fuori campione) ---------------------------
     #: fasce di probabilità del favorito usate per dire «quando il favorito aveva questa

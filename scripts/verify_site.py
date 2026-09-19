@@ -645,6 +645,11 @@ def check_derived(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+def _pos_pct(v: float, lo_q: float, hi_q: float) -> float:
+    """Posizione 0–100 di un valore sulla scala della barra (stessa formula del generatore)."""
+    return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -1305,13 +1310,23 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             wl_b, wh_b = wilson_interval(kb, nb)
             tab_bt.append({"label": label_b, "lo": lo_b, "hi": hi_b, "n": nb,
                            "obs": kb / nb, "wl": wl_b, "wh": wh_b, "pm": float(fav_[mm].mean())})
+        # La riga della tabella porta anche la colonna P2.3 «previsto → uscito»: la barra è
+        # l'intervallo di Wilson, il riempimento la frequenza osservata, la tacca arancione la
+        # media prevista. Sono gli stessi tre numeri già stampati nelle celle accanto, ma un
+        # grafico può disegnare storto ciò che la tabella dice bene: qui si ricalcola che le
+        # posizioni in percentuale corrispondano ai valori pubblicati (tolleranza 0,2 punti,
+        # il massimo che l'arrotondamento a un decimale può spostare).
         row_re = re.compile(
             r'<tr[^>]*>\s*<td>(fino al 40%|fra 40% e 50%|fra 50% e 60%|fra 60% e 75%|oltre il 75%)'
             r'(?: (<span class="tag"[^>]*>questa</span>))?</td>'
             r'\s*<td class="r">(\d+(?:\.\d+)?)</td>'
             r'\s*<td class="r">(\d+,\d+)%</td>'
             r'\s*<td class="r"><b>(\d+,\d+)%</b></td>'
-            r'\s*<td class="r mut small">(\d+,\d+)–(\d+,\d+)%</td></tr>')
+            r'\s*<td class="r mut small">(\d+,\d+)–(\d+,\d+)%</td>'
+            r'\s*<td class="c"[^>]*><span class="wl"[^>]*>'
+            r'<span class="fill" style="width:([\d.]+)%"></span>'
+            r'<span class="ic" style="left:([\d.]+)%;width:([\d.]+)%"></span>'
+            r'<span class="p" style="left:([\d.]+)%"></span></span></td></tr>')
         for pg in pages:
             html = pg.read_text(encoding="utf-8")
             if 'id="fascia-storica"' not in html:
@@ -1332,7 +1347,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             checks += 1
             if not fav_lbl or abs(float(fav_lbl.group(1).replace(",", ".")) - here * 100) > 0.06:
                 fails.append(f"{pg.name}: favorito dichiarato {fav_lbl.group(1) if fav_lbl else '?'}% != {here * 100:.1f}%")
-            for (lab, span, n_t, pm_t, obs_t, lo_t, hi_t), b in zip(got, tab_bt):
+            for (lab, span, n_t, pm_t, obs_t, lo_t, hi_t,
+                 v_fill, v_lo, v_w, v_p), b in zip(got, tab_bt):
                 checks += 1
                 if lab != b["label"]:
                     fails.append(f"{pg.name}: fascia «{lab}» != «{b['label']}»")
@@ -1345,6 +1361,15 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                        (hi_t, b["wh"] * 100, "IC superiore")):
                     if abs(float(txt.replace(",", ".")) - val) > 0.06:
                         fails.append(f"{pg.name}: {lab} {cosa} {txt}% vs ricalcolata {val:.1f}%")
+                # la colonna grafica: riempimento = osservata, barra = IC, tacca = prevista
+                for vis, val, cosa in ((v_fill, b["obs"] * 100, "riempimento"),
+                                       (v_lo, b["wl"] * 100, "inizio intervallo"),
+                                       (v_w, (b["wh"] - b["wl"]) * 100, "larghezza intervallo"),
+                                       (v_p, b["pm"] * 100, "tacca prevista")):
+                    checks += 1
+                    if abs(float(vis) - round(val, 1)) > 0.2:
+                        fails.append(f"{pg.name}: {lab} colonna grafica {cosa} {vis}% "
+                                     f"vs ricalcolata {round(val, 1)}%")
                 # la marcatura «questa» deve stare sulla fascia del favorito di QUESTA scheda
                 cur_page = bool(span)
                 cur_data = bool(b["lo"] <= here < b["hi"])
@@ -1401,12 +1426,64 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: media di lega {mean_t} vs {dist.mean():.1f}")
             if abs(float(med_t.replace(",", ".")) - float(dist.median())) > 0.06:
                 fails.append(f"{pg.name}: mediana di lega {med_t} vs {dist.median():.1f}")
+            # P2.3: la barra sotto la frase è la stessa misura disegnata. Il riempimento e il
+            # segno devono stare sul percentile già verificato sopra, le tacche sulla mediana e
+            # sulla media di lega, gli estremi della scala sul 2° e 98° percentile: un grafico
+            # che mostrasse un'altra posizione sarebbe un secondo numero, non un disegno.
+            # P2.3: la barra sotto la frase è la stessa misura disegnata. Riempimento e segno
+            # stanno sul percentile già verificato sopra, le tacche sulla mediana e sulla media
+            # di lega, gli estremi della scala sul 2° e 98° percentile: un grafico che mostrasse
+            # un'altra posizione sarebbe un secondo numero, non un disegno.
+            viz_re = re.compile(
+                r'<div class="track" role="img" aria-label="Gol attesi totali ([\d,]+), più alti del '
+                r'(\d+) per cento delle (\d+) partite di ([^"]+) previste dal modello\. '
+                r'Scala dal 2° al 98° percentile: da ([\d,]+) a ([\d,]+) gol\. '
+                r'Mediana di lega ([\d,]+), media ([\d,]+)">'
+                r'\s*<span class="fill" style="width:([\d.]+)%"></span>'
+                r'\s*<span class="tick soft" style="left:([\d.]+)%"[^>]*></span>'
+                r'\s*<span class="tick" style="left:([\d.]+)%"[^>]*></span>'
+                r'\s*<span class="pin" style="left:([\d.]+)%"></span>'
+                r'\s*<span class="mark" style="left:([\d.]+)%">([\d,]+)</span>')
+            mv = viz_re.search(html.split('id="posizione-lega"', 1)[1][:4200])
+            lo_q, hi_q = float(dist.quantile(0.02)), float(dist.quantile(0.98))
+            if hi_q - lo_q < 0.2:
+                # distribuzione di lega senza spazio: la barra non c'è per scelta (e la card sì)
+                checks += 1
+                if mv is not None:
+                    fails.append(f"{pg.name}: barra della posizione dove la scala non ha spazio")
+                continue
+            checks += 1
+            if mv is None:
+                fails.append(f"{pg.name}: barra della posizione di lega assente o diversa (P2.3)")
+                continue
+            qui = _pos_pct(lam_here, lo_q, hi_q)
+            for cosa, letto, atteso in (
+                    ("riempimento", float(mv.group(9)), qui),
+                    ("segno", float(mv.group(12)), qui),
+                    ("etichetta del segno", float(mv.group(13)), qui),
+                    ("tacca mediana", float(mv.group(10)),
+                     _pos_pct(float(dist.median()), lo_q, hi_q)),
+                    ("tacca media", float(mv.group(11)), _pos_pct(float(dist.mean()), lo_q, hi_q)),
+                    ("percentile in aria-label", float(mv.group(2)), round(below * 100))):
+                checks += 1
+                if abs(letto - atteso) > 0.2:
+                    fails.append(f"{pg.name}: barra posizione, {cosa} {letto}% vs ricalcolato {atteso}%")
+            checks += 1
+            if mv.group(14) != _stamp_it(lam_here):
+                fails.append(f"{pg.name}: barra posizione, segno {mv.group(14)} vs λ stampati "
+                             f"{_stamp_it(lam_here)}")
+            if abs(float(mv.group(5).replace(",", ".")) - lo_q) > 0.05 or \
+                    abs(float(mv.group(6).replace(",", ".")) - hi_q) > 0.05:
+                fails.append(f"{pg.name}: scala della barra {mv.group(5)}–{mv.group(6)} "
+                             f"vs 2°–98° percentile {lo_q:.2f}–{hi_q:.2f}")
         print(f"[16] percentile dei gol attesi nel campionato verificato: {n_pos}")
 
     # 17) primo gol: ritmo a due tempi calibrato su events.parquet — s, quartili in forma chiusa,
     #     P(0-0 all'intervallo) e P(0-0 piena) ricalcolate; «dopo il 90'» mai oltre il fischio
     ev_df = st.read("events")
     if not ev_df.empty and "type" in ev_df.columns and not preds.empty:
+        from itertools import pairwise
+
         import numpy as np
 
         pr_fg = preds.reset_index() if "match_id" not in preds.columns else preds
@@ -1469,6 +1546,69 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     fails.append(f"{pg.name}: P(0-0 riposo) {m_q.group(4)}% vs {s_ht_f * 100:.1f}%")
                 if abs(float(m_q.group(5).replace(",", ".")) - np.exp(-lam_fg) * 100) > 0.06:
                     fails.append(f"{pg.name}: P(0-0 piena) {m_q.group(5)}% vs {np.exp(-lam_fg) * 100:.1f}%")
+
+                # P2.3: le due righe del grafico. Sopra la distribuzione OSSERVATA dei primi gol
+                # (quarti d'ora, ricavata dagli stessi eventi: primo gol di ogni partita, minuto
+                # 1 se il primo gol è segnato in avvio, partite senza gol escluse), sotto la banda
+                # del modello per questa partita sulle stesse posizioni 0–90 dell'asse. I
+                # conteggi sono ricontati qui: se la pagina mostra una distribuzione che gli
+                # eventi non confermano, il gate morde.
+                vizio_re = re.compile(
+                    r'<div class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol '
+                    r'nella stagione: ([^"]+)">\s*'
+                    r'(.*?</div>)\s*</div>')
+                band_re = re.compile(
+                    r'<div class="bandbar" role="img" aria-label="([^"]+)">\s*'
+                    r'<span class="band" style="left:([\d.]+)%;width:([\d.]+)%"></span>\s*'
+                    r'<span class="med" style="left:([\d.]+)%"></span>')
+                primo = gl.dropna(subset=["minute"]).groupby("match_id").minute.min().clip(lower=1)
+                n_primo = len(primo)
+                confini = (0, 15, 30, 45, 60, 75, 10_000)
+                conteggi = [int(((primo > a) & (primo <= b)).sum())
+                            for a, b in pairwise(confini)]
+                massimo = max(conteggi) or 1
+                etichette = ("1–15'", "16–30'", "31–45'", "46–60'", "61–75'", "76–90'")
+                attesi_barre = [(lab, round(100.0 * c / n_primo), round(100.0 * c / massimo))
+                                for lab, c in zip(etichette, conteggi)]
+                bl2 = html_unescape(html).split('id="primo-gol"', 1)[1][:6000]
+                m_viz = vizio_re.search(bl2)
+                m_band = band_re.search(bl2)
+                checks += 1
+                if m_viz is None or m_band is None:
+                    fails.append(f"{pg.name}: grafico del primo gol assente o diverso (P2.3)")
+                else:
+                    aria = m_viz.group(1)
+                    pezzi = re.findall(r"([\d–]+')\s+(\d+) per cento", aria)
+                    if [p_[0] for p_ in pezzi] != list(etichette) or \
+                            [int(p_[1]) for p_ in pezzi] != [b[1] for b in attesi_barre]:
+                        fails.append(f"{pg.name}: percentuali osservate del primo gol diverse dagli "
+                                     f"eventi: {pezzi} vs {[b[1] for b in attesi_barre]}")
+                    barre = re.findall(r'<span class="v">(\d+)%</span><span class="fill" '
+                                       r'style="height:([\d.]+)%"></span><span class="x">([^<]+)</span>',
+                                       m_viz.group(2))
+                    checks += 1
+                    if len(barre) != 6:
+                        fails.append(f"{pg.name}: barre del primo gol {len(barre)} invece di 6")
+                    else:
+                        for (pv, hv, lv), (lab, per100, h) in zip(barre, attesi_barre):
+                            if lv != lab or int(pv) != per100 or abs(float(hv) - h) > 0.5:
+                                fails.append(f"{pg.name}: barra primo gol {lab}: {pv}%/{hv}% "
+                                             f"vs {per100}%/{h}% dagli eventi")
+                    # la banda: dalla pagina (0–90) ai minuti del modello, e ritorno
+                    # in pagina: inizio banda (25°), mediana (50°), fine banda (75°) — stesso ordine
+                    bl_atteso = [100.0 if qs[k] is None else round(min(100.0, 100.0 * qs[k] / 90.0), 2)
+                                 for k in (0.25, 0.50, 0.75)]
+                    letto = [float(m_band.group(2)), float(m_band.group(4)),
+                             float(m_band.group(2)) + float(m_band.group(3))]
+                    checks += 1
+                    for nome, a, b_ in zip(("inizio banda", "mediana", "fine banda"), letto, bl_atteso):
+                        if abs(a - b_) > 0.2:
+                            fails.append(f"{pg.name}: banda primo gol, {nome} {a}% vs modello {b_}%")
+                    for lab, t in zip(("25°", "50°", "75°"), (qs[0.25], qs[0.50], qs[0.75])):
+                        atteso_txt = "dopo il 90'" if t is None else f"{round(t)}'"
+                        if atteso_txt not in m_band.group(1):
+                            fails.append(f"{pg.name}: aria-label della banda senza il quartile "
+                                         f"{lab} «{atteso_txt}»")
             print(f"[17] quartili del primo gol verificati: {n_q}")
 
     # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso

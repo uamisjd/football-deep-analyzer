@@ -224,6 +224,97 @@ def test_favorite_track_record_bands_and_current_flag():
     assert [r["label"] for r in fr2["rows"] if r["current"]] == ["oltre il 75%"]
 
 
+def test_first_goal_clock_pubblica_distribuzione_osservata_e_banda():
+    """P2.3 (`docs/28` §3): la card «Quando arriva il primo gol» non è più di solo testo.
+
+    Il micro-visivo ha due righe: sopra la distribuzione **osservata** dei primi gol (quarti
+    d'ora, ricavata dagli stessi eventi della quota di 1° tempo), sotto la banda del **modello**
+    per questa partita. Qui si verificano i due pezzi separatamente: i conteggi devono chiudere
+    sul numero di partite in cui un gol è arrivato, e le posizioni della banda devono essere i
+    quartili del modello portati sulla scala 0–90 dell'asse.
+    """
+    rows = []
+    # 40 partite con il primo gol nel 1° quarto d'ora, 30 nel 3°, 20 nell'ultimo
+    for i in range(40):
+        rows.append({"type": "Goal", "minute": 7, "minute_added": None, "match_id": i})
+    for i in range(30):
+        rows.append({"type": "Goal", "minute": 38, "minute_added": None, "match_id": 100 + i})
+    for i in range(20):
+        rows.append({"type": "Goal", "minute": 80, "minute_added": None, "match_id": 200 + i})
+    # una partita senza gol: non entra nella distribuzione, ma conta per la quota «0-0»
+    rows.append({"type": "Shot", "minute": 12, "minute_added": None, "match_id": 999})
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.events = pd.DataFrame(rows)
+    pred = {"lambda_home": 1.5, "lambda_away": 1.5, "dc_rho": 0.0}
+    fg = ma.first_goal_clock(pred)
+    assert fg is not None
+    assert fg["n_first"] == 90, "solo le partite con almeno un gol entrano nella distribuzione"
+    per100 = [b["per100"] for b in fg["bins"]]
+    assert per100 == [44, 0, 33, 0, 0, 22], per100          # 40/90, 30/90, 20/90 arrotondati
+    assert [b["h"] for b in fg["bins"]] == [100, 0, 75, 0, 0, 50]
+    assert sum(b["n"] for b in fg["bins"]) == fg["n_first"]
+    assert fg["senza_gol_oss"] == pytest.approx(1 / 91)     # una partita su 91 senza gol
+    # la banda: i quartili del modello in percentuale dei 90', non in minuti. La quota di
+    # 1° tempo è quella MISURATA su questi eventi (70 gol su 90 entro il 45'), non un'ipotesi
+    lam = 3.0
+    s_ev = 70 / 90
+    r1, r2 = s_ev * lam / 45, (1 - s_ev) * lam / 45
+    s_ht = np.exp(-r1 * 45)
+    for chiave, p_ in (("from", 0.25), ("med", 0.50), ("to", 0.75)):
+        tail = 1.0 - p_
+        t = (-np.log(tail) / r1) if tail >= s_ht else 45.0 + (-np.log(tail) - r1 * 45) / r2
+        assert fg["band"][chiave] == pytest.approx(100.0 * t / 90.0, abs=0.01), chiave
+    assert fg["band"]["from"] < fg["band"]["med"] < fg["band"]["to"]
+    assert not fg["band"]["q1_oltre"]
+
+
+def test_first_goal_clock_banda_oltre_il_90_va_a_fondo_scala():
+    """Un quartile oltre il fischio finale non inventa un minuto: la banda finisce a 100%."""
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    # 40 primi gol nel 1° tempo e 20 nel 2°: la quota di 1° tempo è 2/3, e con un λ totale di
+    # 0,4 il 3° quartile cade oltre il fischio finale (il caso «dopo il 90'»)
+    righe = ([{"type": "Goal", "minute": 30, "minute_added": None, "match_id": i} for i in range(40)] +
+             [{"type": "Goal", "minute": 60, "minute_added": None, "match_id": 100 + i}
+              for i in range(20)])
+    ma.events = pd.DataFrame(righe)
+    fg = ma.first_goal_clock({"lambda_home": 0.2, "lambda_away": 0.2, "dc_rho": 0.0})
+    assert fg is not None
+    assert fg["q"][2][1] is None and fg["band"]["q3_oltre"] and fg["band"]["to"] == 100.0
+
+
+def test_league_goals_percentile_la_barra_e_un_extra_non_la_card():
+    """Se la scala di lega non ha spazio la card resta e la barra no (P2.3).
+
+    Le 121 partite NED1 del test qui sotto stanno tutte a 3,4: la frase ha senso, il grafico
+    no. Il campo `viz` vale None e il template non disegna nulla — la card non sparisce mai
+    per colpa di un grafico (sarebbe una differenza di struttura fra due schede).
+    """
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.preds = pd.DataFrame([
+        {"match_id": 1000 + i, "league_key": "NED1", "lambda_home": 1.7, "lambda_away": 1.7,
+         "made_at": "2026-01-01"} for i in range(121)])
+    lp = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 1.7,
+                                     "lambda_away": 1.7, "dc_rho": 0.0})
+    assert lp is not None and lp["viz"] is None
+    # con una distribuzione vera la barra c'è, e il segno sta sul percentile pubblicato
+    righe = [dict(r) for r in ma.preds.to_dict("records")]
+    for i in range(40):
+        righe.append({"match_id": 5000 + i, "league_key": "NED1", "lambda_home": 1.0 + i / 20,
+                      "lambda_away": 1.0 + i / 20, "made_at": "2026-01-01"})
+    ma.preds = pd.DataFrame(righe)
+    lp = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 2.0,
+                                     "lambda_away": 1.0, "dc_rho": 0.0})
+    assert lp is not None and lp["viz"] is not None
+    assert 0.0 <= lp["viz"]["pct"] <= 100.0
+    assert lp["viz"]["lo"] <= lp["viz"]["hi"]
+    # la posizione è monotona nei gol attesi: la stessa scala, un λ più basso sta più a sinistra
+    lp_basso = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 1.0,
+                                           "lambda_away": 1.0, "dc_rho": 0.0})
+    lp_alto = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 3.0,
+                                          "lambda_away": 3.0, "dc_rho": 0.0})
+    assert lp_basso["viz"]["pct"] < lp["viz"]["pct"] < lp_alto["viz"]["pct"]
+
+
 def test_league_goals_percentile_uses_same_league_distribution_only():
     """Il percentile dei gol attesi conta SOLO le partite dello stesso campionato:
     3,4 gol attesi può essere «tanto» in una lega e «poco» in NED1 — il lettore deve
