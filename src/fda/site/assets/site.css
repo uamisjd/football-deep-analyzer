@@ -442,6 +442,15 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .match-hero-meta .hero-status{display:inline-flex;align-items:center;gap:7px;color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.1em;font-size:10.5px}
 .match-scoreline{display:grid;grid-template-columns:minmax(0,1fr) 150px minmax(0,1fr);align-items:center;gap:18px;padding:22px 0 18px}
 .match-hero-team{font:800 27px/1.15 var(--font-head);overflow-wrap:anywhere}.match-hero-team.home{text-align:right}.match-hero-team.away{text-align:left}
+/* P2.5 (`docs/28` §3): la forma in testa alla scheda, sotto il nome della squadra e allineata al
+   nome (casa a destra, trasferta a sinistra). Riusa le classi della pagina «Oggi» (`.form-line`,
+   `.form-dot`, `.fact-*`): è la stessa informazione vista più da vicino, quindi pallini più piccoli,
+   etichetta «Forma» e punti su una riga sola. Il nome della squadra è a 27px: qui la font va
+   riportata a misura, altrimenti l'etichetta erediterebbe il titolo. */
+.match-hero-team .form-line{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font:700 11px/1.2 var(--font-body)}
+.match-hero-team.home .form-line{justify-content:flex-end}.match-hero-team.away .form-line{justify-content:flex-start}
+.match-hero-team .form-line .fact-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.match-hero-team .form-dot{width:16px;height:16px;border-radius:4px;font-size:9px}
 .match-hero-center{display:flex;flex-direction:column;align-items:center;gap:7px}.match-hero-center .result{font:800 29px/1 var(--font-head);font-variant-numeric:tabular-nums;color:var(--txt);white-space:nowrap}.match-hero-center .date{font-size:11px;color:var(--mut);text-align:center}
 .hero-model{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:15px}
 .hero-pick{display:flex;flex-direction:column;gap:3px}.hero-pick .eyebrow{color:var(--mut)}.hero-pick strong{font:700 17px/1.25 var(--font-head)}.hero-pick strong em{font-style:normal;color:var(--accent)}
@@ -544,7 +553,7 @@ footer .cols li{margin:6px 0}
   .match-teams .match-score{padding:0 6px; min-width:58px}
   .match-projection{display:flex;flex-direction:column;align-items:stretch;gap:10px}.projection-copy strong{font-size:15px}
   .match-facts{gap:6px 9px}.fact-separator{display:none}.form-line{width:100%}
-  .match-hero{padding:18px 15px}.match-hero-meta{flex-direction:column;align-items:flex-start;gap:4px}.match-scoreline{grid-template-columns:minmax(0,1fr) 66px minmax(0,1fr);gap:8px;padding:18px 0 15px}.match-hero-team{font-size:20px}.match-hero-center .result{font-size:22px}.match-hero-center .date{font-size:10px}.hero-model{align-items:flex-start}.hero-metrics{gap:10px 14px}.hero-signal{width:100%;max-width:none;text-align:center}.match-jump{top:4px}
+  .match-hero{padding:18px 15px}.match-hero-meta{flex-direction:column;align-items:flex-start;gap:4px}.match-scoreline{grid-template-columns:minmax(0,1fr) 66px minmax(0,1fr);gap:8px;padding:18px 0 15px}.match-hero-team{font-size:20px}.match-hero-team .form-line{margin-top:6px;font-size:10px;gap:5px}.match-hero-team .form-dot{width:14px;height:14px;font-size:8px}.match-hero-team .form-line .fact-label{font-size:9px}.match-hero-center .result{font-size:22px}.match-hero-center .date{font-size:10px}.hero-model{align-items:flex-start}.hero-metrics{gap:10px 14px}.hero-signal{width:100%;max-width:none;text-align:center}.match-jump{top:4px}
 }
 /* performance: calendario chiuso non costa layout */
 .cal-month:not([open]) .cal-head,

@@ -3798,7 +3798,6 @@ class MatchAnalysis:
             f = ctx.get(f"{side}_form") or []
             if len(f) >= 3:
                 pts = sum(3 if x["res"] == "V" else 1 if x["res"] == "N" else 0 for x in f)
-                seq = "".join(x["res"] for x in f)
                 # la forma è un contenuto obbligatorio, non un'eccezione da segnalare: se non
                 # è estrema si dice comunque, con i numeri (parità fra le 7 leghe, docs/20 §13)
                 if pts >= 2.4 * len(f):
@@ -3807,8 +3806,12 @@ class MatchAnalysis:
                     giudizio = "in difficoltà"
                 else:
                     giudizio = "andamento nella norma"
+                # P2.5 (`docs/28` §3): la serie lettera per lettera non si ripete più qui — sta
+                # nel badge in testa alla scheda, sotto il nome della squadra (e, per esteso,
+                # nella card della squadra). La riga tiene i numeri e il giudizio: è la lettura,
+                # non la trascrizione della serie (docs/20 §13 resta soddisfatta).
                 s.append(f"{name}: {it_plural(pts, 'punto', 'punti')} nelle ultime "
-                         f"{len(f)} ({seq}) — {giudizio}.")
+                         f"{len(f)} — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
@@ -3958,13 +3961,22 @@ class MatchAnalysis:
         # allenatori in panchina (servono alla rilevanza delle notizie e al blocco «Da sapere»)
         home_coach = (self.coach(home_id, kickoff) or {}).get("name")
         away_coach = (self.coach(away_id, kickoff) or {}).get("name")
+        # P2.5 (`docs/28` §3): la forma sale in testa alla scheda — serie e punti in un micro-badge
+        # sotto il nome di ogni squadra, con le stesse classi della pagina «Oggi» (`_matchlist.html`).
+        # Calcolata una volta sola: la riusa anche la narrativa, che non ripete più la serie per
+        # lettere. Il badge compare da 3 gare giocate in su, come la riga obbligatoria della
+        # narrativa (`docs/20` §13): due pallini non sono una forma.
+        home_form = self.form(home_id, kickoff)
+        away_form = self.form(away_id, kickoff)
         ctx: dict[str, Any] = {
             "match_id": match_id, "league_id": int(f["league_id"]), "round": _val(f, "round"),
             "utc_kickoff": kickoff, "status": status,
             "home_id": home_id, "away_id": away_id,
             "home_name": f["home_name"], "away_name": f["away_name"],
             "home_goals": _goals(info, "home_goals", f), "away_goals": _goals(info, "away_goals", f),
-            "home_form": self.form(home_id, kickoff), "away_form": self.form(away_id, kickoff),
+            "home_form": home_form, "away_form": away_form,
+            "home_form_badge": self.form_summary(home_form) if len(home_form) >= 3 else None,
+            "away_form_badge": self.form_summary(away_form) if len(away_form) >= 3 else None,
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
             "home_rest_cup": self.rest_cup(home_id, kickoff), "away_rest_cup": self.rest_cup(away_id, kickoff),
             # post-partita: quando si rigioca (campionato + coppe) e con quanto riposo

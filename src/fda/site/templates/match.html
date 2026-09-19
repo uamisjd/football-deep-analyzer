@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% block title %}{{ c.home_name }} - {{ c.away_name }} — analisi · CalcioMetro{% endblock %}
+{#- P2.5 (`docs/28` §3): la forma recente in testa alla scheda. Stesse classi della pagina «Oggi»
+    (`_matchlist.html`, macro `form_pills`): serie di pallini V/N/P, punti guadagnati e finestra
+    dichiarata nella descrizione per chi usa un lettore di schermo. Prima la serie si leggeva solo
+    scorrendo fino all'analisi o alla card della squadra. Solo a gara non ancora giocata: a
+    risultato acquisito l'hero racconta la partita, non l'attesa. -#}
+{% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta)"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span></span>{% endif %}{% endmacro %}
 {% block content %}
 {% set p = c.prediction %}
 <p class="crumb"><a href="{{ root }}index.html">← Oggi</a><span aria-hidden="true">·</span><span>{{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %}</span></p>
@@ -10,9 +16,9 @@
     <span>{{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</span>
   </div>
   <div class="match-scoreline">
-    <div class="match-hero-team home">{{ c.home_name }}</div>
+    <div class="match-hero-team home">{{ c.home_name }}{% if c.status != 'finished' %}{{ hero_form(c.home_form_badge, c.home_name) }}{% endif %}</div>
     <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% else %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
-    <div class="match-hero-team away">{{ c.away_name }}</div>
+    <div class="match-hero-team away">{{ c.away_name }}{% if c.status != 'finished' %}{{ hero_form(c.away_form_badge, c.away_name) }}{% endif %}</div>
   </div>
   {% if c.status in ('postponed','suspended','cancelled','abandoned') %}<div style="margin-top:12px;padding:10px 14px;background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);border-radius:10px;color:var(--amber);font-weight:700;font-size:13px">⚠ Partita {{ 'rinviata' if c.status == 'postponed' else 'sospesa' if c.status in ('suspended','abandoned') else 'annullata' }} — orario da confermare. La previsione resta quella dell'ultimo calcolo prima del rinvio.</div>{% endif %}
   {% if p and p.prior_di_lega %}<div style="margin-top:10px;padding:8px 12px;background:var(--surface2);border:1px dashed var(--line2);border-radius:8px;color:var(--mut);font-size:12px">Prior di lega: una o entrambe le squadre hanno storico insufficiente (neopromossa) — λ neutre di lega, non stima affidabile.</div>{% endif %}

@@ -382,9 +382,17 @@ def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     """Forma sempre presente (non solo se estrema) e «giocatore di peso» = titolare abituale
     (criterio interno alla squadra, uguale in tutte e 7 le leghe — docs/20 §13)."""
     ma = MatchAnalysis(_store(tmp_path))
-    narr = ma.build(100)["narrative"]
-    assert "Alpha: 5 punti nelle ultime 4 (VNPN) — andamento nella norma." in narr
-    assert "Beta: 5 punti nelle ultime 4 (PNVN) — andamento nella norma." in narr
+    ctx = ma.build(100)
+    narr = ctx["narrative"]
+    # P2.5 (`docs/28` §3): la riga tiene i numeri e il giudizio, non ripete più la serie per
+    # lettere — quella sta nel badge in testa alla scheda (`home_form_badge`/`away_form_badge`)
+    assert "Alpha: 5 punti nelle ultime 4 — andamento nella norma." in narr
+    assert "Beta: 5 punti nelle ultime 4 — andamento nella norma." in narr
+    assert not any("(VNPN)" in s or "(PNVN)" in s for s in narr)
+    # il badge della forma: serie, punti e finestra dichiarata, per entrambe le squadre
+    for lato, seq, pt in (("home", "VNPN", 5), ("away", "PNVN", 5)):
+        b = ctx[f"{lato}_form_badge"]
+        assert b["n"] == 4 and b["points"] == pt and b["sequence"] == seq
     # Ala A (135' su 855 di squadra → titolare, min >= metà media) pesa anche se vale
     # 12M (sotto la vecchia soglia assoluta di 15M); Esordiente A non pesa.
     # P2.4 (docs/19 §2.8): la frase è stata riscritta in italiano corrente — il criterio
@@ -393,6 +401,23 @@ def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     frase_assenze = next(s for s in narr if "deve rinunciare a" in s)
     assert frase_assenze.startswith("Alpha deve rinunciare a 2 assenti, uno dei quali titolare abituale —")
     assert "Ala A" not in frase_assenze and "Esordiente A" not in frase_assenze
+
+
+def test_badge_della_forma_solo_con_almeno_tre_gare(tmp_path):
+    """P2.5 (`docs/28` §3): il badge della forma in testa alla scheda è la stessa serie della
+    narrativa, con la stessa soglia: da tre gare giocate in su (due pallini non sono una forma).
+
+    Il badge è un dato del contesto (`home_form_badge` / `away_form_badge`), non una stringa
+    scritta a mano: serie, punti e numerosità arrivano dal calendario, così il template può
+    ripeterli nella descrizione per chi usa un lettore di schermo senza ricalcolarli.
+    """
+    st = _store(tmp_path)
+    # due sole gare giocate per squadra: sotto la soglia, niente badge (e niente riga)
+    fx = _fixtures()
+    st.write("fixtures", fx[fx.match_id.isin([100, 3, 4])])
+    ctx = MatchAnalysis(st).build(100)
+    assert ctx["home_form_badge"] is None and ctx["away_form_badge"] is None
+    assert not any("punti nelle ultime" in s for s in ctx["narrative"])
 
 
 def test_arrival_trend_publishes_the_numbers_behind_the_judgement():

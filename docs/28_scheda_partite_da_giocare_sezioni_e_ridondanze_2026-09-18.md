@@ -280,10 +280,20 @@ dalla voce d'indice ai precedenti 171 → **0** caratteri, costo **+15 caratteri
 in più). La misura ha corretto la stima di questo documento: i precedenti erano l'**83%** del blocco,
 non «oltre metà».
 
-### P2.5 — Micro-badge forma nell'hero (già proposto in `docs/17` §2, mai applicato)
+### P2.5 — Micro-badge forma nell'hero (già proposto in `docs/17` §2, mai applicato) ✅ APPLICATA il 2026-09-19
 
 La forma compare in narrativa, «Fatti rilevanti», card squadra e «Clima»: portarla anche nell'hero
 (`Milan [V V N N] 7pt`) riduce la ripetizione sotto, come già indicato il 14/09.
+
+**Esito (2026-09-19, `docs/37`).** Fatta come proposto: sotto il nome di **entrambe** le squadre
+ci sono etichetta «Forma», pallini V/N/P e punti guadagnati — le stesse classi della pagina «Oggi»
+(macro `form_pills` di `_matchlist.html`), con la finestra dichiarata nella descrizione per i lettori
+di schermo. La riduzione sotto è la serie lettera per lettera che non si ricopia più nella narrativa
+(**111 → 0** occorrenze sulle 60 schede pre-partita): la frase tiene i numeri e il giudizio, il
+dettaglio per gara resta nella card della squadra. Il badge compare da 3 gare giocate in su e non a
+gara finita; la parità è nel template, quindi vale su **60 schede su 60** (120 badge). Costo: +26
+caratteri visibili mediani per scheda. Nuova invariante **[34]** di `verify_site`: serie, punti e
+numero di pallini ricalcolati dai Parquet per ogni squadra.
 
 ### P2.6 — Le quote dei bookmaker non ci sono (voce da decidere, non un difetto)
 
@@ -303,7 +313,7 @@ Mappa dei dati ripetuti (sedi strutturali, dalla struttura della pagina; contegg
 | xG/gara di stagione | hero · Scontro tattico · Come arrivano · card squadra | valore dell'hero in **mediana 3 card** | **da ridurre** (P1.2) |
 | PPDA | hero · Scontro tattico · Come arrivano · riquadro «Pressing · riposo» | idem (≤6 card) | **da ridurre** (P1.2) |
 | λ per squadra e totali | hero · Previsione · Scontro tattico (+ totali in Posizione lega, Primo gol, Quanti gol) | 3 sedi per squadra | accettabile se i richiami sono espliciti: oggi non lo sono |
-| forma recente | narrativa · Fatti rilevanti · card squadra · Clima | 3-4 sedi | da ridurre con il badge in hero (P2.5) |
+| forma recente | narrativa · Fatti rilevanti · card squadra · Clima | 3-4 sedi | **ridotta** (P2.5): la serie sta nel badge in hero e nella card squadra, la narrativa tiene i numeri e il giudizio |
 | indisponibili (nome) | narrativa · tabella Indisponibili · giocatori che decidono · Clima | 653 nomi, mediana 2 card | da ridurre (P2.2) |
 | punti vs xPTS | Come arrivano · riquadro card squadra · Clima | 3 sedi | accettabile (numeri diversi: serie, sintesi, soglia) |
 | 1X2 completo | hero · Previsione (barra, tabella, doppia chance) · Scomposizione · matrice | 3-4 sedi | accettabile: sono letture diverse, ma vanno legate da un rimando |
@@ -330,7 +340,7 @@ etichette V/N/P; i tooltip di accessibilità su barre e matrici (invarianti di `
 | 2 | P1.2 hero senza xG/PPDA, un solo posto per dato | mediana da 3 card a 1-2 |
 | 3 | P1.4 «Verifica approfondita» chiusa, summary con i due numeri | 1.883 car. fuori dal primo schermo |
 | 4 | P1.3 nav con ancore reali | 6 blocchi pesanti raggiungibili |
-| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta e il gate `parita_schede` |
+| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 ✅ (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta e il gate `parita_schede` |
 
 Ogni intervento va rifatto passare da `fda build` + `verify_site.py` + `scripts/audit_match_sections.py`
 e rimisurato con `scripts/prematch_sections.py`: la quota di testo per sezione è il numero che dice
@@ -346,4 +356,4 @@ card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato
 in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
 (verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
 (indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
-visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). **In coda**, in ordine di peso: **P2.5** (badge forma nell'hero), P2.6 (quote assenti = decisione), P2.8 (rese in browser). ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), P2.5 (badge forma nell'hero), P2.6 (quote assenti = decisione).
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). Applicata anche **P2.5** (`docs/37`: il badge della forma in testa alla scheda su tutte le 60 schede pre-partita, 120 badge; la serie non si ricopia più nella narrativa, 111 → 0). **In coda**, in ordine di peso: **P2.6** (quote assenti = decisione) e **P2.8** (rese in browser: badge, micro-visivi, indice, tendina della verifica). ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), ~~P2.5~~ (badge forma nell'hero), P2.6 (quote assenti = decisione).

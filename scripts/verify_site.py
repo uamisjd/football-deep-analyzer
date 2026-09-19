@@ -1752,6 +1752,64 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 
+    # 34) badge della forma nell'hero (P2.5, docs/28 §3): la serie di pallini e i punti devono
+    # essere quelli del calendario — ultime gare giocate prima del fischio, dal punto di vista
+    # della squadra — e la soglia delle 3 gare vale nei due versi: sotto quella soglia il badge
+    # non c'è, da lì in su c'è. Il numero è ricalcolato qui dai Parquet, non letto dal template:
+    # è il controllo che impedisce a un badge di raccontare una forma che nei dati non esiste
+    # (e alla narrativa di ripetere la serie, che è la metà «riduzione» dell'intervento).
+    n_form = 0
+    if not fx19.empty:
+        fx34 = fx19.copy()
+        fx34["utc_kickoff"] = pd.to_datetime(fx34.utc_kickoff, utc=True)
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Analisi pre-partita" not in html:
+                continue          # il badge è dell'attesa: a gara finita l'hero racconta la partita
+            fr34 = fx34[fx34.match_id == int(pg.stem)]
+            if fr34.empty:
+                continue
+            fr34 = fr34.iloc[0]
+            ko34 = pd.Timestamp(fr34.utc_kickoff)
+            hero = html_unescape(html.split('class="match-scoreline"', 1)[1]
+                                 .split('<div class="hero-model"', 1)[0])
+            pallini, attesi = 0, []
+            for tid, tname, lato in ((int(fr34.home_id), fr34.home_name, "home"),
+                                     (int(fr34.away_id), fr34.away_name, "away")):
+                # stesse regole di MatchAnalysis.form: finite, prima del fischio, ultime 5
+                g34 = fx34[(fx34.status == "finished") & (fx34.utc_kickoff < ko34)
+                           & ((fx34.home_id == tid) | (fx34.away_id == tid))].sort_values("utc_kickoff").tail(5)
+                seq, pts = [], 0
+                for row in g34.itertuples(index=False):
+                    casa = row.home_id == tid
+                    gf, ga = (row.home_goals, row.away_goals) if casa else (row.away_goals, row.home_goals)
+                    res = "V" if gf > ga else ("N" if gf == ga else "P")
+                    seq.append(res)
+                    pts += 3 if res == "V" else 1 if res == "N" else 0
+                seq = "".join(seq)
+                checks += 1
+                if len(seq) < 3:
+                    if f'>{tname}<span class="form-line"' in hero:
+                        fails.append(f"{pg.name}: badge della forma di {tname[:20]} con "
+                                     f"{len(seq)} gare (la soglia è 3)")
+                    continue
+                n_form += 1
+                pallini += len(seq)
+                punti = f"{pts} punto" if pts == 1 else f"{pts} punti"
+                attesi.append(f'<div class="match-hero-team {lato}">{tname}<span class="form-line" '
+                              f'aria-label="Forma di {tname}: {seq} nelle ultime {len(seq)} partite, '
+                              f'{punti}. V=vittoria, N=pareggio, P=sconfitta"')
+                if attesi[-1] not in hero:
+                    fails.append(f"{pg.name}: badge della forma di {tname[:20]} assente o diverso "
+                                 f"dal calendario ({seq})")
+                if f'<span class="fact-value">{pts} pt</span>' not in hero:
+                    fails.append(f"{pg.name}: punti del badge di {tname[:20]} diversi dal "
+                                 f"ricalcolo ({pts} pt)")
+            n_pallini = len(re.findall(r'class="form-dot [VNP]"', hero))
+            if attesi and n_pallini != pallini:
+                fails.append(f"{pg.name}: pallini del badge {n_pallini} (attesi {pallini})")
+    print(f"[34] badge della forma nell'hero verificati: {n_form}")
+
     # 20) «Vita del club» (docs/24 §3.5): la card pubblica solo fatti dentro la finestra di
     # 7 giorni che possono spostare qualcosa. Conteggi, voci pubblicate, «in riserva» e
     # blocco «Da sapere» sono ricalcolati con le stesse funzioni del build e confrontati col

@@ -741,6 +741,79 @@ def test_p23_tre_card_di_testo_hanno_il_loro_micro_visivo(tmp_path):
     st.close()
 
 
+def test_p25_badge_della_forma_in_testa_alla_scheda(tmp_path):
+    """P2.5 (`docs/28` §3): la forma recente sale in testa alla scheda.
+
+    Il badge riusa le classi della pagina «Oggi» (`form-line`, `form-dot`, `fact-value`):
+    serie di pallini e punti guadagnati per **entrambe** le squadre, con la finestra
+    dichiarata nella descrizione per chi usa un lettore di schermo. La narrativa non ripete
+    più la serie lettera per lettera (stava lì, nella card della squadra e nell'elenco di
+    «Oggi»), e a gara finita il badge non c'è: l'hero racconta la partita, non l'attesa.
+    """
+    st = _seed(tmp_path)
+
+    def giocata(mid: int, day: str, hid: int, hname: str, aid: int, aname: str, hg: int, ag: int):
+        return {"match_id": mid, "league_id": 55, "round": "1",
+                "utc_kickoff": pd.Timestamp(day + " 18:00", tz="UTC"),
+                "home_id": hid, "home_name": hname, "away_id": aid, "away_name": aname,
+                "home_goals": hg, "away_goals": ag, "status": "finished"}
+
+    # cinque gare giocate prima di questa partita per ognuna delle due squadre: senza gare non
+    # c'è forma da mostrare. Udinese VVNNP (8 punti), Lazio NPVVV (10 punti).
+    st.upsert("fixtures", [
+        giocata(950001, "2026-08-10", 8600, "Udinese", 9001, "Rivale 1", 2, 0),
+        giocata(950002, "2026-08-14", 9002, "Rivale 2", 8600, "Udinese", 1, 3),
+        giocata(950003, "2026-08-18", 8600, "Udinese", 9003, "Rivale 3", 1, 1),
+        giocata(950004, "2026-08-22", 9004, "Rivale 4", 8600, "Udinese", 2, 2),
+        giocata(950005, "2026-08-26", 8600, "Udinese", 9005, "Rivale 5", 0, 1),
+        giocata(950006, "2026-08-11", 9006, "Rivale 6", 8543, "Lazio", 1, 1),
+        giocata(950007, "2026-08-15", 8543, "Lazio", 9007, "Rivale 7", 0, 2),
+        giocata(950008, "2026-08-19", 9008, "Rivale 8", 8543, "Lazio", 0, 2),
+        giocata(950009, "2026-08-23", 8543, "Lazio", 9009, "Rivale 9", 3, 1),
+        giocata(950010, "2026-08-27", 9010, "Rivale 10", 8543, "Lazio", 1, 2),
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    post = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+
+    hero_pre = pre[pre.index('class="match-scoreline"'):pre.index('class="hero-model"')]
+    hero_post = post[post.index('class="match-scoreline"'):post.index('class="hero-model"')]
+    assert hero_pre.count('class="form-line"') == 2, "un badge per squadra"
+    assert hero_post.count('class="form-line"') == 0, "a gara finita l'hero non è l'attesa"
+
+    ma, fx = MatchAnalysis(st), st.read("fixtures")
+    fr = fx[fx.match_id == 5749669].iloc[0]
+    kickoff = pd.Timestamp(fr.utc_kickoff)
+    sequenze = []
+    # le due serie sono scritte qui a mano: se `form()` cambiasse verso o ordinamento, il test
+    # cadrebbe prima di arrivare al template
+    attesi = {"Udinese": ("VVNNP", 8), "Lazio": ("NPVVV", 10)}
+    for tid, name in ((int(fr.home_id), fr.home_name), (int(fr.away_id), fr.away_name)):
+        rows = ma.form(tid, kickoff)
+        assert len(rows) == 5, "cinque gare giocate per squadra"
+        seq = "".join(r["res"] for r in rows)
+        pts = sum(3 if r["res"] == "V" else 1 if r["res"] == "N" else 0 for r in rows)
+        assert (seq, pts) == attesi[name], (name, seq, pts)
+        punti = f"{pts} punto" if pts == 1 else f"{pts} punti"
+        # il badge sta sotto il nome della squadra, non in mezzo alla pagina
+        assert f'<div class="match-hero-team {"home" if name == fr.home_name else "away"}">{name}<span class="form-line"' in pre
+        # serie e punti sono quelli del calendario, non copiati a mano nel template
+        assert (f'aria-label="Forma di {name}: {seq} nelle ultime {len(rows)} partite, {punti}. '
+                f'V=vittoria, N=pareggio, P=sconfitta"') in hero_pre
+        assert f'<span class="fact-value">{pts} pt</span>' in hero_pre
+        sequenze.append(seq)
+    # i pallini disegnati sono esattamente le due serie, nell'ordine in cui si leggono in hero
+    assert "".join(re.findall(r'class="form-dot (\w)"', hero_pre)) == "".join(sequenze)
+    # la narrativa tiene i numeri e il giudizio, ma non trascrive più la serie
+    assert re.search(r"punti nelle ultime \d+ — ", pre)
+    assert not re.search(r"punti? nelle ultime \d+ \([VNP]+\)", pre), "serie ripetuta nella narrativa"
+    # la card della squadra resta la sede del dettaglio (pallini con avversario e risultato):
+    # il badge non la sostituisce, aggiunge la lettura a colpo d'occhio in cima alla pagina
+    assert 'Forma: <span class="form-dots">' in pre
+    st.close()
+
+
 def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
     """P2.2 (`docs/28` §3): le assenze non si raccontano quattro volte, e nessuna card sparisce.
 
