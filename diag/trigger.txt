@@ -1,4 +1,4 @@
-run_id=35129006426   # run daily rosso del 2026-09-16 17:34 UTC (gate verify_site)
+run_id=35432745402   # run daily rosso del 2026-09-19 09:00 UTC (gate verify_site, PR #58 non ancora mergiata)
 
 Interruttore per il workflow `.github/workflows/diag-fetch-log.yml`.
 
