@@ -182,11 +182,41 @@ solo** con l'invariante `[14]`. Corretti (è il punto §7b di `docs/40`, chiuso)
 persa (verificato: 0 id ripetuti in `RADAR` e 0 intersezioni con `PCT_EXTRA` su tutte e 4 le
 posizioni). Test con 4 seed in 4 processi separati.
 
-### 3.5 Gate dopo le correzioni (stessi dati, stesso ambiente)
+### 3.5 Il gate stesso si è rotto due volte, e va detto
 
-`pytest -q` **457 passed** (+4); `ruff check .` pulito; `fda build` exit 0 (375/2.364/7.492);
-`verify_site` **0 problemi** con il nuovo invariante `[37]` (**459** didascalie verificate) e
-`[14]` esteso; `parita_schede` e `resa_375` rieseguiti (esito in `STATO.md`).
+Estendere `[14]` e aggiungere separatori ha **rotto il verificatore**, non il sito: le regex con
+cui `verify_site` rilegge i numeri pubblicati cercavano solo cifre. Due sintomi reali, entrambi
+presi dai gate locali prima di qualsiasi push:
+
+1. `ValueError: could not convert string to float: '42.7% (2494/5836)'` nell'invariante `[7]`
+   (intervalli di Wilson): la regex `\((\d+)/(\d+)\)` non riconosceva più «(2.494/5.836)» e la
+   riga cadeva nel ramo «nessuna k/n pubblicata».
+2. `accuratezza.html: card backtest senza numerosità o RPS`: `su <b>(\d+)</b> partite` non
+   leggeva più «su **5.836** partite».
+
+Correzione: helper `_int_it()` («2.494» → 2494) e regex rese tolleranti al separatore in `[3]`
+(riga «Tutti»), `[3b]` (tabella riepilogo e composizione del campione) e `[7]`; `it_num` anche su
+`r.n` del riepilogo. **Lezione registrata**: ogni numero che il sito pubblica formattato deve
+essere riletto da un parser che accetta la formattazione, altrimenti il gate si rompe il giorno in
+cui il numero cresce — esattamente il meccanismo che avrebbe fermato il daily da solo (§3.3).
+
+### 3.6 Gate dopo le correzioni (stessi dati, stesso ambiente, build finale)
+
+| gate | prima | dopo |
+|---|---|---|
+| `pytest -q` | 453 passed | **457 passed** (+4) |
+| `ruff check .` | pulito | **pulito** |
+| `fda build` | exit 0 · 375/2.364/7.492 | **exit 0 · 375/2.364/7.492** |
+| `verify_site` | 0 problemi · 151.316 controlli | **0 problemi · 151.775 controlli** (`[37]` 459 didascalie; `[14]` su **4.137** pagine invece di 375) |
+| `parita_schede` | exit 0 | **exit 0** (59 schede · 23 id · 12 voci) |
+| `resa_375` | 23.658 misure · 0 problemi | **23.658 misure · 0 problemi** |
+| `audit_match_sections` | exit 0 | **exit 0** |
+
+Misure sul sito ricostruito: `index.html` → 7 card «in corso», 1 «finale», 23 «calcio d'inizio»;
+hero di una gara in corso → «1–0 · in corso · calcio d'inizio 15:00»; `accuratezza.html` →
+**0** numeri ≥ 1000 senza separatore (prima: 4 forme diverse); pagine che violano `[14]` esteso
+→ **0** (prima della correzione: **165**).
+
 
 ---
 
