@@ -1621,14 +1621,19 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if re.search(r"controlla \d[\d.]+ numeri", testo):
                 fails.append(f"template {f.name}: conteggio dei controlli scritto a mano")
 
-    # 14) n_train e compagni grandi con il separatore delle migliaia (esclusi gli anni 19xx/20xx)
+    # 14) n_train e compagni grandi con il separatore delle migliaia (esclusi gli anni 19xx/20xx).
+    #     Su **tutto** il sito e non solo su `partite/` (docs/40 §7a): `accuratezza.html`
+    #     pubblicava «5836 partite» senza separatore e questo controllo non la leggeva. Il
+    #     sostantivo «gol» è entrato nella lista con `docs/41`: «su 1014 gol nelle 303 partite»
+    #     stava su 164 schede e la vecchia regex, che cercava solo partite/gare, non lo vedeva.
     n_ntrain = 0
-    no_year = r"\b(?!19\d\d|20\d\d)(\d{4,})\s*(?:partite|gare)\b"
-    for pg in pages:
+    no_year = r"\b(?!19\d\d|20\d\d)(\d{4,})\s*(?:partite|gare|gol)\b"
+    for pg in sorted(site.rglob("*.html")):
         html = pg.read_text(encoding="utf-8")
         male = re.search(no_year, re.sub(r"<[^>]+>", " ", html))
         if male:
-            fails.append(f"{pg.name}: «{male.group(1)} partite/gare» senza separatore delle migliaia")
+            fails.append(f"{pg.relative_to(site)}: «{male.group(1)} partite/gare/gol» "
+                         "senza separatore delle migliaia")
         else:
             n_ntrain += 1
     print(f"[13-14] template e formattazione anti-falso: {n_tpl} template, {n_ntrain} pagine")
@@ -2517,6 +2522,62 @@ def check_tavole(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# ---- la didascalia sotto il punteggio dice lo stato della gara (docs/41) -------------------------
+# Misurato sul sito pubblicato il 19/09/2026 alle 16:03 IT: **7 schede su 7** in corso mostravano
+# il punteggio live con la didascalia «calcio d'inizio» («Bologna 1–0 calcio d'inizio» al 63' di
+# gioco) e l'hero della scheda «1–0 · calcio d'inizio · 15:00». La didascalia era binaria
+# (finita / tutto il resto) e nessun invariante la leggeva: `verify_site` era verde con 151.316
+# controlli. Qui si verifica che la didascalia segua lo stato dichiarato dalla card stessa.
+DIDASCALIA_ATTESA = {
+    "finished": "finale",
+    "live": "in corso",
+    "paused": "intervallo",
+    "postponed": "rinviata",
+    "suspended": "sospesa",
+    "cancelled": "annullata",
+    "canceled": "annullata",
+    "abandoned": "sospesa",
+    "scheduled": "calcio d'inizio",
+}
+
+
+def check_didascalie_punteggio(site: Path) -> tuple[list[str], int]:
+    """[37] didascalia del punteggio coerente con lo stato, nelle liste e nell'hero."""
+    fails: list[str] = []
+    checks = 0
+    card = re.compile(r'data-status="([a-z_]+)".*?<div class="match-score">.*?<span>(.*?)</span>',
+                      re.DOTALL)
+    hero = re.compile(r'<span class="result">(.*?)</span><span class="date">(.*?)</span>', re.DOTALL)
+    for pg in sorted(site.rglob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        rel = pg.relative_to(site)
+        # liste (Oggi / Prossime / Risultati): una card per blocco, così una riga di calendario
+        # senza punteggio non può prendere in prestito la didascalia della card successiva
+        for blocco in html.split('<article class="match-card"')[1:]:
+            m = card.search(blocco)
+            if not m:
+                continue
+            checks += 1
+            bucket, scritta = m.group(1), html_unescape(m.group(2)).strip()
+            attesa = DIDASCALIA_ATTESA.get(bucket, "calcio d'inizio")
+            if scritta != attesa:
+                fails.append(f"{rel}: didascalia «{scritta}» su una gara «{bucket}» "
+                             f"(atteso «{attesa}»)")
+        # hero della scheda partita: un punteggio numerico non è mai «calcio d'inizio» da solo
+        m = hero.search(html)
+        if m:
+            punteggio, didascalia = m.group(1).strip(), html_unescape(m.group(2)).strip()
+            if punteggio != "vs":
+                checks += 1
+                if didascalia.startswith("calcio d'inizio"):
+                    fails.append(f"{rel}: hero «{punteggio}» con didascalia «{didascalia}» "
+                                 "(un punteggio giocato non è un calcio d'inizio)")
+                elif punteggio.endswith("–") or punteggio.startswith("–"):
+                    fails.append(f"{rel}: hero con punteggio incompleto «{punteggio}»")
+    print(f"[37] didascalie del punteggio verificate: {checks}")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -2557,6 +2618,9 @@ def main() -> int:
     tavole, tavole_checks = check_tavole(site)
     fails += tavole
     checks += tavole_checks
+    didascalie, didascalie_checks = check_didascalie_punteggio(site)
+    fails += didascalie
+    checks += didascalie_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric

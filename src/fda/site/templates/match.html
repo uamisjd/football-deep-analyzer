@@ -17,7 +17,7 @@
   </div>
   <div class="match-scoreline">
     <div class="match-hero-team home">{{ c.home_name }}{% if c.status != 'finished' %}{{ hero_form(c.home_form_badge, c.home_name) }}{% endif %}</div>
-    <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% else %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
+    <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
     <div class="match-hero-team away">{{ c.away_name }}{% if c.status != 'finished' %}{{ hero_form(c.away_form_badge, c.away_name) }}{% endif %}</div>
   </div>
   {% if c.status in ('postponed','suspended','cancelled','abandoned') %}<div style="margin-top:12px;padding:10px 14px;background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);border-radius:10px;color:var(--amber);font-weight:700;font-size:13px">⚠ Partita {{ 'rinviata' if c.status == 'postponed' else 'sospesa' if c.status in ('suspended','abandoned') else 'annullata' }} — orario da confermare. La previsione resta quella dell'ultimo calcolo prima del rinvio.</div>{% endif %}
@@ -157,7 +157,7 @@
 <div class="card detail-card" id="posizione-lega">
   <h2>Dove si colloca questa partita</h2>
   <p class="small mut">I {{ lp.here|dec(2) }} gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:
-  sono <b>più alti del {{ lp_pct }}% delle {{ lp.n }} partite di {{ lp.league }} fin qui previste dal nostro modello</b>
+  sono <b>più alti del {{ lp_pct }}% delle {{ lp.n|it_num }} partite di {{ lp.league }} fin qui previste dal nostro modello</b>
   (media di lega {{ lp.mean|dec(1) }}, mediana {{ lp.median|dec(1) }}): questa gara è <b>{{ lp.label }}</b>.
   Il confronto conta solo partite del proprio campionato — la stessa cifra in campionati diversi vale diversamente —
   e si aggiorna con l'avanzare della stagione, perché ordina quantità previste, non giudizi.</p>
@@ -167,7 +167,7 @@
       il minimo e il massimo: le code schiaccerebbero tutto al centro. -#}
   {% if lp.viz %}<div class="viz">
     <p class="cap">Questa partita sulla scala di {{ lp.league }}</p>
-    <div class="track" role="img" aria-label="Gol attesi totali {{ lp.here|dec(2) }}, più alti del {{ lp_pct }} per cento delle {{ lp.n }} partite di {{ lp.league }} previste dal modello. Scala dal 2° al 98° percentile: da {{ lp.viz.lo|dec(1) }} a {{ lp.viz.hi|dec(1) }} gol. Mediana di lega {{ lp.median|dec(1) }}, media {{ lp.mean|dec(1) }}">
+    <div class="track" role="img" aria-label="Gol attesi totali {{ lp.here|dec(2) }}, più alti del {{ lp_pct }} per cento delle {{ lp.n|it_num }} partite di {{ lp.league }} previste dal modello. Scala dal 2° al 98° percentile: da {{ lp.viz.lo|dec(1) }} a {{ lp.viz.hi|dec(1) }} gol. Mediana di lega {{ lp.median|dec(1) }}, media {{ lp.mean|dec(1) }}">
       <span class="fill" style="width:{{ lp.viz.pct }}%"></span>
       <span class="tick soft" style="left:{{ lp.viz.med_pct }}%" title="mediana di {{ lp.league }}: {{ lp.median|dec(1) }} gol"></span>
       <span class="tick" style="left:{{ lp.viz.mean_pct }}%" title="media di {{ lp.league }}: {{ lp.mean|dec(1) }} gol"></span>
@@ -183,8 +183,8 @@
 {% set fg = c.first_goal %}
 <div class="card detail-card" id="primo-gol">
   <h2>Quando arriva il primo gol</h2>
-  <p class="small mut">Un ritmo a due tempi calibrato sullo storico, non il puro caso: su {{ fg.n_goals }} gol nelle
-  {{ fg.n_matches }} partite di questa stagione (7 leghe), il {{ (fg.s_half*100)|dec(1) }}% cade nel 1° tempo —
+  <p class="small mut">Un ritmo a due tempi calibrato sullo storico, non il puro caso: su {{ fg.n_goals|it_num }} gol nelle
+  {{ fg.n_matches|it_num }} partite di questa stagione (7 leghe), il {{ (fg.s_half*100)|dec(1) }}% cade nel 1° tempo —
   il 2° tempo spinge di più, e quindi il Poisson «piatto» anticiperebbe i gol di qualche minuto. Con i
   {{ fg.lam|dec(2) }} gol attesi di questa gara la metà centrale dei primi gol cade fra
   {% if fg.q[0][1] is not none %}{{ fg.q[0][1]|round|int }}'{% else %}dopo il 90'{% endif %} e

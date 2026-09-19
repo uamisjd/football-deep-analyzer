@@ -137,6 +137,22 @@ PCT_EXTRA: dict[int, list[str]] = {
     3: ["npxg", "shots", "dribbles", "box_touches"],
 }
 
+
+def percentile_ids(pos_int: int) -> list[str]:
+    """Id delle righe «Percentili di lega» nel loro ordine **dichiarato** (radar, poi extra).
+
+    L'ordine nasce dalle liste qui sopra e non da un ``set``: iterare un insieme di stringhe
+    dipende dall'hash seed del processo, quindi due build **dello stesso codice** producevano
+    2.074 schede giocatore su 3.748 con le card «Percentili di lega» in sequenza diversa
+    (misurato in `docs/40` §5.1; il contenuto era identico, cambiava solo l'ordine). Riprodotto
+    qui: con ``PYTHONHASHSEED`` 0/1/2 l'insieme dava tre sequenze diverse, la lista una sola.
+
+    Nessuna deduplica va persa nel passaggio: in ``RADAR`` non ci sono id ripetuti e
+    ``PCT_EXTRA`` non interseca ``RADAR`` (verificato su tutte e 4 le posizioni), e la
+    concatenazione precedente non deduplicava comunque fra le due liste.
+    """
+    return [sid for sid, _ in RADAR.get(pos_int, [])] + PCT_EXTRA.get(pos_int, [])
+
 # Tabella «Stagione»: (gruppo, [id statistiche]); D, C e A condividono gli stessi gruppi.
 _TABLE_GK = [("Porta", ["conceded", "saves", "saves_box", "prevented", "xgot_faced"]),
              ("Uscite", ["claims", "punches"]),
@@ -592,7 +608,11 @@ class PlayerCatalog:
         pct_rows: list[dict[str, Any]] = []
         if pos_int is not None and r["minutes"] >= MIN_MINUTES:
             radar_ids = {sid for sid, _ in RADAR.get(pos_int, [])}
-            for sid in list(radar_ids) + PCT_EXTRA.get(pos_int, []):
+            # ordine **dichiarato**, non quello di un insieme (docs/40 §5.1): iterare il set
+            # dipendeva dall'hash seed del processo e due build dello stesso codice davano
+            # 2.074 schede giocatore su 3.748 con le card in sequenza diversa. Nessuna deduplica
+            # persa: in RADAR non ci sono id ripetuti e PCT_EXTRA non interseca RADAR.
+            for sid in percentile_ids(pos_int):
                 row = self._stat_row(sid, player_id)
                 row["in_radar"] = sid in radar_ids
                 pct_rows.append(row)

@@ -192,6 +192,8 @@ class SiteBuilder:
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)
         self.env.filters["it_dt_short"] = lambda ts: it_date_short(ts, self.tz)
         self.env.filters["it_dt_full"] = lambda ts: it_date_full(ts, self.tz)
+        # didascalia sotto il punteggio: «finale» / «in corso» / «calcio d'inizio» secondo lo stato
+        self.env.filters["didascalia_punteggio"] = SiteBuilder.score_caption
         self.now = datetime.now(UTC)
         self.league_names = {lg.fotmob_id: lg.name for lg in leagues()}
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
@@ -301,6 +303,31 @@ class SiteBuilder:
             "abandoned": "Sospesa",
             "scheduled": "In programma",
         }.get(bucket, "In programma")
+
+    @staticmethod
+    def score_caption(status: Any) -> str:
+        """Didascalia sotto il punteggio: dice **che cosa è quel numero**, non l'orario.
+
+        Prima era binaria (``finished`` → «finale», tutto il resto → «calcio d'inizio»): su una
+        gara **in corso** il punteggio stampato è quello live e la didascalia lo dichiarava
+        «calcio d'inizio» — misurato sul sito pubblicato il 19/09 alle 16:03 IT su **7 schede su
+        7** in corso («Bologna **1–0** calcio d'inizio», 63' giocati) e sull'hero della scheda
+        («1–0 · calcio d'inizio · 15:00»). Nessun invariante lo copriva: `verify_site` era verde.
+        La didascalia segue lo stesso bucket del filtro, quindi una gara rinviata o sospesa non
+        dice più «calcio d'inizio» accanto a un «vs».
+        """
+        bucket = SiteBuilder._status_bucket(status)
+        return {
+            "finished": "finale",
+            "live": "in corso",
+            "paused": "intervallo",
+            "postponed": "rinviata",
+            "suspended": "sospesa",
+            "cancelled": "annullata",
+            "canceled": "annullata",
+            "abandoned": "sospesa",
+            "scheduled": "calcio d'inizio",
+        }.get(bucket, "calcio d'inizio")
 
     def _match_rows(self, fx: pd.DataFrame) -> list[dict[str, Any]]:
         absent = self._absence_counts()

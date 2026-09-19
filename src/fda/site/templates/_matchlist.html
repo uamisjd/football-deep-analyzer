@@ -31,7 +31,7 @@
     </div>
     <div class="match-score">
       {% if m.home_goals is not none %}<strong>{{ m.home_goals }}–{{ m.away_goals }}</strong>{% else %}<strong>vs</strong>{% endif %}
-      <span>{% if m.status_bucket == 'finished' %}finale{% else %}calcio d'inizio{% endif %}</span>
+      <span>{{ m.status|didascalia_punteggio }}</span>
     </div>
     <div class="match-team away-team">
       <a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.away_name }}</a>

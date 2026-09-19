@@ -16,8 +16,8 @@ resta fissa 45/27/28 e la colonna lo dichiara con «fisso». Negativo = il model
 Con poche gare valutate per campionato i valori restano indicativi: servono ~30 gare per lettura stabile.</p>
 {% if composizione %}
 <p class="small mut">Composizione del campione: {{ composizione.n|it_num }} {{ 'gara valutata' if composizione.n == 1 else 'gare valutate' }}, di cui
-  <b>{{ composizione.corrente }}</b> con il modello corrente ({{ model_version }}) e
-  <b>{{ composizione.calibrate }}</b> con la calibrazione attiva{% if composizione.versioni %};
+  <b>{{ composizione.corrente|it_num }}</b> con il modello corrente ({{ model_version }}) e
+  <b>{{ composizione.calibrate|it_num }}</b> con la calibrazione attiva{% if composizione.versioni %};
   versioni in archivio: {{ composizione.versioni|join(', ') }}{% endif %}. Le previsioni delle ricette
   precedenti restano in archivio per tracciabilità: per questo la tabella qui sopra — che cresce di
   15-20 gare al giorno — può divergere dal backtest fuori campione qui sotto, che valuta
@@ -31,7 +31,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
     <th scope="col" class="r">Brier</th><th scope="col" class="r">Brier base</th><th scope="col" class="r">Δ</th><th scope="col" class="r">scelte indovinate</th>
     <th scope="col" class="r">segnale</th></tr>
   {% for m in markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
-    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k }}/{{ m.n }})</span></td>
+    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k|it_num }}/{{ m.n|it_num }})</span></td>
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
@@ -50,7 +50,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 {% endif %}
 {% if bt and bt.n %}
 <div class="card"><h2>Backtest storico fuori campione</h2>
-  <p class="small">Lo stesso modello, valutato su <b>{{ bt.n }}</b> partite già giocate in
+  <p class="small">Lo stesso modello, valutato su <b>{{ bt.n|it_num }}</b> partite già giocate in
   {{ bt.leagues }} campionati: per ogni finestra il modello è stato addestrato <b>solo</b> sulle
   partite precedenti, quindi nessuna di queste stime ha visto il risultato. È il campione ampio che
   serve per distinguere un difetto vero dal rumore (la tabella qui sopra cresce solo di
@@ -77,15 +77,15 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   <div class="tablewrap"><table><tr><th scope="col">esito</th><th scope="col" class="r">previsto</th><th scope="col" class="r">osservato</th>
     <th scope="col" class="r">intervallo 95%</th><th scope="col" class="r">segnale</th></tr>
   {% for c in bt.calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td>
-    <td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
+    <td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k|it_num }}/{{ c.n|it_num }})</span></td>
     <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
     <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
   </table></div>
   <div class="tablewrap"><table><tr><th scope="col">mercato</th><th scope="col" class="r">gare</th><th scope="col" class="r">previsto</th>
     <th scope="col" class="r">osservato</th><th scope="col" class="r">intervallo 95%</th><th scope="col" class="r">Brier</th>
     <th scope="col" class="r">Brier base</th><th scope="col" class="r">Δ</th><th scope="col" class="r">segnale</th></tr>
-  {% for m in bt.markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n }}</td>
-    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k }}/{{ m.n }})</span></td>
+  {% for m in bt.markets %}<tr><td>{{ m.label }}</td><td class="r">{{ m.n|it_num }}</td>
+    <td class="r">{{ (m.prev*100)|dec(1) }}%</td><td class="r">{{ (m.obs*100)|dec(1) }}% <span class="mut">({{ m.k|it_num }}/{{ m.n|it_num }})</span></td>
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
@@ -107,7 +107,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 <div class="card"><h2>Calibrazione (tutte le gare valutate)</h2>
 <div class="tablewrap"><table><tr><th scope="col">Esito</th><th scope="col" class="r">Probabilità media prevista</th><th scope="col" class="r">Frequenza osservata</th>
 <th scope="col" class="r">intervallo 95%</th><th scope="col" class="r">segnale</th></tr>
-{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k }}/{{ c.n }})</span></td>
+{% for c in calib %}<tr><td>{{ c.label }}</td><td class="r">{{ (c.prev*100)|dec(1) }}%</td><td class="r">{{ (c.obs*100)|dec(1) }}% <span class="mut">({{ c.k|it_num }}/{{ c.n|it_num }})</span></td>
 <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
 <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
 </table></div>
