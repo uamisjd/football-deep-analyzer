@@ -478,6 +478,16 @@ def _num_it(s: str) -> float:
     return float(s.replace(",", "."))
 
 
+def _int_it(s: str) -> int:
+    """'2.494' → 2494: conteggio pubblicato con il separatore italiano delle migliaia.
+
+    Ogni conteggio del sito sopra 999 esce con il separatore (`it_num`), quindi le regex che
+    rileggono i numeri pubblicati devono accettarlo: senza questo, l'invariante [7] andava in
+    eccezione su «(2.494/5.836)» e il [3b] perdeva la riga «Tutti» (docs/41 §3.2).
+    """
+    return int(re.sub(r"<[^>]+>", "", s).replace(".", "").replace(",", "").strip())
+
+
 def check_bars(site: Path) -> tuple[list[str], int]:
     """[11a] Barre 1X2: larghezze, etichette e aria-label devono essere gli stessi tre numeri.
 
@@ -768,7 +778,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         # equalare RPS − naive ricalcolati dai numeri stampati, e la composizione dichiarata
         # del campione deve coincidere con la somma delle gare della tabella.
         righe_riep = re.findall(
-            r'<td>([^<]+)</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>'
+            r'<td>([^<]+)</td><td class="r">([\d.]+)</td><td class="r">(\d+,\d+)</td>'
             r'<td class="r">(\d+,\d+)</td><td class="r">\d+%</td><td class="r">(\d+,\d+)</td>'
             r'<td class="r">(?:[\d.]+|fisso)</td><td class="r [a-z]+">([+\-−]?[\d,]+)</td></tr>', acc_txt)
         if not righe_riep:
@@ -777,19 +787,19 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         for lg, n_r, rps_r, _brier, naive_r, delta_r in righe_riep:
             checks += 1
             if lg.strip() == "Tutti":
-                n_tutti = int(n_r)
+                n_tutti = _int_it(n_r)
             else:
-                n_leghe += int(n_r)
+                n_leghe += _int_it(n_r)
             ric = float(rps_r.replace(",", ".")) - float(naive_r.replace(",", "."))
             pub = float(delta_r.replace(",", ".").replace("−", "-"))
             if abs(pub - ric) > 0.0011:   # rps/naive a 4 decimali + Δ a 3: tolleranza di stampa
                 fails.append(f"accuratezza: Δ {lg} pubblicato {pub:+.4f} ≠ RPS − naive {ric:+.4f}")
         if n_tutti and n_leghe and n_tutti != n_leghe:
             fails.append(f"accuratezza: riga Tutti {n_tutti} gare ≠ somma leghe {n_leghe}")
-        m_comp = re.search(r"Composizione del campione: (\d+) gare valutate", acc_txt)
+        m_comp = re.search(r"Composizione del campione: ([\d.]+) gare valutate", acc_txt)
         if m_comp:
             checks += 1
-            if int(m_comp.group(1)) != n_tutti:
+            if _int_it(m_comp.group(1)) != n_tutti:
                 fails.append(f"accuratezza: composizione {m_comp.group(1)} gare ≠ riga Tutti {n_tutti}")
         elif "Riepilogo" in acc_txt:
             fails.append("accuratezza.html: composizione del campione assente (docs/19 §1.5)")
@@ -810,11 +820,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 continue
             cells = re.findall(r"<td[^>]*>(.*?)</td>", row, re.DOTALL)
             lo_p, hi_p = _n(mi.group(1)), _n(mi.group(2))
-            kn = re.search(r"\((\d+)/(\d+)\)", row)
+            # k/n può avere il separatore delle migliaia («(2.494/5.836)», docs/41 §3.2):
+            # la regex lo accetta e `_n`/`int` tolgono i punti, come per ogni altro numero
+            kn = re.search(r"\(([\d.]+)/([\d.]+)\)", row)
             if kn and len(cells) >= 7:                # riga di mercato: k/n esplicito, 9-10 celle
-                k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[2])
+                k, n, prev = _int_it(kn.group(1)), _int_it(kn.group(2)), _n(cells[2])
             elif kn:                                  # riga di calibrazione: k/n esplicito, 5 celle
-                k, n, prev = int(kn.group(1)), int(kn.group(2)), _n(cells[1])
+                k, n, prev = _int_it(kn.group(1)), _int_it(kn.group(2)), _n(cells[1])
             else:                                     # nessuna k/n pubblicata: k ≈ osservato × n
                 n = int(_n(cells[1]))
                 prev, obs = _n(cells[2]), _n(cells[3])
@@ -854,7 +866,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append("accuratezza.html: tabella `backtest` presente ma nessuna card pubblicata")
         else:
             card = text[i:]
-            m_n = re.search(r"su <b>(\d+)</b> partite", card)
+            m_n = re.search(r"su <b>([\d.]+)</b> partite", card)
             m_r = re.search(r"RPS <b>(\d+,\d+)</b>", card)
             if not m_n or not m_r:
                 fails.append("accuratezza.html: card backtest senza numerosità o RPS")
@@ -863,7 +875,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 mine = pb_rps(bt[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(),
                               bt["outcome"].to_numpy(int).tolist())
                 rps_bt = float(m_r.group(1).replace(",", "."))
-                if int(m_n.group(1)) != len(bt):
+                if _int_it(m_n.group(1)) != len(bt):
                     fails.append(f"backtest: {m_n.group(1)} gare in pagina vs {len(bt)} in tabella")
                 if abs(rps_bt - mine) > 0.002:
                     fails.append(f"backtest: RPS pagina {rps_bt} vs ricalcolato {mine:.4f}")

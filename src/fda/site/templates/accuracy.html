@@ -7,7 +7,7 @@
 {% if summary %}
 <div class="card"><h2>Riepilogo</h2>
 <div class="tablewrap"><table><tr><th scope="col">Campionato</th><th scope="col" class="r">Partite valutate</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Brier</th><th scope="col" class="r">Esito più probabile azzeccato</th><th scope="col" class="r">RPS naive</th><th scope="col" class="r">n base</th><th scope="col" class="r">Δ vs naive</th></tr>
-{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r">{{ r.naive_n|it_num if r.naive_n else 'fisso' }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
+{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n|it_num }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r">{{ r.naive_n|it_num if r.naive_n else 'fisso' }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Δ = RPS modello − RPS della base naive: per ogni riga la base è la <b>frequenza reale
 1·X·2 della stessa lega</b> misurata sullo storico mirror (colonna «n base» = gare di storico dietro
