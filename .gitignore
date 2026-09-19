@@ -35,3 +35,7 @@ htmlcov/
 /site/
 # Anteprima locale generata da scripts/anteprima_scheda.py
 /site_preview/
+
+# Consegna offline di riserva (regola A8bis di docs/00): patch + bundle generati dall'agente
+# quando il push è bloccato. Rigenerabili con `git format-patch`/`git bundle`, mai nel repo.
+/handover/
