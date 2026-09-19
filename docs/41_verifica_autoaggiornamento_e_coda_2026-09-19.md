@@ -273,7 +273,7 @@ attraversata in produzione)». Nuovo file `tests/test_numeri_pubblicati.py`, 3 t
    segnale. Opzioni a costo zero: una `issue` automatica (serve `permissions: issues: write`) o un
    file di stato pubblicato nel sito. Da verificare **solo dal vivo** dopo il merge, quindi resta
    fuori dalla «PR ricca» per regola `docs/00` §D e va fatto in una PR propria.
-2. ~~**Feed Sportmediaset 404** (§1.8)~~ — **diagnosticato e corretto il 19/09** (terzo giro).
+2. ~~**Feed Sportmediaset 404** (§1.8)~~ — **diagnosticato e corretto il 19/09** (terzo giro) e **verificato in produzione** (sessione `arena/01a0bab0`: `daily` `35457599586` post-merge PR #62 → commit `f111b95`, `news:NEWS` = **AVVISO** con 4.052 righe, **0** righe ERRORE su 37).
    Misura su `news.parquet` (16.337 righe): Sportmediaset 205 notizie, **tutte** da Google News,
    **0** dal feed diretto; Sky Sport 392, tutte da Google News; ANSA 377, di cui 94 dal feed.
    Il feed morto **non costa una notizia**: il difetto vero era che la riga `news:NEWS` restava
