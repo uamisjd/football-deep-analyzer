@@ -68,7 +68,7 @@
 </div>
 {% for mo in calendar %}
 <details class="cal-month" id="{{ mo.id }}" data-day-group{% if loop.first %} open{% endif %}>
-  <summary>{{ mo.label }}<span class="cal-count">{{ mo.count|it_num }} {{ 'partita' if mo.count == 1 else 'partite' }}</span></summary>
+  <summary>{{ mo.label }}<span class="cal-count">{{ mo.count|it_num }} {{ 'partita' if mo.count == 1 else 'partite' }}</span><span class="cal-note">stima di oggi · ricalcolata a ogni aggiornamento</span></summary>
   <div class="cal-head" aria-hidden="true"><span>data</span><span>partita</span><span>1 · X · 2</span><span>gol att.</span><span>over 2,5</span></div>
   {% for m in mo.matches %}{{ ml.cal_row(m) }}{% endfor %}
   <p class="empty-filter" data-empty-filter hidden>Nessuna partita corrisponde ai filtri.</p>

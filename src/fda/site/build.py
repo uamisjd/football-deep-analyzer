@@ -45,6 +45,12 @@ ITALIAN_MONTHS_SHORT = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ag
 NAIVE_FALLBACK = np.array([0.45, 0.27, 0.28])
 NAIVE_MIN = 30
 
+# Sotto `STORICO_MINIMO` gare di storico di allenamento, i parametri di una squadra sono
+# stimati su pochi dati: la pagina «Proiezioni» lo dichiara lega per lega (audit `docs/45` §3).
+# Non è una soglia di modello — il fallback a parametri neutri scatta solo per le squadre
+# del tutto assenti dallo storico — ma la soglia sotto la quale il sito ammette il limite.
+STORICO_MINIMO = 10
+
 
 def outcome_freqs(hist: pd.DataFrame) -> dict[str, tuple[np.ndarray, int]]:
     """Frequenze reali 1·X·2 per ``league_key`` (+ chiave «Tutti») da ``history.parquet``.
@@ -78,6 +84,38 @@ def outcome_freqs(hist: pd.DataFrame) -> dict[str, tuple[np.ndarray, int]]:
     for k in pd.unique(keys):
         out[str(k)] = freq_n(keys == k)
     return out
+
+
+def grafico_mercati(markets: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Geometria SVG del confronto «previsto vs osservato» sui mercati (`docs/46` §2).
+
+    Stessa regola del radar dei giocatori: la geometria si calcola qui, il disegno sta
+    nel template. I numeri sono **gli stessi** della tabella (nessuna seconda fonte):
+    punto = probabilità media dichiarata, linea = intervallo 95% della frequenza
+    osservata (Wilson), trattino = frequenza vista. Serve a vedere a colpo d'occhio
+    dove il modello è dentro e dove è fuori, senza leggere 9 righe di decimali.
+    """
+    if not markets:
+        return None
+    x0, x1 = 168.0, 352.0        # area del grafico: 0–100% di probabilità
+    top, step = 30.0, 22.0
+    n = len(markets)
+
+    def sx(p: float) -> float:
+        return x0 + (x1 - x0) * max(0.0, min(1.0, float(p)))
+
+    righe = []
+    for i, m in enumerate(markets):
+        y = top + step * i
+        righe.append({"label": str(m.get("label", "")), "y": round(y, 1),
+                      "lo": round(sx(m["lo"]), 1), "hi": round(sx(m["hi"]), 1),
+                      "prev": round(sx(m["prev"]), 1), "obs": round(sx(m["obs"]), 1),
+                      "fuori": bool(m.get("outside"))})
+    return {"righe": righe, "w": 360, "h": round(top + step * n + 14, 1),
+            "x0": x0, "x1": x1, "base": round(top - 8, 1),
+            "fondo": round(top + step * (n - 1) + 10, 1),
+            "ticks": [{"x": round(sx(v / 100), 1), "label": f"{v}%"} for v in (0, 25, 50, 75, 100)],
+            "fuori": sum(1 for m in markets if m.get("outside"))}
 
 
 def composizione_campione(p: pd.DataFrame, model_version: str) -> dict[str, Any]:
@@ -592,6 +630,18 @@ class SiteBuilder:
                          subtitle="Le proiezioni arrivano dopo il primo run con `fda simulate`.")
             return
         names = {l.key: l.name for l in leagues(None)}
+        # Quante gare di storico di allenamento ha ogni squadra. Sotto `STORICO_MINIMO` i
+        # parametri del modello sono stimati su pochi dati e la pagina lo deve dire, perché
+        # la vecchia nota prometteva parametri neutri di lega per le squadre «senza storico
+        # sufficiente»: il fallback scatta solo per le squadre del tutto assenti dallo storico
+        # (oggi nessuna), non per quelle con poche gare (audit `docs/45` §3). Non è una soglia
+        # di modello, solo la soglia sotto la quale il sito dichiara il limite.
+        hist = self.store.read("history")
+        conteggi = {}
+        if not hist.empty and "league_key" in hist.columns:
+            for key_g, g in hist.groupby("league_key"):
+                conteggi[str(key_g)] = pd.concat([g["home"], g["away"]],
+                                                 ignore_index=True).value_counts()
         blocks = []
         for key, grp in sim.groupby("league_key"):
             grp = grp.sort_values("exp_points", ascending=False).copy()
@@ -618,17 +668,29 @@ class SiteBuilder:
                 row["p_rel_pct"] = mc_percent(row["p_rel"])
                 rows.append(row)
             n_sims = int(pd.to_numeric(grp["n_sims"], errors="coerce").max())
+            conteggio = conteggi.get(str(key))
+            fragili = (sorted(t for t in grp["team"] if int(conteggio.get(t, 0)) < STORICO_MINIMO)
+                       if conteggio is not None else [])
             blocks.append({
                 "key": str(key), "name": names.get(str(key), str(key)), "top_n": top_n,
                 "legacy_top": legacy_top,
                 "mc_se_max_pp": round(mc_se(0.5, n_sims) * 100, 2), "rows": rows,
+                "fragili": fragili, "storico_minimo": STORICO_MINIMO,
             })
         order = {k: i for i, k in enumerate(["ITA1", "ENG1", "ESP1", "GER1", "FRA1", "NED1", "POR1"])}
         blocks.sort(key=lambda b: order.get(b["key"], 99))
         n_sims = int(pd.to_numeric(sim["n_sims"], errors="coerce").max())
+        n_fragili = sum(len(b["fragili"]) for b in blocks)
+        # squadre simulate senza una sola gara nello storico di allenamento: per queste il
+        # modello userebbe i parametri neutri di lega (`_match_grid`), non per le «fragili».
+        n_senza_storico = sum(
+            sum(1 for r in b["rows"]
+                if int(conteggi.get(b["key"], pd.Series(dtype=int)).get(r["team"], 0)) == 0)
+            for b in blocks)
         self._render("stagione.html", "stagione.html", title="Proiezioni di stagione",
                      n_sims=n_sims, updated=it_from_utc(sim["made_at"].max(), self.tz),
-                     leagues=blocks)
+                     leagues=blocks, n_squadre=len(sim), n_fragili=n_fragili,
+                     n_senza_storico=n_senza_storico, storico_minimo=STORICO_MINIMO)
 
     # mercati binari pubblicati dal modello → (colonna, etichetta, evento osservato)
     MARKETS: ClassVar[tuple[tuple[str, str, str], ...]] = (
@@ -649,6 +711,8 @@ class SiteBuilder:
         base_freqs = outcome_freqs(self.store.read("history"))
         key_of = {lg.name: lg.key for lg in leagues()}
         summary, recent, calib, markets = [], [], [], []
+        copertura = None          # copertura del campione valutato (docs/44 §4)
+        lead_stats = None         # anticipo misurato delle previsioni valutate (docs/44 §3)
         if not preds.empty:
             fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id"]]
             # la previsione valida è l'ultima fatta PRIMA del calcio d'inizio
@@ -673,7 +737,14 @@ class SiteBuilder:
                                                   (NAIVE_FALLBACK, 0))
                     naive = np.tile(freq, (len(g), 1))
                     rps, rps_naive = _rps(pr, oc), _rps(naive, oc)
-                    summary.append({"league": lg_name, "n": len(g), "rps": rps, "brier": float(((pr - onehot) ** 2).sum(1).mean()),
+                    # Quante di queste gare sono state previste dalla ricetta **corrente**
+                    # (docs/46 §1): il resto viene da versioni precedenti, tenute in
+                    # archivio per tracciabilità. Senza la colonna, «16 gare valutate»
+                    # lascia credere che siano tutte confrontabili con il modello di oggi.
+                    n_corr = (int((g["model_version"].astype(str) == MODEL_VERSION).sum())
+                              if "model_version" in g.columns else 0)
+                    summary.append({"league": lg_name, "n": len(g), "n_corrente": n_corr, "rps": rps,
+                                    "brier": float(((pr - onehot) ** 2).sum(1).mean()),
                                     "hit": float((pr.argmax(1) == oc).mean()), "naive": rps_naive, "delta": rps - rps_naive,
                                     "naive_n": n_base})
                 summary.sort(key=lambda r: (r["league"] == "Tutti", r["league"]))
@@ -767,6 +838,31 @@ class SiteBuilder:
                     lead_buckets = []
                     import logging
                     logging.getLogger(__name__).debug("RPS per anticipo saltato: %s", exc)
+                # Anticipo misurato (docs/44 §3): la previsione di ogni gara viene **rifatta** a
+                # ogni run (una sola riga per `match_id`), quindi quella valutata è sempre
+                # l'ultima prima del calcio d'inizio e i bucket oltre le 24 ore restano vuoti
+                # per costruzione. Senza questi numeri la pagina prometteva «se la qualità
+                # peggiora con l'anticipo, lo vedremo qui», che oggi non è misurabile.
+                lead_stats = None
+                if "_lead_days" in p.columns:
+                    _ld = p["_lead_days"].dropna()
+                    if not _ld.empty:
+                        lead_stats = {"n": len(_ld), "mean": float(_ld.mean()),
+                                      "min": float(_ld.min()), "max": float(_ld.max()),
+                                      "oltre_24h": int((_ld > 1).sum()),
+                                      "bucket_pieni": len(lead_buckets)}
+        # Copertura del campione (docs/44 §4): quante gare finite sono state valutate e
+        # quante no, col motivo. Senza questa riga «120 gare valutate» sembra dire «tutte
+        # le gare giocate», mentre sono 120 su 331.
+        copertura = None
+        if not preds.empty:
+            _prima = pd.to_datetime(preds["made_at"], utc=True, errors="coerce").min()
+            _senza = fin[~fin["match_id"].isin(p["match_id"])] if not p.empty else fin
+            _ko = pd.to_datetime(_senza["utc_kickoff"], utc=True, errors="coerce")
+            _prec = int((_ko < _prima).sum()) if pd.notna(_prima) else 0
+            copertura = {"finite": len(fin), "valutate": int(len(p) if not p.empty else 0),
+                         "precedenti": _prec, "senza": int(len(_senza) - _prec),
+                         "prima_prev": _prima}
         # backtest cronologico fuori campione (tabella prodotta da `fda backtest`): la card
         # compare solo se esiste, come le sezioni condizionate alla disponibilità della fonte
         bt_rows = self.store.read("backtest")
@@ -784,7 +880,8 @@ class SiteBuilder:
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
                      markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
                      composizione=composizione if 'composizione' in locals() else {},
-                     model_version=MODEL_VERSION)
+                     copertura=copertura, lead_stats=lead_stats if 'lead_stats' in locals() else None,
+                     grafico=grafico_mercati(markets), model_version=MODEL_VERSION)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")
