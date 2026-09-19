@@ -29,7 +29,7 @@ Un "robot" gratuito di GitHub (GitHub Actions) si accende da solo più volte al 
  │  1. ORARIO (cron)  ──►  2. RACCOLTA DATI         │
  │     06:00, 12:00,        FotMob, ESPN, Understat, │
  │     16:00, 20:00,        football-data, ClubElo,  │
- │     23:30 (ora IT)       quote, meteo, notizie    │
+ │     23:30 (ora IT)       meteo, notizie           │
  │                                │                  │
  │                                ▼                  │
  │                         3. DATABASE (DuckDB)      │
@@ -53,7 +53,7 @@ Un "robot" gratuito di GitHub (GitHub Actions) si accende da solo più volte al 
 
 **1. L'orario.** Nel repository c'è un file (`.github/workflows/daily.yml`) con una tabella oraria ("cron"). GitHub esegue il lavoro a quegli orari su un computer virtuale gratuito. Per un repository pubblico i minuti sono illimitati; il lavoro dura 5–15 minuti a esecuzione. Piano orario iniziale (ora italiana):
 - **06:00** — run principale: risultati della sera prima, analisi post-partita, nuove previsioni per le prossime 72 ore, report del giorno.
-- **12:00 e 16:00** — aggiornamento infortuni/indisponibili, quote, meteo, notizie.
+- **12:00 e 16:00** — aggiornamento infortuni/indisponibili, meteo, notizie.
 - **20:00 e 23:30** — nei giorni con partite: risultati, statistiche e shot map delle gare finite.
 - Ogni esecuzione può essere lanciata anche a mano da GitHub con un click ("Run workflow").
 
@@ -63,11 +63,10 @@ Un "robot" gratuito di GitHub (GitHub Actions) si accende da solo più volte al 
 - **Understat** → xG, xGA, xPTS, PPDA per le 5 grandi leghe (seconda opinione).
 - **football-data.co.uk** (via mirror datahub.io su GitHub) → storico dal 1993 per addestrare e validare i modelli.
 - **ClubElo** → rating Elo storico.
-- **The Odds API** (500 crediti/mese gratis) → quote pre-partita 1–2 volte al giorno.
 - **Open-Meteo**, **Google News RSS** → contesto.
 Ogni chiamata è limitata (≤1 richiesta/secondo verso FotMob) e ciò che è già stato scaricato non viene richiesto di nuovo.
 
-**3. Il database.** Tutto finisce in un file DuckDB (`data/fda.duckdb`) più file Parquet, salvati nel repository stesso: così lo storico cresce gratis e ogni esecuzione "vede" cosa è cambiato rispetto alla precedente (quando è uscita una formazione, come si sono mosse le quote, quando è stato annunciato un infortunio).
+**3. Il database.** Tutto finisce in un file DuckDB (`data/fda.duckdb`) più file Parquet, salvati nel repository stesso: così lo storico cresce gratis e ogni esecuzione "vede" cosa è cambiato rispetto alla precedente (quando è uscita una formazione, quando è stato annunciato un infortunio).
 
 > **Correzione del 2026-09-17 (docs/26 §4).** Il percorso reale è `data/processed/fda.duckdb`
 > e quel file **non** è versionato: è una vista derivata dai Parquet che `Store.refresh_views`
@@ -75,9 +74,9 @@ Ogni chiamata è limitata (≤1 richiesta/secondo verso FotMob) e ciò che è gi
 > riscritto a ogni run (5 al giorno) nella history senza aggiungere informazione. I Parquet
 > restano versionati, che è ciò che questa decisione voleva garantire.
 
-**4. Modelli e analisi.** Con i dati aggiornati si ricalcolano: Dixon-Coles (probabilità 1-X-2, risultati esatti, Over/Under, BTTS), Elo, modello su xG, ensemble calibrato; per ogni partita delle prossime 72 ore si genera un **report pre-partita in italiano** (forza, forma, xG, assenze pesate, diffidati, arbitro, riposo/viaggi, meteo, H2H, quote vs modello, notizie); per ogni partita finita un **report post-partita** (xG, shot map, momentum, prestazioni, cosa ha detto il modello). Ogni previsione viene salvata e poi valutata: la pagina "Accuratezza" è aggiornata automaticamente.
+**4. Modelli e analisi.** Con i dati aggiornati si ricalcolano: Dixon-Coles (probabilità 1-X-2, risultati esatti, Over/Under, BTTS), Elo, modello su xG, ensemble calibrato; per ogni partita delle prossime 72 ore si genera un **report pre-partita in italiano** (forza, forma, xG, assenze pesate, diffidati, arbitro, riposo/viaggi, meteo, H2H, notizie); per ogni partita finita un **report post-partita** (xG, shot map, momentum, prestazioni, cosa ha detto il modello). Ogni previsione viene salvata e poi valutata: la pagina "Accuratezza" è aggiornata automaticamente.
 
-**5. Il sito.** Un generatore produce pagine HTML statiche (Oggi · Partita · Squadra · Giocatore · Campionato · Previsioni & Accuratezza · Quote · Stato fonti) pubblicate su **GitHub Pages** (gratis, sempre acceso, nessun server). URL del tipo `https://uamisjd.github.io/football-deep-analyzer/`. Poiché il repository è pubblico, il sito è raggiungibile da chi conosce l'indirizzo: per l'uso personale basta non divulgarlo; se vorrai una protezione vera, la via gratuita è Cloudflare Pages + Cloudflare Access (login con la tua email), documentata in una fase successiva.
+**5. Il sito.** Un generatore produce pagine HTML statiche (Oggi · Prossime · Risultati · Accuratezza · Proiezioni · Giocatori · Squadra · Partita · Stato fonti · Info: le voci della barra in alto, come sono davvero) pubblicate su **GitHub Pages** (gratis, sempre acceso, nessun server). URL del tipo `https://uamisjd.github.io/football-deep-analyzer/`. Poiché il repository è pubblico, il sito è raggiungibile da chi conosce l'indirizzo: per l'uso personale basta non divulgarlo; se vorrai una protezione vera, la via gratuita è Cloudflare Pages + Cloudflare Access (login con la tua email), documentata in una fase successiva.
 
 **6. Tu.** Apri il sito. Opzionale: un bot Telegram gratuito ti manda alle 07:00 il riassunto delle partite del giorno e avvisa quando escono le formazioni ufficiali o un infortunio importante.
 
@@ -89,13 +88,34 @@ Ogni chiamata è limitata (≤1 richiesta/secondo verso FotMob) e ciò che è gi
 ### Limiti onesti
 - Non è "in tempo reale": ritardo da 30 minuti a poche ore, a seconda dell'orario. Se in futuro vorrai il live vero, si aggiunge un run ogni 10 minuti nelle finestre delle partite (sempre gratis, ma più rumoroso).
 - Le formazioni ufficiali escono ~1 h prima: le vedrai nel sito solo se un run cade in quella finestra (si può programmare un run "pre-gara" a orari fissi: 11:30, 14:00, 17:00, 19:45 ora IT, che coprono i calci d'inizio tipici).
-- Le quote gratuite bastano per 1–2 istantanee al giorno, non per il movimento continuo.
+- Le **quote di mercato non sono pubblicate** (decisione del 19/09/2026, `docs/38`): il confronto col mercato si fa **fuori dal sito**, sulle quote di chiusura storiche (`scripts/benchmark_quote.py`), che non entrano nel modello.
 
 ## 3. Uso personale fino al completamento
 Sito non pubblicizzato, nessun indice sui motori di ricerca (`robots.txt` + meta `noindex`), attribuzione fonti in ogni pagina, dati grezzi di terzi non riesposti in blocco (solo metriche e viste derivate).
 
-## 4. Sezione quote / valore: sì
-Si registra una chiave gratuita The Odds API (500 crediti/mese) e si salva come *secret* del repository. Il sito mostra: quote consenso, probabilità implicite senza margine (metodo Shin), confronto con il modello, e — a posteriori — quanto il modello ha fatto meglio o peggio delle quote di chiusura. Disclaimer fisso.
+## 4. Sezione quote / valore: no (decisione cambiata il 19 settembre 2026)
+
+Il piano iniziale era di registrare una chiave gratuita The Odds API (500 crediti/mese) e pubblicare
+quote consenso, probabilità di mercato senza margine (metodo Shin), confronto col modello e quanto
+il modello ha fatto meglio o peggio delle quote di chiusura. **Non è stato fatto, e la decisione è
+di non farlo** (`docs/38`, 19/09/2026):
+
+- quello che il sito pubblica è la **propria** probabilità, con la sua accuratezza misurata (pagina
+  Accuratezza): mettere accanto il prezzo dei bookmaker sposta il giudizio sul mercato invece che
+  sul modello, che è l'opposto del taglio editoriale del progetto;
+- il confronto col mercato **è** misurato, ma **fuori dal sito**: `scripts/benchmark_quote.py`
+  confronta le previsioni fuori campione con le **quote di chiusura storiche** di football-data.co.uk
+  (mirror, colonne `PSCH`/`PSCD`/`PSCA` lette da `src/fda/sources/history.py`); non entrano nel
+  modello e non compaiono in nessuna pagina;
+- nessun dato nuovo per il lettore, un secret in più da gestire e un vincolo in più (crediti
+  mensili) su un sito che oggi gira a costo zero e senza chiavi.
+
+Conseguenza operativa: **nessuna parte del progetto promette più le quote**. La voce «The Odds API»
+è stata tolta dall'elenco delle fonti in `info.html`, la chiave `ODDS_API_KEY` dall'ambiente del run
+(`.github/workflows/daily.yml`), il blocco `oddsapi` da `config/sources.yaml` e la tabella
+`odds_snapshots` dallo schema dello store. L'invariante **[35]** di `scripts/verify_site.py` lega
+l'elenco delle fonti dichiarate ai moduli veri di `src/fda/sources/` (nei due versi) e fa fallire il
+gate se una pagina promette o cita quote di mercato.
 
 ## 5. Fonti: solo raggiungibili da GitHub Actions
 Esclusi per ora: Sofascore, WhoScored, FBref, Transfermarkt diretto. Se un giorno servissero, esiste il piano "collettore locale" nello studio (§4 di `01_studio_fattibilita.md`).
@@ -105,7 +125,7 @@ Esclusi per ora: Sofascore, WhoScored, FBref, Transfermarkt diretto. Se un giorn
 ## Verifiche tecniche fatte il 6 settembre 2026 (salvate qui per non rifarle)
 
 - `penaltyblog 1.12.0` funziona su Python 3.11 con `numpy 2.4.6` / `pandas 3.0.5`: **attenzione**, con pandas 3 bisogna passare al modello array NumPy scrivibili (`.to_numpy().copy()`), altrimenti errore "buffer source array is read-only". Fit Dixon-Coles su una stagione: 0,01 s. Esempio reale su Serie A 2025/26: Inter–Napoli → 56% / 21,5% / 22,4%, λ 1,95–1,16, Over 2,5 = 60%.
-- Il mirror **datahub `datasets/football-datasets`** su GitHub contiene i CSV per serie-a, premier-league, la-liga, bundesliga, ligue-1 dal 1993/94 al 2025/26 (colonne base: Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HT*, Referee, tiri, falli, corner, cartellini — **senza quote**). Il sito originale football-data.co.uk era irraggiungibile il 5–6 settembre; le quote storiche si prenderanno da lì quando torna online.
+- Il mirror **datahub `datasets/football-datasets`** su GitHub contiene i CSV per serie-a, premier-league, la-liga, bundesliga, ligue-1 dal 1993/94 al 2025/26 (colonne base: Date, HomeTeam, AwayTeam, FTHG, FTAG, FTR, HT*, Referee, tiri, falli, corner, cartellini — **senza quote**). Il sito originale football-data.co.uk era irraggiungibile il 5–6 settembre: le quote di chiusura storiche arrivano oggi dai CSV dello stesso mirror e si usano solo offline (`scripts/benchmark_quote.py`), mai in pagina (decisione §4).
 - FotMob `matchDetails` di una partita **futura** (Udinese–Lazio, 7/9) contiene già: arbitro designato con statistiche, stadio con coordinate, forma ultime 5, **formazione probabile** (`lineupType: "predicted"`), indisponibili con rientro per entrambe, H2H completo, insight testuali, **meteo previsto**. Ottimo per il report pre-partita.
 - FotMob `leagues?id=` contiene anche i **trasferimenti** recenti della lega con valore e date; `fixtures?id=&season=` dà tutta la stagione con `matchId`.
 - ESPN funziona anche per `ned.1` (Eredivisie) con statistiche squadra nel scoreboard.

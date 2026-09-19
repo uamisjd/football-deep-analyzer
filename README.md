@@ -1,6 +1,6 @@
 # football-deep-analyzer
 
-Analisi calcistica con dati reali — portale gratuito di analisi profonda delle partite (xG, previsioni calibrate, indisponibili, arbitro, contesto, quote vs modello, schede giocatore con percentili e radar, report in italiano).
+Analisi calcistica con dati reali — portale gratuito di analisi profonda delle partite (xG, previsioni calibrate, indisponibili, arbitro, contesto, schede giocatore con percentili e radar, report in italiano).
 
 ## Stato
 
@@ -42,4 +42,4 @@ GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), comm
 ### Attivazione (una volta sola, dal ramo `main`)
 1. Settings → Pages → *Build and deployment* → Source: **GitHub Actions**.
 2. Actions → *daily* → **Run workflow** (primo run manuale; poi parte da solo con il cron).
-3. Opzionale: Settings → Secrets → `ODDS_API_KEY` (The Odds API, piano gratuito) per la sezione quote.
+3. **Nessun secret**: tutte le fonti usate sono gratuite e senza chiave. Le quote di mercato non sono pubblicate (decisione del 19/09/2026, `docs/38`).

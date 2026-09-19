@@ -10,7 +10,7 @@ from fda.collect import collect_league
 from fda.config import league
 from fda.site.analysis import MatchAnalysis
 from fda.site.build import SiteBuilder, pct_triple
-from fda.store import Store
+from fda.store import TABLE_KEYS, Store
 from tests.test_store_collect import FakeEspn, FakeEspnNoStandings, FakeFotMob, FakeUnderstat
 
 FIX = Path(__file__).parent / "fixtures"
@@ -738,6 +738,50 @@ def test_p23_tre_card_di_testo_hanno_il_loro_micro_visivo(tmp_path):
     # e i tre valori grafici sono in percentuale 0–100
     for stile in re.findall(r'class="(?:fill|ic|p)" style="[^"]*?([\d.]+)%', fs):
         assert 0.0 <= float(stile) <= 100.0, stile
+    st.close()
+
+
+def test_p26_fonti_dichiarate_e_quote_di_mercato_fuori_dal_sito(tmp_path):
+    """P2.6 (`docs/28` §3): la pagina «Info» non promette fonti che non esistono, e il sito non
+    pubblica quote di mercato.
+
+    «The Odds API — quote opzionali, solo se ODDS_API_KEY è configurata» è rimasta nell'elenco
+    delle fonti senza che nessuna riga di codice la chiamasse: il lettore non poteva
+    accorgersene. La decisione (19/09/2026, `docs/38`) è di non pubblicare quote di mercato — il
+    confronto col mercato resta **offline**, sulle quote di chiusura storiche. Qui si verificano i
+    due lati del contratto (elenco pubblicato ↔ moduli di `src/fda/sources/`, nessuna pagina che
+    prometta quote) e i resti della vecchia promessa, che non devono tornare.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build()
+    info = (out / "info.html").read_text(encoding="utf-8")
+    radice = Path(__file__).resolve().parent.parent
+
+    # 1) l'elenco pubblicato e i moduli veri, nei due versi
+    elenco = info[info.index("<h2>Le fonti (gratuite)</h2>"):]
+    voci = re.findall(r"<li><b>([^<]+)</b>", elenco[:elenco.index("</ul>")])
+    atteso = {"FotMob": "fotmob.py", "Understat": "understat.py", "Open-Meteo": "openmeteo.py",
+              "Google News RSS e ESPN news": "news.py", "FotMob coppe (UCL/UEL)": "fotmob.py",
+              "ESPN": "espn.py", "football-data.co.uk": "history.py"}
+    assert voci == list(atteso), voci
+    assert "The Odds API" not in info
+    moduli = {p.name for p in (radice / "src" / "fda" / "sources").glob("*.py")} - {"__init__.py"}
+    assert set(atteso.values()) == moduli, moduli
+
+    # 2) la decisione è dichiarata al lettore, e nessuna pagina promette quote di mercato
+    assert "Quote di mercato: non pubblicate." in info
+    for pg in sorted(out.rglob("*.html")):
+        testo = pg.read_text(encoding="utf-8")
+        for vietata in ("The Odds API", "ODDS_API_KEY", "probabilità implicite", "sezione quote"):
+            assert vietata not in testo, f"{pg.name}: promette quote di mercato ({vietata})"
+
+    # 3) i resti della vecchia promessa: config, ambiente del run, schema dello store
+    assert "oddsapi" not in (radice / "config" / "sources.yaml").read_text(encoding="utf-8")
+    assert "ODDS_API_KEY" not in (radice / ".github" / "workflows" / "daily.yml").read_text(encoding="utf-8")
+    assert "odds_snapshots" not in TABLE_KEYS
+    assert not [f for f in (radice / "src" / "fda").rglob("*.py")
+                if "odds_snapshots" in f.read_text(encoding="utf-8")], "residui nello store"
     st.close()
 
 

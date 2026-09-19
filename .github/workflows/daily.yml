@@ -65,7 +65,6 @@ jobs:
 
       - name: Run giornaliero (collect → predict → backtest → simulate → build)
         env:
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           PYTHONUNBUFFERED: "1"
         run: |
           set -euo pipefail   # senza pipefail il fallimento di `fda daily` veniva mascherato dalla pipe

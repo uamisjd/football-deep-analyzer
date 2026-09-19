@@ -61,7 +61,6 @@ TABLE_KEYS: dict[str, list[str]] = {
     # esteso a tutto il calendario tenere ~23 versioni per partita moltiplicherebbe il file
     # per cinque senza che nessuna pagina le usi (misurato: 3.210 righe per 138 partite).
     "predictions": ["match_id", "model"],
-    "odds_snapshots": ["match_id", "bookmaker", "market", "taken_at"],
     "source_status": ["run_at", "source"],
     # storico dei risultati usato per addestrare i modelli: salvato a ogni run così il
     # laboratorio e la calibrazione possono girare offline ed essere riprodotti (docs/13).

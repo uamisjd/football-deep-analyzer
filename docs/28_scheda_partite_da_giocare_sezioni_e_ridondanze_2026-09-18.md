@@ -295,12 +295,25 @@ gara finita; la parità è nel template, quindi vale su **60 schede su 60** (120
 caratteri visibili mediani per scheda. Nuova invariante **[34]** di `verify_site`: serie, punti e
 numero di pallini ricalcolati dai Parquet per ogni squadra.
 
-### P2.6 — Le quote dei bookmaker non ci sono (voce da decidere, non un difetto)
+### P2.6 — Le quote dei bookmaker non ci sono (voce da decidere, non un difetto) ✅ DECISA il 2026-09-19
 
 Verificato: **0** riferimenti a quote di mercato nelle pagine partita. `docs/03` le descrive come
 parte del sito (consenso, probabilità implicite, confronto col modello); `info.html` le dichiara
 «non prioritarie, l'utente non le richiede». È una decisione aperta, la si cita qui perché è
 l'unica sezione «promessa» che manca alla scheda.
+
+**Decisione (2026-09-19, `docs/38`): non si pubblicano.** Il difetto vero non erano le quote
+mancanti ma la **promessa** che nessuno manteneva: «The Odds API» nell'elenco delle fonti di
+`info.html`, `ODDS_API_KEY` nel README, in `config/sources.yaml` e nel workflow, la tabella
+`odds_snapshots` nello schema dello store, «Sezione quote / valore: sì» in `docs/03` §4 — e
+**nessuna riga di codice** che chiamasse una quota. Il confronto col mercato resta, ma fuori dal
+sito: `scripts/benchmark_quote.py` sulle quote di chiusura storiche (`PSCH`/`PSCD`/`PSCA` di
+football-data.co.uk), che non entrano nel modello e non compaiono in pagina. Tolte tutte le tracce
+della promessa; la pagina Info dichiara al lettore **«Quote di mercato: non pubblicate.»**; la nuova
+invariante **[35]** di `verify_site` lega l'elenco delle fonti ai moduli veri di
+`src/fda/sources/` (nei due versi) e fa fallire il gate se una delle 4.125 pagine promette o cita
+quote di mercato (prova di morso: exit 1 con 4 problemi sulla build pre-fix). Nessuna scheda partita
+è cambiata.
 
 ---
 
@@ -340,7 +353,7 @@ etichette V/N/P; i tooltip di accessibilità su barre e matrici (invarianti di `
 | 2 | P1.2 hero senza xG/PPDA, un solo posto per dato | mediana da 3 card a 1-2 |
 | 3 | P1.4 «Verifica approfondita» chiusa, summary con i due numeri | 1.883 car. fuori dal primo schermo |
 | 4 | P1.3 nav con ancore reali | 6 blocchi pesanti raggiungibili |
-| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 ✅ (legenda unica, Contesto, assenze, micro-visivi, badge forma) | una alla volta, con la misura rifatta e il gate `parita_schede` |
+| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 ✅ · P2.6 ✅ (legenda unica, Contesto, assenze, micro-visivi, badge forma, quote non pubblicate) | una alla volta, con la misura rifatta e il gate `parita_schede` |
 
 Ogni intervento va rifatto passare da `fda build` + `verify_site.py` + `scripts/audit_match_sections.py`
 e rimisurato con `scripts/prematch_sections.py`: la quota di testo per sezione è il numero che dice
@@ -356,4 +369,4 @@ card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato
 in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
 (verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
 (indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
-visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). Applicata anche **P2.5** (`docs/37`: il badge della forma in testa alla scheda su tutte le 60 schede pre-partita, 120 badge; la serie non si ricopia più nella narrativa, 111 → 0). **In coda**, in ordine di peso: **P2.6** (quote assenti = decisione) e **P2.8** (rese in browser: badge, micro-visivi, indice, tendina della verifica). ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), ~~P2.5~~ (badge forma nell'hero), P2.6 (quote assenti = decisione).
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). Applicata anche **P2.5** (`docs/37`: il badge della forma in testa alla scheda su tutte le 60 schede pre-partita, 120 badge; la serie non si ricopia più nella narrativa, 111 → 0) e **P2.6** (`docs/38`: le quote di mercato **non si pubblicano** — decisione, non difetto: tolte la voce «The Odds API» dall'elenco delle fonti, la chiave `ODDS_API_KEY` da README/config/workflow e la tabella `odds_snapshots` dallo schema; il confronto col mercato resta offline sulle quote di chiusura storiche; invariante [35] su 4.125 pagine). **In coda**, ultima voce aperta: **P2.8** (rese in browser: badge, micro-visivi, indice, tendina della verifica). ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), ~~P2.5~~ (badge forma nell'hero), ~~P2.6~~ (quote: decisione = non si pubblicano).

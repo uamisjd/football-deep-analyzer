@@ -2421,6 +2421,75 @@ def check_stime(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# ---- fonti dichiarate nella pagina «Info» (P2.6, docs/38) --------------------------------------
+# La pagina «Info» elencava fra le fonti gratuite «The Odds API — quote opzionali, solo se
+# ODDS_API_KEY è configurata»: nessun modulo del progetto la chiamava, nessuna pagina pubblicava
+# quote, e la chiave in `config/sources.yaml` non era letta da nessuno. Il lettore non poteva
+# accorgersene: quella voce prometteva un'integrazione che non esisteva. Questa invariante lega
+# l'elenco pubblicato ai moduli veri di `src/fda/sources/`, nei due versi: una voce senza modulo
+# (fonte promessa e mai implementata) e un modulo senza voce (fonte implementata e mai dichiarata)
+# fanno fallire il gate. Insieme fissa la decisione sulle quote: il sito non le pubblica, la
+# pagina Info lo dichiara, nessuna pagina le promette. Se la decisione cambia, cambiano insieme
+# questa invariante, `docs/38` e il codice che la applica.
+INFO_FONTI = {
+    "FotMob": "fotmob.py",
+    "Understat": "understat.py",
+    "Open-Meteo": "openmeteo.py",
+    "Google News RSS e ESPN news": "news.py",
+    "FotMob coppe (UCL/UEL)": "fotmob.py",
+    "ESPN": "espn.py",
+    "football-data.co.uk": "history.py",
+}
+#: Formule con cui si prometteva o si citava un mercato che il sito non pubblica.
+QUOTE_VIETATE = ("The Odds API", "ODDS_API_KEY", "probabilità implicite", "quote consenso",
+                 "quote vs modello", "sezione quote", "closing line value")
+#: La frase che dichiara la decisione, nella pagina che elenca le fonti.
+QUOTE_DICHIARAZIONE = "Quote di mercato: non pubblicate."
+
+
+def check_fonti(site: Path) -> tuple[list[str], int]:
+    """Fonti dichiarate in «Info» = moduli in `src/fda/sources/`; niente promesse di quote."""
+    fails: list[str] = []
+    checks = 0
+    info = site / "info.html"
+    if not info.is_file():
+        return [f"info.html assente in {site}"], 0
+    html = info.read_text(encoding="utf-8")
+    inizio = html.find("<h2>Le fonti (gratuite)</h2>")
+    fine = html.find("</ul>", inizio) if inizio != -1 else -1
+    if inizio == -1 or fine == -1:
+        return ["info.html: elenco «Le fonti (gratuite)» non trovato"], 0
+    voci = re.findall(r"<li><b>([^<]+)</b>", html[inizio:fine])
+    sorgenti = Path(__file__).resolve().parent.parent / "src" / "fda" / "sources"
+    moduli = {p.name for p in sorgenti.glob("*.py") if p.name != "__init__.py"}
+    for voce in voci:
+        checks += 1
+        modulo = INFO_FONTI.get(voce)
+        if modulo is None:
+            fails.append(f"info.html: fonte dichiarata «{voce}» senza modulo in src/fda/sources "
+                         f"(promessa non mantenuta)")
+        elif modulo not in moduli:
+            fails.append(f"info.html: la fonte «{voce}» punta al modulo mancante {modulo}")
+    for modulo in sorted(moduli - set(INFO_FONTI.values())):
+        checks += 1
+        fails.append(f"src/fda/sources/{modulo}: fonte implementata e non dichiarata in info.html")
+    checks += 1
+    if QUOTE_DICHIARAZIONE not in html:
+        fails.append(f"info.html: manca la dichiarazione «{QUOTE_DICHIARAZIONE}»")
+    n_pg = 0
+    for pg in sorted(site.rglob("*.html")):
+        n_pg += 1
+        testo = html_unescape(pg.read_text(encoding="utf-8"))
+        for vietata in QUOTE_VIETATE:
+            checks += 1
+            if vietata in testo:
+                fails.append(f"{pg.relative_to(site)}: promette o cita quote di mercato "
+                             f"(«{vietata}»), che il sito non pubblica (decisione docs/38)")
+    print(f"[35] fonti dichiarate nella pagina «Info»: {len(voci)} voci · {len(moduli)} moduli · "
+          f"{n_pg} pagine senza promesse di quote")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -2455,6 +2524,9 @@ def main() -> int:
     stime, stime_checks = check_stime(site)
     fails += stime
     checks += stime_checks
+    fonti, fonti_checks = check_fonti(site)
+    fails += fonti
+    checks += fonti_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
