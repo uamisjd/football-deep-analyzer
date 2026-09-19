@@ -18,6 +18,7 @@ import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from fda.site.build import SiteBuilder
 from tests.test_site import _seed
@@ -53,7 +54,15 @@ def test_gara_in_corso_non_dice_calcio_d_inizio(tmp_path):
     # la gara campione finita diventa **in corso** con il punteggio live (il caso reale del 19/09).
     # Lo stato e il punteggio vanno scritti anche in `match_info`: la scheda partita legge prima
     # quella tabella (`analysis.build`: `_val(info, "status") or f["status"]`).
-    fx.loc[fx.match_id == 5749645, "utc_kickoff"] = now - timedelta(hours=1)
+    # «adesso − 1 ora» attraversa la mezzanotte italiana fra le 22:00 e le 23:00 UTC: la gara
+    # finirebbe sul giorno precedente e la pagina «Oggi» — che filtra per data **locale**
+    # (`build_indexes`, build.py) — non la conterrebbe più. Il test è saltato un'ora al giorno
+    # dal 2026-09-19, quando è stato scritto: il calcio d'inizio resta ~1 ora fa ma non prima
+    # della mezzanotte di oggi, così il risultato non dipende dall'ora in cui gira.
+    adesso_roma = datetime.now(UTC).astimezone(ZoneInfo("Europe/Rome"))
+    mezzanotte_roma = adesso_roma.replace(hour=0, minute=1, second=0, microsecond=0)
+    fx.loc[fx.match_id == 5749645, "utc_kickoff"] = max(
+        now - timedelta(hours=1), mezzanotte_roma.astimezone(UTC))
     fx.loc[fx.match_id == 5749645, "status"] = "live"
     fx.loc[fx.match_id == 5749645, "home_goals"] = 1
     fx.loc[fx.match_id == 5749645, "away_goals"] = 0
@@ -164,3 +173,16 @@ def test_percentile_ids_ordine_dichiarato_su_ogni_hash_seed():
     assert len(uscite) == 1, f"l'ordine cambia con l'hash seed: {uscite}"
     for pos in (0, 1, 2, 3):
         assert percentile_ids(pos) == [s for s, _ in RADAR[pos]] + PCT_EXTRA[pos]
+
+
+def test_scala_della_barra_tollera_il_doppio_arrotondamento():
+    """Il 2026-09-19 il run giornaliero si è fermato su 22 pagine: la scala stampata con una
+    cifra («2,0») veniva confrontata col percentile grezzo (2,0503) con tolleranza 0,05,
+    mentre il generatore arrotonda a due cifre **prima** di stampare (issue #65)."""
+    mod = _site_module()
+    casi_ok = [(2.0, 2.0503), (2.1, 2.0503), (3.4, 3.38), (2.0, 2.0), (2.5, 2.5)]
+    casi_ko = [(2.5, 2.0503), (2.0, 3.1), (3.9, 3.38)]
+    for pubblicato, percentile in casi_ok:
+        assert mod._scala_ok(pubblicato, percentile), (pubblicato, percentile)
+    for pubblicato, percentile in casi_ko:
+        assert not mod._scala_ok(pubblicato, percentile), (pubblicato, percentile)

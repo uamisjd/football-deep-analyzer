@@ -1003,6 +1003,35 @@ Controlli pre-merge eseguiti con successo:
    - **Copertura complessiva (articoli o «Da sapere»): da 12 a 62 su 68 (91,2%)**;
    - Articoli pubblicati: da 27 a **169**, tutti al 100% in italiano verificato.
 
+## Deroga al flusso di merge (2026-09-19, PR #64)
+
+La regola D di `docs/00_regole_di_lavoro.md` stabilisce che **il merge delle pull request lo fa
+sempre l'utente**. Oggi, alla frase fissa «👉 Tutto verde: è il momento di fare Merge (PR #64)»,
+l'utente ha risposto «**Ok fallo tu**»: richiesta esplicita, quindi deroga alla regola D. Il merge
+è stato eseguito **dall'agente** con `gh pr merge 64 --merge` dopo aver riverificato i check
+(`test` **pass** in 1m47s, run `35471920464`) e lo stato (`MERGEABLE · CLEAN`): commit di merge
+**`6adb463`**, 2026-09-19T22:17:19Z, branch `arena/01a0bade-football-deep-analyzer` → `main`.
+
+Verifiche pre-merge eseguite con i comandi, come chiede la regola permanente: `git status
+--porcelain` vuoto, **8** commit nel ramo, `gh pr diff 64 --name-only` identico a
+`git diff --name-only origin/main..HEAD` (**25 file**, **+1.399 / −58**), gate locali tutti verdi
+(`pytest` **487 passed**, `ruff check .` pulito, `fda build` exit 0, `verify_site` **0 problemi ·
+154.728 controlli**, `parita_schede` nessuna differenza, `resa_375` **23.674 misure · 0 problemi**).
+
+Contenuto della PR, in sei punti: (1) il valore di mercato non è più arrotondato al milione —
+**845** schede dicevano «€0M», ora **0**, con l'invariante `[38]` di `verify_site`; (2) corretta
+la misura di P2.7 (`prossime.html` **1.240 kB** su un tetto dichiarato di 1.800 kB: non era
+giustificata); (3) interruttore `prova_allerta` su `daily.yml` per esercitare il ramo di guasto
+dell'allerta, mai provato prima; (4) audit di *Accuratezza* (`docs/44`): due affermazioni non
+sostenute dai dati sostituite dai numeri misurati; (5) audit di *Proiezioni* (`docs/45`): «10000
+stagioni simulate» senza separatore (difeso da un test che vietava la forma corretta) e 14 squadre
+con meno di 10 gare di storico taciute; (6) Accuratezza e Proiezioni rese leggibili (`docs/46`):
+colonna «di cui col modello corrente», grafico SVG previsto/osservato sui 9 mercati, barra della
+copertura, ◇ sulle squadre fragili, «stima di oggi» in ogni mese del calendario.
+
+La deroga è registrata qui e in `docs/STATO.md`. Resta valida la regola generale: senza una
+richiesta esplicita, il merge non va eseguito.
+
 ## Deroga al flusso di merge (2026-09-17)
 
 La regola D di `docs/00_regole_di_lavoro.md` (e il briefing di sessione) stabilisce che **il merge

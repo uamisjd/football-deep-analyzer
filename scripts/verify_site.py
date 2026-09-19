@@ -656,6 +656,22 @@ def check_derived(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+#: La scala della barra «Dove si colloca» arriva al template **già arrotondata a due cifre**
+#: (`viz.lo = round(lo_q, 2)`) e viene stampata con **una** cifra (`dec(1)`): la distanza dal
+#: percentile grezzo può quindi arrivare a 0,05 (mezza unità dell'ultima cifra stampata) più
+#: 0,005 (l'arrotondamento a due cifre), cioè ~0,055. Confrontarla con 0,05 faceva fallire
+#: **22 pagine** il 2026-09-19 («scala 2,0–3,4 vs percentile 2.05–3.38») e ha bloccato il run
+#: giornaliero e il deploy (issue #65): non era un numero sbagliato, era un doppio
+#: arrotondamento. Il confronto si fa sul valore che il template riceve, con mezza cifra di
+#: tolleranza: uno scarto vero (es. scala 2,5 su percentile 2,05) resta un problema.
+TOLLERANZA_SCALA = 0.05 + 1e-9
+
+
+def _scala_ok(pubblicato: float, percentile: float) -> bool:
+    """La scala stampata (1 decimale) corrisponde al percentile che il template riceve?"""
+    return abs(float(pubblicato) - round(float(percentile), 2)) <= TOLLERANZA_SCALA
+
+
 def _pos_pct(v: float, lo_q: float, hi_q: float) -> float:
     """Posizione 0–100 di un valore sulla scala della barra (stessa formula del generatore)."""
     return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
@@ -1506,8 +1522,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if mv.group(14) != _stamp_it(lam_here):
                 fails.append(f"{pg.name}: barra posizione, segno {mv.group(14)} vs λ stampati "
                              f"{_stamp_it(lam_here)}")
-            if abs(float(mv.group(5).replace(",", ".")) - lo_q) > 0.05 or \
-                    abs(float(mv.group(6).replace(",", ".")) - hi_q) > 0.05:
+            if not _scala_ok(float(mv.group(5).replace(",", ".")), lo_q) or \
+                    not _scala_ok(float(mv.group(6).replace(",", ".")), hi_q):
                 fails.append(f"{pg.name}: scala della barra {mv.group(5)}–{mv.group(6)} "
                              f"vs 2°–98° percentile {lo_q:.2f}–{hi_q:.2f}")
         print(f"[16] percentile dei gol attesi nel campionato verificato: {n_pos}")
