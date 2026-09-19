@@ -331,7 +331,8 @@ CAL_ROW = re.compile(
 CAL_PCT = re.compile(r'<span class="cal-p"[^>]*aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%"[^>]*>(.*?)</span>')
 CAL_MONTH = re.compile(
     r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
-    r'<span class="cal-count">([\d.]+) ([^<]+)</span></summary>(.*?)</details>', re.DOTALL)
+    r'<span class="cal-count">([\d.]+) ([^<]+)</span>'
+    r'(?:<span class="cal-note">[^<]*</span>)?</summary>(.*?)</details>', re.DOTALL)
 MESI_IT = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto",
            "settembre", "ottobre", "novembre", "dicembre"]
 
@@ -763,7 +764,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         outc = np.where(p.home_goals > p.away_goals, 0, np.where(p.home_goals == p.away_goals, 1, 2))
         mine = pb_rps(p[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(), outc.tolist())
         acc_txt = acc_path.read_text(encoding="utf-8")
-        mrow = re.search(r'Tutti</td><td class="r">(\d+)</td><td class="r">(\d+,\d+)</td>', acc_txt)
+        mrow = re.search(r'Tutti</td><td class="r">(\d+)</td>'
+                         r'(?:<td class="r">\d+</td>)?<td class="r">(\d+,\d+)</td>', acc_txt)
         if not mrow:
             fails.append("accuratezza.html: riga 'Tutti' non trovata")
         else:
@@ -777,30 +779,50 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         # 3b) invarianti di pubblicazione (docs/19 P0.8): ogni Δ della tabella riepilogo deve
         # equalare RPS − naive ricalcolati dai numeri stampati, e la composizione dichiarata
         # del campione deve coincidere con la somma delle gare della tabella.
-        righe_riep = re.findall(
-            r'<td>([^<]+)</td><td class="r">([\d.]+)</td><td class="r">(\d+,\d+)</td>'
-            r'<td class="r">(\d+,\d+)</td><td class="r">\d+%</td><td class="r">(\d+,\d+)</td>'
-            r'<td class="r">(?:[\d.]+|fisso)</td><td class="r [a-z]+">([+\-−]?[\d,]+)</td></tr>', acc_txt)
+        # Le colonne si leggono **per nome** (gruppi nominati): con la colonna «di cui col
+        # modello corrente» (docs/46 §1) la vecchia regex posizionale ha smesso di leggere
+        # la tabella e il controllo è giustamente caduto — meglio un nome che una posizione.
+        righe_riep = [m.groupdict() for m in re.finditer(
+            r'<td>(?P<lg>[^<]+)</td><td class="r">(?P<n>[\d.]+)</td>'
+            r'<td class="r">(?P<ncorr>\d+)</td><td class="r">(?P<rps>\d+,\d+)</td>'
+            r'<td class="r">(?P<brier>\d+,\d+)</td><td class="r">\d+%</td>'
+            r'<td class="r">(?P<naive>\d+,\d+)</td>'
+            r'<td class="r">(?:[\d.]+|fisso)</td><td class="r [a-z]+">(?P<delta>[+\-−]?[\d,]+)</td></tr>',
+            acc_txt)]
         if not righe_riep:
             fails.append("accuratezza.html: tabella riepilogo non leggibile per il controllo [3b]")
-        n_leghe, n_tutti = 0, 0
-        for lg, n_r, rps_r, _brier, naive_r, delta_r in righe_riep:
+        n_leghe, n_tutti, corr_leghe, corr_tutti = 0, 0, 0, 0
+        for m_riep in righe_riep:
             checks += 1
+            lg, n_r = m_riep["lg"], _int_it(m_riep["n"])
+            n_corr = int(m_riep["ncorr"].replace(".", ""))
             if lg.strip() == "Tutti":
-                n_tutti = _int_it(n_r)
+                n_tutti, corr_tutti = n_r, n_corr
             else:
-                n_leghe += _int_it(n_r)
-            ric = float(rps_r.replace(",", ".")) - float(naive_r.replace(",", "."))
-            pub = float(delta_r.replace(",", ".").replace("−", "-"))
+                n_leghe += n_r
+                corr_leghe += n_corr
+            ric = float(m_riep["rps"].replace(",", ".")) - float(m_riep["naive"].replace(",", "."))
+            pub = float(m_riep["delta"].replace(",", ".").replace("−", "-"))
             if abs(pub - ric) > 0.0011:   # rps/naive a 4 decimali + Δ a 3: tolleranza di stampa
                 fails.append(f"accuratezza: Δ {lg} pubblicato {pub:+.4f} ≠ RPS − naive {ric:+.4f}")
         if n_tutti and n_leghe and n_tutti != n_leghe:
             fails.append(f"accuratezza: riga Tutti {n_tutti} gare ≠ somma leghe {n_leghe}")
+        # la nuova colonna non può raccontare una storia diversa dalla composizione: le gare
+        # «col modello corrente» della tabella devono essere le stesse della nota (docs/46 §1)
+        if corr_tutti and corr_leghe and corr_tutti != corr_leghe:
+            fails.append(f"accuratezza: riga Tutti {corr_tutti} gare del modello corrente "
+                         f"≠ somma leghe {corr_leghe}")
         m_comp = re.search(r"Composizione del campione: ([\d.]+) gare valutate", acc_txt)
         if m_comp:
             checks += 1
             if _int_it(m_comp.group(1)) != n_tutti:
                 fails.append(f"accuratezza: composizione {m_comp.group(1)} gare ≠ riga Tutti {n_tutti}")
+            m_corr = re.search(r"di cui\s*<b>([\d.]+)</b> con il modello corrente", acc_txt)
+            if m_corr:
+                checks += 1
+                if _int_it(m_corr.group(1)) != corr_tutti:
+                    fails.append(f"accuratezza: composizione {m_corr.group(1)} gare del modello corrente "
+                                 f"≠ riga Tutti {corr_tutti}")
         elif "Riepilogo" in acc_txt:
             fails.append("accuratezza.html: composizione del campione assente (docs/19 §1.5)")
         else:

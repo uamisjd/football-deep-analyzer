@@ -6,14 +6,16 @@
 0,25 ≈ tirare a caso con le frequenze medie; i bookmaker si attestano intorno a 0,19–0,20. Brier multiclasse: più basso è, meglio è.</p>
 {% if summary %}
 <div class="card"><h2>Riepilogo</h2>
-<div class="tablewrap"><table><tr><th scope="col">Campionato</th><th scope="col" class="r">Partite valutate</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Brier</th><th scope="col" class="r">Esito più probabile azzeccato</th><th scope="col" class="r">RPS naive</th><th scope="col" class="r">n base</th><th scope="col" class="r">Δ vs naive</th></tr>
-{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n|it_num }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r">{{ r.naive_n|it_num if r.naive_n else 'fisso' }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
+<div class="tablewrap"><table><tr><th scope="col">Campionato</th><th scope="col" class="r">Partite valutate</th><th scope="col" class="r">di cui col modello corrente</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Brier</th><th scope="col" class="r">Esito più probabile azzeccato</th><th scope="col" class="r">RPS naive</th><th scope="col" class="r">n base</th><th scope="col" class="r">Δ vs naive</th></tr>
+{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n|it_num }}</td><td class="r">{{ r.n_corrente|it_num }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r">{{ r.naive_n|it_num if r.naive_n else 'fisso' }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Δ = RPS modello − RPS della base naive: per ogni riga la base è la <b>frequenza reale
 1·X·2 della stessa lega</b> misurata sullo storico mirror (colonna «n base» = gare di storico dietro
 la stima; per «Tutti» le frequenze complessive). Se lo storico di una lega è sotto le 30 gare la base
 resta fissa 45/27/28 e la colonna lo dichiara con «fisso». Negativo = il modello batte la base.
-Con poche gare valutate per campionato i valori restano indicativi: servono ~30 gare per lettura stabile.</p>
+Con poche gare valutate per campionato i valori restano indicativi: servono ~30 gare per lettura stabile.
+  La colonna «di cui col modello corrente» dice quante di quelle gare sono state previste dalla ricetta di
+  oggi: le altre vengono da versioni precedenti, tenute in archivio per tracciabilità (composizione qui sotto).</p>
 {% if composizione %}
 <p class="small mut">Composizione del campione: {{ composizione.n|it_num }} {{ 'gara valutata' if composizione.n == 1 else 'gare valutate' }}, di cui
   <b>{{ composizione.corrente|it_num }}</b> con il modello corrente ({{ model_version }}) e
@@ -31,6 +33,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   {{ copertura.senza|it_num }} {{ 'gara' if copertura.senza == 1 else 'gare' }} non
   {{ 'aveva' if copertura.senza == 1 else 'avevano' }} una previsione salvata prima del calcio d'inizio{% endif %}.
   Nessuna di quelle escluse entra nei numeri qui sopra: una previsione fatta dopo la partita non è una previsione.</p>
+{% if copertura.finite %}<p class="bar-cop" aria-hidden="true"><i style="width:{{ (copertura.valutate / copertura.finite * 100)|round(1) }}%"></i></p>{% endif %}
 {% endif %}
 </div>
 {% if markets %}
@@ -46,6 +49,25 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
     <td class="r">{{ (m.hit*100)|round|int }}%</td>
     <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}</table></div>
+{% if grafico %}
+<figure class="grafico">
+  <svg viewBox="0 0 {{ grafico.w }} {{ grafico.h }}" style="width:100%;height:auto" role="img"
+       aria-label="Per ogni mercato: il punto è la probabilità media dichiarata, la linea orizzontale è l'intervallo 95% della frequenza osservata e il trattino verticale è la frequenza vista{% if grafico.fuori %}. {{ grafico.fuori }} {{ 'mercato è fuori' if grafico.fuori == 1 else 'mercati sono fuori' }} intervallo{% else %}. Nessun mercato è fuori intervallo{% endif %}.">
+    {% for t in grafico.ticks %}<line x1="{{ t.x }}" y1="{{ grafico.base }}" x2="{{ t.x }}" y2="{{ grafico.fondo }}" style="stroke:var(--line)" stroke-width="1" stroke-opacity=".45"/>
+    <text x="{{ t.x }}" y="13" text-anchor="middle" font-size="8" style="fill:var(--mut2)">{{ t.label }}</text>{% endfor %}
+    <line x1="{{ grafico.x0 }}" y1="{{ grafico.base }}" x2="{{ grafico.x1 }}" y2="{{ grafico.base }}" style="stroke:var(--line2)" stroke-width="1"/>
+    {% for r in grafico.righe %}<text x="0" y="{{ (r.y|float) + 3.2 }}" font-size="9.5" style="fill:var(--txt2)">{{ r.label }}</text>
+    <line x1="{{ r.lo }}" y1="{{ r.y }}" x2="{{ r.hi }}" y2="{{ r.y }}" style="stroke:var(--mut)" stroke-width="2.5" stroke-opacity=".7"/>
+    <line x1="{{ r.lo }}" y1="{{ (r.y|float) - 3 }}" x2="{{ r.lo }}" y2="{{ (r.y|float) + 3 }}" style="stroke:var(--mut)" stroke-width="1.5"/>
+    <line x1="{{ r.hi }}" y1="{{ (r.y|float) - 3 }}" x2="{{ r.hi }}" y2="{{ (r.y|float) + 3 }}" style="stroke:var(--mut)" stroke-width="1.5"/>
+    <line x1="{{ r.obs }}" y1="{{ (r.y|float) - 5 }}" x2="{{ r.obs }}" y2="{{ (r.y|float) + 5 }}" style="stroke:var(--txt)" stroke-width="1.5"/>
+    <circle cx="{{ r.prev }}" cy="{{ r.y }}" r="3.6" style="fill:{{ 'var(--lose)' if r.fuori else 'var(--win)' }}"/>{% endfor %}
+  </svg>
+  <figcaption class="small mut">Gli stessi numeri della tabella, disegnati: il punto è la probabilità
+    dichiarata, la linea l'intervallo 95% della frequenza osservata, il trattino la frequenza vista.
+    Punto verde = dentro l'intervallo, punto rosso = fuori.</figcaption>
+</figure>
+{% endif %}
   <p class="small mut">«Previsto» è la probabilità media dichiarata, «osservato» la frequenza reale nello
   stesso campione: se sono vicini il mercato è calibrato. Il Brier misura l'errore quadratico della
   probabilità (0 = perfetto); <b>Brier base</b> è l'errore di chi pronostica sempre la frequenza di

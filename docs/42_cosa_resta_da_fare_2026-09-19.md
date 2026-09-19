@@ -153,6 +153,10 @@ Nessuno di questi controlli era in un documento: sono stati fatti sul sito appen
    corretta; parametri neutri promessi a squadre che non li ricevono, mentre **14** squadre
    sotto le 10 gare di storico non erano dichiarate): tutte sostituite dai numeri misurati.
    Verificata anche la coerenza fra *Proiezioni* e schede partita: **Δ 0,00 pp** su 70 gare.
+   **Giro 58 (`docs/46`):** la stessa area è stata anche resa **leggibile** — colonna
+   «di cui col modello corrente» per lega (5/16 in Bundesliga, 39/120 in totale), grafico
+   SVG previsto/osservato sui 9 mercati, barra della copertura (36,3%), ◇ accanto alle 14
+   squadre con meno di 10 gare di storico, «stima di oggi» in ogni mese del calendario.
 4. **Attendere lunedì 21/09** e leggere, nello stesso run del `lab`, la **prima sonda dei
    fallback** e il **primo verdetto del laboratorio con la griglia pre-registrata**.
 

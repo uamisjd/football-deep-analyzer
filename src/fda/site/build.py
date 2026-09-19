@@ -86,6 +86,38 @@ def outcome_freqs(hist: pd.DataFrame) -> dict[str, tuple[np.ndarray, int]]:
     return out
 
 
+def grafico_mercati(markets: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Geometria SVG del confronto «previsto vs osservato» sui mercati (`docs/46` §2).
+
+    Stessa regola del radar dei giocatori: la geometria si calcola qui, il disegno sta
+    nel template. I numeri sono **gli stessi** della tabella (nessuna seconda fonte):
+    punto = probabilità media dichiarata, linea = intervallo 95% della frequenza
+    osservata (Wilson), trattino = frequenza vista. Serve a vedere a colpo d'occhio
+    dove il modello è dentro e dove è fuori, senza leggere 9 righe di decimali.
+    """
+    if not markets:
+        return None
+    x0, x1 = 168.0, 352.0        # area del grafico: 0–100% di probabilità
+    top, step = 30.0, 22.0
+    n = len(markets)
+
+    def sx(p: float) -> float:
+        return x0 + (x1 - x0) * max(0.0, min(1.0, float(p)))
+
+    righe = []
+    for i, m in enumerate(markets):
+        y = top + step * i
+        righe.append({"label": str(m.get("label", "")), "y": round(y, 1),
+                      "lo": round(sx(m["lo"]), 1), "hi": round(sx(m["hi"]), 1),
+                      "prev": round(sx(m["prev"]), 1), "obs": round(sx(m["obs"]), 1),
+                      "fuori": bool(m.get("outside"))})
+    return {"righe": righe, "w": 360, "h": round(top + step * n + 14, 1),
+            "x0": x0, "x1": x1, "base": round(top - 8, 1),
+            "fondo": round(top + step * (n - 1) + 10, 1),
+            "ticks": [{"x": round(sx(v / 100), 1), "label": f"{v}%"} for v in (0, 25, 50, 75, 100)],
+            "fuori": sum(1 for m in markets if m.get("outside"))}
+
+
 def composizione_campione(p: pd.DataFrame, model_version: str) -> dict[str, Any]:
     """Composizione del campione live valutato in *Accuratezza* (docs/19 §1.5).
 
@@ -705,7 +737,14 @@ class SiteBuilder:
                                                   (NAIVE_FALLBACK, 0))
                     naive = np.tile(freq, (len(g), 1))
                     rps, rps_naive = _rps(pr, oc), _rps(naive, oc)
-                    summary.append({"league": lg_name, "n": len(g), "rps": rps, "brier": float(((pr - onehot) ** 2).sum(1).mean()),
+                    # Quante di queste gare sono state previste dalla ricetta **corrente**
+                    # (docs/46 §1): il resto viene da versioni precedenti, tenute in
+                    # archivio per tracciabilità. Senza la colonna, «16 gare valutate»
+                    # lascia credere che siano tutte confrontabili con il modello di oggi.
+                    n_corr = (int((g["model_version"].astype(str) == MODEL_VERSION).sum())
+                              if "model_version" in g.columns else 0)
+                    summary.append({"league": lg_name, "n": len(g), "n_corrente": n_corr, "rps": rps,
+                                    "brier": float(((pr - onehot) ** 2).sum(1).mean()),
                                     "hit": float((pr.argmax(1) == oc).mean()), "naive": rps_naive, "delta": rps - rps_naive,
                                     "naive_n": n_base})
                 summary.sort(key=lambda r: (r["league"] == "Tutti", r["league"]))
@@ -842,7 +881,7 @@ class SiteBuilder:
                      markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
                      composizione=composizione if 'composizione' in locals() else {},
                      copertura=copertura, lead_stats=lead_stats if 'lead_stats' in locals() else None,
-                     model_version=MODEL_VERSION)
+                     grafico=grafico_mercati(markets), model_version=MODEL_VERSION)
 
     def build_status(self) -> None:
         st = self.store.read("source_status")

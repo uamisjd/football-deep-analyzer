@@ -23,7 +23,7 @@
     <tr><th scope="col">Squadra</th><th scope="col" class="r">PG</th><th scope="col" class="r">Pt</th><th scope="col" class="r">Pt attesi</th><th scope="col" class="r">Media pos.</th>
         <th scope="col" class="r">1°</th>{% if lg.top_n %}<th scope="col" class="r">UCL (prime {{ lg.top_n }}){% if lg.legacy_top %} · dato storico{% endif %}</th>{% endif %}<th scope="col" class="r">Retro</th></tr>
     {% for r in lg.rows %}
-    <tr><td>{{ r.team }}</td><td class="r">{{ r.played }}</td><td class="r"><b>{{ r.points|int }}</b></td>
+    <tr><td>{{ r.team }}{% if r.team in lg.fragili %} <span class="mut" title="Meno di {{ lg.storico_minimo }} gare di storico di allenamento: parametri stimati su pochi dati">◇</span>{% endif %}</td><td class="r">{{ r.played }}</td><td class="r"><b>{{ r.points|int }}</b></td>
         <td class="r">{{ r.exp_points|dec(1) }}</td><td class="r">{{ r.pos_mean|dec(1) }}</td>
         <td class="r">{{ r.p_title_pct }}%</td>{% if lg.top_n %}<td class="r">{{ r.p_top_n_pct }}%</td>{% endif %}
         <td class="r">{{ r.p_rel_pct }}%</td></tr>

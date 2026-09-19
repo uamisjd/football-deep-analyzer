@@ -1330,6 +1330,8 @@ def test_build_indexes_calendario_completo(tmp_path):
     assert h.count('class="cal-row') == 2                       # solo ciò che sta fuori dai 7 giorni
     assert h.count('<details class="cal-month"') == 2           # raggruppato per mese
     assert h.count('class="cal-nav"') == 1 and h.count('<a href="#mese-') == 2
+    # ogni mese dice che i numeri sono la stima di oggi, non una previsione su quella gara
+    assert h.count('class="cal-note"') == 2 and "stima di oggi" in h
     # previsione in forma italiana, col preferito in grassetto e accessibile
     assert 'aria-label="1 43%, X 28%, 2 29%">43 · 28 · <b>29</b>' not in h    # il preferito è l'1
     assert 'aria-label="1 43%, X 28%, 2 29%"><b>43</b> · 28 · 29' in h

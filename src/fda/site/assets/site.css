@@ -506,6 +506,12 @@ footer .cols li{margin:6px 0}
 .cal-month[open]>summary::before{content:"▾"}
 .cal-month>summary:hover{background:var(--surface2)}
 .cal-count{color:var(--mut);font:600 12px var(--font-body);font-variant-numeric:tabular-nums}
+
+/* Nota dei mesi del calendario compatto: la previsione di una gara lontana è la stima di
+   oggi, rifatta a ogni run (docs/46 §4). Senza questa riga, aprendo «Maggio 2027» il
+   lettore vede «61 · 23 · 16» e non sa che non è una previsione su quella partita. */
+.cal-note{color:var(--mut2);font:400 11px var(--font-body);margin-left:auto;padding-left:10px;text-align:right}
+@media (max-width:520px){.cal-note{display:none}}
 .cal-head,.cal-row{display:grid;grid-template-columns:8.5rem minmax(0,1fr) 8rem 4.6rem 5rem;gap:10px;align-items:center}
 .cal-head{padding:9px 16px;border-top:1px solid var(--line);border-bottom:1px solid var(--line);background:var(--bg2);
   color:var(--mut);font:700 10.5px var(--font-body);letter-spacing:.06em;text-transform:uppercase}
@@ -623,3 +629,13 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius
   .match-hero-team .form-dot{width:13px;height:13px}
   .match-hero-team .form-line .fact-label{display:none}
 }
+
+/* ---- docs/46: Accuratezza, copertura e confronto per mercato ---------------------------- */
+/* Barra «gare valutate / gare finite»: il numero è già nel testo, la barra è decorativa. */
+.bar-cop{display:block;height:8px;max-width:420px;margin:8px 0 2px;border-radius:999px;
+  background:var(--surface3);overflow:hidden}
+.bar-cop>i{display:block;height:100%;border-radius:999px;
+  background:linear-gradient(90deg,var(--accent-soft),var(--accent))}
+/* Grafico previsto/osservato per mercato: SVG calcolato in `build.grafico_mercati`. */
+.grafico{margin:14px 0 0}
+.grafico figcaption{margin-top:7px;line-height:1.45}

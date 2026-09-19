@@ -96,3 +96,14 @@ def test_squadra_senza_storico_dichiarata(tmp_path):
     testo = _testo(_build(tmp_path, conteggi))
     assert "ce n'è 1" in testo
     assert "Poche gare di storico: Frosinone" in testo
+
+
+def test_marcatore_sulle_squadre_con_poco_storico(tmp_path):
+    """Accanto al nome, un ◇ dice che quella proiezione poggia su poche gare."""
+    conteggi = {"Inter": 40, "Juventus": 40, "Milan": 40, "Frosinone": 3}
+    html = _build(tmp_path, conteggi)
+    riga = re.search(r"<tr><td>Frosinone.*?</tr>", html, re.DOTALL)
+    assert riga, "la riga della squadra fragile deve esistere"
+    assert "◇" in riga.group(0) and "Meno di 10 gare di storico" in riga.group(0)
+    riga_ok = re.search(r"<tr><td>Inter.*?</tr>", html, re.DOTALL)
+    assert "◇" not in riga_ok.group(0), "chi ha storico non porta il marcatore"
