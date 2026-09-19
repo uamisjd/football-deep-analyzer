@@ -7,8 +7,11 @@ radar, V/N/P del log partite e pagine costruite con segnaposto onesti.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
+from fda.site.build import SiteBuilder
 from fda.site.players import MIN_MINUTES, MIN_PEERS, POSITION_LABELS, PlayerCatalog
 from fda.store import Store
 
@@ -298,3 +301,31 @@ def test_stima_delle_quote_entra_nei_percentili(tmp_path):
     assert cat._pct.loc[911, "pass_pct"] == 100.0      # il grezzo 85,0% supera la media dei pari
     # lo spezzone da 45′ resta fuori dai percentili (soglia MIN_MINUTES), come prima
     assert 910 not in cat._pct.index
+
+
+def test_scheda_giocatore_valore_di_mercato_in_k_euro(tmp_path):
+    """`docs/43` §3: 73.728 € si pubblica «74 k€», non «€0M» (oggi 845 schede a zero).
+
+    Il difetto era `|it_num` senza decimali sul rapporto in milioni: qualsiasi valore
+    sotto i 500.000 € diventava zero. La prova è sul render, non sul formattatore,
+    perché è la pagina ciò che il lettore vede.
+    """
+    lineup = [_lineup_row(1, 10, 501, "Giovane", 3, market_value_eur=73_728.0)]
+    ps = [_ps_row(1, 10, 501, "minutes", 95)]
+    st = _store(tmp_path, lineup, ps, FX)
+    out = tmp_path / "out"
+    SiteBuilder(store=st, out_dir=out).build_players(set())
+    html = (out / "giocatori" / "501.html").read_text(encoding="utf-8")
+    assert "74 k€" in html, "il valore di mercato va pubblicato in k€, non arrotondato a zero"
+    assert "€0M" not in html
+    st.close()
+
+
+def test_nessun_template_arrotonda_a_milioni_interi():
+    """Guardia (`docs/43` §5): gli importi passano tutti da `fee_it`, senza divisioni proprie."""
+    tpl = Path(__file__).resolve().parents[1] / "src" / "fda" / "site" / "templates"
+    for nome in ("giocatore.html", "match.html"):
+        testo = (tpl / nome).read_text(encoding="utf-8")
+        assert "fee_it" in testo, f"{nome}: importo di mercato senza il formattatore comune"
+        assert "/ 1000000" not in testo and "/1e6" not in testo, \
+            f"{nome}: arrotondamento a milioni interi (sotto il milione stampa zero)"

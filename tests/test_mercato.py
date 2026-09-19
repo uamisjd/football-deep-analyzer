@@ -278,6 +278,24 @@ def test_transfer_window_fee_da_testo_della_fonte():
     assert MatchAnalysis.fee_eur("1,5 M") == 1500000.0
 
 
+def test_fee_it_accetta_anche_importi_numerici() -> None:
+    """Valori già numerici (valore di mercato dei giocatori), non solo testo della fonte.
+
+    Il difetto corretto in `docs/43` §3 era un arrotondamento a parte: `|it_num` senza
+    decimali, quindi 73.728 € diventava «€0M» su 845 schede. Ogni importo passa da
+    `fee_it`, che sotto il milione usa i «k€» invece di stampare zero.
+    """
+    assert MatchAnalysis.fee_it(73_728) == "74 k€"
+    assert MatchAnalysis.fee_it(499_999) == "500 k€"
+    assert MatchAnalysis.fee_it(850_000) == "850 k€"
+    assert MatchAnalysis.fee_it(2_250_000) == "2,2 M€"
+    assert MatchAnalysis.fee_it(12_500_000) == "12,5 M€"
+    assert MatchAnalysis.fee_it(148_000_000) == "148 M€"
+    # nessun importo pubblicato è mai «0»: sotto i mille euro si scrive l'importo per intero
+    assert MatchAnalysis.fee_it(500) == "500 €"
+    assert "0 M€" not in MatchAnalysis.fee_it(1)
+
+
 def test_transfer_window_senza_tabella(tmp_path):
     st = Store(tmp_path / "mercato_vuoto")
     an = MatchAnalysis(st)

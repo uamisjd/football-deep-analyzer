@@ -1462,7 +1462,9 @@ class MatchAnalysis:
                             f"xG+xA a partita in meno")
             value = sum(u.get("value") or 0 for u in self.unavailable(match_id, team_id))
             if value >= 30_000_000:
-                bits.append(f"≈ {round(value / 1_000_000)} M€ di mercato ai box")
+                # stesso formattatore degli importi di mercato (docs/24 §4): «148 M€»,
+                # non un arrotondamento a parte che sotto il milione stamperebbe «0».
+                bits.append(f"≈ {self.fee_it(value)} di mercato ai box")
             out.append({"tone": "warn", "text": ", ".join(bits)})
         rest = self.rest_days(team_id, kickoff)
         if rest is not None and rest <= self.MOOD_REST_SHORT:

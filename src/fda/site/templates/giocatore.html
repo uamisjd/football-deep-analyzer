@@ -8,7 +8,7 @@
 <div class="card">
   <div class="tablewrap"><table>
     <tr><th scope="row">Squadra</th><td>{{ p.team_name or '—' }}</td><th scope="row">Età</th><td class="r">{{ p.age if p.age is not none else '—' }}</td></tr>
-    <tr><th scope="row">Nazionalità</th><td>{{ p.country or '—' }}</td>{% if p.market_value_eur %}<th scope="row">Valore di mercato</th><td class="r">€{{ (p.market_value_eur / 1000000)|it_num }}M</td>{% else %}<th scope="row">Valore di mercato</th><td class="r">—</td>{% endif %}</tr>
+    <tr><th scope="row">Nazionalità</th><td>{{ p.country or '—' }}</td>{% if p.market_value_eur %}<th scope="row">Valore di mercato</th><td class="r">{{ p.market_value_eur|fee_it }}</td>{% else %}<th scope="row">Valore di mercato</th><td class="r">—</td>{% endif %}</tr>
     <tr><th scope="row">Presenze {{ p.season }}</th><td>{{ p.matches }}</td><th scope="row">Minuti</th><td class="r">{{ p.minutes|it_num }}</td></tr>
     <tr><th scope="row">Media voto</th><td>{% if p.rating is not none %}{{ p.rating|dec }}{% else %}—{% endif %}</td><th scope="row">Campionato</th><td class="r">{{ league_name or '—' }}</td></tr>
   </table></div>

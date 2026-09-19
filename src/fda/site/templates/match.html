@@ -386,7 +386,7 @@
     <p id="infermeria-{{ side }}" class="small mut">Nessun indisponibile segnalato nella distinta pubblicata dalla fonte ({{ 'formazione ufficiale' if c.lineup_type == 'official' or c.status == 'finished' else 'formazione probabile' }}).</p>
     {% endif %}
     {% if stt %}
-      <div class="formation-head" style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · <span class="mut small" title="Somma Transfermarkt titolari">€{{ (c[side ~ '_value']/1e6)|it_num }}M titolari</span>{% endif %}</div>
+      <div class="formation-head" style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · <span class="mut small" title="Somma Transfermarkt titolari">{{ c[side ~ '_value']|fee_it }} titolari</span>{% endif %}</div>
       <ol class="formation-list">
         {% for s in stt %}
         <li class="{% if s.pos == 'portiere' %}is-gk{% endif %}">

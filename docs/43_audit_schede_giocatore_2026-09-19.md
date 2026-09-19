@@ -135,3 +135,38 @@ Applicare la patch del §5 in un turno dedicato (4 righe di template, 1 di `anal
 1 invariante), con i gate pieni: `pytest` verde, `ruff` pulito, `fda build` + `verify_site`
 0 problemi e «€0M» sparito da tutte le 3.757 pagine. Restano fuori da questo giro: *Accuratezza* e
 *Stagione*, le altre due aree candidate rimaste indietro.
+
+---
+
+## 8. Correzione applicata (stesso giorno, giro 54)
+
+Patch del §5 applicata in tre punti: `giocatore.html:11` e `match.html:389` usano il filtro
+`fee_it` già registrato in `build.py:189`; `analysis.py:1465` chiama `self.fee_it(value)` al posto
+di `round(value / 1_000_000)`.
+
+**Prove di morso (entrambe eseguite, come richiede la regola B8).**
+
+| prova | esito |
+|---|---|
+| template riportato alla forma sbagliata | **2 test falliscono**: `test_scheda_giocatore_valore_di_mercato_in_k_euro` (render: la pagina contiene «€0M») e `test_nessun_template_arrotonda_a_milioni_interi` (guardia) |
+| `verify_site` sul sito **pre-correzione** | **exit 1** — `[38]` segnala **845** pagine con «importo pubblicato come «€0M»» |
+
+**Misure dopo la correzione** (sito ricostruito dagli stessi Parquet, nessun dato cambiato):
+
+| misura | prima | dopo |
+|---|---|---|
+| occorrenze di «€0M» nell'intero sito | **845** | **0** |
+| scheda del giocatore con valore 603.000 € | «Valore di mercato **€0M**» | «Valore di mercato **603 k€**» |
+| «€216M titolari» nella scheda partita | «€216M titolari» | «**216,4 M€** titolari» |
+| parole cambiate nelle schede (a parte il valore) | — | **nessuna**: l'unica altra riga diversa è il timestamp di generazione |
+
+**Gate:** `pytest -q` **478 passed** (475 + 3 nuovi: 2 in `tests/test_players.py`, 1 in
+`tests/test_mercato.py`); `ruff check .` pulito; `fda build` exit 0 (375/2.364/7.498);
+`verify_site` **0 problemi · 154.727 controlli** (150.587 + 4.140 della nuova `[38]`);
+`parita_schede` exit 0 («nessuna differenza»); `resa_375` **23.674 misure · 0 problemi**.
+
+**Osservazione da registrare.** Eseguendo `verify_site` su un sito costruito **3 ore prima** sono
+comparsi **12** problemi di tipo «riga» (riconciliazione di righe pubblicate col dato), **spariti
+dopo il rebuild** con gli stessi dati: il verificatore non è del tutto indipendente dal tempo.
+In CI non morde (il sito è costruito e verificato nello stesso run); va ricordato quando si
+verifica a mano una build non appena generata.
