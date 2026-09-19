@@ -1638,14 +1638,16 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     #     pubblicava «5836 partite» senza separatore e questo controllo non la leggeva. Il
     #     sostantivo «gol» è entrato nella lista con `docs/41`: «su 1014 gol nelle 303 partite»
     #     stava su 164 schede e la vecchia regex, che cercava solo partite/gare, non lo vedeva.
+    #     «stagioni» entra con `docs/45` §3: la pagina Proiezioni pubblicava «10000 stagioni
+    #     simulate» (grezzo) e nessun controllo lo leggeva; un test lo perfino difendeva.
     n_ntrain = 0
-    no_year = r"\b(?!19\d\d|20\d\d)(\d{4,})\s*(?:partite|gare|gol)\b"
+    no_year = r"\b(?!19\d\d|20\d\d)(\d{4,})\s*(?:partite|gare|gol|stagioni)\b"
     for pg in sorted(site.rglob("*.html")):
         html = pg.read_text(encoding="utf-8")
         male = re.search(no_year, re.sub(r"<[^>]+>", " ", html))
         if male:
-            fails.append(f"{pg.relative_to(site)}: «{male.group(1)} partite/gare/gol» "
-                         "senza separatore delle migliaia")
+            fails.append(f"{pg.relative_to(site)}: «{male.group(1)} "
+                         "partite/gare/gol/stagioni» senza separatore delle migliaia")
         else:
             n_ntrain += 1
     print(f"[13-14] template e formattazione anti-falso: {n_tpl} template, {n_ntrain} pagine")

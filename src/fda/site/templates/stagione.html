@@ -3,12 +3,18 @@
 {% block content %}
 <h1>Proiezioni di stagione</h1>
 {% if subtitle %}<p class="small mut">{{ subtitle }}</p>{% else %}
-<p class="small mut">Monte Carlo su {{ n_sims }} stagioni simulate per lega — Dixon-Coles + Elo (ensemble 70/30)
+<p class="small mut">Monte Carlo su {{ n_sims|it_num }} stagioni simulate per lega — Dixon-Coles + Elo (ensemble 70/30)
   sui punteggi delle gare restanti. Aggiornato: {{ updated }}.
-  Le probabilità sono arrotondate all'unità: con {{ n_sims }} simulazioni l'errore standard massimo è circa
+  Le probabilità sono arrotondate all'unità: con {{ n_sims|it_num }} simulazioni l'errore standard massimo è circa
   0,5 punti percentuali. La classifica simulata usa punti → differenza reti → gol fatti; gli scontri diretti
   non sono simulati e l'ordine alfabetico chiude le parità residue.
-  Le squadre senza storico sufficiente (neopromosse) usano parametri neutri di lega.
+  Le squadre del tutto prive di storico sarebbero simulate con le medie di lega: oggi
+  {% if n_senza_storico == 0 %}non ce n'è nessuna (tutte le {{ n_squadre|it_num }} hanno almeno una gara nello
+  storico di allenamento){% else %}ce {{ "n'è" if n_senza_storico == 1 else "ne sono" }}
+  <b>{{ n_senza_storico|it_num }}</b>{% endif %}, ma
+  {% if n_fragili == 0 %}nessuna squadra ha{% else %}<b>{{ n_fragili|it_num }}</b> {{ 'squadra ha' if n_fragili == 1 else 'squadre hanno' }}{% endif %}
+  meno di {{ storico_minimo }} gare di storico e quindi parametri stimati su pochi dati:
+  è indicato lega per lega sotto ogni tabella.
   «Retro» segue le regole di ogni campionato (POR1: 2 retrocessioni dirette + 1 playoff; NED1: 2 dirette + 1 playoff; FRA1: 2 dirette + 1 barrage; le altre: 3 dirette).</p>{% endif %}
 {% for lg in leagues %}
 <div class="card">
@@ -24,6 +30,11 @@
     {% endfor %}
   </table></div>
   <p class="small mut" style="margin-top:10px">UCL = probabilità di chiudere nelle prime {{ lg.top_n if lg.top_n else 'N/D' }} posizioni con accesso ordinario alla fase campionato per la stagione configurata; non include EPS, vincitrici delle coppe o scorrimenti da spareggio. Errore standard massimo misurato: ±{{ lg.mc_se_max_pp|dec(2) }} punti percentuali.{% if lg.legacy_top %} Questo è un fallback storico: lo snapshot non contiene la soglia per lega e il 4 deriva dalla vecchia colonna top-4.{% endif %}</p>
+  {% if lg.fragili %}<p class="small mut">Poche gare di storico: <b>{{ lg.fragili|join(', ') }}</b>
+    ({{ lg.fragili|length }} {{ 'squadra' if lg.fragili|length == 1 else 'squadre' }} sotto le
+    {{ lg.storico_minimo }} gare di allenamento): i loro parametri sono stimati su pochi dati, quindi la
+    loro proiezione è più incerta di quanto dica l'errore standard qui sopra, che misura solo il rumore
+    della simulazione.</p>{% endif %}
 </div>
 {% endfor %}
 {% endblock %}

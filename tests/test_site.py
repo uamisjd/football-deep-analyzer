@@ -362,7 +362,13 @@ def test_site_build_end_to_end(tmp_path):
     stag = (out / "stagione.html").read_text(encoding="utf-8")
     assert "Proiezioni di stagione" in stag and "Serie A" in stag and "Inter" in stag
     assert "84,2" in stag and "61%" in stag and "66%" in stag   # probabilità alla risoluzione sostenuta dalla simulazione
-    assert "10.000" not in stag  # niente formattazioni inglesi
+    # L'asserzione precedente era «"10.000" not in stag» (niente formattazioni inglesi) e
+    # difendeva il grezzo «10000»: contrario alla convenzione del sito, che scrive
+    # «spettatori 57.000» due righe sopra e «1.988 partite» su Prossime (docs/20 #8,
+    # docs/24 §4, docs/01 §8 «10.000 stagioni»). Ora il numero esce con `it_num` e la
+    # guardia vive in `verify_site` [13-14], estesa a «stagioni» (docs/45 §3).
+    assert "10.000 stagioni simulate" in stag
+    assert "10000" not in stag          # nessun conteggio grezzo senza separatore
     assert "UCL (prime 4)" in stag and "Retro" in stag and "Media pos." in stag
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")

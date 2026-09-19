@@ -144,11 +144,15 @@ Nessuno di questi controlli era in un documento: sono stati fatti sul sito appen
 3. **Nuovo audit mirato** su un'area non ancora passata al setaccio: le schede giocatore
    (`giocatori/`: 7 tabelloni + **7.498** schede) o la pagina *Accuratezza* o *Stagione*. È il
    modo con cui il progetto ha trovato finora ogni difetto sostanziale.
-   **Stato 19/09, giro 56:** schede giocatore (`docs/43`) e *Accuratezza* (`docs/44`) **fatte**;
-   resta *Stagione*. In *Accuratezza* sono emerse due affermazioni non sostenute dai dati
-   («RPS per anticipo» prometteva un gradiente impossibile perché la previsione è una sola per
-   gara, riscritta a ogni run; «120 gare valutate» senza dire che sono 120 su **331** finite) ed
-   entrambe sono state sostituite dai numeri misurati.
+   **Stato 19/09, giri 56-57:** schede giocatore (`docs/43`), *Accuratezza* (`docs/44`) e
+   *Proiezioni* (`docs/45`) **fatte**: le tre aree grandi del sito sono passate al setaccio.
+   In *Accuratezza* sono emerse due affermazioni non sostenute dai dati («RPS per anticipo»
+   prometteva un gradiente impossibile perché la previsione è una sola per gara, riscritta a
+   ogni run; «120 gare valutate» senza dire che sono 120 su **331** finite) e in *Proiezioni*
+   due («10000 stagioni simulate» senza separatore, difeso da un test che vietava la forma
+   corretta; parametri neutri promessi a squadre che non li ricevono, mentre **14** squadre
+   sotto le 10 gare di storico non erano dichiarate): tutte sostituite dai numeri misurati.
+   Verificata anche la coerenza fra *Proiezioni* e schede partita: **Δ 0,00 pp** su 70 gare.
 4. **Attendere lunedì 21/09** e leggere, nello stesso run del `lab`, la **prima sonda dei
    fallback** e il **primo verdetto del laboratorio con la griglia pre-registrata**.
 

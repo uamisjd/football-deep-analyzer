@@ -45,6 +45,12 @@ ITALIAN_MONTHS_SHORT = ["", "gen", "feb", "mar", "apr", "mag", "giu", "lug", "ag
 NAIVE_FALLBACK = np.array([0.45, 0.27, 0.28])
 NAIVE_MIN = 30
 
+# Sotto `STORICO_MINIMO` gare di storico di allenamento, i parametri di una squadra sono
+# stimati su pochi dati: la pagina «Proiezioni» lo dichiara lega per lega (audit `docs/45` §3).
+# Non è una soglia di modello — il fallback a parametri neutri scatta solo per le squadre
+# del tutto assenti dallo storico — ma la soglia sotto la quale il sito ammette il limite.
+STORICO_MINIMO = 10
+
 
 def outcome_freqs(hist: pd.DataFrame) -> dict[str, tuple[np.ndarray, int]]:
     """Frequenze reali 1·X·2 per ``league_key`` (+ chiave «Tutti») da ``history.parquet``.
@@ -592,6 +598,18 @@ class SiteBuilder:
                          subtitle="Le proiezioni arrivano dopo il primo run con `fda simulate`.")
             return
         names = {l.key: l.name for l in leagues(None)}
+        # Quante gare di storico di allenamento ha ogni squadra. Sotto `STORICO_MINIMO` i
+        # parametri del modello sono stimati su pochi dati e la pagina lo deve dire, perché
+        # la vecchia nota prometteva parametri neutri di lega per le squadre «senza storico
+        # sufficiente»: il fallback scatta solo per le squadre del tutto assenti dallo storico
+        # (oggi nessuna), non per quelle con poche gare (audit `docs/45` §3). Non è una soglia
+        # di modello, solo la soglia sotto la quale il sito dichiara il limite.
+        hist = self.store.read("history")
+        conteggi = {}
+        if not hist.empty and "league_key" in hist.columns:
+            for key_g, g in hist.groupby("league_key"):
+                conteggi[str(key_g)] = pd.concat([g["home"], g["away"]],
+                                                 ignore_index=True).value_counts()
         blocks = []
         for key, grp in sim.groupby("league_key"):
             grp = grp.sort_values("exp_points", ascending=False).copy()
@@ -618,17 +636,29 @@ class SiteBuilder:
                 row["p_rel_pct"] = mc_percent(row["p_rel"])
                 rows.append(row)
             n_sims = int(pd.to_numeric(grp["n_sims"], errors="coerce").max())
+            conteggio = conteggi.get(str(key))
+            fragili = (sorted(t for t in grp["team"] if int(conteggio.get(t, 0)) < STORICO_MINIMO)
+                       if conteggio is not None else [])
             blocks.append({
                 "key": str(key), "name": names.get(str(key), str(key)), "top_n": top_n,
                 "legacy_top": legacy_top,
                 "mc_se_max_pp": round(mc_se(0.5, n_sims) * 100, 2), "rows": rows,
+                "fragili": fragili, "storico_minimo": STORICO_MINIMO,
             })
         order = {k: i for i, k in enumerate(["ITA1", "ENG1", "ESP1", "GER1", "FRA1", "NED1", "POR1"])}
         blocks.sort(key=lambda b: order.get(b["key"], 99))
         n_sims = int(pd.to_numeric(sim["n_sims"], errors="coerce").max())
+        n_fragili = sum(len(b["fragili"]) for b in blocks)
+        # squadre simulate senza una sola gara nello storico di allenamento: per queste il
+        # modello userebbe i parametri neutri di lega (`_match_grid`), non per le «fragili».
+        n_senza_storico = sum(
+            sum(1 for r in b["rows"]
+                if int(conteggi.get(b["key"], pd.Series(dtype=int)).get(r["team"], 0)) == 0)
+            for b in blocks)
         self._render("stagione.html", "stagione.html", title="Proiezioni di stagione",
                      n_sims=n_sims, updated=it_from_utc(sim["made_at"].max(), self.tz),
-                     leagues=blocks)
+                     leagues=blocks, n_squadre=len(sim), n_fragili=n_fragili,
+                     n_senza_storico=n_senza_storico, storico_minimo=STORICO_MINIMO)
 
     # mercati binari pubblicati dal modello → (colonna, etichetta, evento osservato)
     MARKETS: ClassVar[tuple[tuple[str, str, str], ...]] = (
