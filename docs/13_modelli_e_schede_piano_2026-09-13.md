@@ -1117,6 +1117,18 @@ tutti sullo stesso messaggio: `partite/5749682.html: concordanza '1 assenti'`.
 
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-**#59 (2026-09-19)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #61 (2026-09-19), **#63 (2026-09-19)**. *(PR #43 e #45: fuse dall'utente.)*
 
-Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+## Deroga al flusso di merge (2026-09-19, PR #63)
+
+La regola D riserva il merge all'utente. Alla frase fissa «👉 Tutto verde: è il momento di fare Merge (PR #63)»,
+l'utente ha risposto «ok procedi». In deroga, il merge di **PR #63** (branch
+`arena/01a0bab0-football-deep-analyzer` → `main`: script `scripts/ci_alert.py`, 13 test in
+`tests/test_ci_alert.py`, permessi `issues: write` e passi `on-failure`/`on-success` in
+`.github/workflows/daily.yml`) è stato eseguito **dall'agente** con `gh pr merge 63 --merge`
+dopo le verifiche prescritte: check `test` **pass** in CI (run `35459283042`), PR **MERGEABLE · CLEAN**,
+`git status --porcelain` vuoto, `git log origin/main..HEAD` con i soli commit della PR.
+
+Merge commit **`fc90a0bc267c7d283777e89158748074a295b5f4`** in `main` (2026-09-19T17:54:55Z).
+La deroga è registrata qui e in `docs/STATO.md`. Resta valida la regola generale: senza una richiesta
+esplicita, il merge non va eseguito.
