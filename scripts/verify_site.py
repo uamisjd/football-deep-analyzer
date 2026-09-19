@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import ast
 import re
+import unicodedata
 from collections import Counter
 from html import unescape as html_unescape
 from html.parser import HTMLParser
@@ -644,6 +645,11 @@ def check_derived(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+def _pos_pct(v: float, lo_q: float, hi_q: float) -> float:
+    """Posizione 0–100 di un valore sulla scala della barra (stessa formula del generatore)."""
+    return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -950,8 +956,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                          r'(portiere|difensore|centrocampista|attaccante)</span>')
     abs_re = re.compile(r"Indisponibili \((\d+)\)")
     # `<th[^>]*>`: le celle d'intestazione portano scope="row" da P2-8; il letterale
-    # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi)
-    prev_re = re.compile(r"<th[^>]*>Precedenti \((\d+)\)</th>")
+    # <th> non le trovava più e [5] contava 0 archivi precedenti (74 controlli persi).
+    # Da P2.4 (`docs/28` §3) la card si chiama «Precedenti» e l'etichetta della riga dice
+    # il numero dei casi: «Bilancio (15)» — il titolo non ripete più la riga.
+    prev_re = re.compile(r"<th[^>]*>Bilancio \((\d+)\)</th>")
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
                         r' · ([^<]*?) (\d+) assenti', re.DOTALL)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
@@ -1302,13 +1310,23 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             wl_b, wh_b = wilson_interval(kb, nb)
             tab_bt.append({"label": label_b, "lo": lo_b, "hi": hi_b, "n": nb,
                            "obs": kb / nb, "wl": wl_b, "wh": wh_b, "pm": float(fav_[mm].mean())})
+        # La riga della tabella porta anche la colonna P2.3 «previsto → uscito»: la barra è
+        # l'intervallo di Wilson, il riempimento la frequenza osservata, la tacca arancione la
+        # media prevista. Sono gli stessi tre numeri già stampati nelle celle accanto, ma un
+        # grafico può disegnare storto ciò che la tabella dice bene: qui si ricalcola che le
+        # posizioni in percentuale corrispondano ai valori pubblicati (tolleranza 0,2 punti,
+        # il massimo che l'arrotondamento a un decimale può spostare).
         row_re = re.compile(
             r'<tr[^>]*>\s*<td>(fino al 40%|fra 40% e 50%|fra 50% e 60%|fra 60% e 75%|oltre il 75%)'
             r'(?: (<span class="tag"[^>]*>questa</span>))?</td>'
             r'\s*<td class="r">(\d+(?:\.\d+)?)</td>'
             r'\s*<td class="r">(\d+,\d+)%</td>'
             r'\s*<td class="r"><b>(\d+,\d+)%</b></td>'
-            r'\s*<td class="r mut small">(\d+,\d+)–(\d+,\d+)%</td></tr>')
+            r'\s*<td class="r mut small">(\d+,\d+)–(\d+,\d+)%</td>'
+            r'\s*<td class="c"[^>]*><span class="wl"[^>]*>'
+            r'<span class="fill" style="width:([\d.]+)%"></span>'
+            r'<span class="ic" style="left:([\d.]+)%;width:([\d.]+)%"></span>'
+            r'<span class="p" style="left:([\d.]+)%"></span></span></td></tr>')
         for pg in pages:
             html = pg.read_text(encoding="utf-8")
             if 'id="fascia-storica"' not in html:
@@ -1329,7 +1347,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             checks += 1
             if not fav_lbl or abs(float(fav_lbl.group(1).replace(",", ".")) - here * 100) > 0.06:
                 fails.append(f"{pg.name}: favorito dichiarato {fav_lbl.group(1) if fav_lbl else '?'}% != {here * 100:.1f}%")
-            for (lab, span, n_t, pm_t, obs_t, lo_t, hi_t), b in zip(got, tab_bt):
+            for (lab, span, n_t, pm_t, obs_t, lo_t, hi_t,
+                 v_fill, v_lo, v_w, v_p), b in zip(got, tab_bt):
                 checks += 1
                 if lab != b["label"]:
                     fails.append(f"{pg.name}: fascia «{lab}» != «{b['label']}»")
@@ -1342,6 +1361,15 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                        (hi_t, b["wh"] * 100, "IC superiore")):
                     if abs(float(txt.replace(",", ".")) - val) > 0.06:
                         fails.append(f"{pg.name}: {lab} {cosa} {txt}% vs ricalcolata {val:.1f}%")
+                # la colonna grafica: riempimento = osservata, barra = IC, tacca = prevista
+                for vis, val, cosa in ((v_fill, b["obs"] * 100, "riempimento"),
+                                       (v_lo, b["wl"] * 100, "inizio intervallo"),
+                                       (v_w, (b["wh"] - b["wl"]) * 100, "larghezza intervallo"),
+                                       (v_p, b["pm"] * 100, "tacca prevista")):
+                    checks += 1
+                    if abs(float(vis) - round(val, 1)) > 0.2:
+                        fails.append(f"{pg.name}: {lab} colonna grafica {cosa} {vis}% "
+                                     f"vs ricalcolata {round(val, 1)}%")
                 # la marcatura «questa» deve stare sulla fascia del favorito di QUESTA scheda
                 cur_page = bool(span)
                 cur_data = bool(b["lo"] <= here < b["hi"])
@@ -1398,12 +1426,64 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: media di lega {mean_t} vs {dist.mean():.1f}")
             if abs(float(med_t.replace(",", ".")) - float(dist.median())) > 0.06:
                 fails.append(f"{pg.name}: mediana di lega {med_t} vs {dist.median():.1f}")
+            # P2.3: la barra sotto la frase è la stessa misura disegnata. Il riempimento e il
+            # segno devono stare sul percentile già verificato sopra, le tacche sulla mediana e
+            # sulla media di lega, gli estremi della scala sul 2° e 98° percentile: un grafico
+            # che mostrasse un'altra posizione sarebbe un secondo numero, non un disegno.
+            # P2.3: la barra sotto la frase è la stessa misura disegnata. Riempimento e segno
+            # stanno sul percentile già verificato sopra, le tacche sulla mediana e sulla media
+            # di lega, gli estremi della scala sul 2° e 98° percentile: un grafico che mostrasse
+            # un'altra posizione sarebbe un secondo numero, non un disegno.
+            viz_re = re.compile(
+                r'<div class="track" role="img" aria-label="Gol attesi totali ([\d,]+), più alti del '
+                r'(\d+) per cento delle (\d+) partite di ([^"]+) previste dal modello\. '
+                r'Scala dal 2° al 98° percentile: da ([\d,]+) a ([\d,]+) gol\. '
+                r'Mediana di lega ([\d,]+), media ([\d,]+)">'
+                r'\s*<span class="fill" style="width:([\d.]+)%"></span>'
+                r'\s*<span class="tick soft" style="left:([\d.]+)%"[^>]*></span>'
+                r'\s*<span class="tick" style="left:([\d.]+)%"[^>]*></span>'
+                r'\s*<span class="pin" style="left:([\d.]+)%"></span>'
+                r'\s*<span class="mark" style="left:([\d.]+)%">([\d,]+)</span>')
+            mv = viz_re.search(html.split('id="posizione-lega"', 1)[1][:4200])
+            lo_q, hi_q = float(dist.quantile(0.02)), float(dist.quantile(0.98))
+            if hi_q - lo_q < 0.2:
+                # distribuzione di lega senza spazio: la barra non c'è per scelta (e la card sì)
+                checks += 1
+                if mv is not None:
+                    fails.append(f"{pg.name}: barra della posizione dove la scala non ha spazio")
+                continue
+            checks += 1
+            if mv is None:
+                fails.append(f"{pg.name}: barra della posizione di lega assente o diversa (P2.3)")
+                continue
+            qui = _pos_pct(lam_here, lo_q, hi_q)
+            for cosa, letto, atteso in (
+                    ("riempimento", float(mv.group(9)), qui),
+                    ("segno", float(mv.group(12)), qui),
+                    ("etichetta del segno", float(mv.group(13)), qui),
+                    ("tacca mediana", float(mv.group(10)),
+                     _pos_pct(float(dist.median()), lo_q, hi_q)),
+                    ("tacca media", float(mv.group(11)), _pos_pct(float(dist.mean()), lo_q, hi_q)),
+                    ("percentile in aria-label", float(mv.group(2)), round(below * 100))):
+                checks += 1
+                if abs(letto - atteso) > 0.2:
+                    fails.append(f"{pg.name}: barra posizione, {cosa} {letto}% vs ricalcolato {atteso}%")
+            checks += 1
+            if mv.group(14) != _stamp_it(lam_here):
+                fails.append(f"{pg.name}: barra posizione, segno {mv.group(14)} vs λ stampati "
+                             f"{_stamp_it(lam_here)}")
+            if abs(float(mv.group(5).replace(",", ".")) - lo_q) > 0.05 or \
+                    abs(float(mv.group(6).replace(",", ".")) - hi_q) > 0.05:
+                fails.append(f"{pg.name}: scala della barra {mv.group(5)}–{mv.group(6)} "
+                             f"vs 2°–98° percentile {lo_q:.2f}–{hi_q:.2f}")
         print(f"[16] percentile dei gol attesi nel campionato verificato: {n_pos}")
 
     # 17) primo gol: ritmo a due tempi calibrato su events.parquet — s, quartili in forma chiusa,
     #     P(0-0 all'intervallo) e P(0-0 piena) ricalcolate; «dopo il 90'» mai oltre il fischio
     ev_df = st.read("events")
     if not ev_df.empty and "type" in ev_df.columns and not preds.empty:
+        from itertools import pairwise
+
         import numpy as np
 
         pr_fg = preds.reset_index() if "match_id" not in preds.columns else preds
@@ -1466,6 +1546,69 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     fails.append(f"{pg.name}: P(0-0 riposo) {m_q.group(4)}% vs {s_ht_f * 100:.1f}%")
                 if abs(float(m_q.group(5).replace(",", ".")) - np.exp(-lam_fg) * 100) > 0.06:
                     fails.append(f"{pg.name}: P(0-0 piena) {m_q.group(5)}% vs {np.exp(-lam_fg) * 100:.1f}%")
+
+                # P2.3: le due righe del grafico. Sopra la distribuzione OSSERVATA dei primi gol
+                # (quarti d'ora, ricavata dagli stessi eventi: primo gol di ogni partita, minuto
+                # 1 se il primo gol è segnato in avvio, partite senza gol escluse), sotto la banda
+                # del modello per questa partita sulle stesse posizioni 0–90 dell'asse. I
+                # conteggi sono ricontati qui: se la pagina mostra una distribuzione che gli
+                # eventi non confermano, il gate morde.
+                vizio_re = re.compile(
+                    r'<div class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol '
+                    r'nella stagione: ([^"]+)">\s*'
+                    r'(.*?</div>)\s*</div>')
+                band_re = re.compile(
+                    r'<div class="bandbar" role="img" aria-label="([^"]+)">\s*'
+                    r'<span class="band" style="left:([\d.]+)%;width:([\d.]+)%"></span>\s*'
+                    r'<span class="med" style="left:([\d.]+)%"></span>')
+                primo = gl.dropna(subset=["minute"]).groupby("match_id").minute.min().clip(lower=1)
+                n_primo = len(primo)
+                confini = (0, 15, 30, 45, 60, 75, 10_000)
+                conteggi = [int(((primo > a) & (primo <= b)).sum())
+                            for a, b in pairwise(confini)]
+                massimo = max(conteggi) or 1
+                etichette = ("1–15'", "16–30'", "31–45'", "46–60'", "61–75'", "76–90'")
+                attesi_barre = [(lab, round(100.0 * c / n_primo), round(100.0 * c / massimo))
+                                for lab, c in zip(etichette, conteggi)]
+                bl2 = html_unescape(html).split('id="primo-gol"', 1)[1][:6000]
+                m_viz = vizio_re.search(bl2)
+                m_band = band_re.search(bl2)
+                checks += 1
+                if m_viz is None or m_band is None:
+                    fails.append(f"{pg.name}: grafico del primo gol assente o diverso (P2.3)")
+                else:
+                    aria = m_viz.group(1)
+                    pezzi = re.findall(r"([\d–]+')\s+(\d+) per cento", aria)
+                    if [p_[0] for p_ in pezzi] != list(etichette) or \
+                            [int(p_[1]) for p_ in pezzi] != [b[1] for b in attesi_barre]:
+                        fails.append(f"{pg.name}: percentuali osservate del primo gol diverse dagli "
+                                     f"eventi: {pezzi} vs {[b[1] for b in attesi_barre]}")
+                    barre = re.findall(r'<span class="v">(\d+)%</span><span class="fill" '
+                                       r'style="height:([\d.]+)%"></span><span class="x">([^<]+)</span>',
+                                       m_viz.group(2))
+                    checks += 1
+                    if len(barre) != 6:
+                        fails.append(f"{pg.name}: barre del primo gol {len(barre)} invece di 6")
+                    else:
+                        for (pv, hv, lv), (lab, per100, h) in zip(barre, attesi_barre):
+                            if lv != lab or int(pv) != per100 or abs(float(hv) - h) > 0.5:
+                                fails.append(f"{pg.name}: barra primo gol {lab}: {pv}%/{hv}% "
+                                             f"vs {per100}%/{h}% dagli eventi")
+                    # la banda: dalla pagina (0–90) ai minuti del modello, e ritorno
+                    # in pagina: inizio banda (25°), mediana (50°), fine banda (75°) — stesso ordine
+                    bl_atteso = [100.0 if qs[k] is None else round(min(100.0, 100.0 * qs[k] / 90.0), 2)
+                                 for k in (0.25, 0.50, 0.75)]
+                    letto = [float(m_band.group(2)), float(m_band.group(4)),
+                             float(m_band.group(2)) + float(m_band.group(3))]
+                    checks += 1
+                    for nome, a, b_ in zip(("inizio banda", "mediana", "fine banda"), letto, bl_atteso):
+                        if abs(a - b_) > 0.2:
+                            fails.append(f"{pg.name}: banda primo gol, {nome} {a}% vs modello {b_}%")
+                    for lab, t in zip(("25°", "50°", "75°"), (qs[0.25], qs[0.50], qs[0.75])):
+                        atteso_txt = "dopo il 90'" if t is None else f"{round(t)}'"
+                        if atteso_txt not in m_band.group(1):
+                            fails.append(f"{pg.name}: aria-label della banda senza il quartile "
+                                         f"{lab} «{atteso_txt}»")
             print(f"[17] quartili del primo gol verificati: {n_q}")
 
     # 13) nessun numero di verifica inventato nei template: se cambia il metodo il numero è falso
@@ -1608,6 +1751,64 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                 fails.append(f"{pg.name}: riga panchina «{key}» ({tname}) assente o diversa")
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
+
+    # 34) badge della forma nell'hero (P2.5, docs/28 §3): la serie di pallini e i punti devono
+    # essere quelli del calendario — ultime gare giocate prima del fischio, dal punto di vista
+    # della squadra — e la soglia delle 3 gare vale nei due versi: sotto quella soglia il badge
+    # non c'è, da lì in su c'è. Il numero è ricalcolato qui dai Parquet, non letto dal template:
+    # è il controllo che impedisce a un badge di raccontare una forma che nei dati non esiste
+    # (e alla narrativa di ripetere la serie, che è la metà «riduzione» dell'intervento).
+    n_form = 0
+    if not fx19.empty:
+        fx34 = fx19.copy()
+        fx34["utc_kickoff"] = pd.to_datetime(fx34.utc_kickoff, utc=True)
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Analisi pre-partita" not in html:
+                continue          # il badge è dell'attesa: a gara finita l'hero racconta la partita
+            fr34 = fx34[fx34.match_id == int(pg.stem)]
+            if fr34.empty:
+                continue
+            fr34 = fr34.iloc[0]
+            ko34 = pd.Timestamp(fr34.utc_kickoff)
+            hero = html_unescape(html.split('class="match-scoreline"', 1)[1]
+                                 .split('<div class="hero-model"', 1)[0])
+            pallini, attesi = 0, []
+            for tid, tname, lato in ((int(fr34.home_id), fr34.home_name, "home"),
+                                     (int(fr34.away_id), fr34.away_name, "away")):
+                # stesse regole di MatchAnalysis.form: finite, prima del fischio, ultime 5
+                g34 = fx34[(fx34.status == "finished") & (fx34.utc_kickoff < ko34)
+                           & ((fx34.home_id == tid) | (fx34.away_id == tid))].sort_values("utc_kickoff").tail(5)
+                seq, pts = [], 0
+                for row in g34.itertuples(index=False):
+                    casa = row.home_id == tid
+                    gf, ga = (row.home_goals, row.away_goals) if casa else (row.away_goals, row.home_goals)
+                    res = "V" if gf > ga else ("N" if gf == ga else "P")
+                    seq.append(res)
+                    pts += 3 if res == "V" else 1 if res == "N" else 0
+                seq = "".join(seq)
+                checks += 1
+                if len(seq) < 3:
+                    if f'>{tname}<span class="form-line"' in hero:
+                        fails.append(f"{pg.name}: badge della forma di {tname[:20]} con "
+                                     f"{len(seq)} gare (la soglia è 3)")
+                    continue
+                n_form += 1
+                pallini += len(seq)
+                punti = f"{pts} punto" if pts == 1 else f"{pts} punti"
+                attesi.append(f'<div class="match-hero-team {lato}">{tname}<span class="form-line" '
+                              f'aria-label="Forma di {tname}: {seq} nelle ultime {len(seq)} partite, '
+                              f'{punti}. V=vittoria, N=pareggio, P=sconfitta"')
+                if attesi[-1] not in hero:
+                    fails.append(f"{pg.name}: badge della forma di {tname[:20]} assente o diverso "
+                                 f"dal calendario ({seq})")
+                if f'<span class="fact-value">{pts} pt</span>' not in hero:
+                    fails.append(f"{pg.name}: punti del badge di {tname[:20]} diversi dal "
+                                 f"ricalcolo ({pts} pt)")
+            n_pallini = len(re.findall(r'class="form-dot [VNP]"', hero))
+            if attesi and n_pallini != pallini:
+                fails.append(f"{pg.name}: pallini del badge {n_pallini} (attesi {pallini})")
+    print(f"[34] badge della forma nell'hero verificati: {n_form}")
 
     # 20) «Vita del club» (docs/24 §3.5): la card pubblica solo fatti dentro la finestra di
     # 7 giorni che possono spostare qualcosa. Conteggi, voci pubblicate, «in riserva» e
@@ -1791,8 +1992,12 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
     # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
-    # con le stesse soglie; se una squadra ha segnali la card deve esserci.
+    # con le stesse soglie; se una squadra ha segnali la card deve esserci. Da P2.2 (`docs/28`
+    # §3) la card c'è **sempre** sulle schede pre-partita: due squadre senza segnali non devono
+    # farla sparire (il lettore non distinguerebbe «clima tranquillo» da «dato non raccolto»),
+    # e in quel caso la pagina lo dice riga per riga. Il controllo verifica le due direzioni.
     n_mood = 0
+    vuota = ("Nessun segnale anomalo nei dati raccolti: clima normale.")
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
         if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
@@ -1802,17 +2007,19 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         kickoff = pd.Timestamp(fr.utc_kickoff)
         rows_h = ma19.club_mood(int(pg.stem), int(fr.home_id), str(fr.home_name), kickoff)
         rows_a = ma19.club_mood(int(pg.stem), int(fr.away_id), str(fr.away_name), kickoff)
-        if rows_h or rows_a:
-            n_mood += 1
-            if 'id="clima"' not in html:
-                fails.append(f"{pg.name}: segnali clima presenti ma card assente")
-                continue
-            for r in rows_h + rows_a:
-                checks += 1
-                if r["text"] not in txt:
-                    fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
-        elif 'id="clima"' in html:
-            fails.append(f"{pg.name}: card clima senza segnali calcolati")
+        n_mood += 1
+        if 'id="clima"' not in html:
+            fails.append(f"{pg.name}: card clima assente (deve esserci su ogni scheda pre-partita)")
+            continue
+        for r in rows_h + rows_a:
+            checks += 1
+            if r["text"] not in txt:
+                fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
+        senza = (0 if rows_h else 1) + (0 if rows_a else 1)
+        checks += 1
+        if txt.count(vuota) != senza:
+            fails.append(f"{pg.name}: {senza} squadre senza segnali ma la riga «clima normale» "
+                         f"compare {txt.count(vuota)} volte")
     print(f"[21] pagine con clima del club riconciliate: {n_mood}")
 
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
@@ -2035,6 +2242,68 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+#: L'indice della scheda partita (`match-jump`) e il titolo della sezione che ogni voce apre.
+NAV_LINK = re.compile(r'<a href="(#[^"]+)">([^<]+)</a>')
+NAV_HEAD = re.compile(r"<h([23])[^>]*>(.*?)</h\1>", re.DOTALL)
+
+
+def _testo_confrontabile(s: str) -> str:
+    """Testo per confrontare etichetta e titolo: senza tag, minuscolo, senza accenti."""
+    s = re.sub(r"<[^>]+>", " ", s)
+    s = unicodedata.normalize("NFKD", html_unescape(s))
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return re.sub(r"\s+", " ", s).strip().lower()
+
+
+#: Le sezioni che l'indice della scheda partita deve saper raggiungere quando esistono nella
+#: pagina: sono le card pesanti rimaste senza ancora fino alla P1.3 (`docs/28` §2). Da P2.4
+#: «contesto» non c'è più: le due card che ne sono nate hanno ognuna il suo id e la sua voce.
+NAV_SEZIONI = ("lettura", "previsione", "scontro", "arrivi", "giocatori", "squadre", "panchina",
+               "mercato", "notizie", "arbitro-meteo", "precedenti", "statistiche", "cronaca",
+               "verifica")
+
+
+def check_nav(site: Path) -> tuple[list[str], int]:
+    """[33] L'indice della scheda partita: ogni voce dice il titolo della sezione che apre.
+
+    Fino alla P1.3 (`docs/28` §2) la barra prometteva quattro voci e ne azzeccava una: «Dati e
+    contesto» atterrava su «Confronto di stagione» e le card più pesanti non avevano ancora. Ora
+    l'etichetta è l'inizio del titolo della sezione di destinazione, e questa invariante lo
+    ricalcola su ogni scheda: un'etichetta che invecchia (o una sezione che sparisce) fa fallire
+    il gate invece di mentire al lettore.
+    """
+    partite = site / "partite"
+    if not partite.is_dir():
+        return [], 0
+    fails: list[str] = []
+    checks = 0
+    for page in sorted(partite.glob("*.html")):
+        raw = page.read_text(encoding="utf-8")
+        if 'class="match-jump"' not in raw:
+            continue
+        nav = raw.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+        for href, etichetta in NAV_LINK.findall(nav):
+            checks += 1
+            pos = raw.find(f'id="{href[1:]}"')
+            if pos < 0:
+                fails.append(f"{page.name}: indice → {href}, sezione assente dalla pagina")
+                continue
+            testa = NAV_HEAD.search(raw, pos)
+            if not testa:
+                fails.append(f"{page.name}: indice → {href}, sezione senza titolo h2/h3")
+                continue
+            titolo = _testo_confrontabile(testa.group(2))
+            if not titolo.startswith(_testo_confrontabile(etichetta)):
+                fails.append(f"{page.name}: indice «{etichetta}» → sezione «{titolo[:48]}»")
+        # e l'altra direzione: una sezione pesante che c'è deve essere raggiungibile dall'indice
+        for ancora in NAV_SEZIONI:
+            if f'id="{ancora}"' in raw and f'href="#{ancora}"' not in nav:
+                checks += 1
+                fails.append(f"{page.name}: sezione «{ancora}» presente ma fuori dall'indice")
+    print(f"[33] voci dell'indice della scheda partita verificate: {checks}")
+    return fails, checks
+
+
 def check_assets(site: Path) -> tuple[list[str], int]:
     """[29] CSS esterno (docs/19 P0.5): link giusto in ogni pagina, zero <style> inline.
 
@@ -2152,6 +2421,102 @@ def check_stime(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# ---- fonti dichiarate nella pagina «Info» (P2.6, docs/38) --------------------------------------
+# La pagina «Info» elencava fra le fonti gratuite «The Odds API — quote opzionali, solo se
+# ODDS_API_KEY è configurata»: nessun modulo del progetto la chiamava, nessuna pagina pubblicava
+# quote, e la chiave in `config/sources.yaml` non era letta da nessuno. Il lettore non poteva
+# accorgersene: quella voce prometteva un'integrazione che non esisteva. Questa invariante lega
+# l'elenco pubblicato ai moduli veri di `src/fda/sources/`, nei due versi: una voce senza modulo
+# (fonte promessa e mai implementata) e un modulo senza voce (fonte implementata e mai dichiarata)
+# fanno fallire il gate. Insieme fissa la decisione sulle quote: il sito non le pubblica, la
+# pagina Info lo dichiara, nessuna pagina le promette. Se la decisione cambia, cambiano insieme
+# questa invariante, `docs/38` e il codice che la applica.
+INFO_FONTI = {
+    "FotMob": "fotmob.py",
+    "Understat": "understat.py",
+    "Open-Meteo": "openmeteo.py",
+    "Google News RSS e ESPN news": "news.py",
+    "FotMob coppe (UCL/UEL)": "fotmob.py",
+    "ESPN": "espn.py",
+    "football-data.co.uk": "history.py",
+}
+#: Formule con cui si prometteva o si citava un mercato che il sito non pubblica.
+QUOTE_VIETATE = ("The Odds API", "ODDS_API_KEY", "probabilità implicite", "quote consenso",
+                 "quote vs modello", "sezione quote", "closing line value")
+#: La frase che dichiara la decisione, nella pagina che elenca le fonti.
+QUOTE_DICHIARAZIONE = "Quote di mercato: non pubblicate."
+
+
+def check_fonti(site: Path) -> tuple[list[str], int]:
+    """Fonti dichiarate in «Info» = moduli in `src/fda/sources/`; niente promesse di quote."""
+    fails: list[str] = []
+    checks = 0
+    info = site / "info.html"
+    if not info.is_file():
+        return [f"info.html assente in {site}"], 0
+    html = info.read_text(encoding="utf-8")
+    inizio = html.find("<h2>Le fonti (gratuite)</h2>")
+    fine = html.find("</ul>", inizio) if inizio != -1 else -1
+    if inizio == -1 or fine == -1:
+        return ["info.html: elenco «Le fonti (gratuite)» non trovato"], 0
+    voci = re.findall(r"<li><b>([^<]+)</b>", html[inizio:fine])
+    sorgenti = Path(__file__).resolve().parent.parent / "src" / "fda" / "sources"
+    moduli = {p.name for p in sorgenti.glob("*.py") if p.name != "__init__.py"}
+    for voce in voci:
+        checks += 1
+        modulo = INFO_FONTI.get(voce)
+        if modulo is None:
+            fails.append(f"info.html: fonte dichiarata «{voce}» senza modulo in src/fda/sources "
+                         f"(promessa non mantenuta)")
+        elif modulo not in moduli:
+            fails.append(f"info.html: la fonte «{voce}» punta al modulo mancante {modulo}")
+    for modulo in sorted(moduli - set(INFO_FONTI.values())):
+        checks += 1
+        fails.append(f"src/fda/sources/{modulo}: fonte implementata e non dichiarata in info.html")
+    checks += 1
+    if QUOTE_DICHIARAZIONE not in html:
+        fails.append(f"info.html: manca la dichiarazione «{QUOTE_DICHIARAZIONE}»")
+    n_pg = 0
+    for pg in sorted(site.rglob("*.html")):
+        n_pg += 1
+        testo = html_unescape(pg.read_text(encoding="utf-8"))
+        for vietata in QUOTE_VIETATE:
+            checks += 1
+            if vietata in testo:
+                fails.append(f"{pg.relative_to(site)}: promette o cita quote di mercato "
+                             f"(«{vietata}»), che il sito non pubblica (decisione docs/38)")
+    print(f"[35] fonti dichiarate nella pagina «Info»: {len(voci)} voci · {len(moduli)} moduli · "
+          f"{n_pg} pagine senza promesse di quote")
+    return fails, checks
+
+
+# ---- ogni tabella dentro un contenitore che scorre (P2.8, docs/39) ------------------------------
+# A 375 px una tabella più larga della card faceva scorrere **la pagina** di lato: succedeva su
+# 4.929 tabelle (la fascia storica da 6 colonne chiede 507 px in 295 disponibili). Il rimedio è
+# `.tablewrap` (`overflow-x:auto`): la tabella scorre dentro la card e la pagina resta ferma. La
+# regola è strutturale — una tabella senza contenitore è un difetto su un telefono, e non si vede
+# da fuori perché su desktop la tabella entra comunque. Qui si controlla su tutte le pagine
+# pubblicate; la misura vera delle larghezze sta in `scripts/resa_375.py`.
+def check_tavole(site: Path) -> tuple[list[str], int]:
+    """[36] ogni `<table>` pubblicata sta dentro un `.tablewrap`, una volta sola."""
+    fails: list[str] = []
+    checks = 0
+    for pg in sorted(site.rglob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        n_tab = html.count("<table")
+        n_wrap = html.count('class="tablewrap"')
+        checks += n_tab
+        rel = pg.relative_to(site)
+        if n_wrap != n_tab:
+            fails.append(f"{rel}: {n_tab} tabelle ma {n_wrap} contenitori .tablewrap")
+            continue
+        for m in re.finditer(r"<table\b", html):
+            if html.rfind('class="tablewrap"', 0, m.start()) < html.rfind("</table>", 0, m.start()):
+                fails.append(f"{rel}: <table> fuori da .tablewrap (scorre la pagina, non la card)")
+    print(f"[36] tabelle dentro .tablewrap verificate: {checks}")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -2180,9 +2545,18 @@ def main() -> int:
     stato, stato_checks = check_status(site)
     fails += stato
     checks += stato_checks
+    nav, nav_checks = check_nav(site)
+    fails += nav
+    checks += nav_checks
     stime, stime_checks = check_stime(site)
     fails += stime
     checks += stime_checks
+    fonti, fonti_checks = check_fonti(site)
+    fails += fonti
+    checks += fonti_checks
+    tavole, tavole_checks = check_tavole(site)
+    fails += tavole
+    checks += tavole_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric

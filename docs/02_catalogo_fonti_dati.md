@@ -99,6 +99,8 @@ Dichiarano: formazioni ufficiali ~1 h prima, `unavailable_players`, xG per tiro,
 
 ## 9. Quote — piani gratuiti 📄
 
+> **Catalogo, non un piano attivo.** Nessuna di queste fonti è usata: il sito **non pubblica quote di mercato** (decisione del 19/09/2026, `docs/38`). Le quote di chiusura storiche restano solo il metro di confronto esterno del modello (`scripts/benchmark_quote.py`).
+
 - **The Odds API** (`api.the-odds-api.com/v4/sports/soccer_italy_serie_a/odds?regions=eu&markets=h2h,totals,spreads`): 500 crediti/mese; 1 richiesta = 1 credito × mercati × regioni → con `eu` + `h2h,totals` = 2 crediti → ~8 snapshot/giorno possibili, consigliati 2/giorno + 1 a 1 h dal calcio d'inizio. Fornisce ~15–20 bookmaker (Pinnacle incluso in `eu`).
 - **odds-api.io**: 500 req/giorno gratis ma solo 2 bookmaker.
 - **OddsPapi**: 250 req/mese.

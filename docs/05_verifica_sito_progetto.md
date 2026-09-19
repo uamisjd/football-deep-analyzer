@@ -73,8 +73,10 @@ Non implementati: FotMob non li espone nei dati raccolti. Richiederebbe conteggi
 ### M3 — Schede giocatore (Fase 3)
 Non presenti: pagina giocatore con rating, xG/xA per 90, confronto radar. I dati grezzi (`player_stats`, 127.880 righe) sono già raccolti.
 
-### M4 — Quote vs modello (Fase 4, opzionale)
-Non prioritaria per l'utente (direttiva registrata). Richiederebbe `ODDS_API_KEY`/BSD.
+### M4 — Quote vs modello (Fase 4) · **chiusa: non si fa**
+Decisione del 19/09/2026 (`docs/38`): il sito non pubblica quote di mercato. Richiederebbe una
+chiave esterna (`ODDS_API_KEY`/BSD) e sposterebbe il giudizio del lettore sul mercato; il confronto
+col mercato resta **offline**, sulle quote di chiusura storiche (`scripts/benchmark_quote.py`).
 
 ### M5 — Fase 5 (automazione/qualità)
 Notifiche Telegram, xG proprio su StatsBomb Open Data, collettore locale per fonti protette, eventuale PWA.

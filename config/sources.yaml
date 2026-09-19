@@ -49,12 +49,6 @@ openmeteo:
   base_url: "https://api.open-meteo.com/v1/forecast"
   cache_ttl_h: 3
 
-oddsapi:
-  base_url: "https://api.the-odds-api.com/v4"
-  api_key_env: "ODDS_API_KEY"        # secret di GitHub Actions, mai nel codice
-  monthly_credits: 500
-  snapshots_per_day: 2
-
 news:
   # Google News RSS per squadra (edizione italiana) + ESPN news di lega (docs/21, P1-5).
   # Cache 12 h: con 5 run/giorno solo ~2 fetch reali per squadra al giorno.

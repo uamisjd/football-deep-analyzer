@@ -332,11 +332,63 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .news-list li.mood-bad{border-left-color:var(--lose)}
 .news-list li.mood-warn{border-left-color:var(--amber)}
 .news-list li.mood-good{border-left-color:var(--accent)}
+/* ---- Tendine della scheda (P1.1 «Vita del club», P1.4 «Verifica approfondita») ----------
+   Quando una card non deve occupare il primo schermo, il contenuto sta in una tendina chiusa
+   e il summary dice due cose: che si apre (segno ▸/▾, come il mese del calendario) e i numeri
+   di testa. Una regola sola per entrambe: stesso segno, stesso comportamento. */
+.news-more{margin:12px 0 0;padding-top:10px;border-top:1px solid var(--line)}
+.news-more>summary,#verifica>summary{display:flex;align-items:center;gap:8px;cursor:pointer;
+  list-style:none;color:var(--txt2)}
+.news-more>summary{font:700 12.5px var(--font-body)}
+.news-more>summary::-webkit-details-marker,#verifica>summary::-webkit-details-marker{display:none}
+.news-more>summary::before,#verifica>summary::before{content:"▸";color:var(--mut);font-size:11px;
+  flex:none}
+.news-more[open]>summary::before,#verifica[open]>summary::before{content:"▾"}
+.news-more>summary:hover,.news-more>summary:focus-visible,
+#verifica>summary:hover,#verifica>summary:focus-visible{color:var(--txt)}
 .steps .step-head{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:6px}
 .steps .step-head strong{font-size:14px;color:var(--txt)}
 .steps .delta{font-size:11.5px;font-weight:700;color:var(--txt2);background:var(--surface3);
   border:1px solid var(--line2);border-radius:999px;padding:1px 8px;font-variant-numeric:tabular-nums}
 .steps .bar{height:26px;font-size:12px;border-radius:8px}
+/* ---- P2.3 (`docs/28` §3): micro-visivi delle card di solo testo --------------------------
+   Tre grafici piccoli, ognuno con i numeri che la card già pubblica in prosa: la scala di
+   lega (dove cade questa partita), la distribuzione osservata del primo gol con la banda del
+   modello, e l'intervallo previsto→uscito delle fasce storiche. Stesse convenzioni del
+   resto: riempimento = valore di questa partita/stagione, tacca = riferimento (mediana,
+   previsione), banda = intervallo. Ogni grafico porta un role="img" con l'aria-label che
+   dice gli stessi numeri, così chi usa un lettore di schermo non perde nulla. */
+.viz{margin:12px 0 0}
+.viz .cap{font-size:10.5px;color:var(--mut2);text-transform:uppercase;letter-spacing:.07em;
+  margin:0 0 7px;font-weight:600}
+.track{position:relative;height:26px;border-radius:8px;background:var(--surface2);
+  border:1px solid var(--line)}
+.track .fill{position:absolute;left:0;top:0;bottom:0;border-radius:7px 0 0 7px;
+  background:linear-gradient(90deg,var(--accent-dim),var(--accent));opacity:.75}
+.track .tick{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--amber);
+  border-radius:2px}
+.track .tick.soft{width:1px;background:var(--mut2);top:1px;bottom:1px}
+.track .pin{position:absolute;top:-5px;bottom:-5px;width:2px;background:var(--txt);border-radius:2px}
+.track .mark{position:absolute;top:-19px;font-size:11px;font-weight:700;color:var(--txt);
+  transform:translateX(-50%);white-space:nowrap;font-variant-numeric:tabular-nums}
+.viz .axis{display:flex;justify-content:space-between;font-size:10.5px;color:var(--mut2);
+  margin-top:5px;font-variant-numeric:tabular-nums;gap:8px}
+.viz .axis span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.goalclock{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;align-items:end;
+  height:112px;margin:2px 0 0}
+.bandbar{position:relative;height:20px;margin-top:26px;border-radius:7px;background:var(--surface2);
+  border:1px solid var(--line)}
+.bandbar .band{position:absolute;top:0;bottom:0;background:var(--accent-dim);
+  border-left:1px solid var(--accent);border-right:1px solid var(--accent)}
+.bandbar .med{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--accent);
+  border-radius:2px}
+.wl{position:relative;display:block;height:13px;min-width:104px;border-radius:999px;
+  background:var(--surface2);border:1px solid var(--line)}
+.wl .fill{position:absolute;left:0;top:0;bottom:0;border-radius:999px;
+  background:linear-gradient(90deg,var(--accent-dim),var(--accent));opacity:.55}
+.wl .ic{position:absolute;top:-1px;bottom:-1px;border:1px solid var(--mut2);border-radius:3px}
+.wl .p{position:absolute;top:-3px;bottom:-3px;width:2px;background:var(--amber);border-radius:2px}
+@media (max-width:520px){.goalclock{height:96px}.wl{min-width:76px}.viz .axis{font-size:10px}}
 @media (max-width:520px){.goalgrid{gap:3px}.gb .v,.gb .x,.dp .x{font-size:10px}.dp .stack i{width:8px;height:8px}.goalbars{height:118px}.scoregrid{border-spacing:2px}.scoregrid th,.scoregrid td{width:34px;height:34px;font-size:10px}}
 @media (max-width:360px){.scoregrid th,.scoregrid td{width:30px;height:30px;font-size:9.5px}.match-teams{grid-template-columns:1fr auto 1fr;gap:6px}.match-team a{font-size:14px}.hero-metrics{gap:10px 14px}.hero-metric b{font-size:14px}}
 /* light mode: stesso design, superfici chiare — toggle manuale + prefers-color-scheme */
@@ -390,6 +442,15 @@ ul.narr li{margin:8px 0;color:var(--txt2)}
 .match-hero-meta .hero-status{display:inline-flex;align-items:center;gap:7px;color:var(--accent);font-weight:800;text-transform:uppercase;letter-spacing:.1em;font-size:10.5px}
 .match-scoreline{display:grid;grid-template-columns:minmax(0,1fr) 150px minmax(0,1fr);align-items:center;gap:18px;padding:22px 0 18px}
 .match-hero-team{font:800 27px/1.15 var(--font-head);overflow-wrap:anywhere}.match-hero-team.home{text-align:right}.match-hero-team.away{text-align:left}
+/* P2.5 (`docs/28` §3): la forma in testa alla scheda, sotto il nome della squadra e allineata al
+   nome (casa a destra, trasferta a sinistra). Riusa le classi della pagina «Oggi» (`.form-line`,
+   `.form-dot`, `.fact-*`): è la stessa informazione vista più da vicino, quindi pallini più piccoli,
+   etichetta «Forma» e punti su una riga sola. Il nome della squadra è a 27px: qui la font va
+   riportata a misura, altrimenti l'etichetta erediterebbe il titolo. */
+.match-hero-team .form-line{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;font:700 11px/1.2 var(--font-body)}
+.match-hero-team.home .form-line{justify-content:flex-end}.match-hero-team.away .form-line{justify-content:flex-start}
+.match-hero-team .form-line .fact-label{font-size:10px;text-transform:uppercase;letter-spacing:.06em}
+.match-hero-team .form-dot{width:16px;height:16px;border-radius:4px;font-size:9px}
 .match-hero-center{display:flex;flex-direction:column;align-items:center;gap:7px}.match-hero-center .result{font:800 29px/1 var(--font-head);font-variant-numeric:tabular-nums;color:var(--txt);white-space:nowrap}.match-hero-center .date{font-size:11px;color:var(--mut);text-align:center}
 .hero-model{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:15px}
 .hero-pick{display:flex;flex-direction:column;gap:3px}.hero-pick .eyebrow{color:var(--mut)}.hero-pick strong{font:700 17px/1.25 var(--font-head)}.hero-pick strong em{font-style:normal;color:var(--accent)}
@@ -492,7 +553,7 @@ footer .cols li{margin:6px 0}
   .match-teams .match-score{padding:0 6px; min-width:58px}
   .match-projection{display:flex;flex-direction:column;align-items:stretch;gap:10px}.projection-copy strong{font-size:15px}
   .match-facts{gap:6px 9px}.fact-separator{display:none}.form-line{width:100%}
-  .match-hero{padding:18px 15px}.match-hero-meta{flex-direction:column;align-items:flex-start;gap:4px}.match-scoreline{grid-template-columns:minmax(0,1fr) 66px minmax(0,1fr);gap:8px;padding:18px 0 15px}.match-hero-team{font-size:20px}.match-hero-center .result{font-size:22px}.match-hero-center .date{font-size:10px}.hero-model{align-items:flex-start}.hero-metrics{gap:10px 14px}.hero-signal{width:100%;max-width:none;text-align:center}.match-jump{top:4px}
+  .match-hero{padding:18px 15px}.match-hero-meta{flex-direction:column;align-items:flex-start;gap:4px}.match-scoreline{grid-template-columns:minmax(0,1fr) 66px minmax(0,1fr);gap:8px;padding:18px 0 15px}.match-hero-team{font-size:20px}.match-hero-team .form-line{margin-top:6px;font-size:10px;gap:5px}.match-hero-team .form-dot{width:14px;height:14px;font-size:8px}.match-hero-team .form-line .fact-label{font-size:9px}.match-hero-center .result{font-size:22px}.match-hero-center .date{font-size:10px}.hero-model{align-items:flex-start}.hero-metrics{gap:10px 14px}.hero-signal{width:100%;max-width:none;text-align:center}.match-jump{top:4px}
 }
 /* performance: calendario chiuso non costa layout */
 .cal-month:not([open]) .cal-head,
@@ -531,3 +592,34 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius
   letter-spacing:.03em;text-transform:uppercase;margin-right:6px;vertical-align:1px}
 .news-list li{padding:7px 0;border-bottom:1px solid var(--line)}
 .news-list li:last-child{border-bottom:0}
+
+/* ---- P2.8 (docs/39): la resa a 375 px, misurata con `scripts/resa_375.py` ----
+   Non c'è un browser nel sandbox (e nemmeno in CI): la resa si misura sull'aritmetica del
+   layout dichiarato e sui font veri del sito. Le tre correzioni, ognuna con la sua misura
+   davanti (viewport 375 px, `main` −36 px → 339 px utili):
+   1. **card più larghe sul telefono.** Il padding 20/22 px per lato lasciava 295 px al
+      contenuto: a 14 px per lato ne lasciano 311. È lo spazio che manca alle tabelle più
+      fitte (le «Squadra» a 4 colonne stavano fra 337 e 398 px) e alle etichette dei grafici.
+      Le tabelle che non entrano comunque ora scorrono dentro `.tablewrap` invece di far
+      scorrere la pagina di lato (prima: 4.929 tabelle fuori da ogni contenitore).
+   2. **il badge della forma (P2.5) in una riga.** A 375 px la colonna della squadra è larga
+      114 px e il badge ne chiedeva 136-152: finiva su due righe con l'etichetta «Forma»
+      orfana sopra i pallini. Sotto i 420 px i pallini si stringono (13 px, gap 3) e
+      l'etichetta sparisce: la riga torna una sola. L'informazione non si perde — pallini e
+      «N pt» restano, e l'`aria-label` continua a dire «Forma di X: … nelle ultime 5
+      partite, N punti» per intero (per chi usa un lettore di schermo non cambia nulla).
+   3. **le etichette del primo gol (P2.3) dentro la loro colonna.** «46–60'» a 10 px è larga
+      51 px in una colonna da 45: le etichette si toccavano fra un quarto d'ora e l'altro.
+      Con la card più larga la colonna è 50 px; a 9,5 px l'etichetta più lunga ne misura 48. */
+@media (max-width:520px){
+  .card{padding:16px 14px}
+  .goalclock{gap:2px}
+  .gb .x{font-size:9.5px}
+}
+@media (max-width:420px){
+  .match-hero{padding:16px 12px}
+  .match-hero-team .form-line{gap:4px;margin-top:5px}
+  .match-hero-team .form-dots{gap:3px}
+  .match-hero-team .form-dot{width:13px;height:13px}
+  .match-hero-team .form-line .fact-label{display:none}
+}

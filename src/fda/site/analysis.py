@@ -8,6 +8,7 @@ Jinja2 rendono in HTML.
 from __future__ import annotations
 
 import ast
+import itertools
 import re
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -250,6 +251,77 @@ def _no_news() -> dict[str, Any]:
             "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0,
             "vecchie": 0, "pertinenti": 0, "lingua": 0,
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0}
+
+
+#: Voci dell'imbuto della card «Vita del club» che entrano nella riga unica quando non c'è
+#: niente da pubblicare (`docs/28` §2 P1.1). L'ordine mette per primo il cesto generico —
+#: «servizio o cronaca», cioè quello che non è notizia — e poi i motivi specifici, nello
+#: stesso ordine in cui la riga dell'imbuto li legge per esteso. Un motivo a zero non si
+#: stampa: la riga non deve suggerire scarti che non ci sono stati.
+NEWS_FUNNEL_ORDER: tuple[tuple[str, str], ...] = (
+    ("scartate", "servizio o cronaca"),
+    ("lingua", "in un'altra lingua"),
+    ("annunci", "annunci o logistica"),
+    ("piatti", "non spostano nulla"),
+    ("altre", "su un'altra squadra"),
+    ("doppioni", "già raccontati da un'altra voce"),
+    ("oltre", "oltre il limite dei tre"),
+)
+
+
+def news_quiet_line(home: dict[str, Any], away: dict[str, Any], home_name: str,
+                    away_name: str) -> dict[str, Any] | None:
+    """Una riga sola quando **nessuna** delle due squadre ha un titolo pubblicabile.
+
+    Perché esiste (misurato il 2026-09-18, `docs/28` §2 P1.1): su **42 schede su 66** la card
+    «Vita del club» non aveva nulla da pubblicare e restava comunque il blocco più pesante
+    della pagina — 3.054 caratteri mediani, di cui il **99%** prosa metodologica — mentre
+    tutta l'analisi numerica stava in un decimo del testo. Qui si costruisce il fatto in una
+    riga («nessun titolo pubblicabile: N esaminati e scartati, con i motivi») e i conteggi
+    restano tutti: il template li mostra in una tendina, insieme ai criteri. Nessun numero
+    viene tolto dalla pagina, cambia solo *dove* sta: nel primo schermo il risultato, sotto
+    il lavoro fatto per arrivarci.
+
+    Ritorna ``None`` quando una delle due squadre ha qualcosa da pubblicare (o in riserva):
+    in quel caso la card resta quella completa, colonna per colonna.
+
+    I conteggi sono gli stessi che il verificatore ricalcola con :meth:`MatchAnalysis.team_news`
+    (``scripts/verify_site.py [20]``): la riga non introduce numeri nuovi, somma quelli
+    dell'imbuto già pubblicato per squadra.
+    """
+    def _vuoto(nw: dict[str, Any]) -> bool:
+        return not nw.get("notizie") and not nw.get("riserva")
+
+    if not (_vuoto(home) and _vuoto(away)):
+        return None
+
+    def _somma(chiave: str) -> int:
+        return int(home.get(chiave) or 0) + int(away.get(chiave) or 0)
+
+    esaminate = _somma("esaminate")
+    vecchie = _somma("vecchie")
+    finestra = int(home.get("finestra") or away.get("finestra") or 0)
+    giorni = it_plural(finestra, "giorno")
+    squadre = f"{home_name} e {away_name}"
+    if not esaminate:
+        riga = f"Nessun titolo in lingua italiana raccolto su {squadre} negli ultimi {giorni}"
+        if vecchie:
+            riga += (f" ({it_plural(vecchie, 'titolo più vecchio', 'titoli più vecchi')} oltre la "
+                     "finestra: guardati e lasciati fuori)")
+        riga += "."
+    else:
+        motivi = [f"{_somma(chiave)} {etichetta}" for chiave, etichetta in NEWS_FUNNEL_ORDER
+                  if _somma(chiave)]
+        esam = it_plural(esaminate, "titolo esaminato", "titoli esaminati")
+        scartati = "scartato" if esaminate == 1 else "scartati"
+        riga = (f"Nessun titolo pubblicabile su {squadre} negli ultimi {giorni}: {esam} e "
+                f"{scartati} con criterio — {' · '.join(motivi)}")
+        if vecchie:
+            riga += f" · {it_plural(vecchie, 'troppo vecchio', 'troppo vecchi')}"
+        riga += "."
+    return {"riga": riga, "esaminate": esaminate, "vecchie": vecchie, "finestra": finestra,
+            "motivi": [{"chiave": chiave, "etichetta": etichetta, "n": _somma(chiave)}
+                       for chiave, etichetta in NEWS_FUNNEL_ORDER if _somma(chiave)]}
 
 
 def news_freshness(hours: float) -> float:
@@ -809,10 +881,40 @@ class MatchAnalysis:
                 t = 45.0 + (-np.log(tail) - r1 * 45.0) / r2
             return None if t > 90.0 else float(t)
 
-        return {"q": [(p, _q(p)) for p in (0.25, 0.50, 0.75)],
+        # P2.3 (`docs/28` §3): la card era di solo testo. Il micro-visivo è una distribuzione
+        # **osservata** (quando è arrivato il primo gol nella stagione, in quarti d'ora) più la
+        # banda del modello per QUESTA partita: due cose diverse, etichettate come tali. I
+        # conteggi vengono dagli stessi eventi di `s`, quindi il lettore può rifarli.
+        first = g.dropna(subset=["minute"]).groupby("match_id").minute.min().clip(lower=1)
+        n_first = len(first)
+        confini = (0, 15, 30, 45, 60, 75, 10_000)
+        etichette = ("1–15'", "16–30'", "31–45'", "46–60'", "61–75'", "76–90'")
+        conteggi = [int(((first > lo) & (first <= hi)).sum())
+                    for lo, hi in itertools.pairwise(confini)]
+        massimo = max(conteggi) or 1
+        bins = [{"label": lab, "n": c,
+                 "per100": round(100.0 * c / n_first) if n_first else 0,
+                 "h": round(100.0 * c / massimo)}
+                for lab, c in zip(etichette, conteggi)]
+        # quante partite degli stessi eventi sono finite 0-0 (osservato, non modello)
+        n_partite_eventi = int(self.events.match_id.nunique())
+        senza_gol = (1.0 - n_first / n_partite_eventi) if n_partite_eventi else None
+        q = [(p, _q(p)) for p in (0.25, 0.50, 0.75)]
+
+        def _pct(t: float | None) -> float:
+            """Posizione sulla scala 0–90 dell'asse del grafico (oltre il 90' = fondo scala)."""
+            return 100.0 if t is None else round(min(100.0, 100.0 * t / 90.0), 2)
+
+        return {"q": q,
                 "s_half": s, "s_ht": s_ht, "lam": lam_tot,
                 "n_goals": len(g), "n_matches": int(g.match_id.nunique()),
-                "zero": float(np.exp(-lam_tot))}
+                "zero": float(np.exp(-lam_tot)),
+                "bins": bins, "n_first": n_first,
+                "senza_gol_oss": senza_gol,
+                "band": {"from": _pct(q[0][1]), "to": _pct(q[2][1]), "med": _pct(q[1][1]),
+                         "q1_oltre": q[0][1] is None, "q3_oltre": q[2][1] is None,
+                         "med_oltre": q[1][1] is None},
+                "fmt": {0.25: "25°", 0.50: "50°", 0.75: "75°"}}
 
     # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
     def league_goals_percentile(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -846,8 +948,25 @@ class MatchAnalysis:
         else:
             label = "nella media del campionato"
         name = {x.key: x.name for x in leagues()}.get(str(lg), str(lg))
+        # P2.3 (`docs/28` §3): la barra della posizione. La scala va dal 2° al 98° percentile
+        # della distribuzione di lega (gli estremi veri sono code che schiaccerebbero tutto al
+        # centro), il riempimento è il percentile già pubblicato in prosa e la tacca è la
+        # mediana di lega: si vede a colpo d'occhio da che parte sta questa partita.
+        lo_q, hi_q = float(tot.quantile(0.02)), float(tot.quantile(0.98))
+        med = float(tot.median())
+
+        def _pos(v: float) -> float:
+            return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
+
+        # La barra è un extra della card, non la card: se la distribuzione di lega è troppo
+        # stretta (nessuno spazio fra 2° e 98° percentile) il grafico non direbbe nulla e la
+        # card resta com'era — la frase, che è il contenuto, non sparisce mai per un grafico.
+        viz = ({"lo": round(lo_q, 2), "hi": round(hi_q, 2), "pct": _pos(here),
+                "med_pct": _pos(med), "mean_pct": _pos(float(tot.mean()))}
+               if hi_q - lo_q >= 0.2 else None)
         return {"here": here, "n": n, "below": below, "mean": float(tot.mean()),
-                "median": float(tot.median()), "label": label, "league": name, "league_key": str(lg)}
+                "median": med, "label": label, "league": name, "league_key": str(lg),
+                "viz": viz}
 
     # ---- fascia storica del pronostico (backtest fuori campione) ---------------------------
     #: fasce di probabilità del favorito usate per dire «quando il favorito aveva questa
@@ -3679,7 +3798,6 @@ class MatchAnalysis:
             f = ctx.get(f"{side}_form") or []
             if len(f) >= 3:
                 pts = sum(3 if x["res"] == "V" else 1 if x["res"] == "N" else 0 for x in f)
-                seq = "".join(x["res"] for x in f)
                 # la forma è un contenuto obbligatorio, non un'eccezione da segnalare: se non
                 # è estrema si dice comunque, con i numeri (parità fra le 7 leghe, docs/20 §13)
                 if pts >= 2.4 * len(f):
@@ -3688,8 +3806,12 @@ class MatchAnalysis:
                     giudizio = "in difficoltà"
                 else:
                     giudizio = "andamento nella norma"
+                # P2.5 (`docs/28` §3): la serie lettera per lettera non si ripete più qui — sta
+                # nel badge in testa alla scheda, sotto il nome della squadra (e, per esteso,
+                # nella card della squadra). La riga tiene i numeri e il giudizio: è la lettura,
+                # non la trascrizione della serie (docs/20 §13 resta soddisfatta).
                 s.append(f"{name}: {it_plural(pts, 'punto', 'punti')} nelle ultime "
-                         f"{len(f)} ({seq}) — {giudizio}.")
+                         f"{len(f)} — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
             if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
                 diff = xg["pts"] - xg["xpts"]
@@ -3719,8 +3841,6 @@ class MatchAnalysis:
                 # Lautaro, Barella, Calhanoglu» è un formato elenco-dati, non una frase.
                 # Si scrive in italiano corrente, con la congiunzione prima dell'ultimo nome.
                 # Il criterio di «peso» NON cambia: resta «titolare abituale» (docs/20 §13).
-                names = _elenco_it([u["name"] for u in un[:4]])
-                coda = "…" if len(un) > 4 else ""
                 quanti = it_plural(len(un), "assente")
                 if heavy:
                     # con un solo assente «1 assente, uno dei quali titolare» stona:
@@ -3735,7 +3855,24 @@ class MatchAnalysis:
                     peso = " (peso non valutabile: fonte senza minuti né valori di mercato)"
                 else:
                     peso = ""
-                s.append(f"{name} deve rinunciare a {quanti}{peso}: {names}{coda}.")
+                # P2.2 (`docs/28` §3): i nomi e l'impatto stanno nella tabella dell'infermeria
+                # della squadra (minuti, gol+assist, xG+xA per 90 stabilizzato, motivo e
+                # rientro); ripeterne qui i primi quattro era la stessa informazione due volte,
+                # e la seconda meno informata della prima. La frase tiene quello che la tabella
+                # non dice in una riga: *quanto* pesa l'assenza — quanti, quanti titolari
+                # abituali, quanta produzione offensiva manca — e manda al dettaglio.
+                #
+                # Solo pre-partita, però: a gara finita la tabella dell'infermeria **non c'è**
+                # (la fonte riporta le assenze una volta su due, quindi la pagina non può
+                # distinguere «nessuno fuori» da «non raccolto»: vedi il commento nel template).
+                # Lì la narrativa resta l'unico posto dove i nomi compaiono, e li tiene.
+                if ctx.get("status") == "finished":
+                    elenco = _elenco_it([u["name"] for u in un[:4]])
+                    coda = "…" if len(un) > 4 else ""
+                    s.append(f"{name} deve rinunciare a {quanti}{peso}: {elenco}{coda}.")
+                else:
+                    s.append(f"{name} deve rinunciare a {quanti}{peso} — nomi e impatto in "
+                             f"«Indisponibili».")
             rest = ctx.get(f"{side}_rest")
             if rest is not None and rest <= 3:
                 cup = ctx.get(f"{side}_rest_cup")
@@ -3824,13 +3961,22 @@ class MatchAnalysis:
         # allenatori in panchina (servono alla rilevanza delle notizie e al blocco «Da sapere»)
         home_coach = (self.coach(home_id, kickoff) or {}).get("name")
         away_coach = (self.coach(away_id, kickoff) or {}).get("name")
+        # P2.5 (`docs/28` §3): la forma sale in testa alla scheda — serie e punti in un micro-badge
+        # sotto il nome di ogni squadra, con le stesse classi della pagina «Oggi» (`_matchlist.html`).
+        # Calcolata una volta sola: la riusa anche la narrativa, che non ripete più la serie per
+        # lettere. Il badge compare da 3 gare giocate in su, come la riga obbligatoria della
+        # narrativa (`docs/20` §13): due pallini non sono una forma.
+        home_form = self.form(home_id, kickoff)
+        away_form = self.form(away_id, kickoff)
         ctx: dict[str, Any] = {
             "match_id": match_id, "league_id": int(f["league_id"]), "round": _val(f, "round"),
             "utc_kickoff": kickoff, "status": status,
             "home_id": home_id, "away_id": away_id,
             "home_name": f["home_name"], "away_name": f["away_name"],
             "home_goals": _goals(info, "home_goals", f), "away_goals": _goals(info, "away_goals", f),
-            "home_form": self.form(home_id, kickoff), "away_form": self.form(away_id, kickoff),
+            "home_form": home_form, "away_form": away_form,
+            "home_form_badge": self.form_summary(home_form) if len(home_form) >= 3 else None,
+            "away_form_badge": self.form_summary(away_form) if len(away_form) >= 3 else None,
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
             "home_rest_cup": self.rest_cup(home_id, kickoff), "away_rest_cup": self.rest_cup(away_id, kickoff),
             # post-partita: quando si rigioca (campionato + coppe) e con quanto riposo
@@ -3919,6 +4065,11 @@ class MatchAnalysis:
             ctx["keepers"] = self.keeper_stats(match_id, home_id, away_id)
             ctx["physical"] = self.physical_stats(match_id, home_id, away_id)
         ctx["score_matrix"] = self.score_matrix(ctx["prediction"])
+        # riga unica della card «Vita del club» quando non c'è nulla da pubblicare (docs/28 §2
+        # P1.1): costruita qui perché è un fatto della partita (due squadre), non di una colonna
+        ctx["news_quiet"] = (news_quiet_line(ctx["home_news"], ctx["away_news"],
+                                             f["home_name"], f["away_name"])
+                             if status != "finished" else None)
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
         ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])

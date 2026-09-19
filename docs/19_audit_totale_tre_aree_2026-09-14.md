@@ -2458,6 +2458,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P1.11 | ✅ **FATTO** (2026-09-18, giro 32 di `STATO.md`) — `Candidate.grid` pre-registrata in `lab.py` (griglie dichiarate anche per le varianti esistenti: ξ, shrink, w, k, HFA), colonne `grid_dichiarata`/`n_tentativi` in `summarize()`/`per_league()` → `model_lab.parquet`, regola in `docs/00` §D, `verdetto_lab.py` stampa i tentativi | `lab.py`, `docs/00 §D` | chiuso |
 | P1.12 | Griglia di calibrazione allineata ai bounds (o claim ridotto in `info.html`) | `calibration.py` | **alto** se si rifa il fit → preferire il claim ridotto |
 | P1.13 | ✅ **FATTO** (2026-09-16, `docs/21` §19.6) — skip-link + footer h3→h2; scope e main già coperti (P2-8a); test strutturale | | `base.html` + ~15 template | medio (esteso) |
+| P2.8 | ✅ **la resa a 375 px** (2026-09-19, `docs/39`): 5.899 problemi su 4.109 pagine → 0, con invariante `[36]` e gate `resa_375` in CI | 🔶 resta Lighthouse (serve un browser) | `scripts/resa_375.py` + `site.css` + 2 template | grande |
 | P1.14 | ✅ **FATTO** (2026-09-16, `docs/23`) — `shrink_rate()` unitario in `src/fda/site/rates.py` (media dei pari e peso `k` = 0,25 × mediana del denominatore, **misurati dal run**), regola di pubblicazione (≥270′ grezzo · 90-270′ grezzo + ◎ stima · <90′ solo ◇ stima), percentili sulla stima, `p90_shrunk()` morto eliminato. Il turno ha anche chiuso **due difetti nuovi**: le **quote** (passaggi %, duelli %) pubblicate come rate per 90 con il tooltip «89,2%/90′» e il `◇` che poteva restare vuoto in `match.html`. Invariante nuova **`[32]`** (schede giocatore + schede partita) | `rates.py` (nuovo), `players.py`, `verify_site.py`, template | chiuso |
 | P1.15 | `prossime.html`: debounce filtro + `content-visibility` sulle card | `index.html`/JS, `base.html` | basso |
 
@@ -2472,7 +2473,7 @@ orizzontale (`document.scrollWidth <= 320`) — assertion da aggiungere allo ste
 | P2.5 | Indice completo di `docs/` (18 documenti) + log `players: 3737 pagine` |
 | P2.6 | `fmt.pct_triple`: import di numpy/matplotlib fuori dalla funzione; un'unica implementazione |
 | P2.7 | Paginazione di `prossime.html` per giorno (se il calendario cresce oltre ~250 card) |
-| P2.8 | Lighthouse CI su 3 URL con soglie accessibility ≥ 0,95 (chiusura dei "non verificato") |
+| P2.8 | 🔶 **in parte** (2026-09-19, `docs/39`): la resa a 375 px è misurata — `scripts/resa_375.py` calcola il layout dal CSS pubblicato con le metriche dei font del sito, 23.387 misure, 0 problemi (erano 5.899 su 4.109 pagine), con invariante `[36]` e gate in CI. **Lighthouse resta da fare**: senza un browser non si ottengono i punteggi di accessibilità/performance — serve un runner con Chrome |
 | P2.9 | Registrare in `model_lab.parquet` il candidato **respinto** γ-sharpening (§1.3) |
 | P2.10 | Ricalibrazione del vettore 1X2 (temperatura) come candidato del laboratorio (§1.2) |
 

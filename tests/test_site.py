@@ -10,7 +10,7 @@ from fda.collect import collect_league
 from fda.config import league
 from fda.site.analysis import MatchAnalysis
 from fda.site.build import SiteBuilder, pct_triple
-from fda.store import Store
+from fda.store import TABLE_KEYS, Store
 from tests.test_store_collect import FakeEspn, FakeEspnNoStandings, FakeFotMob, FakeUnderstat
 
 FIX = Path(__file__).parent / "fixtures"
@@ -317,7 +317,9 @@ def test_site_build_end_to_end(tmp_path):
     # card Confronto di stagione (tabella FotMob): Inter in tabella, Monza no → lato «—», nessun evidenziato
     assert "Confronto di stagione" in post and "Punti/gara" in post
     assert "9 in 3 gare" in post and "3,00" in post and "media gol del campionato" in post
-    cmp = post[post.find("Confronto di stagione"):post.find("Contesto")]
+    # il taglio usa l'ancora della card che segue il gruppo del club (da P2.4 è «arbitro-meteo»):
+    # tagliare sulla voce d'indice darebbe una fetta vuota
+    cmp = post[post.find("Confronto di stagione"):post.find('id="arbitro-meteo"')]
     assert "—</td>" in cmp and 'class="best"' not in cmp   # Monza assente: niente evidenziazione nel confronto
     # cartina dei tiri (SVG): 2 pannelli, i 2 tiri dell'Inter del campione, Monza senza tiri
     assert "Cartina dei tiri" in post
@@ -417,6 +419,525 @@ def test_site_build_end_to_end(tmp_path):
     stato = (out / "stato.html").read_text(encoding="utf-8")
     assert "Ultimi run per fonte" in stato and "OK" in stato
     assert ">ERRORE<" not in stato and "AVVISO" not in stato
+    st.close()
+
+
+def test_vita_del_club_in_una_riga_quando_non_c_e_nulla(tmp_path):
+    """P1.1 (docs/28 §2): senza titoli pubblicabili la card «Vita del club» dice il fatto in
+    una riga e mette i conteggi in una tendina.
+
+    Prima, su 42 schede su 66, la card più pesante della pagina (3.054 caratteri mediani, il
+    99% prosa metodologica) serviva a dire che non c'era nulla. I numeri non escono dalla
+    pagina — il verificatore `[20]` li rilegge nella tendina — cambia solo dove stanno.
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    pre = fx[fx.match_id == 5749669].iloc[0]
+    ko = pd.Timestamp(pre.utc_kickoff)
+    ko = ko.tz_localize("UTC") if ko.tzinfo is None else ko.tz_convert("UTC")
+    titoli = [
+        (int(pre.home_id), "Come acquistare i biglietti per Udinese-Lazio: prezzi e informazioni",
+         "https://esempio.it/1"),
+        (int(pre.home_id), "Udinese, la conferenza stampa di domani: orari e diretta",
+         "https://esempio.it/2"),
+        (int(pre.away_id), "Lazio, dove vederla in tv e streaming", "https://esempio.it/3"),
+    ]
+    st.write("news", pd.DataFrame([
+        {"team_id": tid, "published_at": ko - pd.Timedelta(days=1), "title": t, "url": u,
+         "source": "Corriere", "description": ""} for tid, t, u in titoli]))
+
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    html = (out / "partite/5749669.html").read_text(encoding="utf-8")
+
+    assert "Nessun titolo pubblicabile su Udinese e Lazio negli ultimi 7 giorni" in html
+    assert "3 titoli esaminati e scartati con criterio" in html
+    # la tendina c'è, e l'imbuto per squadra (i numeri del verificatore [20]) è dentro di lei
+    inizio = html.find('id="notizie"')
+    assert inizio != -1 and '<details class="news-more">' in html[inizio:]
+    dentro = html[html.find('<details class="news-more">', inizio):]
+    assert "Niente che possa spostare qualcosa" in dentro
+    assert "Fonte: Google News RSS per squadra" in dentro
+    # sopra la tendina resta la riga (più gli eventuali «Da sapere»): l'imbuto per squadra no
+    visibile = re.sub(r"<[^>]+>", " ", html[inizio:html.find('<details class="news-more">', inizio)])
+    visibile = re.sub(r"\s+", " ", visibile).strip()
+    assert '<p style="margin:12px 0 6px"><b>' not in visibile
+    assert "Niente che possa spostare qualcosa" not in visibile
+    assert len(visibile) < 900, f"la card visibile è ancora lunga: {len(visibile)} caratteri"
+    assert visibile.startswith('id="notizie"> Vita del club Nessun titolo pubblicabile su '
+                               "Udinese e Lazio")
+    st.close()
+
+
+def test_xg_e_ppda_una_volta_sola(tmp_path):
+    """P1.2 (docs/28 §2): un dato, un posto — l'hero non anticipa xG/gara e PPDA, «Come arrivano»
+    non ripete le medie di stagione.
+
+    Il posto canonico dei valori di stagione è la card della squadra (più «Scontro tattico» per il
+    confronto di stile): l'hero tiene esito, λ, Over 2,5 e «entrambe a segno», che non compaiono
+    altrove. La gara sintetica serve perché il campione dei test non ha abbastanza righe Understat
+    per far comparire «Come arrivano».
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900003, 2, "Inter", "Napoli", now)])
+    st.upsert("predictions", [{
+        "match_id": 5900003, "model": "ensemble", "league_key": "ITA1",
+        "p_home": 0.5, "p_draw": 0.27, "p_away": 0.23, "lambda_home": 1.6, "lambda_away": 1.1,
+        "p_over15": 0.75, "p_over25": 0.55, "p_over35": 0.3, "p_btts": 0.52,
+        "p_1x": 0.77, "p_12": 0.73, "p_x2": 0.5, "p_home_clean_sheet": 0.3,
+        "p_away_clean_sheet": 0.2, "top_scores": "{'1-1': 0.12, '1-0': 0.1}",
+        "made_at": now, "n_train": 380, "w_dc": 0.7,
+    }])
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999001, "team_name": "Inter",
+         "date": (now - timedelta(days=7 * (4 - i))).isoformat(), "is_home": bool(i % 2),
+         "goals": 2, "goals_against": 1, "xg": 1.9 - i * 0.1, "xga": 1.0, "xpts": 2.0,
+         "pts": 3, "ppda": 9.5} for i in range(4)])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900003})
+    h = (out / "partite" / "5900003.html").read_text(encoding="utf-8")
+
+    hero = h.split('<div class="hero-model">')[1].split('<nav class="match-jump"')[0]
+    assert "xG/gara" not in hero and "PPDA" not in hero
+    assert "gol attesi" in hero and "Over 2,5" in hero and "entrambe a segno" in hero
+
+    assert h.count("xG creati / gara") == 2                    # card squadra: stagione, per squadra
+    assert "xG / gara" in h and "PPDA (↓ = più pressing)" in h  # «Scontro tattico»: il confronto
+
+    arrivo = h.split("<h2>Come arrivano</h2>", 1)[1].split("<h2>", 1)[0]
+    assert "xGA" in arrivo and arrivo.count("<tr>") >= 3        # la serie gara per gara resta
+    assert "fatti contro" not in arrivo and "a partita" not in arrivo   # niente sintesi ripetuta
+    assert "PPDA" not in arrivo
+    assert "Scontro tattico" in arrivo                          # al posto del numero, il rimando
+    st.close()
+
+
+def test_legenda_stabilizzata_una_volta_sola(tmp_path):
+    """P2.1 (docs/28 §3): la spiegazione della stima stabilizzata si dà una volta sola.
+
+    Compariva in ogni card squadra (nota «Soglia di minutaggio: … ◎ stima stabilizzata …») e in
+    ogni riga dell'infermeria: 4 volte per scheda. Ora la legenda sta nel primo punto d'uso — la
+    testata di «I giocatori che decidono» — e altrove resta il marcatore ◎ col tooltip del caso
+    specifico (media dei pari, peso k, numerosità), che è ciò che rende la stima verificabile.
+    """
+    st = _seed(tmp_path)
+    # la stagione dei giocatori della gara futura: senza player_stats la sezione «I giocatori che
+    # decidono» (e con lei la legenda) non si stampa, e il test non proverebbe niente
+    st.upsert("player_stats", [
+        {"match_id": m, "team_id": tid, "player_id": pid, "player_name": nome, "key": chiave,
+         "value": valore, "total": None}
+        for m in (5749669,)      # la gara delle due squadre del campione
+        for tid, pid, nome in ((8600, 111, "A1"), (8600, 112, "A2"), (8600, 113, "A3"),
+                               (8543, 211, "B1"), (8543, 212, "B2"), (8543, 213, "B3"))
+        for chiave, valore in (("minutes_played", 300.0), ("expected_goals", 2.0),
+                               ("expected_assists", 1.0))
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+
+    for nome, pre in (("5749669", True), ("5749645", False)):
+        html = (out / "partite" / f"{nome}.html").read_text(encoding="utf-8")
+        corpo = html.split('<main id="main">', 1)[1]
+        assert corpo.count("stabilizzat") <= 2, f"{nome}: «stabilizzat» {corpo.count('stabilizzat')} volte"
+        if not pre:
+            continue          # a gara conclusa la sezione dei giocatori decisivi non si stampa"
+        # la legenda c'è, una volta, e spiega entrambi i marcatori
+        assert corpo.count("◎ è la <b>stima stabilizzata</b>") == 1
+        assert "◇ significa che sotto i 90′ la rata grezza non si pubblica" in corpo
+        # la nota della card squadra resta, ma solo col dato (soglia e numerosità); nelle gare
+        # del campione di prova può mancare del tutto (nessun giocatore sopra soglia)
+        if "Soglia di minutaggio:" in corpo:
+            nota = corpo.split("Soglia di minutaggio:", 1)[1].split("</p>", 1)[0]
+            assert "minuti" in nota and "in classifica" in nota
+            assert "stabilizzat" not in nota
+        # il tooltip di riga porta il caso specifico, non la spiegazione del metodo (nel campione
+        # di prova può non esserci nessuna riga con la stima: la riga compare dal vero Understat)
+        titoli = re.findall(r'title="◎ Stima stabilizzata — ([^"]*)"', corpo)
+        for t in titoli:
+            assert "media dei pari" in t and "peso k=" in t and "n=" in t
+        assert "Stima stabilizzata (media dei pari e peso misurati" not in corpo  # la frase ripetuta
+    st.close()
+
+
+def test_indice_della_scheda_dice_i_titoli_veri(tmp_path):
+    """P1.3 (docs/28 §2): le voci dell'indice dicono il titolo della sezione che aprono.
+
+    Prima erano quattro e una sola azzeccava: «Dati e contesto» atterrava su «Confronto di
+    stagione», «Squadre» sul nome di una squadra, «Post-partita» su «Il prossimo impegno»; le card
+    più pesanti (Scontro tattico, I giocatori, Mercato, Panchina, Vita del club, Verifica) non
+    avevano un'ancora. Qui si verifica la corrispondenza voce → titolo sulle due schede campione,
+    con la stessa regola dell'invariante [33] di `verify_site`.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+
+    for nome in ("5749669", "5749645"):
+        html = (out / "partite" / f"{nome}.html").read_text(encoding="utf-8")
+        nav = html.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+        voci = re.findall(r'<a href="#([^"]+)">([^<]+)</a>', nav)
+        assert len(voci) >= 8, f"{nome}: indice troppo corto ({len(voci)} voci)"
+        for ancora, etichetta in voci:
+            assert f'id="{ancora}"' in html, f"{nome}: indice → #{ancora}, sezione assente"
+            i = html.index(f'id="{ancora}"')
+            titolo = re.sub(r"<[^>]+>", " ", html[html.index("<h2", i):html.index("</h2>", i)])
+            titolo = re.sub(r"\s+", " ", titolo).strip().lower()
+            assert titolo.startswith(etichetta.lower()), f"{nome}: «{etichetta}» → «{titolo}»"
+
+    # le sezioni che erano irraggiungibili hanno un'ancora e una voce: se la sezione c'è nella
+    # pagina, la voce dell'indice c'è (il caso «Mercato» qui non ha dati: il campione di prova
+    # non ha movimenti, e in quel caso la pagina non ha la sezione né la voce)
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    nav = pre.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+    for etichetta, ancora in (("Scontro tattico", "scontro"), ("I giocatori", "giocatori"),
+                              ("Vita del club", "notizie"), ("Verifica", "verifica"),
+                              ("Panchina", "panchina"), ("Come arrivano", "arrivi"),
+                              ("Le due squadre", "squadre"),
+                              ("Arbitro e meteo", "arbitro-meteo"), ("Precedenti", "precedenti")):
+        if f'id="{ancora}"' not in pre:       # sezione senza dati in questa gara: niente voce
+            continue
+        assert f'<a href="#{ancora}">{etichetta}</a>' in nav, f"voce mancante: {etichetta}"
+    for ancora in ("lettura", "squadre", "arbitro-meteo", "verifica"):     # ci sono sempre
+        assert f'id="{ancora}"' in pre and f'href="#{ancora}"' in nav
+    assert '<h2 class="as-h2" style="grid-column:1/-1">Le due squadre</h2>' in pre
+    # da P2.4 il link «→ precedenti» ha una card con quel nome (vedi il test dedicato)
+    assert '<div class="card" id="precedenti">' in pre
+    st.close()
+
+
+def test_arbitro_meteo_e_precedenti_card_separate(tmp_path):
+    """P2.4 (docs/28 §3): «Contesto» era una card sola per tre cose che non si somigliano.
+
+    Chi dirige la gara e che tempo farà non hanno nulla in comune con la storia della sfida, e i
+    precedenti (grafico, ultimi incontri, frequenze) erano l'84% del testo del blocco: la card più
+    sbilanciata della pagina, con un titolo che non diceva né l'una né l'altra cosa. Ora sono due
+    card, ognuna col titolo di quello che contiene, e l'indice (P1.3) le nomina entrambe.
+
+    La riga della tabella non ripete più il titolo («Bilancio (15)» dice su quanti casi si regge
+    la lettura delle frequenze: è il numero che serve, ed è quello che l'invariante [5] di
+    `scripts/verify_site.py` ricalcola dall'archivio).
+    """
+    st = _seed(tmp_path)
+    # due precedenti in più per la gara futura: da tre casi in su la card pubblica il bilancio
+    # completo con il grafico a ciambella (il campione di prova ne ha uno solo)
+    st.upsert("h2h", [
+        {"match_id": 5749669, "utc": "2025-02-16T14:00:00+00:00", "league": "Serie A",
+         "home_id": 8600, "away_id": 8543, "home_goals": 1, "away_goals": 1},
+        {"match_id": 5749669, "utc": "2024-09-22T16:00:00+00:00", "league": "Serie A",
+         "home_id": 8543, "away_id": 8600, "home_goals": 0, "away_goals": 2},
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    post = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    for nome, html in (("pre", pre), ("post", post)):
+        assert 'id="contesto"' not in html, f"{nome}: la card unica «Contesto» è ancora lì"
+        assert "#contesto" not in html, f"{nome}: resta un rimando a #contesto"
+        assert "<h2>Contesto</h2>" not in html, nome
+        assert "<h2>Arbitro e meteo</h2>" in html, nome
+        assert "<h2>Precedenti</h2>" in html, nome
+        # arbitro e meteo prima, i precedenti dopo: lo stesso ordine della card che li conteneva
+        i = html.index('<div class="card" id="arbitro-meteo">')
+        j = html.index('<div class="card" id="precedenti">')
+        assert i < j, nome
+        arb, prec = html[i:j], html[j:]
+        assert "Arbitro" in arb and "Meteo" in arb, nome
+        assert "Ultimi precedenti" not in arb, f"{nome}: la storia della sfida non sta con l'arbitro"
+        assert "Bilancio" in prec and "Ultimi precedenti" in prec, nome
+        # il grafico a ciambella dei precedenti sta nella card dei precedenti (non con l'arbitro)
+        assert 'aria-label="Bilancio precedenti"' not in arb, nome
+    # la gara futura non ha ancora la designazione: il segnaposto sta nella card dell'arbitro
+    assert "da definire" in pre[pre.index('<div class="card" id="arbitro-meteo">'):pre.index('<div class="card" id="precedenti">')]
+    # la gara futura: grafico a ciambella dentro la card dei precedenti e conteggio dei casi
+    # nell'etichetta della riga — il numero che l'invariante [5] di verify_site ricalcola
+    # dall'archivio (qui lo si ricava dalla stessa tabella h2h del campione di prova)
+    hh = st.read("h2h")
+    casi = int(((hh.match_id == 5749669) & hh.home_goals.notna() & hh.away_goals.notna()).sum())
+    assert casi >= 3
+    prec = pre[pre.index('<div class="card" id="precedenti">'):]
+    assert 'aria-label="Bilancio precedenti"' in prec
+    assert f'<th scope="row">Bilancio ({casi})</th>' in prec
+    # la partita finita mostra il bilancio dell'archivio (riga «Bilancio», senza contatore)
+    assert "<h2>Precedenti</h2>" in post and "Bilancio" in post
+    # il link dei «Fatti rilevanti» punta dritto alla card dei precedenti
+    assert 'href="#precedenti" class="small" style="white-space:nowrap">→ precedenti</a>' in pre
+    st.close()
+
+
+def test_p23_tre_card_di_testo_hanno_il_loro_micro_visivo(tmp_path):
+    """P2.3 (`docs/28` §3): le tre card di sola prosa hanno un grafico, e il grafico dice gli
+    stessi numeri della prosa.
+
+    Serve una fixture più ricca del solito: la scala di lega vuole ≥30 partite previste nello
+    stesso campionato, la fascia storica vuole il backtest, il primo gol vuole gli eventi. Le
+    tre condizioni sono seminati qui perché senza dati le card non esistono (e senza card non
+    c'è niente da verificare).
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    # 40 partite ITA1 previste dal modello (scala di lega) con λ totali diversi
+    st.upsert("predictions", [
+        {"match_id": 700000 + i, "league_key": "ITA1", "home": "A", "away": "B",
+         "model": "ensemble", "p_home": 0.4, "p_draw": 0.3, "p_away": 0.3,
+         "lambda_home": 1.0 + i / 25, "lambda_away": 1.0 + (39 - i) / 25,
+         "made_at": now - timedelta(days=3), "n_train": 380}
+        for i in range(40)])
+    # backtest: 150 gare per ognuna delle cinque fasce (il favorito di questa gara è al 37%,
+    # quindi la fascia «fino al 40%» è quella segnata «questa»)
+    righe = []
+    for fav in (0.36, 0.45, 0.55, 0.65, 0.85):
+        for i in range(150):
+            righe.append({"match_id": 800000 + len(righe), "p_home": fav, "p_draw": (1 - fav) / 2,
+                          "p_away": (1 - fav) / 2, "outcome": 0 if i % 2 else 1,
+                          "league_key": "ITA1", "made_at": now - timedelta(days=400)})
+    st.upsert("backtest", righe)
+    # eventi: 120 gol in 100 partite, primo gol distribuito fra i due tempi
+    st.upsert("events", [
+        {"match_id": 900000 + i, "team_id": 8600, "player_id": 1, "type": "Goal",
+         "minute": float(5 + (i * 7) % 85), "minute_added": None, "period": "FirstHalf"}
+        for i in range(120)])
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    # 1) scala di lega: barra con aria-label, segno e tacca
+    assert 'id="posizione-lega"' in h
+    # la fetta si ferma alla card successiva: `class="gb"` compare anche nel dotplot
+    barra = h.split('id="posizione-lega"', 1)[1].split('<div class="card', 1)[0]
+    assert 'class="track" role="img" aria-label="Gol attesi totali' in barra
+    assert 'class="fill"' in barra and 'class="pin"' in barra and 'class="tick soft"' in barra
+    # il numero sul segno è quello della frase («I 2,47 gol attesi totali in testa alla scheda»)
+    valore = re.search(r"I ([\d,]+) gol attesi totali in testa alla scheda", barra).group(1)
+    assert 'class="mark"' in barra
+    assert f">{valore}</span>" in barra.split('class="mark"')[1][:60]
+
+    # 2) primo gol: distribuzione osservata + banda del modello
+    assert 'id="primo-gol"' in h
+    # la fetta si ferma alla card successiva: `class="gb"` compare anche nel dotplot
+    fg = h.split('id="primo-gol"', 1)[1].split('<div class="card', 1)[0]
+    assert 'class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol' in fg
+    assert fg.count('class="gb"') == 6, "sei quarti d'ora"
+    assert 'class="bandbar" role="img"' in fg and 'class="band"' in fg and 'class="med"' in fg
+    # le percentuali delle barre sono numeri interi e sommano ~100 (partite con almeno un gol)
+    perc = [int(x) for x in re.findall(r'<span class="v">(\d+)%</span>', fg)]
+    assert len(perc) == 6 and 95 <= sum(perc) <= 105, perc
+
+    # 3) fasce storiche: una barra per fascia, con l'intervallo e la tacca della previsione
+    assert 'id="fascia-storica"' in h
+    # la fetta si ferma alla card successiva: `class="gb"` compare anche nel dotplot
+    fs = h.split('id="fascia-storica"', 1)[1].split('<div class="card', 1)[0]
+    assert fs.count('class="wl" role="img"') == 5, "una barra per fascia"
+    assert fs.count('class="ic"') == 5 and fs.count('class="p"') == 5
+    # l'aria-label di ogni barra porta i tre numeri della riga
+    for m in re.finditer(r'class="wl" role="img" aria-label="Fascia ([^"]+)"', fs):
+        assert "media prevista" in m.group(1) and "poi uscito" in m.group(1)
+        assert "intervallo di confidenza" in m.group(1)
+    # e i tre valori grafici sono in percentuale 0–100
+    for stile in re.findall(r'class="(?:fill|ic|p)" style="[^"]*?([\d.]+)%', fs):
+        assert 0.0 <= float(stile) <= 100.0, stile
+    st.close()
+
+
+def test_p26_fonti_dichiarate_e_quote_di_mercato_fuori_dal_sito(tmp_path):
+    """P2.6 (`docs/28` §3): la pagina «Info» non promette fonti che non esistono, e il sito non
+    pubblica quote di mercato.
+
+    «The Odds API — quote opzionali, solo se ODDS_API_KEY è configurata» è rimasta nell'elenco
+    delle fonti senza che nessuna riga di codice la chiamasse: il lettore non poteva
+    accorgersene. La decisione (19/09/2026, `docs/38`) è di non pubblicare quote di mercato — il
+    confronto col mercato resta **offline**, sulle quote di chiusura storiche. Qui si verificano i
+    due lati del contratto (elenco pubblicato ↔ moduli di `src/fda/sources/`, nessuna pagina che
+    prometta quote) e i resti della vecchia promessa, che non devono tornare.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build()
+    info = (out / "info.html").read_text(encoding="utf-8")
+    radice = Path(__file__).resolve().parent.parent
+
+    # 1) l'elenco pubblicato e i moduli veri, nei due versi
+    elenco = info[info.index("<h2>Le fonti (gratuite)</h2>"):]
+    voci = re.findall(r"<li><b>([^<]+)</b>", elenco[:elenco.index("</ul>")])
+    atteso = {"FotMob": "fotmob.py", "Understat": "understat.py", "Open-Meteo": "openmeteo.py",
+              "Google News RSS e ESPN news": "news.py", "FotMob coppe (UCL/UEL)": "fotmob.py",
+              "ESPN": "espn.py", "football-data.co.uk": "history.py"}
+    assert voci == list(atteso), voci
+    assert "The Odds API" not in info
+    moduli = {p.name for p in (radice / "src" / "fda" / "sources").glob("*.py")} - {"__init__.py"}
+    assert set(atteso.values()) == moduli, moduli
+
+    # 2) la decisione è dichiarata al lettore, e nessuna pagina promette quote di mercato
+    assert "Quote di mercato: non pubblicate." in info
+    for pg in sorted(out.rglob("*.html")):
+        testo = pg.read_text(encoding="utf-8")
+        for vietata in ("The Odds API", "ODDS_API_KEY", "probabilità implicite", "sezione quote"):
+            assert vietata not in testo, f"{pg.name}: promette quote di mercato ({vietata})"
+
+    # 3) i resti della vecchia promessa: config, ambiente del run, schema dello store
+    assert "oddsapi" not in (radice / "config" / "sources.yaml").read_text(encoding="utf-8")
+    assert "ODDS_API_KEY" not in (radice / ".github" / "workflows" / "daily.yml").read_text(encoding="utf-8")
+    assert "odds_snapshots" not in TABLE_KEYS
+    assert not [f for f in (radice / "src" / "fda").rglob("*.py")
+                if "odds_snapshots" in f.read_text(encoding="utf-8")], "residui nello store"
+    st.close()
+
+
+def test_p25_badge_della_forma_in_testa_alla_scheda(tmp_path):
+    """P2.5 (`docs/28` §3): la forma recente sale in testa alla scheda.
+
+    Il badge riusa le classi della pagina «Oggi» (`form-line`, `form-dot`, `fact-value`):
+    serie di pallini e punti guadagnati per **entrambe** le squadre, con la finestra
+    dichiarata nella descrizione per chi usa un lettore di schermo. La narrativa non ripete
+    più la serie lettera per lettera (stava lì, nella card della squadra e nell'elenco di
+    «Oggi»), e a gara finita il badge non c'è: l'hero racconta la partita, non l'attesa.
+    """
+    st = _seed(tmp_path)
+
+    def giocata(mid: int, day: str, hid: int, hname: str, aid: int, aname: str, hg: int, ag: int):
+        return {"match_id": mid, "league_id": 55, "round": "1",
+                "utc_kickoff": pd.Timestamp(day + " 18:00", tz="UTC"),
+                "home_id": hid, "home_name": hname, "away_id": aid, "away_name": aname,
+                "home_goals": hg, "away_goals": ag, "status": "finished"}
+
+    # cinque gare giocate prima di questa partita per ognuna delle due squadre: senza gare non
+    # c'è forma da mostrare. Udinese VVNNP (8 punti), Lazio NPVVV (10 punti).
+    st.upsert("fixtures", [
+        giocata(950001, "2026-08-10", 8600, "Udinese", 9001, "Rivale 1", 2, 0),
+        giocata(950002, "2026-08-14", 9002, "Rivale 2", 8600, "Udinese", 1, 3),
+        giocata(950003, "2026-08-18", 8600, "Udinese", 9003, "Rivale 3", 1, 1),
+        giocata(950004, "2026-08-22", 9004, "Rivale 4", 8600, "Udinese", 2, 2),
+        giocata(950005, "2026-08-26", 8600, "Udinese", 9005, "Rivale 5", 0, 1),
+        giocata(950006, "2026-08-11", 9006, "Rivale 6", 8543, "Lazio", 1, 1),
+        giocata(950007, "2026-08-15", 8543, "Lazio", 9007, "Rivale 7", 0, 2),
+        giocata(950008, "2026-08-19", 9008, "Rivale 8", 8543, "Lazio", 0, 2),
+        giocata(950009, "2026-08-23", 8543, "Lazio", 9009, "Rivale 9", 3, 1),
+        giocata(950010, "2026-08-27", 9010, "Rivale 10", 8543, "Lazio", 1, 2),
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    post = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+
+    hero_pre = pre[pre.index('class="match-scoreline"'):pre.index('class="hero-model"')]
+    hero_post = post[post.index('class="match-scoreline"'):post.index('class="hero-model"')]
+    assert hero_pre.count('class="form-line"') == 2, "un badge per squadra"
+    assert hero_post.count('class="form-line"') == 0, "a gara finita l'hero non è l'attesa"
+
+    ma, fx = MatchAnalysis(st), st.read("fixtures")
+    fr = fx[fx.match_id == 5749669].iloc[0]
+    kickoff = pd.Timestamp(fr.utc_kickoff)
+    sequenze = []
+    # le due serie sono scritte qui a mano: se `form()` cambiasse verso o ordinamento, il test
+    # cadrebbe prima di arrivare al template
+    attesi = {"Udinese": ("VVNNP", 8), "Lazio": ("NPVVV", 10)}
+    for tid, name in ((int(fr.home_id), fr.home_name), (int(fr.away_id), fr.away_name)):
+        rows = ma.form(tid, kickoff)
+        assert len(rows) == 5, "cinque gare giocate per squadra"
+        seq = "".join(r["res"] for r in rows)
+        pts = sum(3 if r["res"] == "V" else 1 if r["res"] == "N" else 0 for r in rows)
+        assert (seq, pts) == attesi[name], (name, seq, pts)
+        punti = f"{pts} punto" if pts == 1 else f"{pts} punti"
+        # il badge sta sotto il nome della squadra, non in mezzo alla pagina
+        assert f'<div class="match-hero-team {"home" if name == fr.home_name else "away"}">{name}<span class="form-line"' in pre
+        # serie e punti sono quelli del calendario, non copiati a mano nel template
+        assert (f'aria-label="Forma di {name}: {seq} nelle ultime {len(rows)} partite, {punti}. '
+                f'V=vittoria, N=pareggio, P=sconfitta"') in hero_pre
+        assert f'<span class="fact-value">{pts} pt</span>' in hero_pre
+        sequenze.append(seq)
+    # i pallini disegnati sono esattamente le due serie, nell'ordine in cui si leggono in hero
+    assert "".join(re.findall(r'class="form-dot (\w)"', hero_pre)) == "".join(sequenze)
+    # la narrativa tiene i numeri e il giudizio, ma non trascrive più la serie
+    assert re.search(r"punti nelle ultime \d+ — ", pre)
+    assert not re.search(r"punti? nelle ultime \d+ \([VNP]+\)", pre), "serie ripetuta nella narrativa"
+    # la card della squadra resta la sede del dettaglio (pallini con avversario e risultato):
+    # il badge non la sostituisce, aggiunge la lettura a colpo d'occhio in cima alla pagina
+    assert 'Forma: <span class="form-dots">' in pre
+    st.close()
+
+
+def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
+    """P2.2 (`docs/28` §3): le assenze non si raccontano quattro volte, e nessuna card sparisce.
+
+    Tre cose verificate sulle due schede campione:
+    * la frase della narrativa non elenca i nomi (la tabella dell'infermeria è la fonte unica) e
+      porta il link `→ Infermeria` **della squadra giusta** (`#infermeria-home` / `-away`);
+    * l'avviso «il migliore della lista è indisponibile» non ripete motivo e rientro (stanno
+      nella riga della stessa persona in infermeria) ma ci manda;
+    * «Clima del club» esiste anche quando nessuna delle due squadre ha segnali: il silenzio non
+      deve far sparire la sezione (una scheda su 60 la perdeva).
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    # l'ancora dell'infermeria esiste per entrambe le squadre (tabella o riga «nessuno fuori»)
+    assert 'id="infermeria-home"' in pre and 'id="infermeria-away"' in pre
+    # la narrativa: nessun nome di assente, ma il rimando alla tabella
+    narr = pre.split('<ul class="narr">', 1)[1].split("</ul>", 1)[0]
+    for riga in re.findall(r"<li>(.*?)</li>", narr):
+        if "deve rinunciare a" not in riga:
+            continue
+        assert "«Indisponibili»" in riga
+        lato = "home" if "infermeria-home" in riga else "away"
+        assert f'href="#infermeria-{lato}"' in riga, riga
+        # il nome con cui la frase comincia è quello della squadra di quel lato
+        squadra = "Udinese" if lato == "home" else "Lazio"
+        assert riga.startswith(squadra) or f">{squadra}<" in riga, riga
+        # e nessuno degli indisponibili della tabella compare nella frase
+        cella = pre.split('id="infermeria-' + lato, 1)[1].split("</table>", 1)[0]
+        nomi = re.findall(r"<tr[^>]*>\s*<td><b>([^<]+)</b>", cella)
+        assert not any(n in riga for n in nomi), (riga, nomi)
+
+    # ogni rimando dentro la narrativa ha la sua ancora in pagina (il gate l'ha trovato rotto
+    # sulle schede post-partita: lì la tabella dell'infermeria non esiste, perché la fonte
+    # riporta le assenze una volta su due e la pagina non può dire «nessuno fuori»)
+    post = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    for nome, html in (("pre", pre), ("post", post)):
+        for ancora in re.findall(r'<li>.*?href="#([^"]+)".*?</li>', html, re.DOTALL):
+            assert f'id="{ancora}"' in html, f"{nome}: il link #{ancora} non ha un bersaglio"
+    # e a gara finita i nomi restano nella frase (la tabella non c'è)
+    if "deve rinunciare a" in post:
+        assert 'href="#infermeria-' not in post
+    # «Clima del club» c'è anche senza segnali: la riga per squadra lo dice
+    assert '<div class="card" id="clima">' in pre
+    assert "Nessun segnale anomalo nei dati raccolti: clima normale." in pre
+
+    # l'avviso dentro «I giocatori che decidono»: motivo e rientro non si ripetono, si linkano
+    gioc = pre.split('<div class="card" id="giocatori">', 1)[1]
+    if "è indisponibile" in gioc:
+        avviso = next(r for r in re.findall(r"<p class=\"small warn\"[^>]*>(.*?)</p>", gioc, re.DOTALL)
+                      if "è indisponibile" in r)
+        assert "Infermeria" in avviso and 'href="#infermeria-' in avviso
+        assert "infortunio" not in avviso, avviso      # il motivo sta nella tabella
+    st.close()
+
+
+def test_verifica_approfondita_chiusa_e_annunciata(tmp_path):
+    """P1.4 (docs/28 §2): la verifica dei numeri non occupa il primo schermo.
+
+    Il `<details>` non ha più `open` (prima si apriva da solo sopra i 760 px: era il blocco dati
+    più pesante della pagina), il summary porta i due numeri di testa — moda e mediana dei gol —
+    così il lettore sa se aprirlo, e il contenuto resta nel DOM: `verify_site` e Google lo vedono.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+
+    assert '<details class="card detail-card" id="verifica">' in h      # chiusa
+    assert 'id="verifica" open' not in h
+    summary = h.split('id="verifica">', 1)[1].split("</summary>", 1)[0]
+    assert "moda" in summary and "mediana" in summary and "per chi vuole controllare i numeri" in summary
+    assert "Matrice dei punteggi" in h                                   # il contenuto resta nel DOM
+    assert "Quanti gol, in pratica" in h
+    # il link interno «matrice completa ↓» non deve atterrare su una tendina chiusa:
+    # base.html apre da sola la tendina che contiene il bersaglio dell'ancora
+    assert "closest('details:not([open])')" in h
+    assert 'href="#verifica"' in h
     st.close()
 
 
@@ -1083,4 +1604,38 @@ def test_stato_fonti_senza_sonda_dichiara_che_non_e_verificata(tmp_path):
     SiteBuilder(store=st, out_dir=out).build_status()
     h = (out / "stato.html").read_text(encoding="utf-8")
     assert "nessuna registrazione" in h and "non verificato" in h
+    st.close()
+
+
+def test_p28_ogni_tabella_in_un_contenitore_e_le_regole_mobili(tmp_path):
+    """P2.8 (`docs/19` §3, `docs/39`): a 375 px la pagina non deve scorrere di lato.
+
+    Una `<table>` più larga della card fa scorrere **la pagina** su un telefono: succedeva su
+    4.929 tabelle, e non si vede da desktop perché lì la tabella entra. Il rimedio è il
+    contenitore `.tablewrap` (`overflow-x:auto`). Qui si controlla la struttura su ogni pagina
+    del build di prova; la misura delle larghezze sta in `scripts/resa_375.py`, che gira in CI.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build()
+
+    pagine = sorted(out.rglob("*.html"))
+    assert len(pagine) > 3
+    for pg in pagine:
+        html = pg.read_text(encoding="utf-8")
+        assert html.count('class="tablewrap"') == html.count("<table"), pg.name
+        for m in re.finditer(r"<table\b", html):
+            assert html.rfind('class="tablewrap"', 0, m.start()) > html.rfind(
+                "</table>", 0, m.start()), f"{pg.name}: <table> fuori da .tablewrap"
+
+    # le regole che tengono il badge della forma (P2.5) su **una** riga a 375 px, e la card più
+    # larga sul telefono (P2.8): se spariscono, il gate `resa_375` lo dice — ma un test locale lo
+    # dice in due secondi. Sono regole dichiarate a mano: il test le cita alla lettera apposta.
+    css = (Path(__file__).resolve().parent.parent
+           / "src" / "fda" / "site" / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "@media (max-width:420px)" in css
+    assert ".match-hero-team .form-line .fact-label{display:none}" in css
+    assert ".match-hero-team .form-dot{width:13px;height:13px}" in css
+    assert ".card{padding:16px 14px}" in css
+    assert ".gb .x{font-size:9.5px}" in css
     st.close()

@@ -6,12 +6,12 @@
   {% if p.position_label %}<span class="tag">{{ p.position_label }}</span>{% else %}<span class="tag">ruolo n.d.</span>{% endif %}</h1>
 
 <div class="card">
-  <table>
+  <div class="tablewrap"><table>
     <tr><th scope="row">Squadra</th><td>{{ p.team_name or '—' }}</td><th scope="row">Età</th><td class="r">{{ p.age if p.age is not none else '—' }}</td></tr>
     <tr><th scope="row">Nazionalità</th><td>{{ p.country or '—' }}</td>{% if p.market_value_eur %}<th scope="row">Valore di mercato</th><td class="r">€{{ (p.market_value_eur / 1000000)|it_num }}M</td>{% else %}<th scope="row">Valore di mercato</th><td class="r">—</td>{% endif %}</tr>
     <tr><th scope="row">Presenze {{ p.season }}</th><td>{{ p.matches }}</td><th scope="row">Minuti</th><td class="r">{{ p.minutes|it_num }}</td></tr>
     <tr><th scope="row">Media voto</th><td>{% if p.rating is not none %}{{ p.rating|dec }}{% else %}—{% endif %}</td><th scope="row">Campionato</th><td class="r">{{ league_name or '—' }}</td></tr>
-  </table>
+  </table></div>
   {% if p.unavail %}
   <p style="margin:10px 0 0"><span class="pill p">⚠ {{ p.unavail.type }}</span>{% if p.unavail.return %} <span class="small mut">rientro previsto: {{ p.unavail.return }}</span>{% endif %}</p>
   {% endif %}
@@ -35,13 +35,13 @@
       le rate per 90, gli <b>eventi</b> (tentativi di passaggio, duelli) per le percentuali. Media, peso e numerosità del
       gruppo sono nel tooltip di ogni riga; per una percentuale il tooltip dice anche la frazione esatta
       (es. «58 passaggi riusciti su 65 tentati»), perché una quota non è una rata per 90 minuti.</p>
-    <table>
+    <div class="tablewrap"><table>
       <tr><th scope="col">Statistica</th><th scope="col" class="r">Totale</th><th scope="col" class="r">Per 90′</th></tr>
       {% for row in p.stats_table %}
         {% if row.header %}<tr><th scope="colgroup" colspan="3" style="padding-top:10px">{{ row.group }}</th></tr>
         {% else %}<tr><td>{{ row.label }}{% if row.est_visibile %} <span class="mut small" title="{{ row.est_note }}">{% if row.insufficient %}◇{% else %}◎{% endif %}</span>{% endif %}</td><td class="r">{{ row.total }}</td><td class="r">{% if row.insufficient %}<span class="mut" title="{{ row.per90_titolo }}">◇ {{ row.est_s }}</span>{% elif row.per90 %}<span title="{{ row.per90_titolo }}">{{ row.per90 }}{% if row.est_visibile %} <span class="mut small" style="font-size:10.5px">◎ {{ row.est_s }}</span>{% endif %}</span>{% else %}—{% endif %}</td></tr>{% endif %}
       {% endfor %}
-    </table>
+    </table></div>
   </div>
 
   <div class="card">

@@ -7,6 +7,8 @@ casa attuale) sono inchiodate da asserzioni e non da un controllo a occhio sul s
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -222,6 +224,97 @@ def test_favorite_track_record_bands_and_current_flag():
     assert [r["label"] for r in fr2["rows"] if r["current"]] == ["oltre il 75%"]
 
 
+def test_first_goal_clock_pubblica_distribuzione_osservata_e_banda():
+    """P2.3 (`docs/28` §3): la card «Quando arriva il primo gol» non è più di solo testo.
+
+    Il micro-visivo ha due righe: sopra la distribuzione **osservata** dei primi gol (quarti
+    d'ora, ricavata dagli stessi eventi della quota di 1° tempo), sotto la banda del **modello**
+    per questa partita. Qui si verificano i due pezzi separatamente: i conteggi devono chiudere
+    sul numero di partite in cui un gol è arrivato, e le posizioni della banda devono essere i
+    quartili del modello portati sulla scala 0–90 dell'asse.
+    """
+    rows = []
+    # 40 partite con il primo gol nel 1° quarto d'ora, 30 nel 3°, 20 nell'ultimo
+    for i in range(40):
+        rows.append({"type": "Goal", "minute": 7, "minute_added": None, "match_id": i})
+    for i in range(30):
+        rows.append({"type": "Goal", "minute": 38, "minute_added": None, "match_id": 100 + i})
+    for i in range(20):
+        rows.append({"type": "Goal", "minute": 80, "minute_added": None, "match_id": 200 + i})
+    # una partita senza gol: non entra nella distribuzione, ma conta per la quota «0-0»
+    rows.append({"type": "Shot", "minute": 12, "minute_added": None, "match_id": 999})
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.events = pd.DataFrame(rows)
+    pred = {"lambda_home": 1.5, "lambda_away": 1.5, "dc_rho": 0.0}
+    fg = ma.first_goal_clock(pred)
+    assert fg is not None
+    assert fg["n_first"] == 90, "solo le partite con almeno un gol entrano nella distribuzione"
+    per100 = [b["per100"] for b in fg["bins"]]
+    assert per100 == [44, 0, 33, 0, 0, 22], per100          # 40/90, 30/90, 20/90 arrotondati
+    assert [b["h"] for b in fg["bins"]] == [100, 0, 75, 0, 0, 50]
+    assert sum(b["n"] for b in fg["bins"]) == fg["n_first"]
+    assert fg["senza_gol_oss"] == pytest.approx(1 / 91)     # una partita su 91 senza gol
+    # la banda: i quartili del modello in percentuale dei 90', non in minuti. La quota di
+    # 1° tempo è quella MISURATA su questi eventi (70 gol su 90 entro il 45'), non un'ipotesi
+    lam = 3.0
+    s_ev = 70 / 90
+    r1, r2 = s_ev * lam / 45, (1 - s_ev) * lam / 45
+    s_ht = np.exp(-r1 * 45)
+    for chiave, p_ in (("from", 0.25), ("med", 0.50), ("to", 0.75)):
+        tail = 1.0 - p_
+        t = (-np.log(tail) / r1) if tail >= s_ht else 45.0 + (-np.log(tail) - r1 * 45) / r2
+        assert fg["band"][chiave] == pytest.approx(100.0 * t / 90.0, abs=0.01), chiave
+    assert fg["band"]["from"] < fg["band"]["med"] < fg["band"]["to"]
+    assert not fg["band"]["q1_oltre"]
+
+
+def test_first_goal_clock_banda_oltre_il_90_va_a_fondo_scala():
+    """Un quartile oltre il fischio finale non inventa un minuto: la banda finisce a 100%."""
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    # 40 primi gol nel 1° tempo e 20 nel 2°: la quota di 1° tempo è 2/3, e con un λ totale di
+    # 0,4 il 3° quartile cade oltre il fischio finale (il caso «dopo il 90'»)
+    righe = ([{"type": "Goal", "minute": 30, "minute_added": None, "match_id": i} for i in range(40)] +
+             [{"type": "Goal", "minute": 60, "minute_added": None, "match_id": 100 + i}
+              for i in range(20)])
+    ma.events = pd.DataFrame(righe)
+    fg = ma.first_goal_clock({"lambda_home": 0.2, "lambda_away": 0.2, "dc_rho": 0.0})
+    assert fg is not None
+    assert fg["q"][2][1] is None and fg["band"]["q3_oltre"] and fg["band"]["to"] == 100.0
+
+
+def test_league_goals_percentile_la_barra_e_un_extra_non_la_card():
+    """Se la scala di lega non ha spazio la card resta e la barra no (P2.3).
+
+    Le 121 partite NED1 del test qui sotto stanno tutte a 3,4: la frase ha senso, il grafico
+    no. Il campo `viz` vale None e il template non disegna nulla — la card non sparisce mai
+    per colpa di un grafico (sarebbe una differenza di struttura fra due schede).
+    """
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.preds = pd.DataFrame([
+        {"match_id": 1000 + i, "league_key": "NED1", "lambda_home": 1.7, "lambda_away": 1.7,
+         "made_at": "2026-01-01"} for i in range(121)])
+    lp = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 1.7,
+                                     "lambda_away": 1.7, "dc_rho": 0.0})
+    assert lp is not None and lp["viz"] is None
+    # con una distribuzione vera la barra c'è, e il segno sta sul percentile pubblicato
+    righe = [dict(r) for r in ma.preds.to_dict("records")]
+    for i in range(40):
+        righe.append({"match_id": 5000 + i, "league_key": "NED1", "lambda_home": 1.0 + i / 20,
+                      "lambda_away": 1.0 + i / 20, "made_at": "2026-01-01"})
+    ma.preds = pd.DataFrame(righe)
+    lp = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 2.0,
+                                     "lambda_away": 1.0, "dc_rho": 0.0})
+    assert lp is not None and lp["viz"] is not None
+    assert 0.0 <= lp["viz"]["pct"] <= 100.0
+    assert lp["viz"]["lo"] <= lp["viz"]["hi"]
+    # la posizione è monotona nei gol attesi: la stessa scala, un λ più basso sta più a sinistra
+    lp_basso = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 1.0,
+                                           "lambda_away": 1.0, "dc_rho": 0.0})
+    lp_alto = ma.league_goals_percentile({"league_key": "NED1", "lambda_home": 3.0,
+                                          "lambda_away": 3.0, "dc_rho": 0.0})
+    assert lp_basso["viz"]["pct"] < lp["viz"]["pct"] < lp_alto["viz"]["pct"]
+
+
 def test_league_goals_percentile_uses_same_league_distribution_only():
     """Il percentile dei gol attesi conta SOLO le partite dello stesso campionato:
     3,4 gol attesi può essere «tanto» in una lega e «poco» in NED1 — il lettore deve
@@ -289,15 +382,42 @@ def test_narrative_reports_form_and_absences_weight_in_every_league(tmp_path):
     """Forma sempre presente (non solo se estrema) e «giocatore di peso» = titolare abituale
     (criterio interno alla squadra, uguale in tutte e 7 le leghe — docs/20 §13)."""
     ma = MatchAnalysis(_store(tmp_path))
-    narr = ma.build(100)["narrative"]
-    assert "Alpha: 5 punti nelle ultime 4 (VNPN) — andamento nella norma." in narr
-    assert "Beta: 5 punti nelle ultime 4 (PNVN) — andamento nella norma." in narr
+    ctx = ma.build(100)
+    narr = ctx["narrative"]
+    # P2.5 (`docs/28` §3): la riga tiene i numeri e il giudizio, non ripete più la serie per
+    # lettere — quella sta nel badge in testa alla scheda (`home_form_badge`/`away_form_badge`)
+    assert "Alpha: 5 punti nelle ultime 4 — andamento nella norma." in narr
+    assert "Beta: 5 punti nelle ultime 4 — andamento nella norma." in narr
+    assert not any("(VNPN)" in s or "(PNVN)" in s for s in narr)
+    # il badge della forma: serie, punti e finestra dichiarata, per entrambe le squadre
+    for lato, seq, pt in (("home", "VNPN", 5), ("away", "PNVN", 5)):
+        b = ctx[f"{lato}_form_badge"]
+        assert b["n"] == 4 and b["points"] == pt and b["sequence"] == seq
     # Ala A (135' su 855 di squadra → titolare, min >= metà media) pesa anche se vale
     # 12M (sotto la vecchia soglia assoluta di 15M); Esordiente A non pesa.
     # P2.4 (docs/19 §2.8): la frase è stata riscritta in italiano corrente — il criterio
     # di «peso» (titolare abituale) non cambia, cambia solo come viene detto.
-    assert any(s.startswith("Alpha deve rinunciare a 2 assenti, uno dei quali titolare abituale:")
-               for s in narr), narr
+    # P2.2: la frase tiene il peso e non ripete più i nomi (sono nella tabella dell'infermeria)
+    frase_assenze = next(s for s in narr if "deve rinunciare a" in s)
+    assert frase_assenze.startswith("Alpha deve rinunciare a 2 assenti, uno dei quali titolare abituale —")
+    assert "Ala A" not in frase_assenze and "Esordiente A" not in frase_assenze
+
+
+def test_badge_della_forma_solo_con_almeno_tre_gare(tmp_path):
+    """P2.5 (`docs/28` §3): il badge della forma in testa alla scheda è la stessa serie della
+    narrativa, con la stessa soglia: da tre gare giocate in su (due pallini non sono una forma).
+
+    Il badge è un dato del contesto (`home_form_badge` / `away_form_badge`), non una stringa
+    scritta a mano: serie, punti e numerosità arrivano dal calendario, così il template può
+    ripeterli nella descrizione per chi usa un lettore di schermo senza ricalcolarli.
+    """
+    st = _store(tmp_path)
+    # due sole gare giocate per squadra: sotto la soglia, niente badge (e niente riga)
+    fx = _fixtures()
+    st.write("fixtures", fx[fx.match_id.isin([100, 3, 4])])
+    ctx = MatchAnalysis(st).build(100)
+    assert ctx["home_form_badge"] is None and ctx["away_form_badge"] is None
+    assert not any("punti nelle ultime" in s for s in ctx["narrative"])
 
 
 def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
@@ -739,19 +859,32 @@ def test_narrative_xpts_positivo_resta_esplicito():
 
 
 @pytest.mark.parametrize(("n", "titolari"), [(1, 1), (1, 0), (2, 1), (3, 3), (5, 2)])
-def test_narrative_assenze_e_una_frase_non_un_elenco_di_dati(n, titolari):
-    """«Assenze Inter: 3 — A, B, C» era un record, non una frase (1/2/5 indisponibili)."""
+def test_narrative_assenze_non_ripete_i_nomi_della_tabella(n, titolari):
+    """P2.2 (`docs/28` §3): i nomi degli assenti stanno in un posto solo, la tabella.
+
+    Prima la frase ne elencava fino a quattro (con la congiunzione italiana e il troncamento a
+    «…»): le stesse persone tornavano nella tabella dell'infermeria con minuti, gol+assist,
+    xG+xA per 90, motivo e rientro — più informazione di quanta ne desse la frase. Adesso la
+    frase tiene il *peso* (quanti, quanti titolari abituali) e manda alla tabella, che è la
+    fonte unica; l'ancora del link la mette il template (test_site).
+    """
     un = [{"name": f"G{i}", "value": 20_000_000} for i in range(1, n + 1)]
     ctx = {"home_name": "Inter", "away_name": "Milan", "home_unavailable": un,
            "home_absences": {"has_stats": True, "players": [{"starter": True}] * titolari}}
     frase = next(s for s in MatchAnalysis.narrative(ctx) if "rinunciare" in s)
     assert not frase.startswith("Assenze "), "tornato il formato elenco-dati"
-    assert " — " not in frase, "il trattino da record è tornato nella frase"
-    # con più nomi ci deve essere la congiunzione, non solo virgole
-    if min(n, 4) > 1:
-        assert " e G" in frase, f"manca la congiunzione fra i nomi: {frase}"
-    # il troncamento resta dichiarato
-    assert ("…" in frase) == (n > 4)
+    # il trattino da record («Napoli: 3 — A, B, C») resta vietato: dopo il numero non si
+    # elencano nomi. Il trattino come segno di prosa («… titolare abituale — nomi e impatto in
+    # «Indisponibili»») è un'altra cosa, e adesso è quello che separa il peso dal rimando.
+    assert not re.search(r"\d\s+—\s+[A-ZÀ-Ý]", frase), frase
+    # nessun nome nella frase: la tabella li elenca tutti, con l'impatto di ognuno
+    assert not any(f"G{i}" in frase for i in range(1, n + 1)), frase
+    assert frase.endswith("— nomi e impatto in «Indisponibili»."), frase
+    # il peso resta dichiarato: quanti sono e quanti titolari abituali
+    atteso = f"{n} assente" if n == 1 else f"{n} assenti"
+    assert atteso in frase
+    if titolari:
+        assert "titolare abituale" in frase or "titolari abituali" in frase
 
 
 def test_narrative_assenza_singola_non_dice_uno_dei_quali():

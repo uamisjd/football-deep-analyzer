@@ -65,7 +65,6 @@ jobs:
 
       - name: Run giornaliero (collect → predict → backtest → simulate → build)
         env:
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           PYTHONUNBUFFERED: "1"
         run: |
           set -euo pipefail   # senza pipefail il fallimento di `fda daily` veniva mascherato dalla pipe
@@ -90,6 +89,29 @@ jobs:
         run: |
           set -euo pipefail
           python scripts/verify_site.py --site site --data data/processed 2>&1 | tee verify.log | tail -20
+
+      # Parità fra le schede pre-partita (direttiva utente 2026-09-19: «ogni partita deve avere
+      # la stessa alta qualità e quantità»): struttura (gli stessi id di card), indice (le stesse
+      # voci) e quantità di testo devono coincidere su **ogni** scheda pre-partita. Una guardia
+      # che fa sparire una card su una pagina sola passava tutti i gate senza essere vista
+      # («Clima del club», 59 schede su 60, scoperta misurando): ora ferma il run prima del
+      # commit dei dati.
+      - name: Parità delle schede pre-partita
+        run: |
+          set -euo pipefail
+          python scripts/parita_schede.py site 2>&1 | tee parita.log | tail -20
+
+      # Resa a 375 px (P2.8 di docs/19, docs/39): nessun browser — né qui né nel sandbox — quindi
+      # il layout si misura dove è dichiarato. `resa_375.py` legge il CSS pubblicato, prende le
+      # metriche dai .woff2 **del sito** (istanza variabile sul peso giusto) e calcola, su ogni
+      # pagina pubblicata, la larghezza minima di ogni tabella, l'andata a capo del badge della
+      # forma e la larghezza delle etichette dei grafici. Esce 1 se qualcosa non entra: prima di
+      # questo gate 4.929 tabelle facevano scorrere la pagina di lato su un telefono.
+      # Richiede fontTools (extra "dev": `pip install -e ".[dev]"`).
+      - name: Resa a 375 px (resa_375)
+        run: |
+          set -euo pipefail
+          python -m scripts.resa_375 2>&1 | tee resa375.log | tail -20
 
       - name: Commit dei dati aggiornati
         run: |

@@ -12,7 +12,7 @@ Misura, sulle pagine generate in ``site/partite/*.html`` e sui Parquet di
 6. Fatti rilevanti            → (censimento presenza, già coperta da verify_site)
 7. Come arrivano              → righe «punti vs attesi» con tendenza in direzione opposta
 8. Confronto di stagione      → (coperto da verify_site: valori identici alla classifica)
-9. Contesto                   → etichetta della coda della matrice («almeno una delle due squadre»)
+9. Arbitro e meteo / Precedenti → etichetta della coda della matrice («almeno una delle due squadre»)
 10. Verifica approfondita     → nessun numero di controlli scritto a mano; gerarchia h2/h3
 
 Sintesi della riga di testa (hero): margine coerente con le percentuali stampate.
