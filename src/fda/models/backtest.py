@@ -243,7 +243,12 @@ def backtest_summary(df: pd.DataFrame,
         out["rho_shift"] = float(pd.to_numeric(df["rho_shift"], errors="coerce").iloc[0])
     if "model_version" in df.columns:
         mix = df["model_version"].astype(str).value_counts()
-        out["model_versions"] = " · ".join(f"{k}: {v} gare" for k, v in mix.items())
+        # conteggio con il separatore italiano delle migliaia, come ogni altro numero pubblicato:
+        # il campione del backtest ha superato 1.000 gare e la stringa arriva tale e quale in
+        # `accuratezza.html` (l'invariante [14] di verify_site ora legge tutto il sito, docs/41).
+        # `it_thousands` sta in `fda.site.build`, che dipende da questo modulo: si formatta qui.
+        out["model_versions"] = " · ".join(f"{k}: {int(v):,} gare".replace(",", ".")
+                                           for k, v in mix.items())
     return out
 
 

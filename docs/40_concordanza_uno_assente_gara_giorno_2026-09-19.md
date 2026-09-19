@@ -189,6 +189,11 @@ sequenza. La correzione è una riga (`[sid for sid, _ in RADAR.get(pos_int, [])]
 l'ordine dichiarato in `RADAR`), ma **non è di questo hotfix**: qui si sblocca il daily, e un
 diff che tocca 2.074 pagine ne nasconderebbe quattordici. Resta come punto aperto (§8).
 
+> **Chiuso il 2026-09-19** (sessione `arena/01a0ba12`, [`docs/41`](41_verifica_autoaggiornamento_e_coda_2026-09-19.md)
+> §3.4): la riga è diventata `percentile_ids()` in `players.py`, l'ordine è quello dichiarato in
+> `RADAR` + `PCT_EXTRA` e un test lo esegue in quattro processi con `PYTHONHASHSEED` 0/1/2/7
+> pretendendo un'unica sequenza (prima: tre sequenze diverse su tre seed, riprodotto).
+
 ## 6. Esaminati e **non** toccati, con la guardia che li protegge
 
 Censimento completo dei contatori interpolati nei generatori di testo (`src/fda/site/*.py`)
@@ -259,6 +264,13 @@ misurate e non voglio che si perdano.
    di oggi, con un altro invariante. Correzione da tre righe (`|it_num`), output identico
    finché restano sotto 1.000.
 
+> **Entrambi chiusi il 2026-09-19** (sessione `arena/01a0ba12`,
+> [`docs/41`](41_verifica_autoaggiornamento_e_coda_2026-09-19.md) §3.2 e §3.3): `[14]` ora gira su
+> **tutte** le 4.137 pagine del sito e legge anche il sostantivo «gol» (prima: 375 pagine, solo
+> `partite/`), e i tre conteggi passano da `it_num` insieme a `composizione`, alla colonna
+> «mercato» e a `model_versions`. Misura dopo la correzione: **0** pagine che violano `[14]`
+> esteso, prima erano **165**.
+
 ## 8. Verifiche
 
 | controllo | esito |
@@ -279,7 +291,11 @@ pagine **e** sugli attributi — il test `test_verify_site_content_checks` è st
 dimostrare che intercetta `1 assenti`, `1 titolari`, `1 giocatori`, `1 partite` e `1 giorni`
 sia nel testo sia in un `aria-label`, e che `1 gara finita` **non** è un problema — e (b) la
 build prima/dopo identica (§5). Un test di render con `played = 1` richiederebbe una fixture
-di build completa: resta un punto aperto, dichiarato come tale.
+di build completa: resta un punto aperto, dichiarato come tale. **Chiuso il 2026-09-19**
+(sessione `arena/01a0ba12`, `docs/41` §3.9): `tests/test_numeri_pubblicati.py` costruisce
+`accuratezza.html` sullo seed dei test di sito — che ha **una** gara valutata — e verifica la
+concordanza («1 gara valutata», non «1 gare»), la cardinalità nella riga «Tutti» e il rapporto
+`(k/1)` della calibrazione.
 
 I numeri di `verify_site` e `parita_schede` dipendono dai dati: qui sono calcolati sui
 Parquet versionati su `main`, non su quelli raccolti dai due run rossi (che il gate ha
@@ -299,10 +315,10 @@ fermato prima del commit). Con i dati del run il totale dei controlli sarà dive
    assente**, ≈ 0,7 xG+xA a partita in meno» e «Bologna deve rinunciare a **1 assente**»;
    col contatore a 3 il plurale resta corretto («Torino … **3 assenti**, di cui 1 titolare
    abituale»). I tre run rossi (`35432745402`, `35438804509`, `35446188137`) sono chiusi.
-2. Punti aperti dichiarati in questo documento, da fare in un giro proprio:
-   l'ordine non deterministico delle card «Percentili di lega» (`players.py:594`, §5.1);
-   la copertura di [14] limitata a `partite/` e i tre conteggi senza `it_num` (§7);
-   il test di render coi contatori a 1 (§8).
-3. `docs/STATO.md` chiude il giro a ~115 kB con 17 giri (questo incluso): sopra la soglia degli ~80 kB della regola A5,
-   l'archiviazione dei giri vecchi è da fare (non in questa PR, per non allargare il diff di
-   un hotfix).
+2. ~~Punti aperti dichiarati in questo documento, da fare in un giro proprio~~ — **tutti e tre
+   chiusi il 2026-09-19** (sessione `arena/01a0ba12`, `docs/41` §3.2-§3.4 e §3.9): l'ordine non
+   deterministico delle card «Percentili di lega» (§5.1), la copertura di [14] limitata a
+   `partite/` e i tre conteggi senza `it_num` (§7), il test di render coi contatori a 1 (§8).
+3. ~~`docs/STATO.md` sopra la soglia degli ~80 kB della regola A5~~ — **archiviazione fatta il
+   2026-09-19** (`docs/41` §3.8): 118.900 → **61.422 byte**, i giri 30-45 in
+   `STATO_archivio_2026-09-19.md`, verifica riga per riga senza perdite.
