@@ -297,6 +297,6 @@ fermato prima del commit). Con i dati del run il totale dei controlli sarà dive
    l'ordine non deterministico delle card «Percentili di lega» (`players.py:594`, §5.1);
    la copertura di [14] limitata a `partite/` e i tre conteggi senza `it_num` (§7);
    il test di render coi contatori a 1 (§8).
-3. `docs/STATO.md` è a 104 kB con 16 giri: sopra la soglia degli ~80 kB della regola A5,
+3. `docs/STATO.md` è a 111 kB con 17 giri (questo incluso): sopra la soglia degli ~80 kB della regola A5,
    l'archiviazione dei giri vecchi è da fare (non in questa PR, per non allargare il diff di
    un hotfix).
