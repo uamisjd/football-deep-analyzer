@@ -73,9 +73,26 @@ a 1,00).
 
 | # | voce | misura di oggi |
 |---|---|---|
-| **P2.7** | Paginazione/lazy-loading di `prossime.html` | la soglia dichiarata in `docs/19` («se il calendario cresce oltre ~250 card») è **superata di ~5×**: **1.362** righe-calendario in **8** mesi (`<details class="cal-month">` da 2026-09 a 2027-05) dentro una pagina di **1.287 kB** — la più pesante del sito, 42× la media (30,6 kB) |
+| **P2.7** | Paginazione/lazy-loading di `prossime.html` | **soglia NON raggiunta** (mia misura del 19/09 corretta il 20/09, vedi §4.1): la soglia di `docs/19` («oltre ~250 card») riguarda la **finestra dettagliata**, che oggi ha **29** card; le **1.988** righe compatte stanno in 8 `<details class="cal-month">` (solo il primo aperto) e sono un'**eccezione dichiarata** in `verify_site` (`PAGINE_FUORI_TETTO = {"prossime.html": 1800}`): la pagina pesa **1.240 kB**, il **69%** del suo tetto |
 | **P2.4** | Riscrittura delle 3 frasi-macchina di `narrative()` | da verificare: le tre forme censite nel 2026-09-14 non compaiono nelle schede ricostruite oggi (grep su `partite/*.html` → 0 occorrenze). Serve rileggere `narrative()` prima di dichiararla chiusa o aperta |
 | **P2.8** | Lighthouse (accessibilità/performance/best practice) | **fuori portata dal sandbox**: serve un runner con Chrome (regola B6) |
+
+### 4.1 Correzione del 20/09 (mia misura sbagliata, registrata per traccia)
+
+In questo documento avevo scritto che la soglia di `docs/19` P2.7 («se il calendario cresce oltre
+~250 card») era «superata di ~5×», contando **1.362** righe. Ricontrollando il 20/09 con il
+calendario ricostruito, la misura era sbagliata in due modi:
+
+- le righe non sono 1.362 ma **1.988** (contavo solo le due classi `cal-fav-h`/`cal-fav-a`, non
+  tutte le righe), e soprattutto
+- **le righe compatte non sono la grandezza della soglia**: la soglia riguarda la *finestra
+  dettagliata*, che oggi pubblica **29** card (contro ~250).
+
+Le righe compatte sono inoltre un'eccezione **dichiarata** nel verificatore:
+`PAGINE_FUORI_TETTO = {"prossime.html": 1800}` (`verify_site.py:350`), perché il calendario di
+stagione sta in pagina di proposito, dentro 8 `<details class="cal-month">` di cui solo il primo
+aperto. La pagina pesa **1.286.643 byte (1.240 kB)**, il **69%** di quel tetto. Conclusione
+corretta: **P2.7 non è giustificata oggi**; resta un miglioramento rinviabile.
 
 ---
 
@@ -92,7 +109,7 @@ Nessuno di questi controlli era in un documento: sono stati fatti sul sito appen
 - **CSS esterno confermato (P0.5 chiuso, non solo annunciato).** **0** blocchi `<style>` inline su
   4.140 pagine (0 byte); `assets/site.css` **48.043** byte, `assets/fonts/fonts.css` **12.140**
   byte, 9 woff2.
-- **Peso.** Media 30,6 kB/pagina; pagine più pesanti: `prossime.html` **1.287 kB**,
+- **Peso.** Media 30,6 kB/pagina; pagine più pesanti: `prossime.html` **1.240 kB** (1.286.643 byte),
   `risultati.html` 382 kB, `giocatori/ESP1.html` 232 kB. Scheda partita tipo: 101 kB
   (tabelle 38%, SVG 5%, script 2%).
 - **Dati versionati a `HEAD`.** `predictions` 2.152 righe con `made_at` massimo **18:02:15Z** di
@@ -120,9 +137,10 @@ Nessuno di questi controlli era in un documento: sono stati fatti sul sito appen
    finale (dopo il commit dei dati e la preparazione di Pages, così il sito non si tocca),
    verificare che la issue si apra, poi chiuderla con il run verde successivo. Costo: ~17 minuti
    di runner e una issue di prova.
-2. **P2.7 — alleggerire `prossime.html`** (1.287 kB, 1.362 righe): `content-visibility` per mese
-   o paginazione per giorno. Misurabile offline con `resa_375` e `verify_site`, non cambia una
-   parola dei contenuti.
+2. **P2.7 — `prossime.html`** (1.240 kB, 1.988 righe): **non urgente** — la soglia della coda è
+   sulle card dettagliate (29 oggi contro ~250) e la pagina sta dentro il tetto che il verificatore
+   le assegna per scelta dichiarata (1.800 kB). Intervento utile ma rinviabile: `content-visibility`
+   sui mesi chiusi, nessuna parola dei contenuti cambiata.
 3. **Nuovo audit mirato** su un'area non ancora passata al setaccio: le schede giocatore
    (`giocatori/`: 7 tabelloni + **7.498** schede) o la pagina *Accuratezza* o *Stagione*. È il
    modo con cui il progetto ha trovato finora ogni difetto sostanziale.
