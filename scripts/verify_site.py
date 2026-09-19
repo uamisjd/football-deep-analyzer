@@ -2490,6 +2490,33 @@ def check_fonti(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# ---- ogni tabella dentro un contenitore che scorre (P2.8, docs/39) ------------------------------
+# A 375 px una tabella più larga della card faceva scorrere **la pagina** di lato: succedeva su
+# 4.929 tabelle (la fascia storica da 6 colonne chiede 507 px in 295 disponibili). Il rimedio è
+# `.tablewrap` (`overflow-x:auto`): la tabella scorre dentro la card e la pagina resta ferma. La
+# regola è strutturale — una tabella senza contenitore è un difetto su un telefono, e non si vede
+# da fuori perché su desktop la tabella entra comunque. Qui si controlla su tutte le pagine
+# pubblicate; la misura vera delle larghezze sta in `scripts/resa_375.py`.
+def check_tavole(site: Path) -> tuple[list[str], int]:
+    """[36] ogni `<table>` pubblicata sta dentro un `.tablewrap`, una volta sola."""
+    fails: list[str] = []
+    checks = 0
+    for pg in sorted(site.rglob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        n_tab = html.count("<table")
+        n_wrap = html.count('class="tablewrap"')
+        checks += n_tab
+        rel = pg.relative_to(site)
+        if n_wrap != n_tab:
+            fails.append(f"{rel}: {n_tab} tabelle ma {n_wrap} contenitori .tablewrap")
+            continue
+        for m in re.finditer(r"<table\b", html):
+            if html.rfind('class="tablewrap"', 0, m.start()) < html.rfind("</table>", 0, m.start()):
+                fails.append(f"{rel}: <table> fuori da .tablewrap (scorre la pagina, non la card)")
+    print(f"[36] tabelle dentro .tablewrap verificate: {checks}")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -2527,6 +2554,9 @@ def main() -> int:
     fonti, fonti_checks = check_fonti(site)
     fails += fonti
     checks += fonti_checks
+    tavole, tavole_checks = check_tavole(site)
+    fails += tavole
+    checks += tavole_checks
     if not args.content_only:
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric

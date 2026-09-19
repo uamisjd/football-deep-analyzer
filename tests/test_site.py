@@ -1605,3 +1605,37 @@ def test_stato_fonti_senza_sonda_dichiara_che_non_e_verificata(tmp_path):
     h = (out / "stato.html").read_text(encoding="utf-8")
     assert "nessuna registrazione" in h and "non verificato" in h
     st.close()
+
+
+def test_p28_ogni_tabella_in_un_contenitore_e_le_regole_mobili(tmp_path):
+    """P2.8 (`docs/19` §3, `docs/39`): a 375 px la pagina non deve scorrere di lato.
+
+    Una `<table>` più larga della card fa scorrere **la pagina** su un telefono: succedeva su
+    4.929 tabelle, e non si vede da desktop perché lì la tabella entra. Il rimedio è il
+    contenitore `.tablewrap` (`overflow-x:auto`). Qui si controlla la struttura su ogni pagina
+    del build di prova; la misura delle larghezze sta in `scripts/resa_375.py`, che gira in CI.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build()
+
+    pagine = sorted(out.rglob("*.html"))
+    assert len(pagine) > 3
+    for pg in pagine:
+        html = pg.read_text(encoding="utf-8")
+        assert html.count('class="tablewrap"') == html.count("<table"), pg.name
+        for m in re.finditer(r"<table\b", html):
+            assert html.rfind('class="tablewrap"', 0, m.start()) > html.rfind(
+                "</table>", 0, m.start()), f"{pg.name}: <table> fuori da .tablewrap"
+
+    # le regole che tengono il badge della forma (P2.5) su **una** riga a 375 px, e la card più
+    # larga sul telefono (P2.8): se spariscono, il gate `resa_375` lo dice — ma un test locale lo
+    # dice in due secondi. Sono regole dichiarate a mano: il test le cita alla lettera apposta.
+    css = (Path(__file__).resolve().parent.parent
+           / "src" / "fda" / "site" / "assets" / "site.css").read_text(encoding="utf-8")
+    assert "@media (max-width:420px)" in css
+    assert ".match-hero-team .form-line .fact-label{display:none}" in css
+    assert ".match-hero-team .form-dot{width:13px;height:13px}" in css
+    assert ".card{padding:16px 14px}" in css
+    assert ".gb .x{font-size:9.5px}" in css
+    st.close()

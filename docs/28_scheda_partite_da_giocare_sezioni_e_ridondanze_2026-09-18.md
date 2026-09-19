@@ -35,9 +35,10 @@ Il parser individua come **card** ogni elemento di flusso (`div/section/details`
 `h2` e non ne contiene altri annidati: così una griglia (`#squadre`, `#contesto`) non viene contata
 due volte, e ogni blocco titolato appare una volta sola.
 
-**Limiti dichiarati.** Dal sandbox non c'è browser: resa visiva, tempi di rendering e comportamento
-a 375 px **non** sono misurati qui (restano il punto aperto P2.8/Lighthouse già noto). I giudizi di
-questa istruttoria sono sui contenuti e sulla struttura, non sul pixel.
+**Limiti dichiarati.** Dal sandbox non c'è browser: resa visiva e tempi di rendering **non** sono
+misurati qui. Il comportamento a 375 px lo è dal 19/09/2026 (P2.8, `docs/39`): il layout si calcola
+dal CSS pubblicato con le metriche dei font del sito (`scripts/resa_375.py`). I giudizi di questa
+istruttoria restano sui contenuti e sulla struttura, non sul pixel.
 
 ---
 
@@ -317,6 +318,20 @@ quote di mercato (prova di morso: exit 1 con 4 problemi sulla build pre-fix). Ne
 
 ---
 
+### P2.8 — La resa a 375 px non era mai stata misurata ✅ APPLICATA il 2026-09-19
+
+La scheda pre-partita è pensata per essere letta in mano, e a 375 px non era mai stata guardata —
+il «non verificato» ereditato da `docs/19` §3. Fatta la misura, i difetti erano più grossi di
+quanto il punto aperto lasciasse intendere: **4.929 tabelle** facevano scorrere *la pagina* di lato
+(la fascia storica chiede 507 px in 295 disponibili), il badge della forma di P2.5 andava su due
+righe nella colonna della squadra (152 px in 114), le etichette del primo gol erano più larghe
+della loro colonna (51 px in 45): **5.899 problemi su 4.109 pagine** — tutte, nessuna esclusa.
+Rimedio: ogni tabella dentro un `.tablewrap` (16.085 su 4.125 pagine), card più larghe sul telefono
+(311 px utili invece di 295), badge della forma in una riga (103 px in 114) con l'etichetta «Forma»
+spenta sotto i 420 px, etichette dei grafici dentro la colonna. Adesso: **0 problemi**. Due
+guardie: l'invariante `[36]` di `verify_site` (tabella ↔ contenitore) e `scripts/resa_375.py`, che
+misura e gira in CI. Dettagli in `docs/39`.
+
 ## 3. Ridondanze e ripetizioni: che cosa c'è davvero
 
 Mappa dei dati ripetuti (sedi strutturali, dalla struttura della pagina; conteggi dallo script):
@@ -353,7 +368,7 @@ etichette V/N/P; i tooltip di accessibilità su barre e matrici (invarianti di `
 | 2 | P1.2 hero senza xG/PPDA, un solo posto per dato | mediana da 3 card a 1-2 |
 | 3 | P1.4 «Verifica approfondita» chiusa, summary con i due numeri | 1.883 car. fuori dal primo schermo |
 | 4 | P1.3 nav con ancore reali | 6 blocchi pesanti raggiungibili |
-| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 ✅ · P2.6 ✅ (legenda unica, Contesto, assenze, micro-visivi, badge forma, quote non pubblicate) | una alla volta, con la misura rifatta e il gate `parita_schede` |
+| 5 | P2.1 ✅ · P2.4 ✅ · P2.2 ✅ · P2.3 ✅ · P2.5 ✅ · P2.6 ✅ · P2.8 ✅ (legenda unica, Contesto, assenze, micro-visivi, badge forma, quote non pubblicate, resa a 375 px) | una alla volta, con la misura rifatta e i gate `parita_schede` e `resa_375` |
 
 Ogni intervento va rifatto passare da `fda build` + `verify_site.py` + `scripts/audit_match_sections.py`
 e rimisurato con `scripts/prematch_sections.py`: la quota di testo per sezione è il numero che dice
@@ -369,4 +384,4 @@ card «Vita del club»), [`docs/30`](30_un_dato_in_un_posto_2026-09-18.md) (dato
 in 3 → 1 altri riquadri; −357 caratteri visibili per scheda), [`docs/31`](31_verifica_approfondita_chiusa_2026-09-18.md)
 (verifica chiusa; −1.767 caratteri visibili per scheda) e [`docs/32`](32_indice_della_scheda_2026-09-18.md)
 (indice 4 → 11 voci, tutte vere; 0 → 6 card pesanti raggiungibili). Bilancio del turno: il testo
-visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). Applicata anche **P2.5** (`docs/37`: il badge della forma in testa alla scheda su tutte le 60 schede pre-partita, 120 badge; la serie non si ricopia più nella narrativa, 111 → 0) e **P2.6** (`docs/38`: le quote di mercato **non si pubblicano** — decisione, non difetto: tolte la voce «The Odds API» dall'elenco delle fonti, la chiave `ODDS_API_KEY` da README/config/workflow e la tabella `odds_snapshots` dallo schema; il confronto col mercato resta offline sulle quote di chiusura storiche; invariante [35] su 4.125 pagine). **In coda**, ultima voce aperta: **P2.8** (rese in browser: badge, micro-visivi, indice, tendina della verifica). ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), ~~P2.5~~ (badge forma nell'hero), ~~P2.6~~ (quote: decisione = non si pubblicano).
+visibile per scheda pre-partita scende da **22.520 a 18.807 caratteri (−16,5%)** (sulle 60 schede presenti in tutte le build: **22.905 → 18.987, −17,1%**). Il 2026-09-19, sulla coda **P2**: applicate **P2.1** (`docs/33`: legenda unica della stima stabilizzata, 4 → 1 occorrenze) e **P2.4** (`docs/34`: «Contesto» diviso in «Arbitro e meteo» e «Precedenti», indice 11 → 12 voci, «Contesto» 2 → 0 occorrenze). Applicata anche **P2.2** (`docs/35`: nomi degli assenti 129 → 0 nella frase, «Clima del club» 59/60 → 60/60, parità sotto gate con `scripts/parita_schede.py`) e **P2.3** (`docs/36`: le tre card di solo testo hanno il loro micro-visivo — barra della scala di lega, distribuzione osservata del primo gol con la banda del modello, fasce storiche «previsto → uscito» con l'IC 95%; disegni 0/60 → 60/60, nessun numero nuovo, parità intatta). Applicata anche **P2.5** (`docs/37`: il badge della forma in testa alla scheda su tutte le 60 schede pre-partita, 120 badge; la serie non si ricopia più nella narrativa, 111 → 0) e **P2.6** (`docs/38`: le quote di mercato **non si pubblicano** — decisione, non difetto: tolte la voce «The Odds API» dall'elenco delle fonti, la chiave `ODDS_API_KEY` da README/config/workflow e la tabella `odds_snapshots` dallo schema; il confronto col mercato resta offline sulle quote di chiusura storiche; invariante [35] su 4.125 pagine). Applicata infine **P2.8** (`docs/39`: la resa a 375 px misurata senza browser — 5.899 problemi su 4.109 pagine, tutte; ogni tabella dentro un `.tablewrap`, badge della forma in una riga, card più larghe sul telefono; invariante `[36]` e gate `resa_375` in CI). **La coda P2 è chiusa:** ~~P2.2~~ (assenze raccontate in quattro modi), ~~P2.3~~ (micro-visivi), ~~P2.5~~ (badge forma nell'hero), ~~P2.6~~ (quote: decisione = non si pubblicano), ~~P2.8~~ (resa a 375 px).

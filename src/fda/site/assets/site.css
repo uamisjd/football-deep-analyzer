@@ -592,3 +592,34 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius
   letter-spacing:.03em;text-transform:uppercase;margin-right:6px;vertical-align:1px}
 .news-list li{padding:7px 0;border-bottom:1px solid var(--line)}
 .news-list li:last-child{border-bottom:0}
+
+/* ---- P2.8 (docs/39): la resa a 375 px, misurata con `scripts/resa_375.py` ----
+   Non c'è un browser nel sandbox (e nemmeno in CI): la resa si misura sull'aritmetica del
+   layout dichiarato e sui font veri del sito. Le tre correzioni, ognuna con la sua misura
+   davanti (viewport 375 px, `main` −36 px → 339 px utili):
+   1. **card più larghe sul telefono.** Il padding 20/22 px per lato lasciava 295 px al
+      contenuto: a 14 px per lato ne lasciano 311. È lo spazio che manca alle tabelle più
+      fitte (le «Squadra» a 4 colonne stavano fra 337 e 398 px) e alle etichette dei grafici.
+      Le tabelle che non entrano comunque ora scorrono dentro `.tablewrap` invece di far
+      scorrere la pagina di lato (prima: 4.929 tabelle fuori da ogni contenitore).
+   2. **il badge della forma (P2.5) in una riga.** A 375 px la colonna della squadra è larga
+      114 px e il badge ne chiedeva 136-152: finiva su due righe con l'etichetta «Forma»
+      orfana sopra i pallini. Sotto i 420 px i pallini si stringono (13 px, gap 3) e
+      l'etichetta sparisce: la riga torna una sola. L'informazione non si perde — pallini e
+      «N pt» restano, e l'`aria-label` continua a dire «Forma di X: … nelle ultime 5
+      partite, N punti» per intero (per chi usa un lettore di schermo non cambia nulla).
+   3. **le etichette del primo gol (P2.3) dentro la loro colonna.** «46–60'» a 10 px è larga
+      51 px in una colonna da 45: le etichette si toccavano fra un quarto d'ora e l'altro.
+      Con la card più larga la colonna è 50 px; a 9,5 px l'etichetta più lunga ne misura 48. */
+@media (max-width:520px){
+  .card{padding:16px 14px}
+  .goalclock{gap:2px}
+  .gb .x{font-size:9.5px}
+}
+@media (max-width:420px){
+  .match-hero{padding:16px 12px}
+  .match-hero-team .form-line{gap:4px;margin-top:5px}
+  .match-hero-team .form-dots{gap:3px}
+  .match-hero-team .form-dot{width:13px;height:13px}
+  .match-hero-team .form-line .fact-label{display:none}
+}
