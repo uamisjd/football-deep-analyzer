@@ -137,11 +137,22 @@ Trovare un difetto di lingua ha fatto rileggere anche cosa la card dichiara sull
    dell'italiano. Inoltre la fonte è **sospesa** (`espn:NEWS`: HTTP 403 su tutte e 7 le leghe,
    0 richieste nei run recenti). Una fonte che non può essere pubblicata e non risponde non può
    stare in cima alla card: il footer ora dice entrambe le cose e rimanda a *Stato fonti*.
-2. **Feed diretto Sportmediaset.** Nell'ultimo run (17/09, 14:04) risponde **HTTP 404**
-   (`https://www.sportmediaset.mediaset.it/rss/calcio.xml`). **Da verificare al prossimo run**: nel
-   sandbox di lavoro non ho rete verso l'esterno, quindi non posso provare un URL alternativo senza
-   il rischio di scriverne uno inventato. Se il 404 continua, il feed va sostituito o tolto
-   (oggi restano ANSA e Sky Sport).
+2. **Feed diretto Sportmediaset — chiuso il 19/09/2026 con una misura, non con un'ipotesi.**
+   L'URL risponde con una **pagina HTML vuota** (`<!doctype html><html><head></head><body></body></html>`,
+   verificato il 19/09), non con un XML: il feed non esiste più. Un URL alternativo
+   (`mediasetinfinity.mediaset.it/sportmediaset/rss/calcio.xml`) risponde **403**. Ma la domanda
+   giusta era un'altra — **quanto costa?** Misurato su `news.parquet` (16.337 righe): Sportmediaset
+   ha **205** notizie e arrivano **tutte** da Google News, **0** dal feed diretto (l'ultima il 19/09
+   alle 12:02 UTC); Sky Sport 392, tutte da Google News; ANSA 377, di cui **94** dal feed diretto.
+   I feed diretti sono quindi un canale **ridondante**: quello morto non toglie una notizia. Il
+   difetto vero era un altro: la riga `news:NEWS` era **ERRORE** a ogni run, cioè una fonte che
+   consegnava 3.938 righe dichiarata guasta e un rosso permanente in cui un guasto **vero** di
+   Google News non si sarebbe più distinto. Corretto in `collect.py`: `news direct` entra in
+   `_WARN_NON_BLOCCANTE` (AVVISO col motivo pubblicato, come i 403 ESPN) e `as_status_rows` ora
+   richiede che **tutti** gli errori della fase siano non bloccanti — prima decideva il primo,
+   quindi un feed morto scritto per primo avrebbe mascherato da AVVISO un guasto vero. Due test in
+   `tests/test_diagnostica_fonti.py`. L'URL resta in configurazione: se Mediaset lo riapre, il feed
+   rientra da solo.
 
 ## 6. Verifiche
 
@@ -164,7 +175,7 @@ Trovare un difetto di lingua ha fatto rileggere anche cosa la card dichiara sull
    locale da scaricare in CI o un endpoint pubblico non ufficiale: **entrambe le strade vanno
    decise dall'utente**, perché toccano la promessa «nessun testo è inventato» — una traduzione non
    è invenzione, ma non è nemmeno il testo della fonte.
-2. **Feed Sportmediaset 404** (§5): da confermare al primo run utile.
+2. ~~**Feed Sportmediaset 404** (§5): da confermare al primo run utile~~ — **chiuso il 19/09/2026** (§5.2): il feed è morto (pagina HTML vuota), ma è ridondante — 205 notizie Sportmediaset arrivano tutte da Google News, 0 dal feed. Corretto il difetto vero: la riga `news:NEWS` era ERRORE a ogni run, ora è AVVISO col motivo.
 3. **PR #41**: titolo in inglese, corpo in italiano. Cosmetico, non toccato.
 
 ## 8. Regola aggiunta

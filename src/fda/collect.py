@@ -62,7 +62,19 @@ WEATHER_HORIZON_DAYS = 7
 NEWS_RETENTION_DAYS = 14
 
 # Errori di fonte che degradano senza bloccare il run: la fonte primaria copre il dato.
-_WARN_NON_BLOCCANTE = ("espn standings", "espn news", "espn scoreboard")
+#
+# ``news direct`` (i feed RSS della stampa italiana) entra il 2026-09-19 con una misura, non
+# per comodità. Il feed di Sportmediaset risponde con una pagina HTML vuota (verificato:
+# ``<!doctype html><html><head></head><body></body></html>``) e su *Stato fonti* la riga
+# ``news:NEWS`` era **ERRORE** a ogni run — ma l'archivio dice che i feed diretti sono un
+# canale ridondante: su 16.337 notizie, Sportmediaset ne ha 205 e arrivano **tutte** da
+# Google News (0 dal feed diretto, l'ultima il 19/09 alle 12:02 UTC); Sky Sport 392, tutte da
+# Google News; ANSA 377, di cui 94 dal feed diretto. Un feed diretto morto quindi non toglie
+# una notizia, e marcarlo ERRORE faceva due danni: la riga restava rossa per settimane (il
+# 404 è dichiarato aperto dal 17/09, `docs/25` §5.2) e un guasto **vero** di Google News non
+# si sarebbe più distinto da quel rosso permanente. Come per ESPN, il degrado coperto da
+# un'altra fonte è AVVISO: il motivo resta pubblicato, l'allarme torna a significare qualcosa.
+_WARN_NON_BLOCCANTE = ("espn standings", "espn news", "espn scoreboard", "news direct")
 
 # Versione dello snapshot per-partita. Va incrementata quando cambia il modo in cui le
 # tabelle per-partita vengono salvate: le partite finite salvate con una versione più
@@ -114,13 +126,20 @@ class CollectReport:
             # fonte: `startswith("espn")` avrebbe attribuito l'errore dello scoreboard alla riga
             # della classifica (e viceversa) appena una delle due andava bene e l'altra no.
             prefisso = self.error_prefix.get(src, src)
-            err = next((e for e in self.errors if e.startswith(prefisso)), None)
+            errori = [e for e in self.errors if e.startswith(prefisso)]
+            err = errori[0] if errori else None
             # Fonti il cui 403 è un degrado noto e già coperto da un'altra fonte: vengono
             # registrate come AVVISO, non come errore bloccante (ESPN standings 403 cronico,
             # coperto dalla classifica FotMob; ESPN news 403, coperto da Google News; ESPN
             # scoreboard 403 su 7/7 leghe — misurato nel run `35131980208`, docs/23 §5 — con
-            # gli eventi del giorno già coperti da FotMob).
-            warn = err is not None and err.startswith(_WARN_NON_BLOCCANTE)
+            # gli eventi del giorno già coperti da FotMob; `news direct`, i feed RSS della
+            # stampa italiana, coperti da Google News — misura in testa a questo modulo).
+            #
+            # **Tutti** gli errori della fase devono essere non bloccanti, non solo il primo:
+            # con `err.startswith(...)` bastava un feed diretto morto a mascherare da AVVISO
+            # un guasto vero della stessa fonte capitato nello stesso run, e l'esito dipendeva
+            # dall'ordine in cui le fasi avevano scritto in `errors`.
+            warn = bool(errori) and all(e.startswith(_WARN_NON_BLOCCANTE) for e in errori)
             out.append({"run_at": self.run_at, "source": f"{src}:{self.league}", "requests": n,
                         "ok": err is None, "warn": warn, "error": err,
                         "rows": self.row_counts.get(src), "detail": self.details.get(src, ""),
