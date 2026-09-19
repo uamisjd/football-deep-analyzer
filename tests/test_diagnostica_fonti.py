@@ -342,3 +342,44 @@ def test_la_ritenzione_delle_notizie_copre_le_finestre_di_lettura():
     assert NEWS_RETENTION_DAYS >= MatchAnalysis.NEWS_WINDOW_DAYS, "sotto i 7 giorni la card si svuota"
     default = inspect.signature(collect_news).parameters["window_days"].default
     assert default == NEWS_RETENTION_DAYS, "il default deve essere la costante, non un numero a mano"
+
+
+# ---- 6) un feed RSS diretto morto è un degrado coperto, non un errore della fonte ------------
+def test_feed_diretto_morto_e_avviso_non_errore():
+    """Il 404 di Sportmediaset non deve tingere di rosso la fonte notizie (docs/41 §4, coda P1.2).
+
+    Misurato il 19/09/2026 su `news.parquet` (16.337 righe): Sportmediaset ha **205** notizie e
+    arrivano **tutte** da Google News — **0** dal feed diretto, che risponde con una pagina HTML
+    vuota; Sky Sport 392, tutte da Google News; ANSA 377, di cui 94 dal feed diretto. Il feed di
+    Sportmediaset è morto dal 17/09 (`docs/25` §5.2) e la riga `news:NEWS` era **ERRORE** a ogni
+    run: un rosso permanente in cui un guasto vero di Google News non si sarebbe più distinto,
+    e una fonte che invece consegnava 3.938 righe dichiarata guasta.
+    """
+    rep = CollectReport(league="NEWS", run_at=datetime.now(UTC))
+    rep.requests = {"news": 135}
+    rep.errors = [("news direct Sportmediaset: SourceError: HTTP 404 "
+                   "https://www.sportmediaset.mediaset.it/rss/calcio.xml")]
+    rep.note("news", rows=3938, detail_text="salvate 3938")
+    riga = {r["source"]: r for r in rep.as_status_rows()}["news:NEWS"]
+    assert riga["warn"] is True, "degrado coperto da Google News: AVVISO, non ERRORE"
+    assert riga["ok"] is False
+    assert "Sportmediaset" in riga["error"]      # il motivo resta pubblicato, non sparisce
+    assert riga["rows"] == 3938                  # e le notizie continuano ad arrivare
+
+
+def test_guasto_vero_delle_notizie_non_mascherato_da_un_feed_morto():
+    """Se nello stesso run muore anche Google News, la riga resta ERRORE.
+
+    È il morso della correzione: prima decideva **il primo** errore della fase, quindi un feed
+    diretto morto scritto per primo trasformava in AVVISO anche un guasto vero — e l'esito
+    dipendeva dall'ordine in cui le fasi avevano scritto in `errors`.
+    """
+    rep = CollectReport(league="NEWS", run_at=datetime.now(UTC))
+    rep.requests = {"news": 135}
+    rep.errors = [
+        "news direct Sportmediaset: SourceError: HTTP 404",
+        "news rss Inter: SourceError: HTTP 429",
+    ]
+    riga = {r["source"]: r for r in rep.as_status_rows()}["news:NEWS"]
+    assert riga["warn"] is False, "un guasto vero non è un degrado coperto da un'altra fonte"
+    assert riga["ok"] is False

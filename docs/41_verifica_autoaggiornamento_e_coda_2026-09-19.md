@@ -273,9 +273,14 @@ attraversata in produzione)». Nuovo file `tests/test_numeri_pubblicati.py`, 3 t
    segnale. Opzioni a costo zero: una `issue` automatica (serve `permissions: issues: write`) o un
    file di stato pubblicato nel sito. Da verificare **solo dal vivo** dopo il merge, quindi resta
    fuori dalla «PR ricca» per regola `docs/00` §D e va fatto in una PR propria.
-2. **Feed Sportmediaset 404** (§1.8): aperto dal 17/09 (`docs/25` §5), ancora ERRORE oggi.
-   Serve una decisione: URL alternativo verificato **in CI** (dal sandbox non si può provare) o
-   rimozione del feed (restano ANSA e Sky Sport).
+2. ~~**Feed Sportmediaset 404** (§1.8)~~ — **diagnosticato e corretto il 19/09** (terzo giro).
+   Misura su `news.parquet` (16.337 righe): Sportmediaset 205 notizie, **tutte** da Google News,
+   **0** dal feed diretto; Sky Sport 392, tutte da Google News; ANSA 377, di cui 94 dal feed.
+   Il feed morto **non costa una notizia**: il difetto vero era che la riga `news:NEWS` restava
+   **ERRORE** a ogni run, dichiarando guasta una fonte che consegnava 3.938 righe e rendendo
+   indistinguibile un guasto vero di Google News. Corretto in `collect.py` (`news direct` in
+   `_WARN_NON_BLOCCANTE`; `as_status_rows` richiede che **tutti** gli errori della fase siano non
+   bloccanti, prima decideva il primo) + 2 test. Dettagli in `docs/25` §5.2.
 3. **Sonda dei fallback** (§1.7): primo run lunedì **21/09** 03:30 UTC. Da controllare che
    `source_probe.parquet` entri nel repository e che *Stato fonti* pubblichi la data al posto di
    «nessuna registrazione».

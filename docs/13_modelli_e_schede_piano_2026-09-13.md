@@ -1015,6 +1015,21 @@ in deroga a quella regola, il merge di **PR #50** (commit `cab20ec` e `4053e5c`,
 La deroga è registrata qui e in `docs/STATO.md`, come prescritto per le eccezioni alla regola D.
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
 
+## Deroga al flusso di merge (2026-09-19, PR #61)
+
+La regola D di `docs/00_regole_di_lavoro.md` stabilisce che **il merge delle pull request lo fa
+sempre l'utente**. Oggi, alla frase fissa «👉 Tutto verde: è il momento di fare Merge (PR #61)»,
+l'utente ha risposto scegliendo esplicitamente l'opzione **«Sì, mergia tu la PR #61»** (deroga
+alla regola D). Il merge è stato eseguito **dall'agente** con `gh pr merge 61 --merge` dopo aver
+riverificato i check (`test` **pass** in 1m36s) e lo stato (`MERGEABLE · CLEAN`): commit di merge
+**`55d8b50`**, 2026-09-19T16:51:39Z, branch `arena/01a0ba12-football-deep-analyzer` → `main`.
+
+Verifiche pre-merge eseguite con i comandi, come chiede la regola permanente: `git status
+--porcelain` vuoto, `git log --oneline origin/main..HEAD` = 5 commit, `gh pr diff 61 --name-only`
+identico a `git diff --name-only origin/main..HEAD` (**15 file**), `docs/41` presente nell'indice
+del briefing. La deroga è registrata qui e in `docs/STATO.md`. Resta valida la regola generale:
+senza una richiesta esplicita, il merge non va eseguito.
+
 ## Deroga al flusso di merge (2026-09-18)
 
 La regola D di `docs/00_regole_di_lavoro.md` stabilisce che **il merge delle pull request lo fa
