@@ -15,7 +15,7 @@ la stima; per «Tutti» le frequenze complessive). Se lo storico di una lega è 
 resta fissa 45/27/28 e la colonna lo dichiara con «fisso». Negativo = il modello batte la base.
 Con poche gare valutate per campionato i valori restano indicativi: servono ~30 gare per lettura stabile.</p>
 {% if composizione %}
-<p class="small mut">Composizione del campione: {{ composizione.n }} gare valutate, di cui
+<p class="small mut">Composizione del campione: {{ composizione.n|it_num }} {{ 'gara valutata' if composizione.n == 1 else 'gare valutate' }}, di cui
   <b>{{ composizione.corrente }}</b> con il modello corrente ({{ model_version }}) e
   <b>{{ composizione.calibrate }}</b> con la calibrazione attiva{% if composizione.versioni %};
   versioni in archivio: {{ composizione.versioni|join(', ') }}{% endif %}. Le previsioni delle ricette
@@ -111,7 +111,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 <td class="r mut">{{ (c.lo*100)|dec(1) }} – {{ (c.hi*100)|dec(1) }}%</td>
 <td class="r {{ 'bad' if c.outside else 'mut' }}">{{ 'fuori intervallo' if c.outside else 'compatibile' }}</td></tr>{% endfor %}
 </table></div>
-<p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10. L'intervallo (Wilson, 95%) dice quanto è incerta la frequenza osservata su <b>{{ calib[0].n if calib else 0 }}</b> gare: finché il previsto resta dentro, lo scarto è rumore di campionamento e non un difetto del modello.</p>
+<p class="small mut">Più le due colonne sono vicine, più il modello è calibrato: una probabilità dichiarata al 60% dovrebbe verificarsi circa 6 volte su 10. L'intervallo (Wilson, 95%) dice quanto è incerta la frequenza osservata su <b>{{ (calib[0].n if calib else 0)|it_num }}</b> {{ 'gara' if (calib[0].n if calib else 0) == 1 else 'gare' }}: finché il previsto resta dentro, lo scarto è rumore di campionamento e non un difetto del modello.</p>
 </div>
 {% else %}<div class="card">Nessuna previsione ancora valutata: servono partite giocate dopo la prima previsione.</div>{% endif %}
 {% if recent %}
