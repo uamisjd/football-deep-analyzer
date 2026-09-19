@@ -167,6 +167,40 @@ def test_style_rows_split_as_quotas_with_declared_sources():
     assert "2,55" in (by["xG da azione manovrata (quota)"]["help"] or "")
 
 
+def test_style_rows_concordanza_una_sola_gara():
+    """«su 1 gara» e «(FotMob, 1 gara finita)»: i tooltip dichiarano il campione (docs/40 §1, 4-5).
+
+    Alla prima giornata — o per una neopromossa di cui si è raccolto un solo turno — il
+    numero di gare su cui è calcolata la media vale 1: le due frasi dello «Scontro tattico»
+    stampavano «su 1 gare» e «1 gare finite», cioè la concordanza che il gate ``verify_site``
+    presidia su tutte le pagine. Il trattino del dato mancante resta tale e quale.
+    """
+    from fda.site.advanced import _n_gare
+
+    pred = {"lambda_home": 1.8, "lambda_away": 1.1}
+    home = {"source": "FotMob", "played": 1, "xg_pm": 3.45, "xga_pm": 1.2,
+            "open_pm": 2.55, "set_pm": 0.25, "split_played": 1}
+    away = {"source": "FotMob", "played": 5, "xg_pm": 1.6, "xga_pm": 1.1,
+            "open_pm": 1.30, "set_pm": 0.35, "split_played": 5}
+    clash = style_rows(home, away, pred)
+    by = {r["label"]: r for r in clash["rows"]}
+    assert "media stagionale FotMob su 1 gara" in (by["xG / gara"]["help"] or "")
+    assert "(FotMob, 1 gara finita)" in (by["xG da azione manovrata (quota)"]["help"] or "")
+    assert "(FotMob, 5 gare finite)" in (by["xG da azione manovrata (quota)"]["help"] or "")
+    # due fornitori diversi: entrambe le colonne dichiarano il proprio campione, concordato
+    misto = style_rows(home, {**away, "source": "Understat"}, pred)
+    by2 = {r["label"]: r for r in misto["rows"]}
+    assert "colonna a sinistra FotMob su 1 gara" in (by2["xG / gara"]["help"] or "")
+    assert "colonna a destra Understat su 5 gare" in (by2["xG / gara"]["help"] or "")
+    # l'helper lascia passare il trattino (dato mancante) e concorda l'aggettivo
+    assert _n_gare("—") == "— gare"
+    assert _n_gare(1, "gara finita", "gare finite") == "1 gara finita"
+    assert _n_gare(4, "gara finita", "gare finite") == "4 gare finite"
+    for testo in (by["xG / gara"]["help"], by["xG da azione manovrata (quota)"]["help"],
+                  by2["xG / gara"]["help"]):
+        assert "1 gare" not in (testo or ""), testo
+
+
 def test_match_analysis_score_matrix_and_wp(tmp_path):
     st = Store(tmp_path / "processed")
     st.upsert("predictions", [
