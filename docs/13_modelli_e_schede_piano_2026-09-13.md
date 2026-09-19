@@ -1066,3 +1066,42 @@ sul branch, gate pieni e una sola PR — invece di una PR per ogni piccolo blocc
 del prossimo agente sta in cima a `docs/STATO.md` (trentaduesimo giro).
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+## Deroga al flusso di merge (2026-09-19, PR #59)
+
+La regola D riserva il merge all'utente. L'utente, dopo aver chiesto e ottenuto la verifica
+pre-merge («prima di fare merge verifica che ci sia tutto nella pr», che ha fatto trovare e
+chiudere un buco: mancava la riga di `docs/40` nell'indice del briefing) e dopo la frase fissa,
+ha scritto «ok fai merge nel modo perfetto». In deroga, il merge di **PR #59** (branch
+`arena/01a0b97c-football-deep-analyzer` → `main`: hotfix della concordanza con 1 — «1 assente»,
+«1 gara», «1 giorno» — sei punti nei generatori e otto nei template, gate esteso, `docs/40`) è
+eseguito **dall'agente** con `gh pr merge 59 --merge` dopo la verifica prescritta: check `test`
+**pass** sul commit finale `959b9af`, PR **MERGEABLE · CLEAN**, `git status --porcelain` vuoto,
+`git log origin/main..HEAD` con i soli commit della PR, tip del branch remoto == HEAD e `main`
+ferma alla base `41c9c89` (nessun rebase). Scelte di metodo, entrambe sulla linea delle PR
+precedenti: **merge commit** e non squash (`41c9c89`, `1f12f90`, `6f2bf98` … sono tutti merge
+commit; lo squash avrebbe perso i tre commit della PR e la loro motivazione) e **branch non
+cancellata** (`--delete-branch` non usato: è la branch della sessione, e `delete_branch_on_merge`
+nel repo è disattivato — tutti i branch `arena/...` precedenti sono ancora sul remoto).
+
+Merge commit **`b8bfe12`** in `main` (2026-09-19T13:54:14Z). Controllo che tutto il contenuto sia
+entrato: `git diff origin/main 959b9af` **vuoto**.
+
+**Esito in produzione, verificato nello stesso turno (non presunto).** Il merge ha innescato il
+`daily` (trigger `push` su `main`; la PR tocca `src/` e `tests/`, quindi `paths-ignore: docs/**,
+*.md` non lo esclude): run **`35447124903`** **success**, job `run` verde in **17m19s** con i tre
+passi che erano rossi — `Verifica il sito (verify_site)`, `Parità delle schede pre-partita`,
+`Resa a 375 px` — e i due che da tre run restavano bloccati: `Commit dei dati aggiornati`
+(commit **`e9af29c`** «data: run 2026-09-19 14:11 UTC [skip ci]») e `Prepara il sito per Pages`
+(job `deploy` verde in 9s). Sulla pagina pubblicata **`partite/5749682.html`** — la stessa del
+messaggio del gate — si legge ora «infermeria pesante: **1 assente**, ≈ 0,7 xG+xA a partita in
+meno» (*Clima del club*, Bologna) e «Bologna deve rinunciare a **1 assente**» (narrativa); il
+plurale resta corretto dove il contatore vale 3: «Torino … **3 assenti**, di cui 1 titolare
+abituale». I tre run rossi precedenti (`35432745402`, `35438804509`, `35446188137`) si fermavano
+tutti sullo stesso messaggio: `partite/5749682.html: concordanza '1 assenti'`.
+
+Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
+(2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
+**#59 (2026-09-19)**. *(PR #43 e #45: fuse dall'utente.)*
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.

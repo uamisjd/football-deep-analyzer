@@ -289,14 +289,20 @@ fermato prima del commit). Con i dati del run il totale dei controlli sarà dive
 
 ## 9. Prossimo passo
 
-1. **Merge di questo hotfix** → il `daily` riparte da solo (trigger `push` su `main`) e, se
-   il gate passa, committa i dati e pubblica su Pages. Da verificare dopo il merge: run
-   verde, deploy arrivato, e su `partite/5749682.html` la riga «infermeria pesante: 1
-   assente».
+1. ~~**Merge di questo hotfix**~~ **fatto e verificato in produzione** (2026-09-19, merge
+   commit `b8bfe12`, deroga su ordine esplicito dell'utente — `docs/13`, «Deroga al flusso
+   di merge (2026-09-19, PR #59)»). Il `daily` è ripartito da solo (trigger `push` su
+   `main`): run **`35447124903`** **success**, job `run` verde in 17m19s con `verify_site`,
+   `parita_schede` e `resa_375` — i tre passi che erano rossi — più il commit dei dati
+   **`e9af29c`** («data: run 2026-09-19 14:11 UTC [skip ci]») e il deploy Pages (9s).
+   Sulla pagina pubblicata `partite/5749682.html` si legge «infermeria pesante: **1
+   assente**, ≈ 0,7 xG+xA a partita in meno» e «Bologna deve rinunciare a **1 assente**»;
+   col contatore a 3 il plurale resta corretto («Torino … **3 assenti**, di cui 1 titolare
+   abituale»). I tre run rossi (`35432745402`, `35438804509`, `35446188137`) sono chiusi.
 2. Punti aperti dichiarati in questo documento, da fare in un giro proprio:
    l'ordine non deterministico delle card «Percentili di lega» (`players.py:594`, §5.1);
    la copertura di [14] limitata a `partite/` e i tre conteggi senza `it_num` (§7);
    il test di render coi contatori a 1 (§8).
-3. `docs/STATO.md` è a 111 kB con 17 giri (questo incluso): sopra la soglia degli ~80 kB della regola A5,
+3. `docs/STATO.md` chiude il giro a ~115 kB con 17 giri (questo incluso): sopra la soglia degli ~80 kB della regola A5,
    l'archiviazione dei giri vecchi è da fare (non in questa PR, per non allargare il diff di
    un hotfix).
