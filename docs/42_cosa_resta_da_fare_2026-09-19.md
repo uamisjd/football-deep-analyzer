@@ -131,12 +131,18 @@ Nessuno di questi controlli era in un documento: sono stati fatti sul sito appen
 
 ## 7. Cosa si può fare **ora**, in ordine di utilità misurata
 
-1. **Esercitare dal vivo il ramo di guasto dell'allerta** (§2, voce 1b): è l'unico presidio nuovo
-   del progetto che non ha ancora una prova reale. Strada possibile senza danni: aggiungere a
-   `daily.yml` un input `workflow_dispatch` «prova allerta» che fa fallire **solo** un passo
-   finale (dopo il commit dei dati e la preparazione di Pages, così il sito non si tocca),
-   verificare che la issue si apra, poi chiuderla con il run verde successivo. Costo: ~17 minuti
-   di runner e una issue di prova.
+1. **Esercitare dal vivo il ramo di guasto dell'allerta** (§2, voce 1b): ~~è l'unico presidio
+   nuovo del progetto che non ha ancora una prova reale~~ — **provato sul campo il 19/09
+   (`docs/47`), e non per simulazione.** Il run `daily` delle 20:00 è fallito davvero sul
+   `verify_site` (22 pagine, scala della barra arrotondata due volte): la issue **#65** si è
+   aperta da sola alle **20:00:43Z** con ora, link e diagnostica; dopo la correzione (commit
+   `031644e`), il run **#120** è tornato verde e il passo «Segnala ripristino» ha **chiuso la
+   issue da solo** alle **22:51:38Z**, tre secondi prima del deploy (**22:51:41Z**). Ciclo
+   guasto → allerta → correzione → ripristino completo senza intervento umano; il sito è stato
+   fermo **4h40m** (18:11Z → 22:51Z). L'interruttore `prova_allerta` aggiunto in `daily.yml`
+   dalla PR #64 resta utile come prova **volontaria** (`gh workflow run daily.yml --ref main -f
+   prova_allerta=true`): serve a non scoprire un domani che l'interruttore si è rotto, non a
+   dimostrare che l'allerta funziona.
 2. **P2.7 — `prossime.html`** (1.240 kB, 1.988 righe): **non urgente** — la soglia della coda è
    sulle card dettagliate (29 oggi contro ~250) e la pagina sta dentro il tetto che il verificatore
    le assegna per scelta dichiarata (1.800 kB). Intervento utile ma rinviabile: `content-visibility`
@@ -165,6 +171,7 @@ Nessuno di questi controlli era in un documento: sono stati fatti sul sito appen
 ## 8. Prossimo passo
 
 La coda documentata è vuota fino a lunedì: la scelta del lavoro di questa sessione spetta
-all'utente fra le quattro voci del §7. In assenza di indicazioni, la prima (**prova dal vivo
-dell'allerta**) è l'unica che chiude una casella oggi aperta; la seconda (P2.7) è l'unica con un
-difetto misurato alle spalle.
+all'utente fra le quattro voci del §7. **Aggiornamento 19/09, giro 60:** la prima voce non è più
+«aperta» — il ciclo dell'allerta si è chiuso da solo su un guasto vero (`docs/47`). Restano P2.7
+(non urgente), un nuovo audit su un'area non ancora passata al setaccio, e l'appuntamento di
+lunedì 21/09 con la prima sonda dei fallback e il primo verdetto del laboratorio.
