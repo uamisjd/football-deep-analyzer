@@ -1,0 +1,3 @@
+33 diag_jobs/passi-falliti.log
+job 105885951756 «run»: failure
+  passo fallito: Verifica il sito (verify_site)

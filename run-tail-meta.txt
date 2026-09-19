@@ -1,0 +1,4 @@
+run_id=35438804509
+estratto_il=2026-09-19T11:17:14Z
+branch=arena/01a0b61a-football-deep-analyzer
+workflow_run_url=https://github.com/uamisjd/football-deep-analyzer/actions/runs/35438804509

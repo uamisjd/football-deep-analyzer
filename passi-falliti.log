@@ -1,0 +1,33 @@
+run	Verifica il sito (verify_site)	﻿2026-09-19T11:11:34.5352269Z ##[group]Run set -euo pipefail
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5352601Z ^[[36;1mset -euo pipefail^[[0m
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5353084Z ^[[36;1mpython scripts/verify_site.py --site site --data data/processed 2>&1 | tee verify.log | tail -20^[[0m
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5389651Z shell: /usr/bin/bash -e {0}
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5389910Z env:
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5390179Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5390648Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5391083Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5391474Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5391861Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5392246Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+run	Verifica il sito (verify_site)	2026-09-19T11:11:34.5392578Z ##[endgroup]
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7036772Z [10] scomposizioni della probabilità verificate: 92
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7037243Z [11] riassunti del modello verificati: 164
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7037666Z [12] coperture dei risultati esatti verificate: 164
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7038032Z [15] fasce storiche del pronostico verificate: 164
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7038424Z [16] percentile dei gol attesi nel campionato verificato: 164
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7038997Z [17] quartili del primo gol verificati: 492
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7039714Z [13-14] template e formattazione anti-falso: 12 template, 375 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7040405Z [18] etichette impatto infermeria verificate: 56 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7041021Z [19] panchina e posta in gioco verificate: 60 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7041377Z [34] badge della forma nell'hero verificati: 120
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7041808Z [20] card «Vita del club» riconciliate: 60 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7042171Z [21] pagine con clima del club riconciliate: 60
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7042525Z [22] duello chiave e graduatorie verificati: 60 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7044847Z [23] badge «giocherà?» riconciliati: 60 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7045363Z [24] «Il prossimo impegno» verificato: 315 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7045772Z [25] conversione grandi occasioni verificata: 282 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7046133Z [26] card mercato riconciliate: 60 pagine
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7046340Z 
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7046449Z PROBLEMI (1): {'concordanza': 1}
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7046771Z   - partite/5749682.html: concordanza '1 assenti'
+run	Verifica il sito (verify_site)	2026-09-19T11:13:22.7057620Z ##[error]Process completed with exit code 1.
