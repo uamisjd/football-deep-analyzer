@@ -9,8 +9,8 @@
   </div>
   {% if view_kind == 'today' and summary %}
   <div class="today-overview" aria-label="Riepilogo della giornata">
-    <div class="overview-metric"><strong>{{ summary.matches }}</strong><span>partite</span></div>
-    <div class="overview-metric"><strong>{{ summary.leagues }}</strong><span>campionati</span></div>
+    <div class="overview-metric"><strong>{{ summary.matches }}</strong><span>{{ 'partita' if summary.matches == 1 else 'partite' }}</span></div>
+    <div class="overview-metric"><strong>{{ summary.leagues }}</strong><span>{{ 'campionato' if summary.leagues == 1 else 'campionati' }}</span></div>
     <div class="overview-metric"><strong>{{ summary.predicted }}/{{ summary.prediction_total }}</strong><span>con modello</span></div>
     <div class="overview-metric overview-next"><strong>{% if summary.next_time %}{{ summary.next_time }}{% else %}—{% endif %}</strong><span>prossimo calcio d'inizio</span>{% if summary.next_match %}<small>{{ summary.next_match }}{% if summary.next_league %} · {{ summary.next_league }}{% endif %}</small>{% endif %}{% if summary.next_iso %}<small class="mut" data-countdown="{{ summary.next_iso }}" style="display:block;margin-top:3px;color:var(--accent);font-weight:700">calcolo…</small>{% endif %}</div>
   </div>
@@ -30,12 +30,12 @@
 <div class="card" style="margin:0 0 12px;padding:12px 16px">
   <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
     <div><strong style="font-size:13px">📊 Oggi in numeri</strong><br>
-    <span class="small mut">{{ today_summary_extra.total }} partite · {% if today_summary_extra.avg_gol %}Ø {{ today_summary_extra.avg_gol|dec(2) }} gol attesi · {% endif %}{% if today_summary_extra.avg_over %}Ø {{ today_summary_extra.avg_over }}% Over 2,5{% if today_summary_extra.high_over %} · {{ today_summary_extra.high_over }} con Over &gt;60%{% endif %}{% endif %}</span></div>
+    <span class="small mut">{{ today_summary_extra.total }} {{ 'partita' if today_summary_extra.total == 1 else 'partite' }} · {% if today_summary_extra.avg_gol %}Ø {{ today_summary_extra.avg_gol|dec(2) }} gol attesi · {% endif %}{% if today_summary_extra.avg_over %}Ø {{ today_summary_extra.avg_over }}% Over 2,5{% if today_summary_extra.high_over %} · {{ today_summary_extra.high_over }} con Over &gt;60%{% endif %}{% endif %}</span></div>
     {% if today_leagues %}<div style="display:flex;flex-wrap:wrap;gap:6px">{% for lg in today_leagues %}<span class="tag" style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line)">{{ lg.name }} <b>{{ lg.count }}</b></span>{% endfor %}</div>{% endif %}
   </div>
   {% if today_timeline %}
   <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">
-    {% for slot in today_timeline %}<span class="small" style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:3px 8px">{{ slot.slot }} <b>{{ slot.count }}</b> partite</span>{% endfor %}
+    {% for slot in today_timeline %}<span class="small" style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:3px 8px">{{ slot.slot }} <b>{{ slot.count }}</b> {{ 'partita' if slot.count == 1 else 'partite' }}</span>{% endfor %}
   </div>
   {% endif %}
 </div>
@@ -43,7 +43,7 @@
 
 {% if today_live %}
 <div class="card" style="margin:0 0 12px;border-color:rgba(224,96,90,.35);background:rgba(224,96,90,.06)">
-  <h2 style="margin:0 0 8px;font-size:14px;color:var(--lose)">🔴 In corso ora — {{ today_live|length }} partite</h2>
+  <h2 style="margin:0 0 8px;font-size:14px;color:var(--lose)">🔴 In corso ora — {{ today_live|length }} {{ 'partita' if today_live|length == 1 else 'partite' }}</h2>
   <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
     {% for m in today_live %}
     <div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)">
@@ -97,7 +97,7 @@
   <span style="font-size:20px">🏖️</span>
   <div style="flex:1">
     <strong>Oggi nessuna partita in programma</strong><br>
-    <span class="mut small">È pausa per le nazionali o turno infrasettimanale vuoto. Prossima giornata: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} partite</b>{% if next_info.gap_days > 1 %} — tra {{ next_info.gap_days }} giorni{% endif %}. Le previsioni sono già disponibili nel calendario.</span>
+    <span class="mut small">È pausa per le nazionali o turno infrasettimanale vuoto. Prossima giornata: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} {{ 'partita' if next_info.count == 1 else 'partite' }}</b>{% if next_info.gap_days > 1 %} — tra {{ next_info.gap_days }} giorni{% endif %}. Le previsioni sono già disponibili nel calendario.</span>
     <div style="margin-top:8px"><a href="{{ root }}prossime.html" style="font-weight:700">Vai a Prossime →</a> <span class="mut small">· <a href="{{ root }}prossime.html#mese-{{ next_info.date_iso[:7] }}">salta a {{ next_info.label }}</a></span></div>
   </div>
 </div>
@@ -113,7 +113,7 @@
   <div style="flex:1">
     <strong>{% if next_info.is_break %}Pausa nazionali{% else %}Nessuna partita nei prossimi {{ calendar_days }} giorni{% endif %}</strong><br>
     <span class="small mut">Domani, dopodomani e i prossimi giorni non hanno partite dei 7 campionati seguiti. È normale durante le soste FIFA/UEFA.
-      Prossimo turno disponibile: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} partite</b>{% if next_info.gap_days %} (tra {{ next_info.gap_days }} giorni){% endif %}. Sotto trovi già tutto il calendario con le previsioni del modello, ricalcolate ad ogni aggiornamento.</span>
+      Prossimo turno disponibile: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} {{ 'partita' if next_info.count == 1 else 'partite' }}</b>{% if next_info.gap_days %} (tra {{ next_info.gap_days }} {{ 'giorno' if next_info.gap_days == 1 else 'giorni' }}){% endif %}. Sotto trovi già tutto il calendario con le previsioni del modello, ricalcolate ad ogni aggiornamento.</span>
     <div style="margin-top:8px"><a href="#mese-{{ next_info.date.year }}-{{ '%02d'|format(next_info.date.month) }}" style="font-weight:700">Salta al prossimo turno ↓</a></div>
   </div>
 </div>
@@ -125,7 +125,7 @@
     <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between">
       <div>
         <strong style="font-size:14px">📊 Nei prossimi {{ calendar_days }} giorni</strong><br>
-        <span class="small mut">{{ upcoming_summary.total }} partite · {% if upcoming_summary.avg_gol %}Ø {{ upcoming_summary.avg_gol|dec(2) }} gol attesi · {% endif %}{% if upcoming_summary.avg_over %}Ø {{ upcoming_summary.avg_over }}% Over 2,5{% if upcoming_summary.high_over %} · {{ upcoming_summary.high_over }} con Over &gt;60%{% endif %}{% endif %}</span>
+        <span class="small mut">{{ upcoming_summary.total }} {{ 'partita' if upcoming_summary.total == 1 else 'partite' }} · {% if upcoming_summary.avg_gol %}Ø {{ upcoming_summary.avg_gol|dec(2) }} gol attesi · {% endif %}{% if upcoming_summary.avg_over %}Ø {{ upcoming_summary.avg_over }}% Over 2,5{% if upcoming_summary.high_over %} · {{ upcoming_summary.high_over }} con Over &gt;60%{% endif %}{% endif %}</span>
       </div>
       {% if upcoming_leagues %}
       <div style="display:flex;flex-wrap:wrap;gap:6px">
@@ -192,7 +192,7 @@
   </div>
   {% if filters %}<label class="filter-select"> <span class="sr-only">Campionato</span><select data-league-filter aria-label="Filtra per campionato"><option value="all">Tutti i campionati</option>{% for f in filters %}<option value="{{ f.key }}">{{ f.name }}</option>{% endfor %}</select></label>{% endif %}
   <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Cerca squadra o campionato</span><input type="search" data-match-search placeholder="{% if view_kind == 'upcoming' %}Cerca squadra o campionato (anche nel calendario)…{% else %}Cerca squadra…{% endif %}" autocomplete="off"></label>
-  <span class="filter-result" data-filter-result role="status" aria-live="polite">{{ summary.matches if summary else '' }}{% if summary %} partite{% endif %}</span>
+  <span class="filter-result" data-filter-result role="status" aria-live="polite">{{ summary.matches if summary else '' }}{% if summary %} {{ 'partita' if summary.matches == 1 else 'partite' }}{% endif %}</span>
 </div>
 
 <div class="match-list" data-match-list>
@@ -205,7 +205,7 @@
 {% else %}
 {% if view_kind != 'upcoming' %}
 <div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessuna partita nel periodo</strong><span class="mut">I campionati seguiti non hanno gare in questa vista.</span>
-{% if next_info %}<span class="mut small" style="margin-top:8px">Prossima: <b>{{ next_info.label }}</b> · {{ next_info.count }} partite · <a href="{{ root }}prossime.html">vedi calendario</a></span>{% endif %}
+{% if next_info %}<span class="mut small" style="margin-top:8px">Prossima: <b>{{ next_info.label }}</b> · {{ next_info.count }} {{ 'partita' if next_info.count == 1 else 'partite' }} · <a href="{{ root }}prossime.html">vedi calendario</a></span>{% endif %}
 </div>
 {% endif %}
 {% endfor %}
@@ -226,7 +226,7 @@
       <button type="button" class="filter-button small" data-cal-collapse>Comprimi tutto</button>
     </div>
   </div>
-  <p class="mut small" style="margin-top:8px">Altre {{ cal_total|it_num }} partite in programma dopo i primi {{ calendar_days }} giorni: per ognuna c'è già
+  <p class="mut small" style="margin-top:8px">{{ 'Altra' if cal_total == 1 else 'Altre' }} {{ cal_total|it_num }} {{ 'partita' if cal_total == 1 else 'partite' }} in programma dopo i primi {{ calendar_days }} giorni: per ognuna c'è già
     la previsione del modello (1X2, gol attesi, Over 2,5), ricalcolata a ogni aggiornamento.
     La scheda completa — forma, classifica, assenze, meteo, precedenti — arriva quando la fonte
     pubblica i dettagli, cioè a ridosso della gara.{% if calendar_missing %}

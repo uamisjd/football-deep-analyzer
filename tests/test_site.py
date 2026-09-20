@@ -1,3 +1,4 @@
+import importlib.util
 import itertools
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -14,6 +15,25 @@ from fda.store import TABLE_KEYS, Store
 from tests.test_store_collect import FakeEspn, FakeEspnNoStandings, FakeFotMob, FakeUnderstat
 
 FIX = Path(__file__).parent / "fixtures"
+
+
+def _verify_site():
+    """Modulo ``scripts/verify_site.py``: i test di lingua riusano il suo parser.
+
+    Il gate di concordanza legge il testo **a tag rimossi** (``<b>1</b> partita`` vale
+    «1 partita»): asserire sul grezzo non riprodurrebbe il controllo che ha fermato il run.
+    """
+    p = Path(__file__).parent.parent / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _testo_leggibile(mod, html: str) -> str:
+    parser = mod.Text()
+    parser.feed(html)
+    return re.sub(r"\s+", " ", "".join(parser.parts))
 
 
 class FakeFotMobPre(FakeFotMob):
@@ -187,6 +207,23 @@ def test_insight_drop_log_counts_unknown_shapes():
         assert stats["top_n"] == 2
         reset_insight_stats()
         assert insight_drop_stats() is None
+    finally:
+        reset_insight_stats()
+
+
+def test_insight_drop_stats_senza_scarti_mai_none():
+    """Senza scarti ``top_shape`` è ``\"\"``, mai ``None`` (il template lo stampa verbatim).
+
+    Run daily 2026-09-20: build con fatti tutti tradotti e zero scarti → ``stato.html``
+    pubblicava «None» e verify_site fermava il run (``stato.html: residuo 'None'``).
+    """
+    from fda.site.analysis import INSIGHT_SEEN, insight_drop_stats, reset_insight_stats
+    reset_insight_stats()
+    try:
+        INSIGHT_SEEN["tradotti"] = 3      # fatti visti e tradotti, nessuno scartato
+        stats = insight_drop_stats()
+        assert stats is not None
+        assert stats["top_n"] == 0 and stats["top_shape"] == ""
     finally:
         reset_insight_stats()
 
@@ -956,6 +993,99 @@ def test_status_page_warns_espn_standings(tmp_path):
     stato = (out / "stato.html").read_text(encoding="utf-8")
     assert "AVVISO" in stato and "espn standings" in stato
     assert ">ERRORE<" not in stato                 # nessun'altra fonte fallisce nel seed
+    st.close()
+
+
+def test_stato_senza_scarti_non_pubblica_none(tmp_path):
+    """stato.html con zero scarti: «Nessuno scarto registrato», mai «None» a schermo.
+
+    Stesso run del 2026-09-20 di ``test_insight_drop_stats_senza_scarti_mai_none``: la
+    riga «Scarto più frequente» esiste solo quando c'è almeno uno scarto da mostrare.
+    """
+    st = Store(tmp_path / "processed")
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out)._render(
+        "status.html", "stato.html", sources=[], tables=[], probe=[], audit=[],
+        audit_counts={"presente": 0, "atteso": 0, "mancante": 0},
+        insight_stats={"tradotti": 3, "scartati": 0, "n_shapes": 0,
+                       "top_shape": "", "top_n": 0})
+    h = (out / "stato.html").read_text(encoding="utf-8")
+    assert "None" not in h
+    assert "Nessuno scarto registrato" in h
+    assert "Scarto più frequente" not in h
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    assert [f for f in fails if "residuo" in f] == []
+    st.close()
+
+
+def test_oggi_con_una_partita_sola_concorda_il_singolare(tmp_path):
+    """Conteggi a 1 in «Oggi»: «1 partita» / «1 campionato», mai «1 partite».
+
+    Run daily 2026-09-20: ``index.html`` pubblicava «1 partite» (una sola gara live, una
+    sola fascia oraria) e il gate di concordanza di verify_site fermava il run prima del
+    deploy. Ogni contatore della vista «Oggi» concorda il singolare.
+    """
+    st = Store(tmp_path / "processed")
+    out = tmp_path / "site"
+    now = datetime.now(UTC)
+    live = [{"match_id": 1, "league_name": "Serie A", "utc_kickoff": now,
+             "status_label": "In corso", "home_name": "Inter", "away_name": "Milan",
+             "home_goals": 1, "away_goals": 0}]
+    SiteBuilder(store=st, out_dir=out)._render(
+        "index.html", "index.html", title="Partite di oggi", subtitle="x",
+        view_kind="today", days=[],
+        summary={"matches": 1, "leagues": 1, "live": 1, "scheduled": 0, "finished": 0,
+                 "predicted": 1, "prediction_total": 1, "next_time": None,
+                 "next_match": None, "next_iso": None, "next_league": None},
+        filters=[],
+        next_info={"label": "lunedì 21 settembre 2026", "count": 1, "gap_days": 1,
+                   "date_iso": "2026-09-21", "is_break": False},
+        today_summary_extra={"total": 1, "avg_gol": 2.5, "avg_over": 55, "high_over": 0},
+        today_leagues=[{"name": "Serie A", "count": 1}],
+        today_timeline=[{"slot": "20–22", "count": 1}],
+        today_live=live, today_highlights=[], today_finished_summary=None,
+        today_finished=[])
+    h = (out / "index.html").read_text(encoding="utf-8")
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    # i collegamenti interni mancano nel render minimo (nessuna scheda partita): conta
+    # solo la lingua, cioè il gate che ha fermato il run
+    lingua = [f for f in fails if "concordanza" in f or "residuo" in f]
+    assert lingua == []
+    assert "1 partita" in _testo_leggibile(vs, h)
+    # numero e nome in due elementi separati: il testo visivo è «1» sopra «campionato»
+    assert ">campionato</span>" in h and ">campionati</span>" not in h
+    st.close()
+
+
+def test_prossime_con_una_partita_sola_concorda_il_singolare(tmp_path):
+    """Conteggi a 1 in «Prossime»: banner, riassunto e calendario al singolare.
+
+    Stessa classe del run 2026-09-20 (``index.html: concordanza '1 partite'``), ma sulla
+    vista «Prossime»: con una sola gara nel calendario il banner, il riassunto e la riga
+    «Altra 1 partita in programma» devono concordare.
+    """
+    st = Store(tmp_path / "processed")
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out)._render(
+        "index.html", "prossime.html", title="Prossime partite", subtitle="x",
+        view_kind="upcoming", days=[], summary=None, filters=[],
+        calendar=[{"id": "mese-2026-10", "label": "Ottobre 2026",
+                   "label_short": "Ott 26", "count": 1, "matches": []}],
+        calendar_missing=1, calendar_days=30, upcoming_count=0,
+        next_info={"label": "giovedì 1 ottobre 2026", "count": 1, "gap_days": 1,
+                   "date": date(2026, 10, 1), "is_break": False},
+        upcoming_summary={"total": 1, "avg_gol": 2.5, "avg_over": 55, "high_over": 0},
+        upcoming_leagues=[], upcoming_highlights=[], calendar_picks=[])
+    h = (out / "prossime.html").read_text(encoding="utf-8")
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    lingua = [f for f in fails if "concordanza" in f or "residuo" in f]
+    assert lingua == []
+    testo = _testo_leggibile(vs, h)
+    assert "1 partita" in testo and "Altra 1 partita" in testo
+    assert "tra 1 giorno" in testo
     st.close()
 
 
