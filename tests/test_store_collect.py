@@ -1,3 +1,4 @@
+import importlib.util
 import json
 from datetime import date
 from pathlib import Path
@@ -128,9 +129,26 @@ class FakeFotMobNoWeather(FakeFotMob):
         return raw
 
 
+class FakeOpenMeteoVuoto(FakeOpenMeteo):
+    """Come FakeOpenMeteo, ma senza ore utilizzabili: nessuna previsione utile."""
+
+    def forecast(self, lat, lon, when):
+        # nessuna ora utilizzabile → None implicito, come il client reale a vuoto
+        self.requests += 1
+
+
 class FakeFotMobNoTable(FakeFotMob):
     def league_raw(self, league_id, season_str=None):
         raise RuntimeError("leagues temporarily unavailable")
+
+
+def _gate_agreement():
+    """La regex di concordanza del gate `verify_site`, usata qui come oracolo."""
+    p = Path(__file__).parent.parent / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.AGREEMENT
 
 
 def test_collect_league_offline(tmp_path):
@@ -316,6 +334,56 @@ def test_collect_skips_openmeteo_when_not_provided(tmp_path):
     assert st.read("weather_forecast").empty
     assert "openmeteo" not in rep.requests     # passo disattivato: nessuna fonte registrata
     st.close()
+
+
+def test_openmeteo_reason_concordanza_una_sola_gara(tmp_path):
+    """Le frasi meteo di `source_status` concordano il singolare (issue #69, 2026-09-20).
+
+    Caso reale: tre run di fila fermi su `verify_site` con
+    `stato.html: concordanza '1 gare'` — le frasi meteo interpolavano il contatore col
+    plurale fisso e, a turno in corso, qualche lega restava con una sola gara senza
+    meteo FotMob. La frase nasce qui nel collect e arriva verbatim in `stato.html`
+    (`build_status` → `{{ r.detail }}`): la prova è sul `detail` salvato, con la regex
+    del gate come oracolo.
+    """
+    agree = _gate_agreement()
+    st = Store(tmp_path / "processed")
+    # una sola gara senza meteo FotMob → «1 gara», non «1 gare»
+    collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMobNoWeather(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), openmeteo=FakeOpenMeteo(), today=date(2026, 9, 6),
+    )
+    det = st.read("source_status")
+    det = det[det.source == "openmeteo:ITA1"].iloc[-1]["detail"]
+    assert det == "1 gara senza meteo FotMob"
+    assert agree.search(det) is None
+    st.close()
+
+    # una sola gara futura e nessuna previsione utile → «1 gara futura»
+    st = Store(tmp_path / "processed2")
+    collect_league(
+        league("ITA1"), st, past_days=30, future_days=30,
+        fotmob=FakeFotMobNoWeather(raw_dir=tmp_path / "raw"), understat=FakeUnderstat(),
+        espn=FakeEspn(), openmeteo=FakeOpenMeteoVuoto(), today=date(2026, 9, 6),
+    )
+    det = st.read("source_status")
+    det = det[det.source == "openmeteo:ITA1"].iloc[-1]["detail"]
+    assert det == ("nessuna previsione utile su 1 gara futura "
+                   "(meteo FotMob 0 · coordinate 0 · previsione assente 1)")
+    assert agree.search(det) is None
+    st.close()
+
+
+def test_openmeteo_reason_plurale_invariato():
+    """Col contatore diverso da 1 le frasi meteo restano quelle di prima, alla lettera."""
+    from fda.collect import _conta_gare
+
+    assert _conta_gare(0, "gara futura", "gare future") == "0 gare future"
+    assert _conta_gare(1, "gara futura", "gare future") == "1 gara futura"
+    assert _conta_gare(2, "gara futura", "gare future") == "2 gare future"
+    assert _conta_gare(1, "gara", "gare") == "1 gara"
+    assert _conta_gare(5, "gara", "gare") == "5 gare"
 
 
 def test_upsert_replace_by_snapshot(tmp_path):
