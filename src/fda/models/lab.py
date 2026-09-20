@@ -134,19 +134,25 @@ CANDIDATES: tuple[Candidate, ...] = (
               "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "gamma": 1.24},
               grid=(1.00, 1.08, 1.12, 1.20, 1.24, 1.32, 1.40)),
-    # P2.10 (docs/19 §1.2) — temperatura sul vettore 1X2: il modello è sotto-confidente sui
-    # decili alti (0,728 previsto contro 0,799 osservato). τ>1 concentra senza cambiare
-    # l'argmax. Griglia pre-registrata e simmetrica attorno a 1,00, così il candidato può
-    # anche **peggiorare**: una griglia solo-sopra-1 presupporrebbe la conclusione.
+    # P2.10 (docs/19 §1.2, docs/48 §4.1) — temperatura sul vettore 1X2: il modello è sotto-confidente
+    # sui decili alti (0,729 previsto contro 0,792 osservato). τ>1 concentra senza cambiare
+    # l'argmax. Griglia pre-registrata e simmetrica attorno a 1,00, con τ 1,16 (T ≈ 0,86 ottimo empirico):
     Candidate("tau_090", "Temperatura 1X2 τ 0,90 (appiattisce)", "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 0.90},
-              grid=(0.90, 1.00, 1.10, 1.20, 1.30)),
+              grid=(0.90, 1.00, 1.10, 1.16, 1.20, 1.30)),
     Candidate("tau_110", "Temperatura 1X2 τ 1,10 (concentra)", "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 1.10},
-              grid=(0.90, 1.00, 1.10, 1.20, 1.30)),
+              grid=(0.90, 1.00, 1.10, 1.16, 1.20, 1.30)),
+    Candidate("tau_116", "Temperatura 1X2 τ 1,16 (T ≈ 0,86 de-piattimento favoriti, docs/48)", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 1.16},
+              grid=(0.90, 1.00, 1.10, 1.16, 1.20, 1.30)),
     Candidate("tau_120", "Temperatura 1X2 τ 1,20 (concentra molto)", "production", "dixon_coles",
               {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7, "tau": 1.20},
-              grid=(0.90, 1.00, 1.10, 1.20, 1.30)),
+              grid=(0.90, 1.00, 1.10, 1.16, 1.20, 1.30)),
+    # docs/48 §1: shrinkage ridotto nell'ensemble di produzione
+    Candidate("prod_no_shrink", "DC+Elo produzione senza shrinkage (shrink 0, docs/48)", "production", "dixon_coles",
+              {"xi": 0.0018, "shrink": 0.0, "w_dc": 0.7},
+              grid=(0.0, 4.0, 8.0, 16.0)),
 )
 
 
