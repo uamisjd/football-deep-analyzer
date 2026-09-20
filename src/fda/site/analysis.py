@@ -575,12 +575,17 @@ def insight_dropped(text: str) -> None:
 
 
 def insight_drop_stats() -> dict[str, Any] | None:
-    """Riepilogo per stato.html: fatti visti dal build, tradotti, scartati, forma top."""
+    """Riepilogo per stato.html: fatti visti dal build, tradotti, scartati, forma top.
+
+    Senza scarti ``top_shape`` è ``\"\"`` (mai ``None``): il template lo stampa verbatim e
+    un ``None`` arriverebbe a schermo come residuo — il gate di verify_site lo segnala
+    (run daily 2026-09-20: ``stato.html: residuo 'None'`` con zero scarti nel build).
+    """
     tot_seen = INSIGHT_SEEN["tradotti"] + INSIGHT_SEEN["scartati"]
     if not tot_seen and not INSIGHT_DROP_LOG:
         return None
     top_key, top_n = (max(INSIGHT_DROP_LOG.items(), key=lambda kv: kv[1])
-                      if INSIGHT_DROP_LOG else (None, 0))
+                      if INSIGHT_DROP_LOG else ("", 0))
     return {"tradotti": INSIGHT_SEEN["tradotti"], "scartati": INSIGHT_SEEN["scartati"],
             "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n}
 
