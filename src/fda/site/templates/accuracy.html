@@ -82,7 +82,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 {% if bt and bt.n %}
 <div class="card"><h2>Backtest storico fuori campione</h2>
   <p class="small">Lo stesso modello, valutato su <b>{{ bt.n|it_num }}</b> partite già giocate in
-  {{ bt.leagues }} campionati: per ogni finestra il modello è stato addestrato <b>solo</b> sulle
+  {{ bt.leagues }} {{ 'campionato' if bt.leagues == 1 else 'campionati' }}: per ogni finestra il modello è stato addestrato <b>solo</b> sulle
   partite precedenti, quindi nessuna di queste stime ha visto il risultato. È il campione ampio che
   serve per distinguere un difetto vero dal rumore (la tabella qui sopra cresce solo di
   15-20 gare al giorno).</p>
