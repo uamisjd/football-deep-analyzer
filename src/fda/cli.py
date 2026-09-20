@@ -263,50 +263,13 @@ def predict_cmd(
                 orizzonte = f"nei prossimi {days_ahead} giorni" if days_ahead > 0 else "in programma"
                 console.print(f"{lg.name}: storico {len(hist)} partite, nessuna partita {orizzonte}")
                 continue
-            # prior arricchiti: mercato + assenze + riposo (P2 quality)
-            try:
-                mi = store.read("match_info")
-                up_base = pd.DataFrame({"match_id": upcoming.match_id, "league_key": lg.key, "utc_kickoff": upcoming.utc_kickoff,
-                               "home": upcoming.home_name.map(canonical), "away": upcoming.away_name.map(canonical),
-                               "home_id": upcoming.home_id, "away_id": upcoming.away_id})
-                # mercato
-                if not mi.empty and "match_id" in mi.columns:
-                    mv = mi[["match_id", "home_starters_value_eur", "away_starters_value_eur"]].copy()
-                    up_base = up_base.merge(mv, on="match_id", how="left")
-                    up_base = up_base.rename(columns={"home_starters_value_eur": "home_value", "away_starters_value_eur": "away_value"})
-                # riposo + assenze via MatchAnalysis (già calcolato per schede)
-                try:
-                    from .site.analysis import MatchAnalysis
-                    ma = MatchAnalysis(store)
-                    rest_h, rest_a, contrib_h, contrib_a = [], [], [], []
-                    for _, r in upcoming.iterrows():
-                        try:
-                            ko = pd.Timestamp(r.utc_kickoff)
-                            rh = ma.rest_days(int(r.home_id), ko)
-                            ra = ma.rest_days(int(r.away_id), ko)
-                        except Exception:
-                            rh, ra = None, None
-                        try:
-                            ab_h = ma.absences_weight(int(r.match_id), int(r.home_id))
-                            ab_a = ma.absences_weight(int(r.match_id), int(r.away_id))
-                            ch = float(ab_h["contrib_lost_p90"]) if ab_h and ab_h.get("contrib_lost_p90") else None
-                            ca = float(ab_a["contrib_lost_p90"]) if ab_a and ab_a.get("contrib_lost_p90") else None
-                        except Exception:
-                            ch, ca = None, None
-                        rest_h.append(rh); rest_a.append(ra)
-                        contrib_h.append(ch); contrib_a.append(ca)
-                    up_base["rest_home"] = rest_h
-                    up_base["rest_away"] = rest_a
-                    up_base["absences_home"] = contrib_h
-                    up_base["absences_away"] = contrib_a
-                except Exception as exc:
-                    # non bloccare predizione se analisi fallisce
-                    import logging
-                    logging.getLogger(__name__).debug("prior assenze/riposo saltato: %s", exc)
-                up = up_base
-            except Exception:
-                up = pd.DataFrame({"match_id": upcoming.match_id, "league_key": lg.key, "utc_kickoff": upcoming.utc_kickoff,
-                               "home": upcoming.home_name.map(canonical), "away": upcoming.away_name.map(canonical)})
+            up = pd.DataFrame({
+                "match_id": upcoming.match_id,
+                "league_key": lg.key,
+                "utc_kickoff": upcoming.utc_kickoff,
+                "home": upcoming.home_name.map(canonical),
+                "away": upcoming.away_name.map(canonical),
+            })
             from .models.predict import xi_for_league
             xi_lg = xi_for_league(lg.key)
             pred, dc, _ = predict_matches(hist, up, calibration=cal, xi=xi_lg)

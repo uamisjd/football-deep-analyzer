@@ -470,7 +470,7 @@ def test_i_candidati_p29_p210_dichiarano_una_griglia_che_contiene_il_valore_prov
     """Regola P1.11 (`docs/00` §D): niente candidato che cerca un iperparametro senza griglia."""
     nuovi = {c.key: c for c in CANDIDATES
              if "gamma" in c.params or "tau" in c.params}
-    assert set(nuovi) == {"gamma_112", "gamma_124", "tau_090", "tau_110", "tau_120"}
+    assert set(nuovi) == {"gamma_112", "gamma_124", "tau_090", "tau_110", "tau_116", "tau_120"}
     for cand in nuovi.values():
         assert cand.grid, f"{cand.key} senza griglia pre-registrata"
         valore = cand.params.get("gamma", cand.params.get("tau"))

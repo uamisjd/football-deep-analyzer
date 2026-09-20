@@ -153,7 +153,7 @@ def market_value_tilt(lh: float, la: float, hv: float | None, av: float | None, 
         hv_f = float(hv); av_f = float(av)
         if not (hv_f > 0 and av_f > 0):
             return lh, la, None, None
-        import math, numpy as np
+        import numpy as np
         if not (np.isfinite(hv_f) and np.isfinite(av_f)):
             return lh, la, None, None
         ratio = hv_f / av_f
@@ -691,9 +691,6 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     neutral_lh = float(np.clip(neutral_lh, *NEUTRAL_LAMBDA_BOUNDS))
     neutral_la = float(np.clip(neutral_la, *NEUTRAL_LAMBDA_BOUNDS))
     rows = []
-    has_market = {"home_value", "away_value"} <= set(fixtures.columns) or {"home_starters_value_eur", "away_starters_value_eur"} <= set(fixtures.columns)
-    has_abs = {"absences_home", "absences_away"} <= set(fixtures.columns) or {"contrib_home", "contrib_away"} <= set(fixtures.columns)
-    has_rest = {"rest_home", "rest_away"} <= set(fixtures.columns)
     for f in fixtures.itertuples(index=False):
         is_prior = False
         try:
@@ -708,74 +705,6 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
             d["dc_home_advantage"] = 0.0; d["dc_rho"] = 0.0
             is_prior = True
 
-        # --- tilt chain: DC -> market -> absences -> rest (docs/16 §1.6) ---
-        # raccoglie λ correnti e applica sequenzialmente, ricostruendo griglia una sola volta alla fine
-        lh_cur = float(d.get("lambda_home", neutral_lh))
-        la_cur = float(d.get("lambda_away", neutral_la))
-        tilt_applied = False
-        # market-value prior (P2)
-        hv = getattr(f, "home_value", None)
-        if hv is None:
-            hv = getattr(f, "home_starters_value_eur", None)
-        av = getattr(f, "away_value", None)
-        if av is None:
-            av = getattr(f, "away_starters_value_eur", None)
-        if hv is not None and av is not None and has_market:
-            lh1, la1, ratio, adj = market_value_tilt(lh_cur, la_cur, hv, av, k=market_k)
-            if ratio is not None:
-                d["market_value_ratio"] = float(ratio)
-                d["market_value_adj"] = float(adj) if adj else None
-                d["market_value_k"] = float(market_k)
-                d["lambda_home_market"] = lh1
-                d["lambda_away_market"] = la1
-                lh_cur, la_cur = lh1, la1
-                tilt_applied = True
-
-        # absences prior (P2 quality): Δλ = -0.30*contrib_lost cap ±0.30
-        ch = getattr(f, "absences_home", None)
-        if ch is None:
-            ch = getattr(f, "contrib_home", None)
-        ca = getattr(f, "absences_away", None)
-        if ca is None:
-            ca = getattr(f, "contrib_away", None)
-        if has_abs and (ch is not None or ca is not None):
-            lh2, la2, ch_out, ca_out, dh, da = absences_tilt(lh_cur, la_cur, ch, ca)
-            if dh is not None or da is not None:
-                d["absences_contrib_home"] = float(ch_out) if ch_out is not None else None
-                d["absences_contrib_away"] = float(ca_out) if ca_out is not None else None
-                d["absences_delta_home"] = float(dh) if dh is not None else None
-                d["absences_delta_away"] = float(da) if da is not None else None
-                d["lambda_home_absences"] = lh2
-                d["lambda_away_absences"] = la2
-                lh_cur, la_cur = lh2, la2
-                tilt_applied = True
-
-        # rest prior: ≤2→0.95, 3-4→0.97, ≥7→1.02
-        rh = getattr(f, "rest_home", None)
-        ra = getattr(f, "rest_away", None)
-        if has_rest and (rh is not None or ra is not None):
-            lh3, la3, rh_out, ra_out, fh, fa = rest_tilt(lh_cur, la_cur, rh, ra)
-            if fh is not None or fa is not None:
-                d["rest_days_home"] = int(rh_out) if rh_out is not None else None
-                d["rest_days_away"] = int(ra_out) if ra_out is not None else None
-                d["rest_factor_home"] = float(fh) if fh is not None else None
-                d["rest_factor_away"] = float(fa) if fa is not None else None
-                d["lambda_home_rest"] = lh3
-                d["lambda_away_rest"] = la3
-                lh_cur, la_cur = lh3, la3
-                tilt_applied = True
-
-        if tilt_applied:
-            # ricostruisci griglia con λ finali dopo tutti i tilt pre-Elo
-            grid_tilt = probability_grid(lh_cur, la_cur, d.get("dc_rho", 0.0) or 0.0, size=GRID_SIZE)
-            d_new = _grid_markets(grid_tilt)
-            for kk in ("dc_attack_home","dc_defence_home","dc_attack_away","dc_defence_away","dc_home_advantage","dc_rho",
-                       "market_value_ratio","market_value_adj","market_value_k","lambda_home_market","lambda_away_market",
-                       "absences_contrib_home","absences_contrib_away","absences_delta_home","absences_delta_away","lambda_home_absences","lambda_away_absences",
-                       "rest_days_home","rest_days_away","rest_factor_home","rest_factor_away","lambda_home_rest","lambda_away_rest"):
-                if kk in d:
-                    d_new[kk]=d[kk]
-            d = d_new
         # Elo: se manca una squadra, usa 1500 invece di saltare (simula come prior)
         e = None
         try:
@@ -789,7 +718,7 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
         r = calibrated_prediction(ensemble(d, e, w_dc=w_dc), cal)
         if is_prior:
             r["prior_di_lega"] = True
-            # il modello resta dc/ensemble ma la scheda può dichiarare \"storico insufficiente, prior di lega\"
+            # il modello resta dc/ensemble ma la scheda può dichiarare "storico insufficiente, prior di lega"
         r.update({
             "lambda_scale": float(cal.lambda_scale), "rho_shift": float(cal.rho_shift),
             "calibration_version": cal.version if not cal.is_identity else "identity",
