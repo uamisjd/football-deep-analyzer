@@ -157,6 +157,18 @@ def _safe(step: str, fn: Callable[[], Any], report: CollectReport) -> Any:
         return None
 
 
+def _conta_gare(n: int, singolare: str, plurale: str) -> str:
+    """Contatore + nome concordato per i motivi meteo di ``source_status`` (``1 gara``).
+
+    Le frasi arrivano verbatim in ``stato.html`` (``build_status`` → ``{{ r.detail }}``)
+    dove il gate di concordanza le legge: con una sola gara «1 gare» ha fermato tre run
+    di fila (issue #69, 2026-09-20). Helper locale e non ``fmt.it_plural`` per due
+    ragioni: ``collect`` non dipende dal layer del sito, e una delle due frasi concorda
+    anche l'aggettivo («gara futura» / «gare future»).
+    """
+    return f"{n} {singolare if n == 1 else plurale}"
+
+
 def collect_league(
     lg: League,
     store: Store,
@@ -362,11 +374,12 @@ def collect_league(
                          "precip_prob": fc.get("precip_prob"), "code": fc.get("code"),
                          "desc": fc.get("desc"), "fetched_at": now})
         if not rows:
-            weather_reason = (f"nessuna previsione utile su {len(upcoming)} gare future "
+            quante = _conta_gare(len(upcoming), "gara futura", "gare future")
+            weather_reason = (f"nessuna previsione utile su {quante} "
                               f"(meteo FotMob {skipped_fotmob} · coordinate {skipped_coords} · "
                               f"previsione assente {skipped_forecast})")
             return 0
-        weather_reason = f"{len(rows)} gare senza meteo FotMob"
+        weather_reason = f"{_conta_gare(len(rows), 'gara', 'gare')} senza meteo FotMob"
         return store.upsert("weather_forecast", rows)
 
     weather_rows = _safe("openmeteo forecast", _weather, report) or 0
