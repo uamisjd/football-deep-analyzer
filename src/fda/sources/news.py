@@ -880,6 +880,66 @@ PIATTO_NEWS = re.compile(
 )
 
 
+
+# ---- reputazione fonte (P2 audit §18 + quality 2026-09-20: alzare soglia gossip) ----
+LOW_REPUTATION_PATTERN = re.compile(
+    r"fantacalcio|calciomercato|tuttomercato|scommess|pronostic|the sun|daily star|"
+    r"leggo\.it|superscommess|barcauniversal|madridista|onlyfans|clickbait|"
+    r"juvefc|sempreinter|sempremilan|toro news|toronews|napolicalcio|calcio\.com|"
+    r"diretta|sofascore|futbol24|yahoo|fotmob|sportbible|sospronostics|"
+    r"instagram|tiktok|facebook|youtube|twitter|x\.com|dagospia|novella|gossip|trash|"
+    r"the\s+sun",
+    re.IGNORECASE,
+)
+
+LOW_REPUTATION_EXACT = frozenset({
+    "diretta",
+    "sofascore",
+    "futbol24",
+    "yahoo",
+    "yahoo finanzas",
+    "yahoo sports",
+    "top scommesse",
+    "fantacalcio",
+    "calciomercato",
+    "tuttomercatoweb",
+    "calciomercato.com",
+    "tuttomercatoweb.com",
+    "fantacalcio.it",
+    "leggo.it",
+    "superscommesse",
+    "sospronostics",
+    "the sun",
+    "daily star",
+    "sportbible",
+    "sempreinter",
+    "sempremilan",
+    "toro news",
+    "toronews.net",
+    "napolicalcionews.it",
+    "calcio.com",
+    "fotmob",
+})
+
+def is_low_reputation(source: str | None) -> bool:
+    """Fonte a bassa reputazione per la card news (P2): scommesse, fantacalcio, gossip, aggregatori live."""
+    if not source:
+        return False
+    s = str(source).strip()
+    if not s:
+        return False
+    low = s.lower()
+    if low in LOW_REPUTATION_EXACT:
+        return True
+    if LOW_REPUTATION_PATTERN.search(s):
+        return True
+    # aggregatori generici senza redazione
+    if low in {"diretta", "sofascore", "futbol24", "yahoo", "fotmob"}:
+        return True
+    return False
+
+
+
 def news_value(title: str | None, description: str | None = "",
                source: str | None = None) -> str | None:
     """Il fatto può **spostare qualcosa** o dare sostanza di club? ``None`` se sì, altrimenti il motivo.

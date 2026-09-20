@@ -14,7 +14,10 @@
 {% set meta = p.meta if p else none %}
 {% set ctx = m.context %}
 <article class="match-card" data-match-card data-league="{{ m.league_key }}" data-status="{{ m.status_bucket }}"
-         data-search="{{ m.home_name }} {{ m.away_name }} {{ m.league_name }}">
+         data-search="{{ m.home_name }} {{ m.away_name }} {{ m.league_name }}"
+         {% if p and p.p_over25 is not none %}data-over="{{ (p.p_over25*100)|round|int }}"{% endif %}
+         {% if p and p.lambda_home is not none and p.lambda_away is not none %}data-gol="{{ (p.lambda_home + p.lambda_away)|round(1) }}"{% endif %}
+         {% if p and p.p_home is not none %}data-maxprob="{{ ([p.p_home, p.p_draw, p.p_away]|max *100)|round|int }}"{% endif %}>
   <div class="match-card-head">
     <div class="match-meta">
       <span class="status status-{{ m.status_bucket }}"><span class="status-dot" aria-hidden="true"></span>{{ m.status_label }}</span>
@@ -85,11 +88,11 @@
 
 {% macro cal_row(m) -%}
 {% set p = m.prediction %}
-<div class="cal-row{% if p %} cal-fav-{{ p.fav }}{% endif %}" data-match-card data-league="{{ m.league_key }}" data-status="scheduled">
+<div class="cal-row{% if p %} cal-fav-{{ p.fav }}{% endif %}" data-match-card data-league="{{ m.league_key }}" data-status="scheduled" data-search="{{ m.search }}"{% if p and p.over is not none %} data-over="{{ p.over }}"{% endif %}{% if p and p.gol %} data-gol="{{ p.gol }}"{% endif %}{% if p and p.pct %} data-maxprob="{{ p.pct|max }}"{% endif %}>
   <time class="cal-when" datetime="{{ m.date }}">{{ m.when }} <b>{{ m.time }}</b></time>
   <span class="cal-teams">{% if m.url %}<a href="{{ root }}{{ m.url }}">{% endif %}{{ m.home_name }} – {{ m.away_name }}{% if m.url %}</a>{% endif %}<span class="cal-lg">{{ m.league_name }}</span></span>
   {%- if p %}
-  <span class="cal-p" title="1X2: {{ p.pct[0] }}% · {{ p.pct[1] }}% · {{ p.pct[2] }}% — preferito in grassetto" aria-label="1 {{ p.pct[0] }}%, X {{ p.pct[1] }}%, 2 {{ p.pct[2] }}%">{% for v in p.pct %}{% if loop.index0 == p.fav_i %}<b>{{ v }}</b>{% else %}{{ v }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</span>
+  <span class="cal-p" title="1X2: {{ p.pct[0] }}% · {{ p.pct[1] }}% · {{ p.pct[2] }}% — preferito in grassetto" aria-label="1 {{ p.pct[0] }}%, X {{ p.pct[1] }}%, 2 {{ p.pct[2] }}%"><span class="cal-extra" aria-hidden="true"> · {{ p.gol }} gol · {{ p.over }}% over</span>{% for v in p.pct %}{% if loop.index0 == p.fav_i %}<b>{{ v }}</b>{% else %}{{ v }}{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</span>
   <span class="cal-gol" title="Gol attesi totali">{{ p.gol if p.gol else '—' }}</span>
   <span class="cal-o" title="Over 2,5 = {{ p.over }}% = {{ p.over|it_plural('partita') }} su 100 con 3+ gol">{{ (p.over ~ '%') if p.over is not none else '—' }}</span>
   {%- else %}

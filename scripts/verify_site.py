@@ -326,9 +326,9 @@ def check_status(site: Path) -> tuple[list[str], int]:
 # Una riga per partita, compatta: le regole da rispettare sono le stesse delle schede, ma il
 # lettore qui non ha contesto, quindi un arrotondamento sbagliato non sarebbe riconoscibile.
 CAL_ROW = re.compile(
-    r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)">(.*?)</div>',
+    r'<div class="cal-row([^"]*)" data-match-card data-league="([^"]+)" data-status="([^"]+)"[^>]*>(.*?)</div>',
     re.DOTALL)
-CAL_PCT = re.compile(r'<span class="cal-p"[^>]*aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%"[^>]*>(.*?)</span>')
+CAL_PCT = re.compile(r'<span class="cal-p"[^>]*aria-label="1 (\d+)%, X (\d+)%, 2 (\d+)%"[^>]*>(.*?)</span>\s*<span class="cal-gol"', re.DOTALL)
 CAL_MONTH = re.compile(
     r'<details class="cal-month" id="mese-(\d{4})-(\d{2})"[^>]*>\s*<summary>([^<]+)'
     r'<span class="cal-count">([\d.]+) ([^<]+)</span>'
@@ -416,7 +416,9 @@ def check_calendar(site: Path) -> tuple[list[str], int]:
                                          int(prob.group(3)), prob.group(4))
                 if uno + x + due != 100:
                     fails.append(f"{rel}: 1X2 di calendario {uno}+{x}+{due} != 100")
-                numeri = [int(v) for v in re.findall(r"\d+", re.sub(r"</?b>", "", visibile))]
+                # cal-extra contiene gol e over per mobile: va tolto prima di contare l'1X2
+                vis_senza_extra = re.sub(r'<span class="cal-extra".*?</span>', '', visibile, flags=re.DOTALL)
+                numeri = [int(v) for v in re.findall(r"\d+", re.sub(r"</?b>", "", vis_senza_extra))]
                 if numeri != [uno, x, due]:
                     fails.append(f"{rel}: 1X2 letto {numeri} != aria-label {[uno, x, due]}")
                 grassetto = re.findall(r"<b>(\d+)</b>", visibile)

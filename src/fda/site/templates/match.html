@@ -5,7 +5,7 @@
     dichiarata nella descrizione per chi usa un lettore di schermo. Prima la serie si leggeva solo
     scorrendo fino all'analisi o alla card della squadra. Solo a gara non ancora giocata: a
     risultato acquisito l'hero racconta la partita, non l'attesa. -#}
-{% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta)"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span></span>{% endif %}{% endmacro %}
+{% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta){% if f.n < 5 %} — campione ridotto (<5 gare), lettura provvisoria{% endif %}"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span>{% if f.n < 5 %}<span class="small mut" title="meno di 5 gare: forma provvisoria"> ⚠</span>{% endif %}</span>{% endif %}{% endmacro %}
 {% block content %}
 {% set p = c.prediction %}
 <p class="crumb"><a href="{{ root }}index.html">← Oggi</a><span aria-hidden="true">·</span><span>{{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %}</span></p>
@@ -26,7 +26,7 @@
   <div class="hero-model">
     {% set hb = p.meta.pct %}
     <div class="hero-pick"><span class="eyebrow">Esito più probabile</span><strong>{{ p.meta.top_name }} <em>{{ p.meta.top_pct }}%</em></strong><span class="small mut" title="Differenza in punti percentuali fra le due percentuali intere stampate qui a fianco (primo e secondo esito, scala 1X2)">+{{ p.meta.margin_pp|it_plural('punto','punti') }} sul secondo — {{ p.meta.second_name }} {{ p.meta.second_pct }}% · 1 {{ hb[0] }}% · X {{ hb[1] }}% · 2 {{ hb[2] }}%</span></div>
-    <div class="hero-metrics"><span class="hero-metric" title="λ casa + λ trasferta Dixon-Coles+Elo calibrate — non media xG ultime 3 (vedi 'Come arrivano'). Il totale guida Over/Under ed «entrambe a segno»"><b>{{ p.lambda_home|dec }} + {{ p.lambda_away|dec }}</b><span>gol attesi · <b>{{ p.lambda_home|dec_sum(p.lambda_away) }} totali</b></span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span></div>
+    <div class="hero-metrics"><span class="hero-metric" title="λ del modello (Dixon-Coles+Elo calibrate su {{ p.n_train }} gare), non media xG ultime 3 — 'Come arrivano' è descrittivo, non predittivo. Il totale guida Over/Under ed entrambe a segno"><b>{{ p.lambda_home|dec }} + {{ p.lambda_away|dec }}</b><span>gol attesi · <b>{{ p.lambda_home|dec_sum(p.lambda_away) }} totali</b></span></span><span class="hero-metric"><b>{{ (p.p_over25 * 100)|round|int }}%</b><span>Over 2,5</span></span><span class="hero-metric"><b>{{ (p.p_btts * 100)|round|int }}%</b><span>entrambe a segno</span></span>{% if c.market_chip %}<span class="hero-metric" style="background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);" title="{{ c.market_chip.detail }} — squilibrio valore titolari ≥2×, prior che migliora Brier di ~0,02"><b>{{ c.market_chip.text }}</b><span>{{ c.market_chip.detail }}</span></span>{% endif %}</div>
     <span class="hero-signal" title="Confronto fra i due motori del modello: Dixon-Coles sui gol attesi e rating Elo (distanza sui 100 casi)">{{ p.meta.signal_label }}</span>
     {#- P1.2 (docs/28 §2): l'hero non ripete xG/gara né PPDA — stanno nella card della squadra
         (valori di stagione) e in «Scontro tattico» (confronto di stile della gara). Qui restano
@@ -44,20 +44,20 @@
     titolo o che punta a una sezione assente fa fallire il gate. -#}
 <nav class="match-jump" aria-label="Sezioni della scheda partita">
   <a href="#lettura">{{ 'Lettura' if c.status == 'finished' else 'Analisi' }}</a>
-  {% if p %}<a href="#previsione">Previsione</a>{% endif %}
+  {% if c.fattori_chiave %}<a href="#fattori">Fattori</a>{% endif %}
   {% if c.clash %}<a href="#scontro">Scontro tattico</a>{% endif %}
+  {% if c.epv %}<a href="#epv">EPV</a>{% endif %}
   {% if c.status != 'finished' and (c.home_arrival or c.away_arrival) %}<a href="#arrivi">Come arrivano</a>{% endif %}
   {% if c.status != 'finished' and (c.home_key_deep or c.away_key_deep or c.home_key_players or c.away_key_players) %}<a href="#giocatori">I giocatori</a>{% endif %}
   <a href="#squadre">Le due squadre</a>
   {% if c.home_bench or c.away_bench %}<a href="#panchina">Panchina</a>{% endif %}
   {% if (c.home_market or c.away_market) and c.status != 'finished' %}<a href="#mercato">Mercato</a>{% endif %}
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}<a href="#notizie">Vita del club</a>{% endif %}
-  {#- P2.4 (`docs/28` §3): due voci al posto di «Contesto»: ognuna dice il titolo della card
-      che apre (invariante [33] di `scripts/verify_site.py`). -#}
   {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}<a href="#arbitro-meteo">Arbitro e meteo</a>{% endif %}
   {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}<a href="#precedenti">Precedenti</a>{% endif %}
   {% if c.key_stats %}<a href="#statistiche">Statistiche</a>{% endif %}
   {% if c.status == 'finished' and c.timeline %}<a href="#cronaca">Cronaca essenziale</a>{% endif %}
+  {% if p %}<a href="#previsione">Previsione</a>{% endif %}
   <a href="#verifica">Verifica</a>
 </nav>
 
@@ -77,144 +77,24 @@
   {% else %}<p class="mut">Dati insufficienti per un'analisi automatica.</p>{% endif %}
 </div>
 
-{% if p %}
-<div class="grid detail-card" id="previsione">
-  <div class="card">
-    <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
-    {# larghezze ed etichette dagli stessi tre numeri, somma esattamente 100: prima tre
-       arrotondamenti indipendenti facevano 99% o 101% e la barra non chiudeva il contenitore #}
-    {% set b1x2 = (p.p_home, p.p_draw, p.p_away)|pct3 %}
-    <div class="bar" role="img" aria-label="Probabilità: vittoria {{ c.home_name }} {{ b1x2[0] }} per cento, pareggio {{ b1x2[1] }} per cento, vittoria {{ c.away_name }} {{ b1x2[2] }} per cento" style="height:30px;font-size:14px"><span class="h" style="width:{{ b1x2[0] }}%">1 · {{ b1x2[0] }}%</span><span class="d" style="width:{{ b1x2[1] }}%">X · {{ b1x2[1] }}%</span><span class="a" style="width:{{ b1x2[2] }}%">2 · {{ b1x2[2] }}%</span></div>
-    <div class="tablewrap"><table style="margin-top:10px">
-      <tr><th scope="col"></th><th scope="col" class="r">{{ c.home_name }}</th><th scope="col" class="r">{{ c.away_name }}</th></tr>
-      <tr><th scope="row">Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
-      <tr><th scope="row">Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ (p.p_over15*100)|round|int }}% / {{ (p.p_over25*100)|round|int }}% / {{ (p.p_over35*100)|round|int }}%
-        <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
-          <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over15*100)|round }}%;background:var(--accent)"></i></span>
-          <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over25*100)|round }}%;background:var(--accent)"></i></span>
-          <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over35*100)|round }}%;background:var(--accent)"></i></span>
-        </div>
-      </td></tr>
-      <tr><th scope="row">Entrambe a segno</th><td colspan="2" class="r">{{ (p.p_btts*100)|round|int }}%</td></tr>
-      {# doppia chance = somma di due dei tre numeri stampati nella barra qui sopra: il lettore
-         può verificarla a mente, e i tre valori restano 200 in tutto. Prima ogni valore era
-         arrotondato da solo e nel 29% delle schede contraddiceva l'1X2 pubblicato (docs/22). #}
-      <tr style="opacity:.82"><th scope="row">Doppia chance 1X / 12 / X2</th><td colspan="2" class="r" style="font-size:13px">{{ b1x2[0] + b1x2[1] }}% / {{ b1x2[0] + b1x2[2] }}% / {{ b1x2[1] + b1x2[2] }}%</td></tr>
-      <tr style="opacity:.78"><th scope="row">Porta inviolata casa / trasferta</th><td colspan="2" class="r" style="font-size:12px">{{ (p.p_home_clean_sheet*100)|round|int }}% / {{ (p.p_away_clean_sheet*100)|round|int }}%</td></tr>
-    </table></div>
-    <p class="small mut" style="margin-top:8px;line-height:1.45">Stime Dixon-Coles pesato + Elo ({{ (p.w_dc*100)|round|int }}/{{ (100-p.w_dc*100)|round|int }}) · {{ p.n_train|it_num }} {{ 'partita' if p.n_train == 1 else 'partite' }} · {{ p.made_at|it_utc }} (ora ITA)<br><span style="color:var(--mut2)">λ pesate nel tempo su {{ p.n_train|it_num }} {{ 'gara' if p.n_train == 1 else 'gare' }}, non media delle ultime 3 → vedi “Come arrivano”</span>{% if p.lambda_limitata %} <span class="warn" style="font-weight:700">· λ limitate (tetto)</span>{% endif %}{% if p.prior_di_lega %} <span class="warn" style="font-weight:700">· prior di lega</span>{% endif %}</p>
-  </div>
-  <div class="card">
-    <h2>Risultati esatti più probabili</h2>
-    <div class="tablewrap"><table>{% for score, prob in p.top_scores.items() %}<tr><td>{{ score }}</td><td class="r">{{ (prob*100)|dec(1) }}%</td></tr>{% endfor %}</table></div>
-    {% if p.top_scores and c.score_matrix %}<p class="small mut" style="margin-top:8px" title="Somma delle probabilità dei sei punteggi qui sopra: la quota di casi che coprono">Questi {{ p.top_scores|length }} punteggi coprono {{ ((p.top_scores.values()|sum) * 100)|dec(1) }} partite su 100; il resto è negli altri {{ (c.score_matrix.cap + 1) ** 2 - p.top_scores|length }} punteggi della griglia 0–{{ c.score_matrix.cap }} e nella coda «6+ gol» (<a href="#verifica">matrice completa ↓</a>). Il più probabile non è «il risultato»: vale pochi casi su 100.</p>{% endif %}
-    {% if p.elo_home %}<p class="small mut" style="margin-top:10px">Elo: {{ c.home_name }} {{ p.elo_home|round|int }} · {{ c.away_name }} {{ p.elo_away|round|int }}<br>
-    Forza DC (attacco/difesa): {{ p.dc_attack_home|dec }}/{{ p.dc_defence_home|dec }} vs {{ p.dc_attack_away|dec }}/{{ p.dc_defence_away|dec }} · vantaggio casa {{ p.dc_home_advantage|dec }}</p>{% endif %}
-  </div>
-</div>
-{% endif %}
-{% if c.prob_steps %}
-<div class="card detail-card" id="scomposizione">
-  <h2>Come nasce questa probabilità</h2>
-  <p class="small mut">La percentuale in cima alla scheda è l'ultimo passo di una catena leggibile: ogni barra è il
-  vettore 1 / X / 2 di quel passaggio, «Δ pp» è di quanto si sposta l'esito più probabile rispetto al passo
-  precedente. Sono i valori salvati nella previsione al momento del calcolo, non una ricostruzione a posteriori:
-  se un passaggio non è tracciato nei dati, qui non compare.</p>
-  <ol class="steps">
-    {% for st in c.prob_steps %}<li>
-      <div class="step-head"><strong>{{ loop.index }} · {{ st.label }}</strong>
-        {% if st.delta_pp is not none %}<span class="delta">Δ {{ st.delta_pp|dec(1, true) }} pp</span>{% endif %}
-        <span class="small mut">{{ st.note }}</span></div>
-      {% set sb = (st.p_home, st.p_draw, st.p_away)|pct3(1) %}
-      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ sb[0]|dec(1) }} per cento, pareggio {{ sb[1]|dec(1) }} per cento, vittoria {{ c.away_name }} {{ sb[2]|dec(1) }} per cento"><span class="h" style="width:{{ sb[0] }}%">1 · {{ sb[0]|dec(1) }}%</span><span class="d" style="width:{{ sb[1] }}%">X · {{ sb[1]|dec(1) }}%</span><span class="a" style="width:{{ sb[2] }}%">2 · {{ sb[2]|dec(1) }}%</span></div>
-    </li>{% endfor %}
-  </ol>
-</div>
-{% endif %}
-
-{% if c.fav_record %}
-{% set fr = c.fav_record %}
-<div class="card detail-card" id="fascia-storica">
-  <h2>Quando il favorito aveva questa forza</h2>
-  <p class="small mut">Com'è poi andata, per ogni fascia di pronostico, nelle {{ fr.n_tot|it_num }} partite del backtest fuori campione (2020→2026, 7 leghe, nessun risultato visto a priori). La riga segnata è la fascia di QUESTA partita (favorito {{ (fr.fav*100)|dec(1) }}%). <b>Frequenza passata, non promessa</b>: l'intervallo di confidenza al 95% dice quanto la frequenza è precisa con quella numerosità.</p>
+{% if c.fattori_chiave %}
+<div class="card detail-card" id="fattori">
+  <h2>Fattori che spostano la partita</h2>
+  <p class="small mut">Sei fattori quantitativi con soglie esplicite (non giudizi): valore mercato titolari ≥1,5×, infermeria ≥2 assenti o 1 titolare abituale, riposo ≤4 gg o ≥7 gg (≤4 = corto, ricerca UEFA RR 1,32), xPTS gap ≥3 pt, PPDA ratio ≤0,75, modello ξ per lega + λ calibrata. Non cambiano la previsione salvata (Dixon-Coles+Elo tilt 70/30, RPS ~0,20), la spiegano con numeri già raccolti.</p>
   <div class="tablewrap"><table>
-    <tr><th scope="col">Favorito</th><th scope="col" class="r">partite</th><th scope="col" class="r">media prevista</th><th scope="col" class="r">poi uscito</th><th scope="col" class="r">IC 95%</th><th scope="col" class="c" title="Barra = intervallo di confidenza 95%, riempimento = frequenza osservata, tacca arancione = media prevista">previsto → uscito</th></tr>
-    {% for r in fr.rows %}<tr{% if r.current %} style="outline:1.5px solid var(--accent);outline-offset:-1.5px" title="Fascia di questa partita"{% endif %}>
-      <td>{{ r.label }}{% if r.current %} <span class="tag" style="font-size:10px;padding:1px 6px">questa</span>{% endif %}</td>
-      <td class="r">{{ r.n|it_num }}</td>
-      <td class="r">{{ (r.pred_mean*100)|dec(1) }}%</td>
-      <td class="r"><b>{{ (r.obs*100)|dec(1) }}%</b></td>
-      <td class="r mut small">{{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%</td>
-      <td class="c" style="width:150px"><span class="wl" role="img" aria-label="Fascia {{ r.label }}: {{ r.n|it_num }} gare, media prevista {{ (r.pred_mean*100)|dec(1) }} per cento, poi uscito {{ (r.obs*100)|dec(1) }} per cento, intervallo di confidenza da {{ (r.wil_lo*100)|dec(1) }} a {{ (r.wil_hi*100)|dec(1) }} per cento"><span class="fill" style="width:{{ (r.obs*100)|round(1) }}%"></span><span class="ic" style="left:{{ (r.wil_lo*100)|round(1) }}%;width:{{ ((r.wil_hi-r.wil_lo)*100)|round(1) }}%"></span><span class="p" style="left:{{ (r.pred_mean*100)|round(1) }}%"></span></span></td></tr>{% endfor %}
+    <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto</th></tr>
+    {% for f in c.fattori_chiave.rows %}<tr>
+      <td><span title="{{ f.desc }}">{{ f.icon }} {{ f.label }}</span><br><span style="display:inline-block;height:4px;background:var(--line2);border-radius:999px;width:80px;overflow:hidden;vertical-align:middle"><i style="display:block;height:100%;width:{{ f.bar_pct }}%;background:{% if f.tone == 'bad' %}var(--lose){% elif f.tone == 'good' %}var(--accent){% else %}var(--mut){% endif %}"></i></span> <span class="small mut">{{ f.bar_pct }}%</span></td>
+      <td class="small">{{ f.home }}</td>
+      <td class="small">{{ f.away }}</td>
+      <td class="small"><b>{{ f.delta }}</b></td>
+      <td class="small {% if f.tone == 'bad' %}warn{% elif f.tone == 'good' %}good{% else %}mut{% endif %}">{{ f.impact }}</td>
+    </tr>{% endfor %}
   </table></div>
-  <p class="small mut" style="margin-top:8px"> {% for r in fr.rows %}{% if r.current %}Su partite come questa il favorito è poi uscito nel <b>{{ (r.obs*100)|dec(1) }}%</b> delle {{ r.n|it_num }} gare di riferimento (IC 95% {{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%).{% endif %}{% endfor %}</p>
+  <ul class="narr" style="margin-top:10px">{% for f in c.fattori_chiave.rows %}<li class="small"><b>{{ f.icon }} {{ f.label }}:</b> {{ f.desc }}</li>{% endfor %}</ul>
+  {% if c.fattori_chiave.n > 6 %}<p class="small mut">+{{ c.fattori_chiave.n - 6 }} altri fattori sotto soglia non mostrati in tabella ma disponibili nei dati.</p>{% endif %}
 </div>
 {% endif %}
-
-{% if c.league_pos %}
-{% set lp = c.league_pos %}
-{% set lp_pct = ((lp.below*100)|round|int) %}
-<div class="card detail-card" id="posizione-lega">
-  <h2>Dove si colloca questa partita</h2>
-  <p class="small mut">I {{ lp.here|dec(2) }} gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:
-  sono <b>più alti del {{ lp_pct }}% delle {{ lp.n|it_num }} partite di {{ lp.league }} fin qui previste dal nostro modello</b>
-  (media di lega {{ lp.mean|dec(1) }}, mediana {{ lp.median|dec(1) }}): questa gara è <b>{{ lp.label }}</b>.
-  Il confronto conta solo partite del proprio campionato — la stessa cifra in campionati diversi vale diversamente —
-  e si aggiorna con l'avanzare della stagione, perché ordina quantità previste, non giudizi.</p>
-  {#- P2.3 (`docs/28` §3): la card era di solo testo. La barra mette il numero di questa partita
-      sulla scala del campionato: riempimento = percentile pubblicato in prosa, tacca grigia =
-      mediana di lega, tacca arancione = media. Gli estremi sono il 2° e il 98° percentile, non
-      il minimo e il massimo: le code schiaccerebbero tutto al centro. -#}
-  {% if lp.viz %}<div class="viz">
-    <p class="cap">Questa partita sulla scala di {{ lp.league }}</p>
-    <div class="track" role="img" aria-label="Gol attesi totali {{ lp.here|dec(2) }}, più alti del {{ lp_pct }} per cento delle {{ lp.n|it_num }} partite di {{ lp.league }} previste dal modello. Scala dal 2° al 98° percentile: da {{ lp.viz.lo|dec(1) }} a {{ lp.viz.hi|dec(1) }} gol. Mediana di lega {{ lp.median|dec(1) }}, media {{ lp.mean|dec(1) }}">
-      <span class="fill" style="width:{{ lp.viz.pct }}%"></span>
-      <span class="tick soft" style="left:{{ lp.viz.med_pct }}%" title="mediana di {{ lp.league }}: {{ lp.median|dec(1) }} gol"></span>
-      <span class="tick" style="left:{{ lp.viz.mean_pct }}%" title="media di {{ lp.league }}: {{ lp.mean|dec(1) }} gol"></span>
-      <span class="pin" style="left:{{ lp.viz.pct }}%"></span>
-      <span class="mark" style="left:{{ lp.viz.pct }}%">{{ lp.here|dec(2) }}</span>
-    </div>
-    <div class="axis"><span>{{ lp.viz.lo|dec(1) }} · più chiusa</span><span>mediana {{ lp.median|dec(1) }} · media {{ lp.mean|dec(1) }}</span><span>più aperta · {{ lp.viz.hi|dec(1) }}</span></div>
-  </div>{% endif %}
-</div>
-{% endif %}
-
-{% if c.first_goal %}
-{% set fg = c.first_goal %}
-<div class="card detail-card" id="primo-gol">
-  <h2>Quando arriva il primo gol</h2>
-  <p class="small mut">Un ritmo a due tempi calibrato sullo storico, non il puro caso: su {{ fg.n_goals|it_num }} gol nelle
-  {{ fg.n_matches|it_num }} partite di questa stagione (7 leghe), il {{ (fg.s_half*100)|dec(1) }}% cade nel 1° tempo —
-  il 2° tempo spinge di più, e quindi il Poisson «piatto» anticiperebbe i gol di qualche minuto. Con i
-  {{ fg.lam|dec(2) }} gol attesi di questa gara la metà centrale dei primi gol cade fra
-  {% if fg.q[0][1] is not none %}{{ fg.q[0][1]|round|int }}'{% else %}dopo il 90'{% endif %} e
-  {% if fg.q[2][1] is not none %}{{ fg.q[2][1]|round|int }}'{% else %}dopo il 90'{% endif %} e la mediana è
-  {% if fg.q[1][1] is not none %}{{ fg.q[1][1]|round|int }}'{% else %}dopo il 90'{% endif %}. Pari senza gol al riposo: <b>{{ (fg.s_ht*100)|dec(1) }}%</b>;
-  zero gol su novanta minuti: {{ (fg.zero*100)|dec(1) }}%. I minuti oltre il 90° non esistono in queste misure:
-  un quartile oltre il fischio finale viene scritto «dopo il 90'».</p>
-  {#- P2.3 (`docs/28` §3): due righe sovrapposte sullo stesso asse 0–90. Sopra la distribuzione
-      **osservata** dei primi gol nella stagione (quarti d'ora, {{ fg.n_first }} partite in cui un
-      gol è arrivato: gli stessi eventi da cui è misurata la quota di 1° tempo), sotto la banda
-      **del modello** per questa partita (dal 25° al 75° percentile, tacca sulla mediana).
-      Le due righe sono fonti diverse e l'etichetta lo dice: una è storia, l'altra è previsione. -#}
-  <div class="viz">
-    <p class="cap">Com'è andata davvero: quarto d'ora del primo gol ({{ fg.n_first|it_num }} partite con almeno un gol)</p>
-    <div class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol nella stagione: {% for b in fg.bins %}{{ b.label }} {{ b.per100 }} per cento{% if not loop.last %}, {% endif %}{% endfor %}">
-      {% for b in fg.bins %}<div class="gb"><span class="v">{{ b.per100 }}%</span><span class="fill" style="height:{{ b.h }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
-    </div>
-    <p class="cap" style="margin:14px 0 7px">Questa partita, dal modello: metà centrale dei primi gol</p>
-    <div class="bandbar" role="img" aria-label="Questa partita: la metà centrale dei primi gol cade fra {{ fg.q[0][1]|round|int ~ "'" if fg.q[0][1] is not none else "dopo il 90'" }} e {{ fg.q[2][1]|round|int ~ "'" if fg.q[2][1] is not none else "dopo il 90'" }}, mediana {{ fg.q[1][1]|round|int ~ "'" if fg.q[1][1] is not none else "dopo il 90'" }}; pari senza gol al riposo {{ (fg.s_ht*100)|dec(1) }} per cento">
-      <span class="band" style="left:{{ fg.band.from }}%;width:{{ (fg.band.to - fg.band.from)|round(2) }}%"></span>
-      <span class="med" style="left:{{ fg.band.med }}%"></span>
-    </div>
-    <div class="axis"><span>0'</span><span>15'</span><span>30'</span><span>45'</span><span>60'</span><span>75'</span><span>90'</span></div>
-  </div>
-</div>
-{% endif %}
-
-
-
-
 
 {% if c.clash %}
 <div class="card" id="scontro">
@@ -232,12 +112,41 @@
     </tr>
     {% endfor %}
   </table></div>
+  {% if c.clash_radar %}
+  <div style="margin:14px 0 0">
+    <p class="small mut" style="margin:0 0 6px"><b>Radar stile (5 metriche normalizzate 0-100)</b> — attacco × media, difesa × media (invertita), pressing PPDA (invertito), profondità, palle inattive %</p>
+    <div class="tablewrap"><table style="margin:0"><tr><th scope="col">Metrica</th><th scope="col" style="width:36%">{{ c.home_name }}</th><th scope="col" style="width:36%">{{ c.away_name }}</th></tr>
+      {% set rd = c.clash_radar %}
+      {% for i in range(5) %}<tr>
+        <th scope="row" class="small">{{ rd.labels[i] }}</th>
+        <td><div style="display:flex;align-items:center;gap:6px"><span style="flex:0 0 {{ rd.home[i]|round|int }}%;height:8px;background:#28c893;border-radius:999px;display:inline-block"></span><span class="small">{{ rd.home[i]|round|int }} <span class="mut">({{ rd.home_raw[ ['att','def','ppda','deep','set'][i] ]|dec if rd.home_raw[ ['att','def','ppda','deep','set'][i] ] is not none else 'n.d.' }})</span></span></div></td>
+        <td><div style="display:flex;align-items:center;gap:6px"><span style="flex:0 0 {{ rd.away[i]|round|int }}%;height:8px;background:#e0605a;border-radius:999px;display:inline-block"></span><span class="small">{{ rd.away[i]|round|int }} <span class="mut">({{ rd.away_raw[ ['att','def','ppda','deep','set'][i] ]|dec if rd.away_raw[ ['att','def','ppda','deep','set'][i] ] is not none else 'n.d.' }})</span></span></div></td>
+      </tr>{% endfor %}
+    </table></div>
+    <p class="small mut" style="margin:6px 0 0"><span style="color:#28c893">●</span> {{ c.home_name }} · <span style="color:#e0605a">●</span> {{ c.away_name }} — barre normalizzate 0-100 (100 = migliore in lega su quella metrica).</p>
+  </div>
+  {% endif %}
   {% if c.clash_ranks %}
   <p style="margin:10px 0 0"><b>{{ c.home_name }}</b>: {{ c.clash_ranks.home_line }} · <b>{{ c.away_name }}</b>: {{ c.clash_ranks.away_line }}</p>
   <p class="small" style="color:var(--accent);margin:4px 0 0">{{ c.clash_ranks.duel_line }}</p>
   <p class="small mut">Graduatorie e rapporti «× media» dalla classifica FotMob: una sola fonte per tutte le squadre della lega, quindi confrontabili senza mescolare fornitori xG.</p>
   {% endif %}
   <p class="small mut" style="margin-top:8px">{{ c.clash.global_note if c.clash.global_note is defined else c.clash.notes[0] ~ ' ' ~ c.clash.notes[1] }}</p>
+</div>
+{% endif %}
+{% if c.epv %}
+<div class="card" id="epv">
+  <h2>EPV pre-match — {{ c.epv.label }} (score {{ c.epv.epv_score|dec }})</h2>
+  <p class="small mut">Expected Possession Value ispirato a Bundesliga (PMC12640942): point diff 40% SHAP, venue 30%, goal diff ultimi 3 20%, pos 10%. Confronto EPV attesi vs modello DC+Elo. Fonte: classifica FotMob + forma ultimi 3.</p>
+  <div class="tablewrap"><table>
+    <tr><th scope="col"></th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th></tr>
+    <tr><th scope="row">Punti / PPG</th><td>{{ c.epv.home_points }} pt ({{ c.epv.home_ppg|dec }}/g)</td><td>{{ c.epv.away_points }} pt ({{ c.epv.away_ppg|dec }}/g)</td><td>{{ c.epv.point_diff }} pt · PPG {{ c.epv.ppg_diff|dec }}</td></tr>
+    <tr><th scope="row">Posizione</th><td>{{ c.epv.home_rank }}ª</td><td>{{ c.epv.away_rank }}ª</td><td>{{ c.epv.pos_diff }} pos</td></tr>
+    <tr><th scope="row">GD ultimi 3</th><td>{{ c.epv.home_gd3 }}</td><td>{{ c.epv.away_gd3 }}</td><td>{{ c.epv.gd_diff }}</td></tr>
+    <tr><th scope="row">EPV attesi</th><td>{{ c.epv.exp_home|dec }}</td><td>{{ c.epv.exp_away|dec }}</td><td>{{ c.epv.exp_total|dec }} tot (media lega {{ c.epv.league_avg_gf|dec }})</td></tr>
+    {% if c.epv.model_diff is not none %}<tr><th scope="row">Modello vs EPV</th><td colspan="3" class="small">Δ diff gol (modello-EPV) = {{ c.epv.model_diff|dec }} · modello {{ c.prediction.lambda_home|dec }}+{{ c.prediction.lambda_away|dec }}={{ c.prediction.lambda_home|dec_sum(c.prediction.lambda_away) }} vs EPV {{ c.epv.exp_home|dec }}+{{ c.epv.exp_away|dec }}={{ c.epv.exp_total|dec }}</td></tr>{% endif %}
+  </table></div>
+  <div style="margin:8px 0 0"><span class="small mut">EPV score</span> <span style="display:inline-block;height:8px;background:var(--line2);border-radius:999px;width:160px;overflow:hidden;vertical-align:middle;margin:0 6px"><i style="display:block;height:100%;width:{{ ((c.epv.epv_score+1)/2*100)|round|int }}%;background:{% if c.epv.epv_score>0.10 %}var(--accent){% elif c.epv.epv_score<-0.10 %}var(--lose){% else %}var(--mut){% endif %}\"></i></span> <span class="small">{{ c.epv.epv_score|dec }}</span> <span class="small mut" style="margin-left:8px">50% = equilibrata, &gt;0 casa, &lt;0 trasferta</span></div>
 </div>
 {% endif %}
 
@@ -262,11 +171,12 @@
       <h3 style="margin:0 0 8px">{{ name }}</h3>
       {% if a %}
       <div class="tablewrap"><table>
-        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
+        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
         {% for r in a.rows %}
         <tr>
           <td class="mut small">{{ r.date|it_dt_short }}</td>
           <td class="small">{% if r.home %}vs{% else %}@{% endif %} {{ r.opp or '—' }}</td>
+          <td class="small mut">{% if r.opp_rank %}{{ r.opp_rank }}ª{% if r.opp_pts %} ({{ r.opp_pts }} pt){% endif %}{% else %}—{% endif %}</td>
           <td class="r"><span class="pill {{ r.res }}">{{ r.res }}</span></td>
           <td class="r small">{{ r.gf }}-{{ r.ga }}</td>
           <td class="r small">{{ r.xg|dec }}</td>
@@ -274,6 +184,7 @@
         </tr>
         {% endfor %}
       </table></div>
+      {% if a.spark_xg %}<div style="margin:8px 0 0;display:flex;align-items:end;gap:2px;height:28px" title="Sparkline xG creati (gara per gara)">{% for v in a.spark_xg %}<span style="display:inline-block;width:12px;background:var(--accent);border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xG {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xG sparkline</span></div><div style="display:flex;gap:2px;margin:2px 0 0;height:14px" title="Sparkline xGA">{% for v in a.spark_xga %}<span style="display:inline-block;width:12px;background:var(--lose);opacity:.6;border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xGA {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xGA</span></div>{% endif %}
       {#- P1.2: qui c'era la riga di sintesi (xG/xGA a partita e punti contro xPTS): gli stessi
           numeri stanno nella card della squadra e in «Scontro tattico». Resta la serie gara per
           gara con la tendenza, che è l'unica cosa che questa card può dire bene. -#}
@@ -396,7 +307,9 @@
         </li>
         {% endfor %}
       </ol>
+      {% if c[side ~ '_subs'] %}<div style="margin:8px 0 0"><p class="small mut" style="margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em">Panchina ({{ c[side ~ '_subs']|length }}) — primi 5</p><p class="small">{% for sb in c[side ~ '_subs'][:5] %}{{ sb.num if sb.num is not none else '—' }} {{ sb.name }}{% if sb.pos %} <span class="mut">({{ sb.pos }})</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}{% if c[side ~ '_subs']|length >5 %} <span class="mut">+{{ c[side ~ '_subs']|length -5 }} altri</span>{% endif %}</p></div>{% endif %}
       {% if stt|length != 11 %}<p class="small mut" style="margin-top:6px">La fonte elenca {{ stt|length|it_plural('titolare') }}: distinta non definitiva.</p>{% endif %}
+      <p class="small mut" style="margin-top:6px">Legenda stime: ◇ campione <90′ — rata grezza non pubblicata, stima stabilizzata; ◎ stima stabilizzata <270′ (media pari, peso k nel tooltip).</p>
     {% endif %}
   </div>
 {% endfor %}
@@ -495,10 +408,10 @@
     {% set news_intro %}    <p class="small mut" style="margin:0 0 10px">Quello che si dice delle due società <b>mentre si avvicina la partita</b>, e solo se può <b>cambiare qualcosa</b>: una frizione, una decisione, un vincolo societario, un episodio che pesa sull'umore del gruppo. Restano fuori annunci e logistica (conferenza stampa, orari, accessi, lavori, sponsor) anche quando sono freschi; niente infortuni e formazioni (sono già in questa scheda) e niente mercato (c'è la card qui sopra). Finestra di <b>{{ c.home_news.finestra }}</b> giorni; per ogni squadra fino a <b>tre fatti</b>, non più di due per categoria. Titoli in lingua italiana selezionati dalla stampa, con testata, data e link alla fonte.</p>{% endset %}
     {% set news_sapere %}    {% for s in c.news_sapere %}<p class="small sapere" style="margin:0 0 8px;border-left:2px solid var(--accent);padding-left:8px"><b>Da sapere · {{ s.titolo }}.</b> {{ s.testo }}</p>{% endfor %}{% endset %}
     {% set news_imbuto %}    {% for side in ('home','away') %}{% set nw = c[side ~ '_news'] %}
-    <p style="margin:12px 0 6px"><b>{{ c[side ~ '_name'] }}</b> <span class="small mut">· {{ nw.esaminate }} {{ 'titolo esaminato' if nw.esaminate == 1 else 'titoli esaminati' }} negli ultimi {{ nw.finestra }} giorni · {{ nw.pubblicate }} {{ 'pubblicato' if nw.pubblicate == 1 else 'pubblicati' }}{% if nw.annunci %} · {{ nw.annunci }} {{ 'annuncio' if nw.annunci == 1 else 'annunci' }} o logistica{% endif %}{% if nw.scartate %} · {{ nw.scartate }} servizio o cronaca{% endif %}{% if nw.lingua %} · {{ nw.lingua }} in un'altra lingua{% endif %}{% if nw.piatti %} · {{ nw.piatti }} non {{ 'sposta' if nw.piatti == 1 else 'spostano' }} nulla{% endif %}{% if nw.altre %} · {{ nw.altre }} su un'altra squadra{% endif %}{% if nw.doppioni %} · {{ nw.doppioni }} già raccontat{{ 'o' if nw.doppioni == 1 else 'i' }} da un'altra voce{% endif %}{% if nw.oltre %} · {{ nw.oltre }} oltre il limite{% endif %}{% if nw.vecchie %} · {{ nw.vecchie }} {{ 'troppo vecchio' if nw.vecchie == 1 else 'troppo vecchi' }}{% endif %}{% if nw.riserva %} · <b>{{ nw.riserva|length }} in riserva</b>{% endif %}</span></p>
+    <p style="margin:12px 0 6px"><b>{{ c[side ~ '_name'] }}</b> <span class="small mut">· {{ nw.esaminate }} {{ 'titolo esaminato' if nw.esaminate == 1 else 'titoli esaminati' }} negli ultimi {{ nw.finestra }} giorni · {{ nw.pubblicate }} {{ 'pubblicato' if nw.pubblicate == 1 else 'pubblicati' }}{% if nw.annunci %} · {{ nw.annunci }} {{ 'annuncio' if nw.annunci == 1 else 'annunci' }} o logistica{% endif %}{% if nw.scartate %} · {{ nw.scartate }} servizio o cronaca{% endif %}{% if nw.lingua %} · {{ nw.lingua }} in un'altra lingua{% endif %}{% if nw.bassa_reputazione %} · {{ nw.bassa_reputazione }} fonte a bassa reputazione{% endif %}{% if nw.piatti %} · {{ nw.piatti }} non {{ 'sposta' if nw.piatti == 1 else 'spostano' }} nulla{% endif %}{% if nw.altre %} · {{ nw.altre }} su un'altra squadra{% endif %}{% if nw.doppioni %} · {{ nw.doppioni }} già raccontat{{ 'o' if nw.doppioni == 1 else 'i' }} da un'altra voce{% endif %}{% if nw.oltre %} · {{ nw.oltre }} oltre il limite{% endif %}{% if nw.vecchie %} · {{ nw.vecchie }} {{ 'troppo vecchio' if nw.vecchie == 1 else 'troppo vecchi' }}{% endif %}{% if nw.riserva %} · <b>{{ nw.riserva|length }} in riserva</b>{% endif %}</span></p>
     {% if nw.notizie %}<ul class="news-list">{% for n in nw.notizie %}<li><span class="topic">{{ n.topic_label }}</span> <span class="mut small">{{ n.published_at|it_dt }} · {{ n.source }} · {{ n.ore|round|int }} ore al fischio d'inizio</span><br><a href="{{ n.url }}" rel="noopener noreferrer nofollow">{{ n.title }}</a>{% if n.sintesi %}<br><span class="small mut">{{ n.sintesi }}</span>{% endif %}{% if n.why %}<br><span class="small"><b>Perché conta:</b> {{ n.why }}</span>{% endif %}</li>{% endfor %}</ul>
     {% for n in nw.riserva %}<p class="small mut" style="margin:4px 0 0">In riserva, fuori dai tre per regola: <a href="{{ n.url }}" rel="noopener noreferrer nofollow">{{ n.title }}</a> <span class="mut">({{ n.published_at|it_dt }} · {{ n.source }})</span></p>{% endfor %}
-    {% elif nw.esaminate %}<p class="small mut"><b>Niente che possa spostare qualcosa</b> su questa squadra: {{ nw.scartate }} servizio o cronaca{% if nw.lingua %} · {{ nw.lingua }} in un'altra lingua (pubblicabili solo in italiano){% endif %} · {{ nw.annunci }} annunci o logistica · {{ nw.piatti }} non spostano nulla{% if nw.altre %} · {{ nw.altre }} su un'altra squadra{% endif %}{% if nw.doppioni %} · {{ nw.doppioni }} già raccontat{{ 'o' if nw.doppioni == 1 else 'i' }} da un'altra voce{% endif %}{% if nw.oltre %} · {{ nw.oltre }} oltre il limite{% endif %}{% if nw.vecchie %} · {{ nw.vecchie }} troppo vecchi (oltre i {{ nw.finestra }} giorni){% endif %}. La card non riempie lo spazio con conferenze stampa, orari, lavori allo stadio o frasi di circostanza.</p>
+    {% elif nw.esaminate %}<p class="small mut"><b>Niente che possa spostare qualcosa</b> su questa squadra: {{ nw.scartate }} servizio o cronaca{% if nw.lingua %} · {{ nw.lingua }} in un'altra lingua (pubblicabili solo in italiano){% endif %}{% if nw.bassa_reputazione %} · {{ nw.bassa_reputazione }} fonte a bassa reputazione{% endif %} · {{ nw.annunci }} annunci o logistica · {{ nw.piatti }} non spostano nulla{% if nw.altre %} · {{ nw.altre }} su un'altra squadra{% endif %}{% if nw.doppioni %} · {{ nw.doppioni }} già raccontat{{ 'o' if nw.doppioni == 1 else 'i' }} da un'altra voce{% endif %}{% if nw.oltre %} · {{ nw.oltre }} oltre il limite{% endif %}{% if nw.vecchie %} · {{ nw.vecchie }} troppo vecchi (oltre i {{ nw.finestra }} giorni){% endif %}. La card non riempie lo spazio con conferenze stampa, orari, lavori allo stadio o frasi di circostanza.</p>
     {% else %}<p class="small mut">Nessun titolo in lingua italiana raccolto su questa società negli ultimi {{ nw.finestra }} giorni{% if nw.vecchie %} ({{ nw.vecchie }} i {{ 'titolo' if nw.vecchie == 1 else 'titoli' }} più {{ 'vecchio guardato' if nw.vecchie == 1 else 'vecchi guardati' }}, oltre la finestra){% endif %}.</p>
     {% endif %}
     {% endfor %}{% endset %}
@@ -529,8 +442,8 @@
   <div class="card" id="arbitro-meteo">
     <h2>Arbitro e meteo</h2>
     <div class="tablewrap"><table>
-      {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int|it_plural('gara') }})</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
-      {% if c.weather.desc %}<tr><th scope="row">Meteo</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
+      {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int|it_plural('gara') }})</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% if c.referee.yellows and c.referee.league_yellows %}<br><span style="display:inline-block;height:6px;background:var(--line2);border-radius:999px;width:120px;overflow:hidden;vertical-align:middle;margin-top:4px"><i style="display:block;height:100%;width:{{ ((c.referee.yellows / (c.referee.league_yellows*1.5) *100) if c.referee.league_yellows else 50)|round|int }}%;background:{% if c.referee.yellows >= c.referee.league_yellows*1.15 %}var(--lose){% elif c.referee.yellows <= c.referee.league_yellows*0.85 %}var(--accent){% else %}var(--mut){% endif %}"></i></span> <span class="small mut">{% if c.referee.yellows >= c.referee.league_yellows*1.15 %}sopra media lega{% elif c.referee.yellows <= c.referee.league_yellows*0.85 %}sotto media{% else %}nella media{% endif %}</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
+      {% if c.weather.desc and c.weather.extreme %}<tr><th scope="row">Meteo ⚠</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %} <span class="small warn">estremo — può spostare ritmi</span></td></tr>{% elif c.weather.desc %}<tr><th scope="row">Meteo</th><td class="small mut">{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %} — nella norma (precip <30%, 10-28°C, vento <15 km/h), non impattante</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
     </table></div>
   </div>
   {% endif %}
@@ -545,9 +458,159 @@
     {% endif %}
     {% if c.h2h_list %}<p style="margin-top:10px"><b>Ultimi precedenti</b> <span class="small mut">(esito dal punto di vista di {{ c.home_name }})</span></p>
     <div class="tablewrap"><table>{% for g in c.h2h_list %}<tr><td class="mut small" style="width:92px">{{ g.date }}<br><span style="font-size:10px;color:var(--mut2)">{{ g.league }}</span></td><td class="small">{{ g.home }} <b>{{ g.score }}</b> {{ g.away }}</td><td class="r"><span class="pill {{ g.res }}" title="{{ g.home }} {{ g.score }} {{ g.away }} — esito {{ c.home_name }}">{{ g.res }}</span></td></tr>{% endfor %}</table></div>
-    {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">{% if c.h2h_stats.n == 1 %}Nel precedente mostrato:{% else %}Nei {{ c.h2h_stats.n }} precedenti mostrati:{% endif %} <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}% dei casi.</p>{% endif %}
+    {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">{% if c.h2h_stats.n == 1 %}Nel precedente mostrato:{% else %}Nei {{ c.h2h_stats.n }} precedenti mostrati:{% endif %} <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}%{% if c.h2h_stats.over25 is defined %} · Over 2,5 nel {{ (c.h2h_stats.over25*100)|round|int }}%{% endif %}.</p>{% endif %}
+    {% if c.h2h_trend_note %}<p class="small" style="margin-top:6px;color:var(--amber)">⚠ {{ c.h2h_trend_note }}</p>{% endif %}
     {% endif %}
   </div>
+{% if p %}
+<div class="grid detail-card" id="previsione">
+  <div class="card">
+    <h2>Previsione del modello <span class="tag">{{ p.model }}</span></h2>
+    {# larghezze ed etichette dagli stessi tre numeri, somma esattamente 100: prima tre
+       arrotondamenti indipendenti facevano 99% o 101% e la barra non chiudeva il contenitore #}
+    {% set b1x2 = (p.p_home, p.p_draw, p.p_away)|pct3 %}
+    <div class="bar" role="img" aria-label="Probabilità: vittoria {{ c.home_name }} {{ b1x2[0] }} per cento, pareggio {{ b1x2[1] }} per cento, vittoria {{ c.away_name }} {{ b1x2[2] }} per cento" style="height:30px;font-size:14px"><span class="h" style="width:{{ b1x2[0] }}%">1 · {{ b1x2[0] }}%</span><span class="d" style="width:{{ b1x2[1] }}%">X · {{ b1x2[1] }}%</span><span class="a" style="width:{{ b1x2[2] }}%">2 · {{ b1x2[2] }}%</span></div>
+    <div class="tablewrap"><table style="margin-top:10px">
+      <tr><th scope="col"></th><th scope="col" class="r">{{ c.home_name }}</th><th scope="col" class="r">{{ c.away_name }}</th></tr>
+      <tr><th scope="row">Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
+      <tr><th scope="row">Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ (p.p_over15*100)|round|int }}% / {{ (p.p_over25*100)|round|int }}% / {{ (p.p_over35*100)|round|int }}%
+        <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
+          <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over15*100)|round }}%;background:var(--accent)"></i></span>
+          <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over25*100)|round }}%;background:var(--accent)"></i></span>
+          <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over35*100)|round }}%;background:var(--accent)"></i></span>
+        </div>
+        {% if c.league_over %}<br><span class="small mut">vs media {{ c.league_over.league }} Over 2,5 {{ (c.league_over.mean*100)|round|int }}% — {{ c.league_over.label }} (Δ {{ (c.league_over.diff*100)|dec(1, true) }}pp, su {{ c.league_over.n }} partite)</span>{% endif %}
+      </td></tr>
+      <tr><th scope="row">Entrambe a segno</th><td colspan="2" class="r">{{ (p.p_btts*100)|round|int }}%</td></tr>
+      {# doppia chance = somma di due dei tre numeri stampati nella barra qui sopra: il lettore
+         può verificarla a mente, e i tre valori restano 200 in tutto. Prima ogni valore era
+         arrotondato da solo e nel 29% delle schede contraddiceva l'1X2 pubblicato (docs/22). #}
+      <tr style="opacity:.82"><th scope="row">Doppia chance 1X / 12 / X2</th><td colspan="2" class="r" style="font-size:13px">{{ b1x2[0] + b1x2[1] }}% / {{ b1x2[0] + b1x2[2] }}% / {{ b1x2[1] + b1x2[2] }}%</td></tr>
+      <tr style="opacity:.78"><th scope="row">Porta inviolata casa / trasferta</th><td colspan="2" class="r" style="font-size:12px">{{ (p.p_home_clean_sheet*100)|round|int }}% / {{ (p.p_away_clean_sheet*100)|round|int }}%</td></tr>
+    </table></div>
+    <p class="small mut" style="margin-top:8px;line-height:1.45">Stime Dixon-Coles pesato + Elo ({{ (p.w_dc*100)|round|int }}/{{ (100-p.w_dc*100)|round|int }}) · {{ p.n_train|it_num }} {{ 'partita' if p.n_train == 1 else 'partite' }} · {{ p.made_at|it_utc }} (ora ITA)<br><span style="color:var(--mut2)">λ pesate nel tempo su {{ p.n_train|it_num }} {{ 'gara' if p.n_train == 1 else 'gare' }}, non media delle ultime 3 → vedi “Come arrivano”</span>{% if p.lambda_limitata %} <span class="warn" style="font-weight:700">· λ limitate (tetto)</span>{% endif %}{% if p.prior_di_lega %} <span class="warn" style="font-weight:700">· prior di lega</span>{% endif %}{% if p.market_value_ratio %} <br><span title="Prior mercato titolari: ratio {{ p.market_value_ratio|dec }} clip 0,2-5,0, k={{ p.market_value_k|dec(2) }}, adj={{ p.market_value_adj|dec }}, λ market {{ p.lambda_home_market|dec }}+{{ p.lambda_away_market|dec }} — tilt che preserva totale, Brier -0,02">💰 Prior mercato: ratio {{ p.market_value_ratio|dec }} (clip 0,2-5,0) · k {{ p.market_value_k|dec(2) }} · adj {{ p.market_value_adj|dec }} · λ market {{ p.lambda_home_market|dec }}+{{ p.lambda_away_market|dec }}</span>{% endif %}</p>
+  </div>
+  <div class="card">
+    <h2>Risultati esatti più probabili</h2>
+    <div class="tablewrap"><table>{% for score, prob in p.top_scores.items() %}<tr><td>{{ score }}</td><td class="r">{{ (prob*100)|dec(1) }}%</td></tr>{% endfor %}</table></div>
+    {% if p.top_scores and c.score_matrix %}<p class="small mut" style="margin-top:8px" title="Somma delle probabilità dei sei punteggi qui sopra: la quota di casi che coprono">Questi {{ p.top_scores|length }} punteggi coprono {{ ((p.top_scores.values()|sum) * 100)|dec(1) }} partite su 100; il resto è negli altri {{ (c.score_matrix.cap + 1) ** 2 - p.top_scores|length }} punteggi della griglia 0–{{ c.score_matrix.cap }} e nella coda «6+ gol» (<a href="#verifica">matrice completa ↓</a>). Il più probabile non è «il risultato»: vale pochi casi su 100.</p>{% endif %}
+    {% if p.elo_home %}<p class="small mut" style="margin-top:10px">Elo: {{ c.home_name }} {{ p.elo_home|round|int }} · {{ c.away_name }} {{ p.elo_away|round|int }}<br>
+    Forza DC (attacco/difesa): {{ p.dc_attack_home|dec }}/{{ p.dc_defence_home|dec }} vs {{ p.dc_attack_away|dec }}/{{ p.dc_defence_away|dec }} · vantaggio casa {{ p.dc_home_advantage|dec }}</p>{% endif %}
+  </div>
+</div>
+{% endif %}
+{% if c.prob_steps %}
+<div class="card detail-card" id="scomposizione">
+  <h2>Come nasce questa probabilità</h2>
+  <p class="small mut">La percentuale in cima alla scheda è l'ultimo passo di una catena leggibile: ogni barra è il
+  vettore 1 / X / 2 di quel passaggio, «Δ pp» è di quanto si sposta l'esito più probabile rispetto al passo
+  precedente. Sono i valori salvati nella previsione al momento del calcolo, non una ricostruzione a posteriori:
+  se un passaggio non è tracciato nei dati, qui non compare.</p>
+  <ol class="steps">
+    {% for st in c.prob_steps %}<li>
+      <div class="step-head"><strong>{{ loop.index }} · {{ st.label }}</strong>
+        {% if st.delta_pp is not none %}<span class="delta">Δ {{ st.delta_pp|dec(1, true) }} pp</span>{% endif %}
+        <span class="small mut">{{ st.note }}</span></div>
+      {% set sb = (st.p_home, st.p_draw, st.p_away)|pct3(1) %}
+      <div class="bar" role="img" aria-label="{{ st.label }}: vittoria {{ c.home_name }} {{ sb[0]|dec(1) }} per cento, pareggio {{ sb[1]|dec(1) }} per cento, vittoria {{ c.away_name }} {{ sb[2]|dec(1) }} per cento"><span class="h" style="width:{{ sb[0] }}%">1 · {{ sb[0]|dec(1) }}%</span><span class="d" style="width:{{ sb[1] }}%">X · {{ sb[1]|dec(1) }}%</span><span class="a" style="width:{{ sb[2] }}%">2 · {{ sb[2]|dec(1) }}%</span></div>
+    </li>{% endfor %}
+  </ol>
+  <div style="margin-top:14px">
+    <p class="small mut" style="margin:0 0 6px"><b>Waterfall Δ sul favorito</b> — quanto si sposta il preferito ad ogni correzione (verde = aumenta, rosso = diminuisce)</p>
+    <div style="display:grid;gap:6px">
+      {% for st in c.prob_steps %}
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="small" style="width:200px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ loop.index }}. {{ st.label }}</span>
+        <span style="display:inline-block;height:8px;border-radius:999px;background:{% if st.delta_pp is none %}var(--line2){% elif st.delta_pp>0 %}var(--accent){% else %}var(--lose){% endif %};width:{{ (st.delta_pp|abs*6)|round|int if st.delta_pp is not none else 0 }}px;min-width:{% if st.delta_pp is not none and (st.delta_pp|abs)>0.05 %}4px{% else %}0{% endif %}"></span>
+        <span class="small {% if st.delta_pp is not none and st.delta_pp>0 %}good{% elif st.delta_pp is not none and st.delta_pp<0 %}warn{% endif %}">{% if st.delta_pp is not none %}{{ st.delta_pp|dec(1, true) }}pp{% endif %}</span>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</div>
+{% endif %}
+
+{% if c.fav_record %}
+{% set fr = c.fav_record %}
+<div class="card detail-card" id="fascia-storica">
+  <h2>Quando il favorito aveva questa forza</h2>
+  <p class="small mut">Com'è poi andata, per ogni fascia di pronostico, nelle {{ fr.n_tot|it_num }} partite del backtest fuori campione (2020→2026, 7 leghe, nessun risultato visto a priori). La riga segnata è la fascia di QUESTA partita (favorito {{ (fr.fav*100)|dec(1) }}%). <b>Frequenza passata, non promessa</b>: l'intervallo di confidenza al 95% dice quanto la frequenza è precisa con quella numerosità.</p>
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Favorito</th><th scope="col" class="r">partite</th><th scope="col" class="r">media prevista</th><th scope="col" class="r">poi uscito</th><th scope="col" class="r">IC 95%</th><th scope="col" class="c" title="Barra = intervallo di confidenza 95%, riempimento = frequenza osservata, tacca arancione = media prevista">previsto → uscito</th></tr>
+    {% for r in fr.rows %}<tr{% if r.current %} style="outline:1.5px solid var(--accent);outline-offset:-1.5px" title="Fascia di questa partita"{% endif %}>
+      <td>{{ r.label }}{% if r.current %} <span class="tag" style="font-size:10px;padding:1px 6px">questa</span>{% endif %}</td>
+      <td class="r">{{ r.n|it_num }}</td>
+      <td class="r">{{ (r.pred_mean*100)|dec(1) }}%</td>
+      <td class="r"><b>{{ (r.obs*100)|dec(1) }}%</b></td>
+      <td class="r mut small">{{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%</td>
+      <td class="c" style="width:150px"><span class="wl" role="img" aria-label="Fascia {{ r.label }}: {{ r.n|it_num }} gare, media prevista {{ (r.pred_mean*100)|dec(1) }} per cento, poi uscito {{ (r.obs*100)|dec(1) }} per cento, intervallo di confidenza da {{ (r.wil_lo*100)|dec(1) }} a {{ (r.wil_hi*100)|dec(1) }} per cento"><span class="fill" style="width:{{ (r.obs*100)|round(1) }}%"></span><span class="ic" style="left:{{ (r.wil_lo*100)|round(1) }}%;width:{{ ((r.wil_hi-r.wil_lo)*100)|round(1) }}%"></span><span class="p" style="left:{{ (r.pred_mean*100)|round(1) }}%"></span></span></td></tr>{% endfor %}
+  </table></div>
+  <p class="small mut" style="margin-top:8px"> {% for r in fr.rows %}{% if r.current %}Su partite come questa il favorito è poi uscito nel <b>{{ (r.obs*100)|dec(1) }}%</b> delle {{ r.n|it_num }} gare di riferimento (IC 95% {{ (r.wil_lo*100)|dec(1) }}–{{ (r.wil_hi*100)|dec(1) }}%).{% if r.bias is defined %} Bias {{ (r.bias*100)|dec(1, true) }}pp.{% endif %}{% endif %}{% endfor %}{% if fr.bias_note %} <br><span class="small" style="color:var(--amber)">{{ fr.bias_note }}</span>{% endif %}</p>
+</div>
+{% endif %}
+
+{% if c.league_pos %}
+{% set lp = c.league_pos %}
+{% set lp_pct = ((lp.below*100)|round|int) %}
+<div class="card detail-card" id="posizione-lega">
+  <h2>Dove si colloca questa partita</h2>
+  <p class="small mut">I {{ lp.here|dec(2) }} gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:
+  sono <b>più alti del {{ lp_pct }}% delle {{ lp.n|it_num }} partite di {{ lp.league }} fin qui previste dal nostro modello</b>
+  (media di lega {{ lp.mean|dec(1) }}, mediana {{ lp.median|dec(1) }}): questa gara è <b>{{ lp.label }}</b>.
+  Il confronto conta solo partite del proprio campionato — la stessa cifra in campionati diversi vale diversamente —
+  e si aggiorna con l'avanzare della stagione, perché ordina quantità previste, non giudizi.</p>
+  {#- P2.3 (`docs/28` §3): la card era di solo testo. La barra mette il numero di questa partita
+      sulla scala del campionato: riempimento = percentile pubblicato in prosa, tacca grigia =
+      mediana di lega, tacca arancione = media. Gli estremi sono il 2° e il 98° percentile, non
+      il minimo e il massimo: le code schiaccerebbero tutto al centro. -#}
+  {% if lp.viz %}<div class="viz">
+    <p class="cap">Questa partita sulla scala di {{ lp.league }}</p>
+    <div class="track" role="img" aria-label="Gol attesi totali {{ lp.here|dec(2) }}, più alti del {{ lp_pct }} per cento delle {{ lp.n|it_num }} partite di {{ lp.league }} previste dal modello. Scala dal 2° al 98° percentile: da {{ lp.viz.lo|dec(1) }} a {{ lp.viz.hi|dec(1) }} gol. Mediana di lega {{ lp.median|dec(1) }}, media {{ lp.mean|dec(1) }}">
+      <span class="fill" style="width:{{ lp.viz.pct }}%"></span>
+      <span class="tick soft" style="left:{{ lp.viz.med_pct }}%" title="mediana di {{ lp.league }}: {{ lp.median|dec(1) }} gol"></span>
+      <span class="tick" style="left:{{ lp.viz.mean_pct }}%" title="media di {{ lp.league }}: {{ lp.mean|dec(1) }} gol"></span>
+      <span class="pin" style="left:{{ lp.viz.pct }}%"></span>
+      <span class="mark" style="left:{{ lp.viz.pct }}%">{{ lp.here|dec(2) }}</span>
+    </div>
+    <div class="axis"><span>{{ lp.viz.lo|dec(1) }} · più chiusa</span><span>mediana {{ lp.median|dec(1) }} · media {{ lp.mean|dec(1) }}</span><span>più aperta · {{ lp.viz.hi|dec(1) }}</span></div>
+  </div>{% endif %}
+</div>
+{% endif %}
+
+{% if c.first_goal %}
+{% set fg = c.first_goal %}
+<div class="card detail-card" id="primo-gol">
+  <h2>Quando arriva il primo gol</h2>
+  <p class="small mut">Un ritmo a due tempi calibrato sullo storico, non il puro caso: su {{ fg.n_goals|it_num }} gol nelle
+  {{ fg.n_matches|it_num }} partite di questa stagione (7 leghe), il {{ (fg.s_half*100)|dec(1) }}% cade nel 1° tempo —
+  il 2° tempo spinge di più, e quindi il Poisson «piatto» anticiperebbe i gol di qualche minuto. Con i
+  {{ fg.lam|dec(2) }} gol attesi di questa gara la metà centrale dei primi gol cade fra
+  {% if fg.q[0][1] is not none %}{{ fg.q[0][1]|round|int }}'{% else %}dopo il 90'{% endif %} e
+  {% if fg.q[2][1] is not none %}{{ fg.q[2][1]|round|int }}'{% else %}dopo il 90'{% endif %} e la mediana è
+  {% if fg.q[1][1] is not none %}{{ fg.q[1][1]|round|int }}'{% else %}dopo il 90'{% endif %}. Pari senza gol al riposo: <b>{{ (fg.s_ht*100)|dec(1) }}%</b>;
+  zero gol su novanta minuti: {{ (fg.zero*100)|dec(1) }}%. I minuti oltre il 90° non esistono in queste misure:
+  un quartile oltre il fischio finale viene scritto «dopo il 90'».</p>
+  {% if fg.first_scorer %}<p class="small" style="margin-top:8px"><b>Chi segna prima:</b> {{ c.home_name }} {{ fg.first_scorer.home_pct }}% · {{ c.away_name }} {{ fg.first_scorer.away_pct }}% · 0-0 {{ fg.first_scorer.none_pct }}% <span class="mut small">(da λ: P(first)=λ_i/λ_tot × (1-P(0-0)))</span></p>{% endif %}
+  {#- P2.3 (`docs/28` §3): due righe sovrapposte sullo stesso asse 0–90. Sopra la distribuzione
+      **osservata** dei primi gol nella stagione (quarti d'ora, {{ fg.n_first }} partite in cui un
+      gol è arrivato: gli stessi eventi da cui è misurata la quota di 1° tempo), sotto la banda
+      **del modello** per questa partita (dal 25° al 75° percentile, tacca sulla mediana).
+      Le due righe sono fonti diverse e l'etichetta lo dice: una è storia, l'altra è previsione. -#}
+  <div class="viz">
+    <p class="cap">Com'è andata davvero: quarto d'ora del primo gol ({{ fg.n_first|it_num }} partite con almeno un gol)</p>
+    <div class="goalclock" role="img" aria-label="Distribuzione osservata del primo gol nella stagione: {% for b in fg.bins %}{{ b.label }} {{ b.per100 }} per cento{% if not loop.last %}, {% endif %}{% endfor %}">
+      {% for b in fg.bins %}<div class="gb"><span class="v">{{ b.per100 }}%</span><span class="fill" style="height:{{ b.h }}%"></span><span class="x">{{ b.label }}</span></div>{% endfor %}
+    </div>
+    <p class="cap" style="margin:14px 0 7px">Questa partita, dal modello: metà centrale dei primi gol</p>
+    <div class="bandbar" role="img" aria-label="Questa partita: la metà centrale dei primi gol cade fra {{ fg.q[0][1]|round|int ~ "'" if fg.q[0][1] is not none else "dopo il 90'" }} e {{ fg.q[2][1]|round|int ~ "'" if fg.q[2][1] is not none else "dopo il 90'" }}, mediana {{ fg.q[1][1]|round|int ~ "'" if fg.q[1][1] is not none else "dopo il 90'" }}; pari senza gol al riposo {{ (fg.s_ht*100)|dec(1) }} per cento">
+      <span class="band" style="left:{{ fg.band.from }}%;width:{{ (fg.band.to - fg.band.from)|round(2) }}%"></span>
+      <span class="med" style="left:{{ fg.band.med }}%"></span>
+    </div>
+    <div class="axis"><span>0'</span><span>15'</span><span>30'</span><span>45'</span><span>60'</span><span>75'</span><span>90'</span></div>
+  </div>
+</div>
+{% endif %}
+
   {% endif %}
   {% if c.key_stats %}
   <div class="card" id="statistiche">

@@ -2,10 +2,10 @@
 {% block title %}Stato fonti — CalcioMetro{% endblock %}
 {% block content %}
 <h1>Stato fonti e database</h1>
-<p class="mut">Salute degli aggiornamenti automatici: ogni fonte viene interrogata ripetutamente al giorno e qui si vede l'esito dell'ultimo run, oltre alla completezza delle schede partita.</p>
+<p class="mut">Salute degli aggiornamenti automatici: ogni fonte viene interrogata 5 volte al giorno e qui si vede l'esito dell'ultimo run, oltre alla completezza delle schede partita. <b>FotMob è la fonte primaria</b> (7/7 leghe); ESPN è riserva sospesa per 403 cronico, coperta da FotMob/Google News.</p>
 <div class="grid">
 <div class="card"><h2>Ultimi run per fonte</h2>
-<p class="small mut">«Righe» sono le righe di dati salvate dalla fonte in quell'ultimo run: una fonte che risponde ma non salva nulla scrive qui il motivo (feed vuoto, forma cambiata, niente in finestra) — così un run «andato bene» non nasconde più un contenuto mancante.</p>
+<p class="small mut">«Righe» sono le righe di dati salvate dalla fonte in quell'ultimo run: una fonte che risponde ma non salva nulla scrive qui il motivo. <b>SOSPESO</b> non è un errore del sito: la fonte ha fallito per molti run consecutivi (es. ESPN 403), il sistema la mette in pausa e la riprova da solo ogni 4 run. <b>AVVISO</b> è un degrado coperto da un'altra fonte (es. feed Sportmediaset 404, coperto da Google News).</p>
 <div class="tablewrap"><table><tr><th scope="col">Fonte</th><th scope="col">Ultimo run</th><th scope="col" class="r">Richieste</th><th scope="col" class="r">Righe</th><th scope="col">Esito</th></tr>
 {% for r in sources %}<tr><td>{{ r.source }}</td><td class="mut">{{ r.run_at }}</td><td class="r">{{ r.requests|it_num }}</td><td class="r">{{ r.rows|it_num if r.rows is not none else "—" }}</td><td>{% if not r.ok %}{% if r.suspended %}<span class="pill S" title="La fonte ha fallito gli ultimi run: il run non la interroga più, ma riprova periodicamente da sola">SOSPESO</span> <span class="small mut">{{ r.error }}</span>{% elif r.warn %}<span class="pill N">AVVISO</span> <span class="small mut">{{ r.error }}</span>{% else %}<span class="pill P">ERRORE</span> <span class="small mut">{{ r.error }}</span>{% endif %}{% elif r.rows == 0 %}<span class="pill V">OK</span> <span class="small mut">0 righe · {{ r.detail }}</span>{% else %}<span class="pill V">OK</span> <span class="small mut">{{ r.detail }}</span>{% endif %}</td></tr>{% else %}<tr><td colspan="5" class="mut">Nessun run registrato.</td></tr>{% endfor %}
 </table></div>

@@ -16,7 +16,7 @@ import pandas as pd
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from ..backoff import is_suspended_row
-from ..config import DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
+from ..config import CALENDAR_DAYS, DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..models.season_sim import mc_percent, mc_se
 from ..store import Store
@@ -404,8 +404,9 @@ class SiteBuilder:
         scheduled = sum(row["status_bucket"] == "scheduled" for row in rows)
         finished = sum(row["status_bucket"] == "finished" for row in rows)
         predicted = sum(row["prediction"] is not None for row in rows)
-        next_match = next((row for row in sorted(rows, key=lambda item: item["utc_kickoff"])
-                           if row["status_bucket"] == "scheduled"), None)
+        # prossimo calcio: ordinato per orario, solo scheduled
+        sorted_sched = sorted([r for r in rows if r["status_bucket"] == "scheduled"], key=lambda item: item["utc_kickoff"])
+        next_match = sorted_sched[0] if sorted_sched else None
         return {
             "matches": len(rows), "leagues": len({row["league_key"] for row in rows}),
             "live": live, "scheduled": scheduled, "finished": finished,
@@ -413,7 +414,15 @@ class SiteBuilder:
             "next_time": next_match["utc_kickoff"].strftime("%H:%M") if next_match else None,
             "next_match": (f'{next_match["home_name"]} – {next_match["away_name"]}'
                            if next_match else None),
+            "next_iso": next_match["utc_kickoff"].isoformat() if next_match else None,
+            "next_league": next_match["league_name"] if next_match else None,
         }
+
+    @staticmethod
+    def _sort_today_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Ordina Oggi: live prima, poi pausa, poi scheduled per orario, poi finite."""
+        order = {"live": 0, "paused": 1, "scheduled": 2, "postponed": 3, "suspended": 4, "finished": 5}
+        return sorted(rows, key=lambda r: (order.get(r.get("status_bucket"), 9), r.get("utc_kickoff")))
 
     def _calendar_rows(self, fx: pd.DataFrame, preds: pd.DataFrame,
                        with_card: set[int]) -> tuple[list[dict[str, Any]], int]:
@@ -451,6 +460,8 @@ class SiteBuilder:
                 "when": f"{ITALIAN_DAYS_SHORT[local.weekday()]} {local.day} {ITALIAN_MONTHS_SHORT[local.month]}",
                 "time": local.strftime("%H:%M"), "date": local.date().isoformat(),
                 "home_name": str(r.home_name), "away_name": str(r.away_name),
+                # ricerca anche sulle righe compatte (bug: prima mancava → filtro testo non funzionava sul calendario)
+                "search": f"{r.home_name} {r.away_name} {self.league_names.get(int(r.league_id), '')}",
                 # la scheda esiste solo nella finestra breve: altrove la riga resta testuale
                 "url": f"partite/{int(r.match_id)}.html" if int(r.match_id) in with_card else None,
                 "prediction": prev,
@@ -470,6 +481,228 @@ class SiteBuilder:
         return [(day_label(d), sorted(v, key=lambda m: m["utc_kickoff"])) for d, v in sorted(groups.items())]
 
     # ---- pagine ----------------------------------------------------------------------------------
+    def _next_fixture_info(self, fx: pd.DataFrame, today_local):
+        """Prossima data con partite dopo oggi (per gestire pause nazionali).
+
+        Ritorna dict con data, label italiana, conteggio e giorni di attesa, oppure None
+        se non ci sono future. Serve a spiegare perché domani/dopodomani mancano.
+        """
+        future = fx[fx["local_date"] > today_local].copy()
+        if future.empty:
+            return None
+        future = future.sort_values("utc_kickoff")
+        next_date = future.iloc[0]["local_date"]
+        same_day = future[future["local_date"] == next_date]
+        gap_days = (next_date - today_local).days
+        return {
+            "date": next_date,
+            "date_iso": next_date.isoformat(),
+            "label": day_label(next_date),
+            "count": len(same_day),
+            "gap_days": gap_days,
+            "is_break": gap_days > DETAIL_WINDOW_DAYS,
+        }
+
+    def _upcoming_highlights(self, rows: list[dict[str, Any]], calendar: list[dict] | None = None) -> dict[str, Any]:
+        """Estrae valore dalla vista Prossime: riassunto, top match, distribuzione leghe.
+
+        rows = _match_rows per i prossimi 7gg (schede complete). Se vuoti (pausa),
+        usa il primo mese di calendario per non lasciare la pagina senza spunti.
+        Ritorna dict con summary, highlights, league_breakdown, calendar_picks.
+        """
+        from collections import Counter
+        out: dict[str, Any] = {"summary": None, "highlights": [], "leagues": [], "calendar_picks": [],
+                               "live": [], "finished": [], "timeline": [], "finished_summary": None}
+
+        # ---- riassunto 7gg ----
+        if rows:
+            total = len(rows)
+            # leghe
+            cnt = Counter(r["league_name"] for r in rows)
+            leagues = [{"name": k, "count": v} for k, v in cnt.most_common()]
+            # gol attesi e over dalle prediction (se disponibili)
+            gols, overs = [], []
+            for r in rows:
+                p = r.get("prediction") or {}
+                lh = p.get("lambda_home")
+                la = p.get("lambda_away")
+                if lh is not None and la is not None:
+                    try:
+                        gols.append(float(lh) + float(la))
+                    except Exception:
+                        pass
+                ov = p.get("p_over25")
+                if ov is not None:
+                    try:
+                        overs.append(float(ov))
+                    except Exception:
+                        pass
+            avg_gol = round(sum(gols) / len(gols), 2) if gols else None
+            avg_over = round(sum(overs) / len(overs) * 100) if overs else None
+            high_over = sum(1 for o in overs if o >= 0.60)
+            # bilanciata = max prob più bassa, sbilanciata = max prob più alta
+            def max_prob(r):
+                p = r.get("prediction") or {}
+                return max(p.get("p_home", 0), p.get("p_draw", 0), p.get("p_away", 0))
+            try:
+                most_balanced = min(rows, key=max_prob) if rows else None
+                most_one_sided = max(rows, key=max_prob) if rows else None
+                highest_gol = max(rows, key=lambda r: (r.get("prediction") or {}).get("lambda_home", 0) + (r.get("prediction") or {}).get("lambda_away", 0)) if gols else None
+                highest_over = max(rows, key=lambda r: (r.get("prediction") or {}).get("p_over25", 0)) if overs else None
+            except Exception:
+                most_balanced = most_one_sided = highest_gol = highest_over = None
+
+            out["summary"] = {
+                "total": total,
+                "avg_gol": avg_gol,
+                "avg_over": avg_over,
+                "high_over": high_over,
+            }
+            out["leagues"] = leagues
+
+            # highlights per 7gg
+            hl = []
+            if highest_gol:
+                p = highest_gol.get("prediction") or {}
+                hl.append({"kind": "gol", "label": "Più gol attesi", "icon": "⚽", "match": highest_gol,
+                           "detail": f"{it_dec((p.get('lambda_home',0)+p.get('lambda_away',0)),1)} gol attesi"})
+            if highest_over:
+                p = highest_over.get("prediction") or {}
+                hl.append({"kind": "over", "label": "Over 2,5 più probabile", "icon": "🔥", "match": highest_over,
+                           "detail": f"Over 2,5 al {round(p.get('p_over25',0)*100)}%"})
+            if most_balanced:
+                p = most_balanced.get("prediction") or {}
+                hl.append({"kind": "balanced", "label": "Più equilibrata", "icon": "⚖️", "match": most_balanced,
+                           "detail": f"1 {round(p.get('p_home',0)*100)}% · X {round(p.get('p_draw',0)*100)}% · 2 {round(p.get('p_away',0)*100)}% — incerta"})
+            if most_one_sided:
+                p = most_one_sided.get("prediction") or {}
+                # evita duplicato se stessa della balanced
+                if most_one_sided != most_balanced:
+                    hl.append({"kind": "onesided", "label": "Favorita netta", "icon": "🎯", "match": most_one_sided,
+                               "detail": f"{max_prob(most_one_sided)*100:.0f}% sul favorito"})
+            out["highlights"] = hl[:3]  # max 3 per non affollare
+
+            # ---- live / finite / timeline (valore per Oggi) ----
+            try:
+                live = [r for r in rows if r.get("status_bucket") == "live"]
+                out["live"] = sorted(live, key=lambda x: x["utc_kickoff"])[:6]
+            except Exception:
+                out["live"] = []
+            try:
+                finished = [r for r in rows if r.get("status_bucket") == "finished"]
+                # verifica modello per finite di oggi: hit se favorito = esito reale
+                fin_verified = []
+                hits = 0
+                for r in finished:
+                    p = r.get("prediction") or {}
+                    hg = r.get("home_goals")
+                    ag = r.get("away_goals")
+                    if hg is None or ag is None:
+                        continue
+                    # esito reale
+                    if hg > ag:
+                        real = "h"
+                    elif hg == ag:
+                        real = "d"
+                    else:
+                        real = "a"
+                    # favorito modello
+                    fav = None
+                    try:
+                        ph, pd_, pa = float(p.get("p_home",0)), float(p.get("p_draw",0)), float(p.get("p_away",0))
+                        fav = ["h","d","a"][[ph,pd_,pa].index(max(ph,pd_,pa))]
+                    except Exception:
+                        fav = None
+                    hit = (fav == real) if fav else None
+                    if hit:
+                        hits += 1
+                    fin_verified.append({"match": r, "real": real, "fav": fav, "hit": hit})
+                out["finished"] = fin_verified[:10]
+                if finished:
+                    out["finished_summary"] = {"total": len(finished), "hits": hits, "hit_rate": round(hits/len(finished)*100) if finished else 0}
+            except Exception:
+                out["finished"] = []
+            try:
+                # timeline per fasce orarie
+                from collections import defaultdict
+                tl = defaultdict(list)
+                for r in rows:
+                    try:
+                        h = r["utc_kickoff"].hour
+                    except Exception:
+                        continue
+                    # fascia: mattina 12-14, pomeriggio 15-17, sera 18-20, notte 21+
+                    if h < 15:
+                        key = "12–14"
+                    elif h < 18:
+                        key = "15–17"
+                    elif h < 21:
+                        key = "18–20"
+                    else:
+                        key = "21–23"
+                    tl[key].append(r)
+                out["timeline"] = [{"slot": k, "count": len(v), "matches": sorted(v, key=lambda x: x["utc_kickoff"])[:3]} for k,v in sorted(tl.items())]
+            except Exception:
+                out["timeline"] = []
+
+        # ---- picks dal calendario (prossimo mese) — utile durante pausa ----
+        if calendar:
+            # per pausa, mostra prima le partite del giorno di rientro (next_info), non del fine mese
+            all_cands = [m for mo in calendar for m in mo.get("matches", [])]
+            if not all_cands:
+                out["calendar_picks"] = []
+                return out
+            # data più vicina nel calendario
+            try:
+                next_cal_date = min(m["date"] for m in all_cands)
+                cands_next_day = [m for m in all_cands if m["date"] == next_cal_date]
+            except Exception:
+                cands_next_day = []
+            # se il giorno di rientro ha poche partite, completa con resto del primo mese
+            first_month = next((m for m in calendar if m.get("matches")), None)
+            pool = cands_next_day if len(cands_next_day) >= 3 else (first_month["matches"] if first_month else all_cands)
+
+            def parse_gol(x):
+                try:
+                    return float((x.get("prediction") or {}).get("gol", "0").replace(",", "."))
+                except Exception:
+                    return 0.0
+            def parse_over(x):
+                try:
+                    return int((x.get("prediction") or {}).get("over") or 0)
+                except Exception:
+                    return 0
+
+            # ordina per gol e over, ma privilegia il giorno di rientro
+            def sort_key(m):
+                is_next_day = 1 if m["date"] == next_cal_date else 0
+                return (is_next_day, parse_gol(m), parse_over(m))
+
+            # prima i top del giorno di rientro per gol/over, poi completa
+            top_gol = sorted(pool, key=parse_gol, reverse=True)[:2]
+            top_over = sorted(pool, key=parse_over, reverse=True)[:2]
+            seen = set()
+            picks = []
+            for m in cands_next_day:  # prima tutti del giorno di rientro ordinati per gol
+                if m["match_id"] in seen:
+                    continue
+                seen.add(m["match_id"])
+                picks.append(m)
+                if len(picks) >= 3:
+                    break
+            for m in top_gol + top_over:
+                if m["match_id"] in seen:
+                    continue
+                seen.add(m["match_id"])
+                picks.append(m)
+                if len(picks) >= 3:
+                    break
+            # ordina finale per data/ora per leggibilità
+            picks = sorted(picks, key=lambda x: (x["date"], x["time"]))[:3]
+            out["calendar_picks"] = picks
+
+        return out
+
     def build_indexes(self, fx: pd.DataFrame) -> set[int]:
         today_local = self.now.astimezone(self.tz).date()
         fx = fx[fx.status != "cancelled"].copy()
@@ -482,38 +715,80 @@ class SiteBuilder:
         today_rows = self._match_rows(today)
         upcoming_rows = self._match_rows(upcoming)
         result_rows = self._match_rows(results)
-        ids_breve = set(pd.concat([today, upcoming, results]).match_id.astype(int))
-        # --- calendario completo: ciò che la finestra breve non copre, in forma compatta ---
-        # non costa richieste extra (le partite sono già state raccolte da `fda collect`) e
-        # nemmeno analisi per partita: una riga = data, squadre e ultima previsione disponibile
+        # Oggi: live prima, poi scheduled per orario, poi finite — più intuitivo
+        today_rows = self._sort_today_rows(today_rows)
+        # evita concat vuoto quando una delle tre tabelle è vuota (pausa nazionali)
+        parts = [df for df in (today, upcoming, results) if not df.empty]
+        ids_breve = set(pd.concat(parts).match_id.astype(int)) if parts else set()
+        # --- calendario compatto: ciò che la finestra breve non copre, limitato a 30gg (prima 8 mesi, 1.4MB)
         lontano = fx[(fx.status.isin(["scheduled", "postponed", "suspended", "cancelled"]))
-                     & (fx.local_date > today_local + timedelta(days=DETAIL_WINDOW_DAYS))]
+                     & (fx.local_date > today_local + timedelta(days=DETAIL_WINDOW_DAYS))
+                     & (fx.local_date <= today_local + timedelta(days=CALENDAR_DAYS))]
         calendar, calendar_missing = self._calendar_rows(lontano, self.store.read("predictions"), ids_breve)
-        log.info("calendario completo: %d partite in %d mesi (%d senza previsione)",
-                 len(lontano), len(calendar), calendar_missing)
+        log.info("calendario compatto %dgg: %d partite in %d mesi (%d senza previsione)",
+                 CALENDAR_DAYS, len(lontano), len(calendar), calendar_missing)
+
+        # info sulla prossima data utile (per gestire buchi come sosta nazionali)
+        next_info = self._next_fixture_info(fx, today_local)
+        # anche per oggi: se oggi è vuoto, serve la prossima data
+        next_after_today = next_info
+        # per la vista risultati: se ultimi 7 gg vuoti, mostra ultimi 30 gg (fallback utile durante pause)
+        results_fallback = None
+        if results.empty:
+            last30 = fx[(fx["local_date"] < today_local) & (fx.status == "finished")].sort_values("utc_kickoff", ascending=False).head(20)
+            if not last30.empty:
+                results_fallback = {
+                    "count": len(last30),
+                    "last_date": last30.iloc[0]["local_date"],
+                    "label": day_label(last30.iloc[0]["local_date"]),
+                    "is_fallback": True,
+                }
+                # mostra comunque gli ultimi finiti, non lasciare pagina vuota
+                results = last30.sort_values("utc_kickoff")
+                result_rows = self._match_rows(results)
+
+        # valore aggiunto per Oggi: riassunto con gol/over + highlights + timeline
+        today_extra = self._upcoming_highlights(today_rows, None)
+
         self._render("index.html", "index.html", title=f"Partite di oggi — {day_label(today_local)}",
                      subtitle="Il quadro della giornata, poi il dettaglio verificabile di ogni partita.",
                      page_title=f"Partite di oggi — {day_label(today_local)} · CalcioMetro",
                      page_description="Tutte le partite di oggi con analisi pre-partita, previsioni Dixon-Coles+Elo, forma, indisponibili, arbitro e meteo. Aggiornato 5 volte al giorno.",
                      days=self._group_by_day(today_rows), view_kind="today",
-                     summary=self._today_summary(today_rows), filters=self._list_filters(today_rows))
+                     summary=self._today_summary(today_rows), filters=self._list_filters(today_rows),
+                     next_info=next_after_today, today_local=today_local,
+                     today_summary_extra=today_extra.get("summary"),
+                     today_highlights=today_extra.get("highlights"),
+                     today_leagues=today_extra.get("leagues"),
+                     today_live=today_extra.get("live"),
+                     today_finished=today_extra.get("finished"),
+                     today_timeline=today_extra.get("timeline"),
+                     today_finished_summary=today_extra.get("finished_summary"))
+        # valore aggiunto per Prossime: riassunto 7gg, highlights, picks calendario
+        upcoming_extra = self._upcoming_highlights(upcoming_rows, calendar)
+
         self._render("index.html", "prossime.html", title="Prossime partite",
-                     subtitle=f"I prossimi {DETAIL_WINDOW_DAYS} giorni con la scheda completa, "
-                              "poi tutto il calendario della stagione in forma compatta.",
-                     page_title="Prossime partite e calendario completo · CalcioMetro",
-                     page_description=f"I prossimi {DETAIL_WINDOW_DAYS} giorni con schede "
-                                      "dettagliate e l'intero calendario stagionale in forma "
-                                      "compatta: pronostici, gol attesi e Over 2,5 per ogni gara.",
+                     subtitle=f"I prossimi {CALENDAR_DAYS} giorni: {DETAIL_WINDOW_DAYS} giorni con scheda completa, "
+                              f"poi calendario compatto fino a {CALENDAR_DAYS} giorni.",
+                     page_title=f"Prossime partite nei prossimi {CALENDAR_DAYS} giorni · CalcioMetro",
+                     page_description=f"I prossimi {CALENDAR_DAYS} giorni con schede "
+                                      f"dettagliate per {DETAIL_WINDOW_DAYS} giorni e calendario compatto: pronostici, gol attesi e Over 2,5.",
                      days=self._group_by_day(upcoming_rows), view_kind="upcoming", summary=None,
                      filters=self._list_filters(upcoming_rows),
                      calendar=calendar, calendar_missing=calendar_missing,
-                     calendar_days=DETAIL_WINDOW_DAYS)
+                     calendar_days=CALENDAR_DAYS, next_info=next_info,
+                     today_local=today_local, upcoming_count=len(upcoming_rows),
+                     upcoming_summary=upcoming_extra.get("summary"),
+                     upcoming_highlights=upcoming_extra.get("highlights"),
+                     upcoming_leagues=upcoming_extra.get("leagues"),
+                     calendar_picks=upcoming_extra.get("calendar_picks"))
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
                      subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
                      page_title="Risultati recenti e analisi post-partita · CalcioMetro",
                      page_description="Risultati degli ultimi 7 giorni con lettura post-partita: xG, occasioni, cronaca e verifica delle previsioni.",
                      days=self._group_by_day(result_rows), view_kind="results", summary=None,
-                     filters=self._list_filters(result_rows))
+                     filters=self._list_filters(result_rows),
+                     results_fallback=results_fallback, today_local=today_local)
         return ids_breve
 
     @staticmethod

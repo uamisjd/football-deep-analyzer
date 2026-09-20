@@ -23,6 +23,11 @@ PROCESSED_DIR = DATA_DIR / "processed"
 #: elenco che prometteva più schede di quante ne esistano (P1.5, docs/19 §2.4).
 DETAIL_WINDOW_DAYS: int = 7
 
+#: Giorni totali mostrati nel calendario compatto di Prossime. Prima era illimitato (8 mesi,
+#: 1988 partite, 1.4 MB) — pesante su mobile, modello poco affidabile oltre 30gg, SEO thin.
+#: Con 30 giorni: 152 partite totali, 29 dettagliate + 123 compatte, ~200 KB.
+CALENDAR_DAYS: int = 30
+
 
 @dataclass(frozen=True)
 class League:

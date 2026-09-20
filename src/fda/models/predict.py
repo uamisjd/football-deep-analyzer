@@ -37,6 +37,142 @@ log = logging.getLogger(__name__)
 #      calibrazione è stata ristimata su questa ricetta, non riutilizzata dalla precedente.
 MODEL_VERSION = "dc-elo-tilt-0.4"
 
+# Market-value prior (P2 audit §market-value prior): world-cup-predictor Brier 0.6123→0.5907
+# k calibrato su backtest: 0.12 è il valore che massimizza log-loss fuori campione su 5.7k gare
+# con valori FotMob disponibili (grid 0.05..0.25). Ratio clip 0.2..5.0 per evitare estremi
+# a inizio stagione (valori mancanti → nessun tilt).
+MARKET_VALUE_K: float = 0.12
+MARKET_VALUE_RATIO_CLIP: tuple[float, float] = (0.2, 5.0)
+
+# Assenze: λ *= 1 - 0.30*contrib_lost/avg_contrib, preservando totale (audit 2026-09-20 §Prossimi step)
+# avg_contrib = 2.0 xG+xA/90 di squadra (stima da distribuzione: 1.1 media persa → fattore ~0.835)
+ABSENCES_K: float = 0.30
+ABSENCES_AVG_CONTRIB: float = 2.0
+ABSENCES_FACTOR_MIN: float = 0.70
+ABSENCES_FACTOR_MAX: float = 1.0
+ABSENCES_CAP: float = 0.30  # legacy, mantenuto per compatibilità ma non usato nel nuovo fattore
+# Riposo: ≤2→0.95, ≤4→0.98 (UEFA RR 1.32), ≥7→1.02, preservando totale
+REST_SHORT = 2
+REST_WARN = 4
+REST_LONG = 7
+REST_FACTOR_VERY_SHORT = 0.95
+REST_FACTOR_SHORT = 0.98
+REST_FACTOR_LONG = 1.02
+
+def absences_tilt(lh: float, la: float, ch: float | None, ca: float | None,
+                  k: float = ABSENCES_K, avg: float = ABSENCES_AVG_CONTRIB) -> tuple[float, float, float | None, float | None, float | None, float | None]:
+    """Prior assenze con fattore moltiplicativo e preservazione del totale gol.
+
+    λ *= 1 - k*contrib_lost/avg_contrib (audit 2026-09-20). Il totale resta quello del modello
+    sui gol: se una squadra perde attacco, l'altra non guadagna gol gratis, ma il rapporto
+    si sposta e poi si rinormalizza. Ritorna (lh_new, la_new, ch, ca, fh, fa) dove fh/fa sono
+    i fattori applicati prima della rinormalizzazione.
+    """
+    try:
+        fh = fa = None
+        lh_f = float(lh); la_f = float(la)
+        total = lh_f + la_f
+        # fattori
+        if ch is not None and np.isfinite(ch) and ch > 0:
+            raw = 1.0 - k * float(ch) / avg if avg else 1.0
+            fh = float(np.clip(raw, ABSENCES_FACTOR_MIN, ABSENCES_FACTOR_MAX))
+            lh_f = lh_f * fh
+        if ca is not None and np.isfinite(ca) and ca > 0:
+            raw = 1.0 - k * float(ca) / avg if avg else 1.0
+            fa = float(np.clip(raw, ABSENCES_FACTOR_MIN, ABSENCES_FACTOR_MAX))
+            la_f = la_f * fa
+        # preserva totale atteso
+        tot_new = lh_f + la_f
+        if tot_new > 0 and total > 0:
+            scale = total / tot_new
+            lh_f *= scale
+            la_f *= scale
+        lh_new = max(0.25, lh_f)
+        la_new = max(0.25, la_f)
+        # per compatibilità storica il campo delta contiene fattore-1
+        dh = (fh - 1.0) if fh is not None else None
+        da = (fa - 1.0) if fa is not None else None
+        return lh_new, la_new, ch, ca, dh, da
+    except Exception:
+        return lh, la, ch, ca, None, None
+
+def rest_tilt(lh: float, la: float, rh: int | None, ra: int | None) -> tuple[float, float, float | None, float | None, float | None, float | None]:
+    """Prior riposo con preservazione del totale: ≤2→0.95, ≤4→0.98, ≥7→1.02."""
+    try:
+        fh = fa = None
+        lh_f = float(lh); la_f = float(la)
+        total = lh_f + la_f
+        if rh is not None:
+            try:
+                rh_i = int(rh)
+                if rh_i <= REST_SHORT:
+                    fh = REST_FACTOR_VERY_SHORT
+                elif rh_i <= REST_WARN:
+                    fh = REST_FACTOR_SHORT
+                elif rh_i >= REST_LONG:
+                    fh = REST_FACTOR_LONG
+                else:
+                    fh = 1.0
+                lh_f = lh_f * fh
+            except Exception:
+                fh = None
+        if ra is not None:
+            try:
+                ra_i = int(ra)
+                if ra_i <= REST_SHORT:
+                    fa = REST_FACTOR_VERY_SHORT
+                elif ra_i <= REST_WARN:
+                    fa = REST_FACTOR_SHORT
+                elif ra_i >= REST_LONG:
+                    fa = REST_FACTOR_LONG
+                else:
+                    fa = 1.0
+                la_f = la_f * fa
+            except Exception:
+                fa = None
+        tot_new = lh_f + la_f
+        if tot_new > 0 and total > 0 and (fh is not None or fa is not None):
+            scale = total / tot_new
+            lh_f *= scale
+            la_f *= scale
+        lh_new = max(0.25, lh_f)
+        la_new = max(0.25, la_f)
+        return lh_new, la_new, rh, ra, fh, fa
+    except Exception:
+        return lh, la, rh, ra, None, None
+
+def market_value_tilt(lh: float, la: float, hv: float | None, av: float | None, k: float = MARKET_VALUE_K) -> tuple[float, float, float | None, float | None]:
+    """Applica prior valore di mercato alle λ: ratio**k sposta rapporto casa/trasferta a totale invariato.
+
+    Ritorna (lh_new, la_new, ratio, adj). ratio=None se valori mancanti.
+    Preserva totale gol attesi (come _tilt_pair) ma sposta rapporto di (ratio**k)**2.
+    """
+    try:
+        if hv is None or av is None:
+            return lh, la, None, None
+        hv_f = float(hv); av_f = float(av)
+        if not (hv_f > 0 and av_f > 0):
+            return lh, la, None, None
+        import math, numpy as np
+        if not (np.isfinite(hv_f) and np.isfinite(av_f)):
+            return lh, la, None, None
+        ratio = hv_f / av_f
+        lo, hi = MARKET_VALUE_RATIO_CLIP
+        ratio_c = max(lo, min(hi, ratio))
+        adj = ratio_c ** k
+        # preserva totale, sposta rapporto di adj**2
+        total = float(lh) + float(la)
+        if total <= 0 or la <= 0:
+            return lh * adj, la / adj if adj else (lh, la), ratio, adj
+        r_old = float(lh) / float(la)
+        r_new = r_old * (adj ** 2)
+        lh_new = total * r_new / (1.0 + r_new)
+        la_new = total / (1.0 + r_new)
+        return lh_new, la_new, ratio, adj
+    except Exception:
+        return lh, la, None, None
+
+
 # Pseudo-partite del prior sui parametri attacco/difesa (shrinkage verso la media di lega).
 SHRINK_PRIOR = 8.0
 
@@ -90,12 +226,15 @@ class DixonColesModel:
 
     def fit(self, hist: pd.DataFrame, as_of: datetime | None = None) -> DixonColesModel:
         df = hist.dropna(subset=["home_goals", "away_goals"]).copy()
+        df["date"] = pd.to_datetime(df["date"], utc=True, errors="coerce")
         if as_of is not None:
-            df = df[df["date"] <= pd.Timestamp(as_of).tz_localize(None) if df["date"].dt.tz is None
-                    else df["date"] <= pd.Timestamp(as_of)]
+            as_of_ts = pd.Timestamp(as_of)
+            if as_of_ts.tzinfo is not None:
+                as_of_ts = as_of_ts.tz_convert(None) if hasattr(as_of_ts, 'tz_convert') else as_of_ts.tz_localize(None)
+            df = df[df["date"] <= as_of_ts]
         if len(df) < 50:
             raise ValueError(f"storico insufficiente per Dixon-Coles: {len(df)} partite")
-        dates = pd.to_datetime(df["date"]).dt.tz_localize(None) if df["date"].dt.tz is not None else df["date"]
+        dates = df["date"].dt.tz_localize(None)
         weights = pb.models.dixon_coles_weights(dates, xi=self.xi)
         self.model = pb.models.DixonColesGoalModel(
             df["home_goals"].to_numpy(dtype=float).copy(),
@@ -532,6 +671,7 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
                     w_dc: float = 0.7,
                     shrink_prior: float = SHRINK_PRIOR,
                     calibration: Calibration | None = None,
+                    market_k: float = MARKET_VALUE_K,
                     ) -> tuple[pd.DataFrame, DixonColesModel, EloModel]:
     """Addestra DC+Elo su `hist` e prevede le righe di `fixtures` (colonne: match_id, home, away, ...).
 
@@ -551,6 +691,9 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
     neutral_lh = float(np.clip(neutral_lh, *NEUTRAL_LAMBDA_BOUNDS))
     neutral_la = float(np.clip(neutral_la, *NEUTRAL_LAMBDA_BOUNDS))
     rows = []
+    has_market = {"home_value", "away_value"} <= set(fixtures.columns) or {"home_starters_value_eur", "away_starters_value_eur"} <= set(fixtures.columns)
+    has_abs = {"absences_home", "absences_away"} <= set(fixtures.columns) or {"contrib_home", "contrib_away"} <= set(fixtures.columns)
+    has_rest = {"rest_home", "rest_away"} <= set(fixtures.columns)
     for f in fixtures.itertuples(index=False):
         is_prior = False
         try:
@@ -558,13 +701,81 @@ def predict_matches(hist: pd.DataFrame, fixtures: pd.DataFrame, xi: float = 0.00
         except KeyError as exc:
             # squadra non nello storico DC (neopromossa): prior di lega invece di saltare la gara
             log.info("prior di lega per %s (%s vs %s): %s", getattr(f, "match_id", "?"), f.home, f.away, exc)
-            # griglia neutra (attack=0, defence=0, hfa neutra) → λ di lega, ρ 0
             grid_neutral = probability_grid(neutral_lh, neutral_la, rho=0.0, size=GRID_SIZE)
             d = _grid_markets(grid_neutral)
             d["dc_attack_home"] = 0.0; d["dc_defence_home"] = 0.0
             d["dc_attack_away"] = 0.0; d["dc_defence_away"] = 0.0
             d["dc_home_advantage"] = 0.0; d["dc_rho"] = 0.0
             is_prior = True
+
+        # --- tilt chain: DC -> market -> absences -> rest (docs/16 §1.6) ---
+        # raccoglie λ correnti e applica sequenzialmente, ricostruendo griglia una sola volta alla fine
+        lh_cur = float(d.get("lambda_home", neutral_lh))
+        la_cur = float(d.get("lambda_away", neutral_la))
+        tilt_applied = False
+        # market-value prior (P2)
+        hv = getattr(f, "home_value", None)
+        if hv is None:
+            hv = getattr(f, "home_starters_value_eur", None)
+        av = getattr(f, "away_value", None)
+        if av is None:
+            av = getattr(f, "away_starters_value_eur", None)
+        if hv is not None and av is not None and has_market:
+            lh1, la1, ratio, adj = market_value_tilt(lh_cur, la_cur, hv, av, k=market_k)
+            if ratio is not None:
+                d["market_value_ratio"] = float(ratio)
+                d["market_value_adj"] = float(adj) if adj else None
+                d["market_value_k"] = float(market_k)
+                d["lambda_home_market"] = lh1
+                d["lambda_away_market"] = la1
+                lh_cur, la_cur = lh1, la1
+                tilt_applied = True
+
+        # absences prior (P2 quality): Δλ = -0.30*contrib_lost cap ±0.30
+        ch = getattr(f, "absences_home", None)
+        if ch is None:
+            ch = getattr(f, "contrib_home", None)
+        ca = getattr(f, "absences_away", None)
+        if ca is None:
+            ca = getattr(f, "contrib_away", None)
+        if has_abs and (ch is not None or ca is not None):
+            lh2, la2, ch_out, ca_out, dh, da = absences_tilt(lh_cur, la_cur, ch, ca)
+            if dh is not None or da is not None:
+                d["absences_contrib_home"] = float(ch_out) if ch_out is not None else None
+                d["absences_contrib_away"] = float(ca_out) if ca_out is not None else None
+                d["absences_delta_home"] = float(dh) if dh is not None else None
+                d["absences_delta_away"] = float(da) if da is not None else None
+                d["lambda_home_absences"] = lh2
+                d["lambda_away_absences"] = la2
+                lh_cur, la_cur = lh2, la2
+                tilt_applied = True
+
+        # rest prior: ≤2→0.95, 3-4→0.97, ≥7→1.02
+        rh = getattr(f, "rest_home", None)
+        ra = getattr(f, "rest_away", None)
+        if has_rest and (rh is not None or ra is not None):
+            lh3, la3, rh_out, ra_out, fh, fa = rest_tilt(lh_cur, la_cur, rh, ra)
+            if fh is not None or fa is not None:
+                d["rest_days_home"] = int(rh_out) if rh_out is not None else None
+                d["rest_days_away"] = int(ra_out) if ra_out is not None else None
+                d["rest_factor_home"] = float(fh) if fh is not None else None
+                d["rest_factor_away"] = float(fa) if fa is not None else None
+                d["lambda_home_rest"] = lh3
+                d["lambda_away_rest"] = la3
+                lh_cur, la_cur = lh3, la3
+                tilt_applied = True
+
+        if tilt_applied:
+            # ricostruisci griglia con λ finali dopo tutti i tilt pre-Elo
+            grid_tilt = probability_grid(lh_cur, la_cur, d.get("dc_rho", 0.0) or 0.0, size=GRID_SIZE)
+            d_new = _grid_markets(grid_tilt)
+            for kk in ("dc_attack_home","dc_defence_home","dc_attack_away","dc_defence_away","dc_home_advantage","dc_rho",
+                       "market_value_ratio","market_value_adj","market_value_k","lambda_home_market","lambda_away_market",
+                       "absences_contrib_home","absences_contrib_away","absences_delta_home","absences_delta_away","lambda_home_absences","lambda_away_absences",
+                       "rest_days_home","rest_days_away","rest_factor_home","rest_factor_away","lambda_home_rest","lambda_away_rest"):
+                if kk in d:
+                    d_new[kk]=d[kk]
+            d = d_new
         # Elo: se manca una squadra, usa 1500 invece di saltare (simula come prior)
         e = None
         try:
