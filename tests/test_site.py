@@ -1449,6 +1449,13 @@ def test_build_indexes_calendario_entro_la_finestra_compatta(tmp_path):
     now = datetime.now(UTC)
     st.upsert("fixtures", [_fixture_lontana(5900001, 10, "Roma", "Fiorentina", now),
                            _fixture_lontana(5900002, 20, "Napoli", "Bologna", now)])
+    # le due gare lontane cadono in uno o due mesi a seconda del giorno di esecuzione
+    # (a cavallo del mese solo dal giorno 11 al 20): l'atteso si calcola dalle date,
+    # non si fissa a 2 — il 21/09/2026 entrambe cadevano in ottobre e il test cadeva
+    from zoneinfo import ZoneInfo
+    roma = ZoneInfo("Europe/Rome")
+    mesi_attesi = len({(now + timedelta(days=d)).astimezone(roma).strftime("%Y-%m")
+                       for d in (10, 20)})
     st.upsert("predictions", [{"match_id": 5900001, "model": "ensemble", "league_key": "ITA1",
                                "p_home": 0.424, "p_draw": 0.283, "p_away": 0.293,
                                "lambda_home": 1.5, "lambda_away": 1.1, "p_over25": 0.52,
@@ -1459,10 +1466,10 @@ def test_build_indexes_calendario_entro_la_finestra_compatta(tmp_path):
 
     assert "Tutto il calendario" in h
     assert h.count('class="cal-row') == 2                       # solo ciò che sta fuori dai 7 giorni
-    assert h.count('<details class="cal-month"') == 2           # raggruppato per mese
-    assert h.count('class="cal-nav"') == 1 and h.count('<a href="#mese-') == 2
+    assert h.count('<details class="cal-month"') == mesi_attesi  # raggruppato per mese
+    assert h.count('class="cal-nav"') == 1 and h.count('<a href="#mese-') == mesi_attesi
     # ogni mese dice che i numeri sono la stima di oggi, non una previsione su quella gara
-    assert h.count('class="cal-note"') == 2 and "stima di oggi" in h
+    assert h.count('class="cal-note"') == mesi_attesi and "stima di oggi" in h
     # previsione in forma italiana, col preferito in grassetto e accessibile
     assert 'aria-label="1 43%, X 28%, 2 29%">43 · 28 · <b>29</b>' not in h    # il preferito è l'1
     assert 'aria-label="1 43%, X 28%, 2 29%"' in h
