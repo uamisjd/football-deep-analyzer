@@ -1003,6 +1003,30 @@ Controlli pre-merge eseguiti con successo:
    - **Copertura complessiva (articoli o «Da sapere»): da 12 a 62 su 68 (91,2%)**;
    - Articoli pubblicati: da 27 a **169**, tutti al 100% in italiano verificato.
 
+## Deroga al flusso di merge (2026-09-20, PR #72)
+
+La regola D di `docs/00_regole_di_lavoro.md` stabilisce che **il merge delle pull request lo fa
+sempre l'utente**. Oggi, alla proposta di audit e riepilogo decisionale, l'utente ha risposto
+«**Please merge the pull request**»: richiesta esplicita, quindi deroga alla regola D. Il merge
+è stato eseguito **dall'agente** con `gh pr merge 72 --merge` dopo aver riverificato i check
+(`test` **pass** in 2m1s, run `35535840309`) e lo stato (`MERGEABLE · CLEAN`): commit di merge
+**`89cff41`**, 2026-09-20T20:50:40Z, branch `arena/01a0c06a-football-deep-analyzer` → `main`.
+
+Verifiche pre-merge eseguite con i comandi, come prescritto dalla regola permanente: `git status
+--porcelain` vuoto, 2 commit nel ramo (`e79c377` e `6314a78`), working tree pulito, gate locali
+verdi (`pytest` **491 passed**, `ruff` baseline, `fda build` 375 schede, `verify_site` **0 problemi ·
+141.023 controlli**).
+
+Contenuto della PR #72: (1) **`docs/48_audit_potenzialita_modelli_2026-09-20.md`**: audit completo e
+misurato sui dati offline con lo script `scripts/audit_modelli.py` e `docs/_audit_modelli.json`;
+(2) **Bugfix vitale calibrazione nel daily** (`src/fda/cli.py`): risolto il `TypeError` che dal
+13/09 bloccava silenziosamente il ricalcolo e salvataggio di `calibration.parquet`, con regression
+test in `tests/test_cli_daily.py`; (3) **Anni reali del backtest**: eliminato il falso «2020→2026»
+nella scheda partita per il track record del favorito (`favorite_track_record` ora espone `anni`).
+
+La deroga è registrata qui e in `docs/STATO.md`. Resta valida la regola generale: senza una
+richiesta esplicita, il merge non va eseguito.
+
 ## Deroga al flusso di merge (2026-09-19, PR #64)
 
 La regola D di `docs/00_regole_di_lavoro.md` stabilisce che **il merge delle pull request lo fa
