@@ -506,7 +506,7 @@ class SiteBuilder:
     def _upcoming_highlights(self, rows: list[dict[str, Any]], calendar: list[dict] | None = None) -> dict[str, Any]:
         """Estrae valore dalla vista Prossime: riassunto, top match, distribuzione leghe.
 
-        rows = _match_rows per i prossimi 7gg (schede complete). Se vuoti (pausa),
+        rows = _match_rows nella finestra dettagliata (schede complete). Se vuoti (pausa),
         usa il primo mese di calendario per non lasciare la pagina senza spunti.
         Ritorna dict con summary, highlights, league_breakdown, calendar_picks.
         """
@@ -1337,7 +1337,14 @@ class SiteBuilder:
             lab_rows = len(ml) if not ml.empty else 0
         except Exception:
             lab_rows = 0
-        self._render("info.html", "info.html", title="Metodologia e fonti", cal=cal_info, lab_rows=lab_rows)
+        self._render(
+            "info.html",
+            "info.html",
+            title="Metodologia e fonti",
+            cal=cal_info,
+            lab_rows=lab_rows,
+            detail_window_days=DETAIL_WINDOW_DAYS,
+        )
         # 404 del sito (P1.6, docs/19 §2.9): GitHub Pages lo serve a QUALSIASI percorso,
         # quindi i link sono assoluti sul base del sito e la pagina è noindex.
         self._render("404.html", "404.html", root=f"{SITE_BASE_URL}/", no_index=True,

@@ -1423,8 +1423,8 @@ class MatchAnalysis:
     MOOD_ABSENT_N = 4           # assenti → infermeria pesante
     MOOD_ABSENT_STARTERS = 2    # titolari abituali fuori → infermeria pesante
     MOOD_ABSENT_CONTRIB = 0.5   # xG+xA/gara portati via dagli assenti
-    MOOD_REST_SHORT = 4         # giorni di riposo → corto (ricerca UEFA: ≤4 aumenta RR 1,32)
-    MOOD_REST_VERY_SHORT = 2    # ≤2 → bad, 3-4 → warn
+    MOOD_REST_SHORT = 3         # giorni di riposo → corto
+    MOOD_REST_VERY_SHORT = 2    # ≤2 → bad, 3 → warn
     MOOD_CONGEST_DAYS = 10      # finestra di congestione
     MOOD_CONGEST_N = 3          # gare giocate nella finestra → congestione
 
@@ -1519,9 +1519,8 @@ class MatchAnalysis:
             cup = self.rest_cup(team_id, kickoff)
             tone = "bad" if rest <= self.MOOD_REST_VERY_SHORT else "warn"
             out.append({"tone": tone,
-                        "text": f"riposo {'molto corto' if rest <= self.MOOD_REST_VERY_SHORT else 'corto'}: {rest} {'giorno' if rest == 1 else 'giorni'}"
-                                + (f", con un turno di {cup} in mezzo" if cup else "")
-                                + (" — rischio infortunio muscolare RR 1,32 (ricerca UEFA)" if rest <= 4 else "")})
+                        "text": f"riposo corto: {rest} {'giorno' if rest == 1 else 'giorni'}"
+                                + (f", con un turno di {cup} in mezzo" if cup else "")})
         src = self._rest_source()
         if not src.empty:
             lo = pd.Timestamp(kickoff) - pd.Timedelta(days=self.MOOD_CONGEST_DAYS)
@@ -4359,8 +4358,7 @@ class MatchAnalysis:
                 cup = ctx.get(f"{side}_rest_cup")
                 tail = f", con un turno di {cup} in mezzo" if cup else ""
                 riposo = "un solo giorno" if rest == 1 else f"soli {rest} giorni"
-                extra = " — rischio infortunio RR 1,32 (≤4gg, ricerca UEFA)" if rest <= 4 else ""
-                s.append(f"{name} gioca dopo {riposo} di riposo{tail}{extra}.")
+                s.append(f"{name} gioca dopo {riposo} di riposo{tail}.")
             # mercato squilibrio in narrativa quando ratio ≥2 (fattore #1 per audit)
             if side == "home":
                 hv = ctx.get("home_value"); av = ctx.get("away_value")
