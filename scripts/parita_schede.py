@@ -24,19 +24,33 @@ Le soglie sono dichiarate e prudenti: 75% della mediana sul totale e 25% della m
 singola sezione. Non giudicano se una partita *ha* meno dati — quello si vede in pagina e nei
 numeri — ma se la pagina si è *dimenticata* di raccontarli.
 
-Uso: ``.venv/bin/python -m scripts.parita_schede [site_dir]`` — richiede una build già fatta
-(``fda build``); esce 0 se tutte le schede sono pari, 1 elencando le differenze.
+Uso: ``.venv/bin/python -m scripts.parita_schede [site_dir] [--data data_dir]`` —
+richiede una build già fatta (``fda build``); esce 0 se tutte le schede sono pari,
+1 elencando le differenze.
+
+**Stato vuoto legittimo (sosta dei campionati, 2026-09-21).** Durante una pausa
+(nazionali, nessuna gara in programma nei 7 giorni della finestra dettagliata) la
+build produce correttamente **zero** schede pre-partita: solo pagine post-partita
+d'archivio. Il vecchio comportamento trattava lo zero come «build mancante» e
+fermava il run — misurato il 2026-09-21 (ultime gare il 20/09, ripresa il 09/10).
+Ora lo zero si distingue leggendo ``fixtures.parquet``: se in finestra non c'è
+davvero nessuna gara non finita, il gate non è applicabile (exit 0); se invece le
+gare ci sono e le schede mancano, la build le ha perse (exit 1).
 """
 
 from __future__ import annotations
 
+import argparse
 import collections
 import re
 import statistics
 import sys
+from datetime import datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from fda.config import DETAIL_WINDOW_DAYS, load_leagues_config
 from scripts.prematch_sections import leaf_cards, parse
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -76,13 +90,65 @@ def _ancore(html: str) -> tuple[str, ...]:
                                              html.split(f'class="{NAV}"', 1)[1].split("</nav>", 1)[0]))
 
 
+def attese_prepartita(data: Path) -> int | None:
+    """Gare non finite in finestra su ``fixtures.parquet`` (``None`` se illeggibile).
+
+    Stessa finestra della build (``SiteBuilder.build_indexes``): da oggi a oggi +
+    ``DETAIL_WINDOW_DAYS`` in date locali, esclusi finiti e annullati (gli annullati
+    non ricevono nessuna pagina). Una pagina contiene «Analisi pre-partita» se e solo
+    se il suo stato non è ``finished`` (``match.html``): questo conteggio è quindi il
+    numero di schede pre-partita che la build **deve** aver prodotto.
+    """
+    import pandas as pd
+
+    fx_path = data / "fixtures.parquet"
+    if not fx_path.is_file():
+        return None
+    try:
+        fx = pd.read_parquet(fx_path)
+        if fx.empty or not {"utc_kickoff", "status"}.issubset(fx.columns):
+            return None
+        tz = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
+        oggi = datetime.now(tz).date()
+        local = pd.to_datetime(fx["utc_kickoff"], utc=True, errors="coerce").dt.tz_convert(tz).dt.date
+        in_finestra = (local >= oggi) & (local <= oggi + timedelta(days=DETAIL_WINDOW_DAYS))
+        return int((in_finestra & ~fx["status"].isin(["finished", "cancelled"])).sum())
+    except Exception:
+        return None
+
+
+def _gestisci_vuoto(site: Path, data: Path) -> int:
+    """Zero schede pre-partita: build mancante, sosta legittima o build che perde pagine."""
+    partite = site / "partite"
+    n_pagine = len(list(partite.glob("*.html"))) if partite.is_dir() else 0
+    if n_pagine == 0:
+        print(f"nessuna pagina in {site}/partite: serve una build (`fda build`)")
+        return 1
+    attese = attese_prepartita(data)
+    if attese is None:
+        print(f"0 schede pre-partita in {site}/partite e {data}/fixtures.parquet illeggibile: "
+              f"impossibile distinguere una sosta da una build persa")
+        return 1
+    if attese == 0:
+        print(f"[P] schede pre-partita: 0 su {n_pagine} pagine — sosta dei campionati "
+              f"(0 gare non finite in finestra su fixtures.parquet): parità non applicabile")
+        return 0
+    print(f"0 schede pre-partita in {site}/partite ma {attese} gare non finite in finestra: "
+          f"la build le ha perse")
+    return 1
+
+
 def main(argv: list[str] | None = None) -> int:
-    args = list(sys.argv[1:] if argv is None else argv)
-    site = Path(args[0]) if args else ROOT / "site"
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("site", nargs="?", default=str(ROOT / "site"),
+                    help="cartella del sito generato")
+    ap.add_argument("--data", default=str(ROOT / "data" / "processed"),
+                    help="cartella dei Parquet (per distinguere una sosta da una build persa)")
+    args = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    site = Path(args.site)
     pagine = schede(site)
     if not pagine:
-        print(f"nessuna scheda pre-partita in {site}/partite: serve una build (`fda build`)")
-        return 1
+        return _gestisci_vuoto(site, Path(args.data))
 
     problemi: list[str] = []
     strutture: dict[tuple[str, ...], list[str]] = collections.defaultdict(list)

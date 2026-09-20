@@ -80,6 +80,7 @@ target-version = "py311"
 "src/fda/collect.py" = ["BLE001"]
 "src/fda/backoff.py" = ["BLE001"]       # il wrapper di retry deve assorbire ogni errore di rete
 "scripts/probe_fonti.py" = ["BLE001"]   # sonda diagnostica: ogni fonte deve fallire da sola
+"scripts/parita_schede.py" = ["BLE001"]  # gate: fixtures illeggibili (qualsiasi errore) = non verificabile → exit 1
 "tests/test_openmeteo.py" = ["DTZ001"]  # il codice sotto test usa datetime naive
 
 [tool.pytest.ini_options]
