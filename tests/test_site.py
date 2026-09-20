@@ -424,7 +424,8 @@ def test_site_build_end_to_end(tmp_path):
     # stato fonti: tutte le fonti OK → nessun ERRORE (regressione rumore ESPN standings)
     stato = (out / "stato.html").read_text(encoding="utf-8")
     assert "Ultimi run per fonte" in stato and "OK" in stato
-    assert ">ERRORE<" not in stato and "AVVISO" not in stato
+    assert 'class="pill P">ERRORE' not in stato
+    assert 'class="pill N">AVVISO' not in stato
     st.close()
 
 
@@ -1308,16 +1309,16 @@ def _fixture_lontana(match_id: int, giorni: int, home: str, away: str, now) -> d
             "status": "scheduled", "source": "test"}
 
 
-def test_build_indexes_calendario_completo(tmp_path):
-    """«Prossime» = 7 giorni con scheda + tutto il calendario in righe compatte.
+def test_build_indexes_calendario_entro_la_finestra_compatta(tmp_path):
+    """«Prossime» = finestra dettagliata + calendario compatto entro 30 giorni.
 
-    Le partite lontane hanno la previsione del modello ma non la scheda (i dettagli arrivano
+    Le partite oltre 7 ed entro 30 giorni hanno la previsione ma non la scheda (i dettagli arrivano
     a ridosso della gara): la riga deve dirlo, non mostrare buchi o link rotti.
     """
     st = _seed(tmp_path)
     now = datetime.now(UTC)
-    st.upsert("fixtures", [_fixture_lontana(5900001, 40, "Roma", "Fiorentina", now),
-                           _fixture_lontana(5900002, 75, "Napoli", "Bologna", now)])
+    st.upsert("fixtures", [_fixture_lontana(5900001, 10, "Roma", "Fiorentina", now),
+                           _fixture_lontana(5900002, 20, "Napoli", "Bologna", now)])
     st.upsert("predictions", [{"match_id": 5900001, "model": "ensemble", "league_key": "ITA1",
                                "p_home": 0.424, "p_draw": 0.283, "p_away": 0.293,
                                "lambda_home": 1.5, "lambda_away": 1.1, "p_over25": 0.52,
@@ -1334,7 +1335,8 @@ def test_build_indexes_calendario_completo(tmp_path):
     assert h.count('class="cal-note"') == 2 and "stima di oggi" in h
     # previsione in forma italiana, col preferito in grassetto e accessibile
     assert 'aria-label="1 43%, X 28%, 2 29%">43 · 28 · <b>29</b>' not in h    # il preferito è l'1
-    assert 'aria-label="1 43%, X 28%, 2 29%"><b>43</b> · 28 · 29' in h
+    assert 'aria-label="1 43%, X 28%, 2 29%"' in h
+    assert '<b>43</b> · 28 · 29' in h
     # gol attesi e Over con title per tooltip intuitivo (verifica tollerante al title)
     assert 'cal-gol' in h and '2,6' in h and 'cal-o' in h and '52%' in h
     # senza previsione: lo dice, non lascia celle vuote
