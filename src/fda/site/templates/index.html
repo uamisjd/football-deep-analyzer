@@ -12,7 +12,7 @@
     <div class="overview-metric"><strong>{{ summary.matches }}</strong><span>partite</span></div>
     <div class="overview-metric"><strong>{{ summary.leagues }}</strong><span>campionati</span></div>
     <div class="overview-metric"><strong>{{ summary.predicted }}/{{ summary.prediction_total }}</strong><span>con modello</span></div>
-    <div class="overview-metric overview-next"><strong>{% if summary.next_time %}{{ summary.next_time }}{% else %}—{% endif %}</strong><span>prossimo calcio d'inizio</span>{% if summary.next_match %}<small>{{ summary.next_match }}</small>{% endif %}</div>
+    <div class="overview-metric overview-next"><strong>{% if summary.next_time %}{{ summary.next_time }}{% else %}—{% endif %}</strong><span>prossimo calcio d'inizio</span>{% if summary.next_match %}<small>{{ summary.next_match }}{% if summary.next_league %} · {{ summary.next_league }}{% endif %}</small>{% endif %}{% if summary.next_iso %}<small class="mut" data-countdown="{{ summary.next_iso }}" style="display:block;margin-top:3px;color:var(--accent);font-weight:700">calcolo…</small>{% endif %}</div>
   </div>
   {% endif %}
 </div>
@@ -24,9 +24,156 @@
   <span><i class="status-dot status-dot-finished" aria-hidden="true"></i><b>{{ summary.finished }}</b> terminate</span>
   <span class="mut">Dati e probabilità sono quelli dell'ultimo aggiornamento indicato in alto.</span>
 </div>
-{% if summary.live == 0 and summary.scheduled > 0 %}
+
+{# --- OGGI: valore aggiunto --- #}
+{% if today_summary_extra %}
+<div class="card" style="margin:0 0 12px;padding:12px 16px">
+  <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between">
+    <div><strong style="font-size:13px">📊 Oggi in numeri</strong><br>
+    <span class="small mut">{{ today_summary_extra.total }} partite · {% if today_summary_extra.avg_gol %}Ø {{ today_summary_extra.avg_gol|dec(2) }} gol attesi · {% endif %}{% if today_summary_extra.avg_over %}Ø {{ today_summary_extra.avg_over }}% Over 2,5{% if today_summary_extra.high_over %} · {{ today_summary_extra.high_over }} con Over &gt;60%{% endif %}{% endif %}</span></div>
+    {% if today_leagues %}<div style="display:flex;flex-wrap:wrap;gap:6px">{% for lg in today_leagues %}<span class="tag" style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line)">{{ lg.name }} <b>{{ lg.count }}</b></span>{% endfor %}</div>{% endif %}
+  </div>
+  {% if today_timeline %}
+  <div style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px">
+    {% for slot in today_timeline %}<span class="small" style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:3px 8px">{{ slot.slot }} <b>{{ slot.count }}</b> partite</span>{% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if today_live %}
+<div class="card" style="margin:0 0 12px;border-color:rgba(224,96,90,.35);background:rgba(224,96,90,.06)">
+  <h2 style="margin:0 0 8px;font-size:14px;color:var(--lose)">🔴 In corso ora — {{ today_live|length }} partite</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
+    {% for m in today_live %}
+    <div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface)">
+      <div style="font-size:11px;color:var(--mut)">{{ m.league_name }} · {{ m.utc_kickoff.strftime('%H:%M') }} · <span style="color:var(--lose);font-weight:700">{{ m.status_label }}</span></div>
+      <div style="font-weight:700;font-size:13px">{{ m.home_name }} {% if m.home_goals is not none %}{{ m.home_goals }}–{{ m.away_goals }}{% else %}–{% endif %} {{ m.away_name }}</div>
+      <div style="margin-top:4px"><a href="{{ root }}partite/{{ m.match_id }}.html" style="font-size:11px;font-weight:700">Live ↗</a></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if today_highlights %}
+<div class="card" style="margin:0 0 12px">
+  <h2 style="margin:0 0 8px;font-size:14px">⭐ Da non perdere oggi</h2>
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+    {% for hl in today_highlights %}
+    {% set m = hl.match %}
+    <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)">
+      <div style="font-size:11px;color:var(--mut);margin-bottom:3px">{{ hl.icon }} {{ hl.label }} · {{ m.league_name }}</div>
+      <div style="font-weight:700;font-size:13.5px">{{ m.home_name }} – {{ m.away_name }} · {{ m.utc_kickoff.strftime('%H:%M') }}</div>
+      <div class="small mut">{{ hl.detail }}</div>
+      <div style="margin-top:5px"><a href="{{ root }}partite/{{ m.match_id }}.html" style="font-size:12px;font-weight:700">Analisi ↗</a></div>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if today_finished_summary %}
+<div class="card" style="margin:0 0 12px">
+  <h2 style="margin:0 0 8px;font-size:14px">✅ Già finite oggi — verifica lampo del modello</h2>
+  <p class="small mut" style="margin:0 0 8px">{{ today_finished_summary.total }} terminate · {{ today_finished_summary.hits }} pronostici centrati sul favorito ({{ today_finished_summary.hit_rate }}%) · RPS e xG completi nelle schede.</p>
+  {% if today_finished %}
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:8px">
+    {% for f in today_finished %}
+    {% set m = f.match %}
+    <div style="border:1px solid var(--line);border-radius:8px;padding:8px 10px;background:var(--surface);{% if f.hit %}border-color:rgba(40,200,147,.35){% elif f.hit==False %}border-color:rgba(224,96,90,.25){% endif %}">
+      <div style="font-size:11px;color:var(--mut)">{{ m.league_name }} · {{ m.home_goals }}–{{ m.away_goals }} finale</div>
+      <div style="font-weight:600;font-size:12.5px">{{ m.home_name }} – {{ m.away_name }}</div>
+      <div class="small mut">{% if f.hit %}✓ favorito {{ f.fav }} centrato{% elif f.hit==False %}✗ favorito {{ f.fav }}, uscito {{ f.real }}{% else %}senza previsione{% endif %}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if summary.matches == 0 and next_info %}
+<div style="margin:0 0 14px;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;display:flex;gap:12px;align-items:flex-start">
+  <span style="font-size:20px">🏖️</span>
+  <div style="flex:1">
+    <strong>Oggi nessuna partita in programma</strong><br>
+    <span class="mut small">È pausa per le nazionali o turno infrasettimanale vuoto. Prossima giornata: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} partite</b>{% if next_info.gap_days > 1 %} — tra {{ next_info.gap_days }} giorni{% endif %}. Le previsioni sono già disponibili nel calendario.</span>
+    <div style="margin-top:8px"><a href="{{ root }}prossime.html" style="font-weight:700">Vai a Prossime →</a> <span class="mut small">· <a href="{{ root }}prossime.html#mese-{{ next_info.date_iso[:7] }}">salta a {{ next_info.label }}</a></span></div>
+  </div>
+</div>
+{% elif summary.live == 0 and summary.scheduled > 0 %}
 <div style="margin:0 0 12px;padding:10px 14px;background:var(--surface);border:1px solid var(--line);border-radius:10px;color:var(--mut);font-size:12.5px">Cerchi domani? Vai a <a href="{{ root }}prossime.html"><b>Prossime</b></a> — lì c'è tutto il calendario fino a maggio, con schede e proiezioni già disponibili.</div>
 {% endif %}
+{% endif %}
+
+{# ---------- PROSSIME: banner pausa + valore aggiunto ---------- #}
+{% if view_kind == 'upcoming' and next_info and upcoming_count == 0 %}
+<div style="margin:0 0 16px;padding:14px 16px;background:rgba(230,179,74,.10);border:1px solid rgba(230,179,74,.35);border-radius:12px;display:flex;gap:12px;align-items:flex-start">
+  <span style="font-size:20px">⏸️</span>
+  <div style="flex:1">
+    <strong>{% if next_info.is_break %}Pausa nazionali{% else %}Nessuna partita nei prossimi {{ calendar_days }} giorni{% endif %}</strong><br>
+    <span class="small mut">Domani, dopodomani e i prossimi giorni non hanno partite dei 7 campionati seguiti. È normale durante le soste FIFA/UEFA.
+      Prossimo turno disponibile: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} partite</b>{% if next_info.gap_days %} (tra {{ next_info.gap_days }} giorni){% endif %}. Sotto trovi già tutto il calendario con le previsioni del modello, ricalcolate ad ogni aggiornamento.</span>
+    <div style="margin-top:8px"><a href="#mese-{{ next_info.date.year }}-{{ '%02d'|format(next_info.date.month) }}" style="font-weight:700">Salta al prossimo turno ↓</a></div>
+  </div>
+</div>
+{% endif %}
+
+{% if view_kind == 'upcoming' %}
+  {% if upcoming_summary %}
+  <div class="card" style="margin:0 0 14px;padding:14px 16px">
+    <div style="display:flex;flex-wrap:wrap;gap:14px;align-items:center;justify-content:space-between">
+      <div>
+        <strong style="font-size:14px">📊 Nei prossimi {{ calendar_days }} giorni</strong><br>
+        <span class="small mut">{{ upcoming_summary.total }} partite · {% if upcoming_summary.avg_gol %}Ø {{ upcoming_summary.avg_gol|dec(2) }} gol attesi · {% endif %}{% if upcoming_summary.avg_over %}Ø {{ upcoming_summary.avg_over }}% Over 2,5{% if upcoming_summary.high_over %} · {{ upcoming_summary.high_over }} con Over &gt;60%{% endif %}{% endif %}</span>
+      </div>
+      {% if upcoming_leagues %}
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        {% for lg in upcoming_leagues %}<span class="tag" style="font-size:11px;padding:3px 8px;border-radius:999px;background:var(--surface2);border:1px solid var(--line)">{{ lg.name }} <b>{{ lg.count }}</b></span>{% endfor %}
+      </div>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if upcoming_highlights %}
+  <div class="card" style="margin:0 0 16px">
+    <h2 style="margin:0 0 10px;font-size:15px">⭐ Da non perdere — 3 letture del modello</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+      {% for hl in upcoming_highlights %}
+      {% set m = hl.match %}
+      <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)">
+        <div style="font-size:12px;color:var(--mut);margin-bottom:4px">{{ hl.icon }} {{ hl.label }} · <span class="mut2">{{ m.league_name }}</span></div>
+        <div style="font-weight:700;font-size:13.5px;margin-bottom:2px">{{ m.home_name }} – {{ m.away_name }}</div>
+        <div class="small mut">{{ m.utc_kickoff.strftime('%a %d %b %H:%M') }} · {{ hl.detail }}</div>
+        <div style="margin-top:6px"><a href="{{ root }}partite/{{ m.match_id }}.html" style="font-size:12px;font-weight:700">Apri analisi ↗</a></div>
+      </div>
+      {% endfor %}
+    </div>
+    <p class="small mut" style="margin:10px 0 0">Scelte automatiche: più gol attesi, Over più probabile, partita più equilibrata / più sbilanciata secondo l'1X2 del modello.</p>
+  </div>
+  {% endif %}
+
+  {% if upcoming_count == 0 and calendar_picks %}
+  <div class="card" style="margin:0 0 16px">
+    <h2 style="margin:0 0 10px;font-size:15px">🔭 In evidenza al ritorno — {{ next_info.label }}</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:10px">
+      {% for m in calendar_picks %}
+      <div style="border:1px solid var(--line);border-radius:10px;padding:10px 12px;background:var(--surface)">
+        <div style="font-size:12px;color:var(--mut);margin-bottom:4px">{{ m.league_name }} · {{ m.when }} {{ m.time }}</div>
+        <div style="font-weight:700;font-size:13.5px">{{ m.home_name }} – {{ m.away_name }}</div>
+        {% if m.prediction %}<div class="small mut" style="margin-top:2px">1X2 {{ m.prediction.pct[0] }}% · {{ m.prediction.pct[1] }}% · {{ m.prediction.pct[2] }}% · {{ m.prediction.gol }} gol · {{ m.prediction.over }}% over</div>{% endif %}
+        {% if m.url %}<div style="margin-top:6px"><a href="{{ root }}{{ m.url }}" style="font-size:12px;font-weight:700">Scheda (quando disponibile) ↗</a></div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="small mut" style="margin:10px 0 0">Durante la pausa il modello ha già le previsioni compatte fino a maggio. Le schede complete arrivano a ridosso della gara.</p>
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if view_kind == 'upcoming' and days|length == 0 and (next_info is none or next_info.gap_days <= 7) %}
+<div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessuna partita nei prossimi {{ calendar_days }} giorni con scheda completa</strong><span class="mut">La scheda dettagliata arriva quando la fonte pubblica i dettagli (a ridosso della gara). Sotto c'è comunque tutto il calendario con le previsioni compatte.</span></div>
 {% endif %}
 
 <div class="match-toolbar" data-match-toolbar>
@@ -38,8 +185,13 @@
     <button type="button" class="filter-button" data-status-filter="scheduled" aria-pressed="false">In programma</button>
     <button type="button" class="filter-button" data-status-filter="finished" aria-pressed="false">Terminate</button>
   </div>
+  <div class="filter-buttons" role="group" aria-label="Filtri rapidi" style="margin-left:8px">
+    <button type="button" class="filter-button small" data-over-filter aria-pressed="false" title="Mostra solo partite con Over 2,5 >=60%">🔥 Over &gt;60%</button>
+    <button type="button" class="filter-button small" data-gol-filter aria-pressed="false" title="Ordina per gol attesi">⚽ Più gol</button>
+    <button type="button" class="filter-button small" data-squilibrio-filter aria-pressed="false" title="Mostra solo partite squilibrate: favorita ≥60%">🎯 Squilibrata</button>
+  </div>
   {% if filters %}<label class="filter-select"> <span class="sr-only">Campionato</span><select data-league-filter aria-label="Filtra per campionato"><option value="all">Tutti i campionati</option>{% for f in filters %}<option value="{{ f.key }}">{{ f.name }}</option>{% endfor %}</select></label>{% endif %}
-  <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Cerca squadra o campionato</span><input type="search" data-match-search placeholder="Cerca squadra…" autocomplete="off"></label>
+  <label class="search-box"><span aria-hidden="true">⌕</span><span class="sr-only">Cerca squadra o campionato</span><input type="search" data-match-search placeholder="{% if view_kind == 'upcoming' %}Cerca squadra o campionato (anche nel calendario)…{% else %}Cerca squadra…{% endif %}" autocomplete="off"></label>
   <span class="filter-result" data-filter-result role="status" aria-live="polite">{{ summary.matches if summary else '' }}{% if summary %} partite{% endif %}</span>
 </div>
 
@@ -51,20 +203,38 @@
   <p class="empty-filter" data-empty-filter hidden>Nessuna partita corrisponde ai filtri.</p>
 </section>
 {% else %}
-<div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessuna partita nel periodo</strong><span class="mut">I campionati seguiti non hanno gare in questa vista.</span></div>
+{% if view_kind != 'upcoming' %}
+<div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessuna partita nel periodo</strong><span class="mut">I campionati seguiti non hanno gare in questa vista.</span>
+{% if next_info %}<span class="mut small" style="margin-top:8px">Prossima: <b>{{ next_info.label }}</b> · {{ next_info.count }} partite · <a href="{{ root }}prossime.html">vedi calendario</a></span>{% endif %}
+</div>
+{% endif %}
 {% endfor %}
+
+{% if view_kind == 'results' and days|length == 0 %}
+<div class="card empty-state"><span class="empty-icon" aria-hidden="true">◌</span><strong>Nessun risultato negli ultimi 7 giorni</strong><span class="mut">Potrebbe essere pausa nazionali. I risultati restano comunque nell'archivio: ogni partita finita ha la sua pagina.</span>
+{% if results_fallback %}<span class="mut small" style="margin-top:8px">Ultima giornata con partite: <b>{{ results_fallback.label }}</b> · <a href="{{ root }}index.html">torna a Oggi</a></span>{% endif %}
+</div>
+{% endif %}
 
 {% if view_kind == 'upcoming' and calendar %}
 {% set cal_total = calendar|sum(attribute='count') %}
 <div class="cal-intro">
-  <h2 class="cal-title">Tutto il calendario</h2>
-  <p class="mut small">Altre {{ cal_total|it_num }} partite in programma dopo i primi {{ calendar_days }} giorni: per ognuna c'è già
+  <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between">
+    <h2 class="cal-title" style="margin:0">Tutto il calendario</h2>
+    <div style="display:flex;gap:6px">
+      <button type="button" class="filter-button small" data-cal-expand>Espandi tutto</button>
+      <button type="button" class="filter-button small" data-cal-collapse>Comprimi tutto</button>
+    </div>
+  </div>
+  <p class="mut small" style="margin-top:8px">Altre {{ cal_total|it_num }} partite in programma dopo i primi {{ calendar_days }} giorni: per ognuna c'è già
     la previsione del modello (1X2, gol attesi, Over 2,5), ricalcolata a ogni aggiornamento.
     La scheda completa — forma, classifica, assenze, meteo, precedenti — arriva quando la fonte
     pubblica i dettagli, cioè a ridosso della gara.{% if calendar_missing %}
     <strong>{{ calendar_missing|it_num }}</strong> {{ 'partita' if calendar_missing == 1 else 'partite' }} senza previsione:
-    storico insufficiente per una o entrambe le squadre.{% endif %}</p>
+    storico insufficiente per una o entrambe le squadre.{% endif %}
+    {% if next_info and next_info.is_break %}<br><span style="color:var(--amber)"><b>Nota:</b> {{ next_info.gap_days }} giorni senza partite fino a {{ next_info.label }} — sosta per le nazionali.</span>{% endif %}</p>
   <nav class="cal-nav" aria-label="Vai al mese">{% for mo in calendar %}<a href="#{{ mo.id }}">{{ mo.label_short }}<span>{{ mo.count }}</span></a>{% endfor %}</nav>
+  <p class="small mut" style="margin:6px 0 0">💡 <b>Legenda compatta:</b> 1·X·2 = percentuali modello (grassetto = favorito), gol att. = gol attesi totali, over 2,5 = % di partite con 3+ gol. Cerca filtra anche qui.</p>
 </div>
 {% for mo in calendar %}
 <details class="cal-month" id="{{ mo.id }}" data-day-group{% if loop.first %} open{% endif %}>
@@ -83,26 +253,25 @@
   const toolbar = document.querySelector('[data-match-toolbar]');
   if (!list || !toolbar) return;
   const cards = [...list.querySelectorAll('[data-match-card]')];
-  // indice di ricerca precomputato e già lowercased (niente toLocaleLowerCase nel loop caldo)
   cards.forEach(card => {
     if (!card.dataset.search) card.dataset.search = (card.textContent || '').replace(/\s+/g, ' ').trim();
     card.dataset.searchLower = (card.dataset.search || '').toLocaleLowerCase('it-IT');
-    // contenuto già indicizzato: libera la stringa lunga non più necessaria
-    // card.dataset.search rimane per debugging, ma il filtro usa searchLower
   });
   const groups = [...list.querySelectorAll('[data-day-group]')];
   const result = toolbar.querySelector('[data-filter-result]');
   const search = toolbar.querySelector('[data-match-search]');
   const league = toolbar.querySelector('[data-league-filter]');
+  const overBtn = toolbar.querySelector('[data-over-filter]');
+  const golBtn = toolbar.querySelector('[data-gol-filter]');
+  const squilibrioBtn = toolbar.querySelector('[data-squilibrio-filter]');
   let status = 'all';
+  let overOnly = false;
+  let golSort = false;
+  let squilibrioOnly = false;
   let raf = 0;
   let timer = 0;
   let queryLower = '';
   const statusAliases = {scheduled:['scheduled','postponed','suspended','cancelled','abandoned']};
-  // P1.15 (docs/19 §3.10): i badge contano i bucket di stato su TUTTE le card e non
-  // dipendono né dalla ricerca né dalla lega → sono costanti. Prima venivano ricalcolati
-  // dentro applyNow(), cioè a ogni frame di digitazione: con 1.987 card e 5 bottoni erano
-  // 9.935 confronti per frame, l'83% del lavoro totale. Ora si contano una volta sola.
   const statusCounts = (() => {
     const tally = Object.create(null);
     for (const card of cards) {
@@ -128,9 +297,25 @@
       if (!badge) { badge = document.createElement('span'); badge.className='filter-count'; badge.style.cssText='margin-left:4px;opacity:.7;font-weight:700;min-width:28px;display:inline-block;text-align:left'; btn.appendChild(badge); }
       badge.textContent = n ? `(${n})` : '';
       btn.hidden = false;
-      // nascondi bottone Pausa se 0 e non attivo (meno rumore)
       if (bucket === 'paused' && n === 0 && status !== 'paused') btn.hidden = true;
     });
+  }
+
+  function parseGol(card){
+    const v = card.dataset.gol;
+    if (!v) return 0;
+    const num = parseFloat(String(v).replace(',','.'));
+    return isNaN(num) ? 0 : num;
+  }
+  function parseOver(card){
+    const v = card.dataset.over;
+    const num = parseInt(v||'0',10);
+    return isNaN(num) ? 0 : num;
+  }
+  function parseMaxProb(card){
+    const v = card.dataset.maxprob;
+    const num = parseInt(v||'0',10);
+    return isNaN(num) ? 0 : num;
   }
 
   function applyNow() {
@@ -143,17 +328,32 @@
       else okStatus = card.dataset.status === status;
       const okLeague = leagueValue === 'all' || card.dataset.league === leagueValue;
       const okQuery = !queryLower || (card.dataset.searchLower || '').includes(queryLower);
-      const shown = okStatus && okLeague && okQuery;
+      const okOver = !overOnly || parseOver(card) >= 60;
+      const okSquilibrio = !squilibrioOnly || parseMaxProb(card) >= 60;
+      const shown = okStatus && okLeague && okQuery && okOver && okSquilibrio;
       card.hidden = !shown;
       if (shown) visible += 1;
+    }
+    // gol sort: ordina dentro ogni day-group per gol attesi
+    if (golSort) {
+      for (const group of groups) {
+        const container = group;
+        const groupCards = [...container.querySelectorAll('[data-match-card]')].sort((a,b) => parseGol(b) - parseGol(a));
+        // ri-append in ordine
+        for (const c of groupCards) container.appendChild(c);
+        // riporta empty-filter in fondo
+        const ef = container.querySelector('[data-empty-filter]');
+        if (ef) container.appendChild(ef);
+      }
     }
     for (const group of groups) {
       const shown = group.querySelectorAll('[data-match-card]:not([hidden])').length;
       group.hidden = shown === 0;
       const empty = group.querySelector('[data-empty-filter]');
-      if (empty) empty.hidden = shown === 0 && group.querySelectorAll('[data-match-card]').length > 0;
+      if (empty) empty.hidden = shown !== 0 || group.querySelectorAll('[data-match-card]').length === 0;
+      if (empty && shown === 0 && group.querySelectorAll('[data-match-card]').length > 0) empty.hidden = false;
     }
-    if (result) result.textContent = `${visible} ${visible === 1 ? 'partita' : 'partite'}`;
+    if (result) result.textContent = `${visible} ${visible === 1 ? 'partita' : 'partite'}${overOnly ? ' · Over>60%' : ''}${squilibrioOnly ? ' · Squilibrate≥60%' : ''}${golSort ? ' · ordinate per gol' : ''}`;
   }
 
   function scheduleApply() {
@@ -165,26 +365,75 @@
     button.addEventListener('click', () => {
       status = button.dataset.statusFilter;
       toolbar.querySelectorAll('[data-status-filter]').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
-      // il click è un gesto singolo e deliberato: nessun debounce, risposta immediata
       scheduleApply();
       updateBadges();
     });
   });
-  // P1.15 (docs/19 §3.10): debounce 120 ms sulla ricerca. Digitando «juventus» il filtro
-  // girava 8 volte su 1.987 card; ora gira una volta sola, 120 ms dopo l'ultimo tasto.
-  // Sotto i 120 ms la digitazione resta fluida e la lista non "salta" a ogni lettera.
+  overBtn?.addEventListener('click', () => {
+    overOnly = !overOnly;
+    overBtn.setAttribute('aria-pressed', String(overOnly));
+    overBtn.style.background = overOnly ? 'var(--accent-dim)' : '';
+    overBtn.style.borderColor = overOnly ? 'var(--accent-soft)' : '';
+    overBtn.style.color = overOnly ? 'var(--accent-strong)' : '';
+    scheduleApply();
+  });
+  golBtn?.addEventListener('click', () => {
+    golSort = !golSort;
+    golBtn.setAttribute('aria-pressed', String(golSort));
+    golBtn.style.background = golSort ? 'var(--accent-dim)' : '';
+    golBtn.style.borderColor = golSort ? 'var(--accent-soft)' : '';
+    golBtn.style.color = golSort ? 'var(--accent-strong)' : '';
+    scheduleApply();
+  });
+  squilibrioBtn?.addEventListener('click', () => {
+    squilibrioOnly = !squilibrioOnly;
+    squilibrioBtn.setAttribute('aria-pressed', String(squilibrioOnly));
+    squilibrioBtn.style.background = squilibrioOnly ? 'var(--accent-dim)' : '';
+    squilibrioBtn.style.borderColor = squilibrioOnly ? 'var(--accent-soft)' : '';
+    squilibrioBtn.style.color = squilibrioOnly ? 'var(--accent-strong)' : '';
+    scheduleApply();
+  });
   search?.addEventListener('input', () => {
     queryLower = (search.value || '').trim().toLocaleLowerCase('it-IT');
     clearTimeout(timer);
     timer = setTimeout(scheduleApply, 120);
   });
-  // Invio: l'utente vuole il risultato adesso, non fra 120 ms
   search?.addEventListener('keydown', event => {
     if (event.key === 'Enter') { event.preventDefault(); clearTimeout(timer); scheduleApply(); }
   });
   league?.addEventListener('change', scheduleApply);
   applyNow();
   updateBadges();
+
+  // espandi/comprimi tutto calendario
+  const expandBtn = document.querySelector('[data-cal-expand]');
+  const collapseBtn = document.querySelector('[data-cal-collapse]');
+  const months = [...document.querySelectorAll('.cal-month')];
+  expandBtn?.addEventListener('click', () => months.forEach(m => m.open = true));
+  collapseBtn?.addEventListener('click', () => months.forEach((m,i) => m.open = i===0));
+
+  // countdown prossimo calcio d'inizio (Oggi)
+  const cd = document.querySelector('[data-countdown]');
+  if (cd) {
+    const targetIso = cd.getAttribute('data-countdown');
+    try {
+      const target = new Date(targetIso);
+      function tick(){
+        const now = new Date();
+        const diff = target - now;
+        if (isNaN(diff)) { cd.textContent=''; return; }
+        if (diff <= 0) { cd.textContent='in corso o appena iniziato'; return; }
+        const h = Math.floor(diff/3600000);
+        const m = Math.floor((diff%3600000)/60000);
+        const s = Math.floor((diff%60000)/1000);
+        if (h>0) cd.textContent = `tra ${h}h ${m}m`;
+        else if (m>0) cd.textContent = `tra ${m}m ${s}s`;
+        else cd.textContent = `tra ${s}s`;
+      }
+      tick();
+      setInterval(tick, 1000);
+    } catch(e) {}
+  }
 })();
 </script>
 {% endblock %}

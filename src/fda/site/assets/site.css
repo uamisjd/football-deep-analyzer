@@ -639,3 +639,41 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius
 /* Grafico previsto/osservato per mercato: SVG calcolato in `build.grafico_mercati`. */
 .grafico{margin:14px 0 0}
 .grafico figcaption{margin-top:7px;line-height:1.45}
+
+/* ---- Fix 2026-09-20: banner sosta nazionali e stati vuoti -----------------------------
+   Pausa nazionali = gap >7 giorni senza partite. Prima mostrava "Nessuna partita nel periodo"
+   senza spiegare perché domani/dopodomani mancano. Ora banner giallo/neutro con prossima data.
+   Anche Oggi vuoto ora dice dove sono le prossime. */
+.banner-pausa{display:flex;gap:12px;align-items:flex-start;padding:14px 16px;background:var(--surface);border:1px solid var(--line);border-radius:12px;margin:0 0 16px}
+.banner-pausa.warn{background:rgba(230,179,74,.10);border-color:rgba(230,179,74,.35)}
+.banner-pausa .ic{font-size:20px;flex:0 0 auto}
+.banner-pausa strong{display:block;margin-bottom:2px}
+.banner-pausa a{font-weight:700}
+
+/* calendario: riga compatta deve mostrare ricerca e lega, già fixato in build.py.
+   Miglioria mobile: mostra gol attesi e over anche su telefono come seconda riga, non nasconderli del tutto. */
+@media (max-width:760px){
+  .cal-row{grid-template-columns:6.4rem minmax(0,1fr) 7rem;position:relative}
+  .cal-row .cal-gol,.cal-row .cal-o{display:inline;font-size:11px;color:var(--mut2);margin-left:6px}
+  .cal-head span:nth-child(n+4){display:none}
+  .cal-p{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+  .cal-p .cal-extra{font-size:10.5px;color:var(--mut2);font-weight:400}
+}
+.cal-extra{color:var(--mut2);font-size:11px}
+
+/* risultati vuoti durante pausa */
+.empty-state .next-hint{margin-top:10px;font-size:12.5px;color:var(--mut)}
+.empty-state .next-hint b{color:var(--txt2)}
+
+/* toolbar filtri: quando calendario è vuoto per filtro, mostra messaggio */
+.cal-month[hidden]{display:none!important}
+.day-group[hidden]{display:none!important}
+
+/* ---- Prossime: valore aggiunto -------------------------------------------------
+   - summary 7gg con pill leghe
+   - highlights Da non perdere (3 card)
+   - picks al ritorno durante pausa
+   - legenda + espandi/comprimi */
+.filter-button.small{font-size:11px;padding:4px 9px;min-height:28px}
+.cal-intro .cal-title{flex:1}
+.upcoming-summary-leagues .tag b{color:var(--txt)}
