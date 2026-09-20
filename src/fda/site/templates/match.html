@@ -533,7 +533,7 @@
 {% set fr = c.fav_record %}
 <div class="card detail-card" id="fascia-storica">
   <h2>Quando il favorito aveva questa forza</h2>
-  <p class="small mut">Com'è poi andata, per ogni fascia di pronostico, nelle {{ fr.n_tot|it_num }} partite del backtest fuori campione (2020→2026, 7 leghe, nessun risultato visto a priori). La riga segnata è la fascia di QUESTA partita (favorito {{ (fr.fav*100)|dec(1) }}%). <b>Frequenza passata, non promessa</b>: l'intervallo di confidenza al 95% dice quanto la frequenza è precisa con quella numerosità.</p>
+  <p class="small mut">Com'è poi andata, per ogni fascia di pronostico, nelle {{ fr.n_tot|it_num }} partite del backtest fuori campione ({% if fr.anni %}{{ fr.anni }}, {% endif %}7 leghe, nessun risultato visto a priori). La riga segnata è la fascia di QUESTA partita (favorito {{ (fr.fav*100)|dec(1) }}%). <b>Frequenza passata, non promessa</b>: l'intervallo di confidenza al 95% dice quanto la frequenza è precisa con quella numerosità.</p>
   <div class="tablewrap"><table>
     <tr><th scope="col">Favorito</th><th scope="col" class="r">partite</th><th scope="col" class="r">media prevista</th><th scope="col" class="r">poi uscito</th><th scope="col" class="r">IC 95%</th><th scope="col" class="c" title="Barra = intervallo di confidenza 95%, riempimento = frequenza osservata, tacca arancione = media prevista">previsto → uscito</th></tr>
     {% for r in fr.rows %}<tr{% if r.current %} style="outline:1.5px solid var(--accent);outline-offset:-1.5px" title="Fascia di questa partita"{% endif %}>

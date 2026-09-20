@@ -638,7 +638,10 @@ def daily_cmd(
                 max_matches=40, max_backfill=40)
     if not skip_predict:
         try:  # calibrazione della griglia dal backtest del run precedente (solo dati passati)
-            calibrate_cmd()
+            # argomenti espliciti: chiamata come funzione Python, i default `typer.Option`
+            # restano oggetti OptionInfo (stesso bug di collect dell'8/9, docs/48 §5) → la
+            # calibrazione falliva qui a ogni run ed era ferma al fit del 13/09
+            calibrate_cmd(min_rows=1200, folds=6, dry_run=False)
         except Exception as exc:
             console.print(f"[red]calibrate fallito: {exc}[/red]")
         try:  # tutto il calendario: zero richieste in più, il modello usa solo storico e squadre
@@ -650,7 +653,7 @@ def daily_cmd(
         except Exception as exc:
             console.print(f"[red]backtest fallito: {exc}[/red]")
         try:  # monitoraggio mercati binari sul backtest appena rigenerato (docs/21 P3-b)
-            mercati_monitor_cmd()
+            mercati_monitor_cmd(save=True)
         except Exception as exc:
             console.print(f"[red]mercati-monitor fallito: {exc}[/red]")
         try:  # Monte Carlo stagione: fallisce in isolato, il sito esce comunque

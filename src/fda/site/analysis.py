@@ -1055,7 +1055,14 @@ class MatchAnalysis:
                     bias_note = f"In questa fascia il modello storicamente sovrastima di {_f(bias*100,1)}pp ({_f(obs*100,1)}% osservato vs {_f(pred_mean*100,1)}% previsto) — favorita meno affidabile."
         if not any(r["current"] for r in out):
             return None
-        return {"rows": out, "n_tot": len(fav), "fav": here, "bias_note": bias_note}
+        # anni reali del campione: il template scriveva «2020→2026» a mano, ma il backtest
+        # parte dal 2024-01-20 (docs/48 §4.2.3)
+        anni = None
+        if "date" in self.backtest.columns:
+            d = pd.to_datetime(self.backtest["date"], errors="coerce").dropna()
+            if not d.empty:
+                anni = f"{d.min().year}→{d.max().year}"
+        return {"rows": out, "n_tot": len(fav), "fav": here, "bias_note": bias_note, "anni": anni}
 
     # ---- forma recente da calendario --------------------------------------------------------
     def form(self, team_id: int, before: datetime, n: int = 5) -> list[dict[str, Any]]:
