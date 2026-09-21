@@ -106,6 +106,21 @@
     - **Prossimo passo — direttiva utente 2026-09-14 (prioritaria)**: applicare le correzioni di `docs/20` nell'ordine del §15 — prima **#2** (una riga di template, affermazione falsa su 371 pagine) e **#1** (catena a quattro passi, ingressi già tutti salvati), con l'invariante nuova in `verify_site.py`: *ogni Δ pp pubblicato deve equalare la differenza fra due passi adiacenti stampati*. Poi #3+#4 (stessa tabella), #5+#6+#7 (stessa riga di testa), #10+#13 (narrativa e parità), infine le finiture. Vecchio riferimento: audit profondo delle **10 sezioni della scheda partita** (Analisi pre-partita, Previsione del modello, Risultati esatti più probabili, Come nasce questa probabilità, Scontro tattico, Fatti rilevanti, Come arrivano, Confronto di stagione, Contesto, Verifica approfondita) perché siano accurate, intuitive, precise, profonde, di qualità e logica. Poi i P0 residui: **P0.5** (CSS esterno, −144 MB), **P0.6** (composizione del campione in *Accuratezza*), **P0.8** (invarianti di pubblicazione). La baseline naive hard-coded `45/27/28` di `build.py:500` (§1.6, P1) resta da sostituire con la frequenza osservata del campione.
     - ✅ **Push riuscito in questo turno** (il token GitHub è tornato valido): `b034bbb` (docs/19) e `c645f96` (tema chiaro AA) sono su `arena/01a0a1a3-football-deep-analyzer`. Aperta **PR #32** verso `main` → check `test` **pass in 50s** (verifica indipendente in Actions dei 14 test nuovi). Merge di competenza dell'utente.
 
+16. **Questa sessione** (`arena/01a0c35a-football-deep-analyzer`, 2026-09-21): indagine richiesta
+utente «il sito è fermo a "aggiornato 01:29" — come mai non sono partiti gli aggiornamenti
+automatici?» → misure complete in `docs/49_ritardo_schedule_github_e_bug_lab_2026-09-21.md`.
+**(a) Verdetto**: nessun guasto nel repo — GitHub avvia gli schedule con ritardi fino a **+5h49**
+(oggi: cron 06:00 IT partito alle 11:49 IT; `lab` del lunedì 05:30 IT partito alle 11:11 IT,
++5h41). Il run ritardato `35585378048` è riuscito (12:00 IT, run+deploy verdi): sito a
+**«AGGIORNATO 21/09/2026 11:56»** (verificato su Pages), commit dati `551a6a0`. **(b) Bug `lab`
+trovato e fixato in questa PR**: `git add --ignore-missing` senza `--dry-run` → fatal exit 128 al
+passo «Commit del riepilogo del laboratorio» (riga introdotta da `bb99d93` il 15/09, primo lunedì
+successivo = oggi; riprodotto in locale su git 2.39.5; log portati dal workflow `diag`) → fix:
+loop `if [ -f ... ]`. **(c) Residuo** (proposto all'utente, non approvato in questa sessione):
+watchdog anti-stallo per i run **mai partiti** (`ci_alert.py` copre solo i rossi). **Prossimo**:
+merge di questa PR (utente); lunedì 28/09 verificare che il `lab` committi il riepilogo senza
+errori; se i ritardi degli schedule restano di queste ampiezze, riproporre il watchdog (docs/49 §4).
+
 ## Decisioni aperte
 - **Backfill partite finite esteso a tutte le 7 leghe** (deciso 2026-09-09, `arena/01a0864d`, fase 3): prima il backfill completo di stagione riguardava solo NED1/POR1 (per l'xG FotMob); ora vale per tutte (statistiche giocatore complete dall'1ª giornata + report storicizzati). Costo: 97 richieste una tantum (stagione in corso al 9/9), poi ~10/lega a giornata; tetto `--max-backfill=40`/lega/run invariato. In attesa di conferma dal vivo al primo `daily` post-merge.
 - **B5 SofaScore — RIMOSSO 2026-09-09** (decisione del 2026-09-09, eseguita in `arena/01a08630` come commit dedicato dopo gli insights). Cancellati `sources/sofascore.py`, `tests/test_sofascore.py` e la voce in `config/sources.yaml`. Il client non era mai collegato a `collect.py`. Reversibile da git (`805bcb5`). Il catalogo in `02` resta come nota (403 da IP datacenter).
