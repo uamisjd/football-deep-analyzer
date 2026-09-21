@@ -1,4 +1,4 @@
-run_id=35129006426   # run daily rosso del 2026-09-16 17:34 UTC (gate verify_site)
+run_id=35581890193   # run lab rosso del 2026-09-21 09:11 UTC (passo «Commit del riepilogo del laboratorio»)
 
 Interruttore per il workflow `.github/workflows/diag-fetch-log.yml`.
 
@@ -17,3 +17,4 @@ Come si usa (agente o utente):
 DEFAULT_RUN_ID=35037211442   # run daily del 2026-09-15 23:47 UTC (primo rosso post-merge)
 trigger 00:14:21 — prova del flusso su diag-logs (senza skip ci)
 # trigger 2026-09-16 17:52 UTC
+# trigger 2026-09-21 09:55 UTC — diagnosi run lab 35581890193
