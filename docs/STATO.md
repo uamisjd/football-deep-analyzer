@@ -123,7 +123,12 @@ della regola D (eccezione con deroga esplicita) l'agente ha eseguito `gh pr merg
 **10:17 UTC**, dopo verifica con comando (check `test` **verde**, PR `MERGEABLE`/`CLEAN`, `git status
 --porcelain` vuoto, `git log origin/main..HEAD` = solo lavoro della PR) → **merge commit `ed4de42` in
 `main`**; fix `lab.yml` e `docs/49` verificati presenti su `main`. Deroga registrata in `docs/13`
-§9.15. **Prossimo**: lunedì **28/09** verificare che il `lab` committi il riepilogo senza errori
+§9.15. **Verifica post-merge (dal vivo, 2026-09-21)**: il push del merge ha fatto partire su `main`
+`tests` `35587928624` (**verde**, 2m10s) e `daily` `35587928675` (**verde**, 13m54s; job `run` +
+`deploy` entrambi success) → commit dati **`56585b0`** e sito Pages aggiornato a
+**«AGGIORNATO 21/09/2026 12:25»** (verificato su `uamisjd.github.io/football-deep-analyzer`):
+la pipeline non è stata toccata dal merge. **Prossimo**: lunedì **28/09** verificare che il `lab`
+committi il riepilogo senza errori
 (run `35581890193` era rosso); se i ritardi degli schedule restano di queste ampiezze (06:00 IT →
 +4h42…+5h49), riproporre il watchdog anti-stallo di docs/49 §4 (non approvato in questa sessione);
 per i dispatch manuali dal sandbox `gh workflow run daily.yml` resta **403** (serve il click
