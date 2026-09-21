@@ -130,8 +130,13 @@ jobs:
           fi
           git config user.name "fda-bot"
           git config user.email "fda-bot@users.noreply.github.com"
-          git add --ignore-missing data/processed/model_lab.parquet data/processed/xi_league.parquet \
-            data/processed/source_probe.parquet
+          # `git add --ignore-missing` SENZA `--dry-run` è rifiutato da git ("requires --dry-run",
+          # exit 128): introdotto da bb99d93 il 15/09, ha fallito al primo lunedì successivo
+          # (run 35581890193 del 21/09). Un file alla volta, solo se esiste.
+          for f in data/processed/model_lab.parquet data/processed/xi_league.parquet \
+                   data/processed/source_probe.parquet; do
+            if [ -f "$f" ]; then git add "$f"; fi
+          done
           if git diff --cached --quiet; then
             echo "riepilogo invariato"
             exit 0
