@@ -1168,8 +1168,48 @@ plurale resta corretto dove il contatore vale 3: «Torino … **3 assenti**, di 
 abituale». I tre run rossi precedenti (`35432745402`, `35438804509`, `35446188137`) si fermavano
 tutti sullo stesso messaggio: `partite/5749682.html: concordanza '1 assenti'`.
 
+### 9.15 Merge PR #77 — fix del commit di riepilogo del `lab` + diagnosi dei ritardi di schedule (2026-09-21, deroga esplicita)
+
+**Contenuto PR #77** (3 commit: `449ac0d` → `6cf44dd` → `8d4a5b2`; **6 file**):
+
+- **`fix(ci)` `.github/workflows/lab.yml`** — il passo «Commit del riepilogo del laboratorio» usava
+  `git add --ignore-missing <3 file>`: git rifiuta quell'opzione senza `--dry-run`
+  (`fatal: the option '--ignore-missing' requires '--dry-run'`, exit 128), quindi il run moriva lì
+  e i 3 parquet del riepilogo (`model_lab`, `xi_league`, `source_probe`) **non venivano committati
+  dal 2026-09-15** (riga introdotta da `bb99d93` il 15/09, estesa da `2687c8f` il 16/09; il cron
+  gira solo il lunedì, quindi il primo run che l'ha eseguita è quello di oggi, `35581890193` —
+  rosso). Riprodotto in locale (git 2.39.5). Fix: loop
+  `for f in …; do if [ -f "$f" ]; then git add "$f"; fi; done`, provato con `bash -e` (la shell dei
+  runner). [live: log del run portati dal workflow `diag` → `run-tail-meta.txt`, `sommario.txt`,
+  `passi-falliti.log`]
+- **`diag/trigger.txt`** — traccia del trigger che ha portato quei log su `diag-logs` (meccanismo
+  consolidato: `gh run view --log-failed` dal sandbox resta inutilizzabile, docs/00 §B6).
+- **`docs/49_ritardo_schedule_github_e_bug_lab_2026-09-21.md`** — indagine richiesta dall'utente
+  («aggiornato 21/09 01:29», ore 11:44): **nessun guasto nel repo**, GitHub avvia gli schedule con
+  ritardi misurati fino a **+5h49** (cron 06:00 IT → run `35585378048` partito alle 11:49 IT e
+  riuscito; `lab` lun 05:30 IT → +5h41; tabella completa dei ritardi in §2 del documento). Catena
+  verificata fino al pubblico: commit dati `551a6a0` + sito Pages «AGGIORNATO 21/09/2026 11:56».
+  Residuo non approvato: watchdog anti-stallo per i run **mai partiti** (§4), perché `ci_alert.py`
+  segnala solo i run rossi.
+- **`docs/STATO.md`** — checkpoint di sessione (item 16).
+
+**Verifiche prima del merge**: suite locale **500 passed** (`python -m pytest -q tests/`);
+workflow `tests` sul branch **verde**; toccati solo workflow e documenti, quindi nessun impatto sui
+numeri pubblicati (nessun `fda build`/`verify_site` necessario: il sito non è stato toccato).
+
+**Deroga merge PR #77**: l'utente ha scritto «Please merge the pull request» (2026-09-21). In
+applicazione della regola D (eccezione con deroga esplicita) l'agente ha eseguito
+`gh pr merge 77 --merge` alle **10:17:08Z** **dopo aver verificato con comando**: check `test`
+verde, PR `MERGEABLE` / `mergeStateStatus CLEAN`, `git status --porcelain` vuoto e
+`git log --oneline origin/main..HEAD` = solo i 3 commit della PR. Merge commit **`ed4de42`** in
+`main`; fix e `docs/49` verificati su `main` (`git show origin/main:.github/workflows/lab.yml`).
+
+**Da verificare dal vivo**: il primo `lab` con il fix è il cron di **lunedì 28/09** — deve chiudere
+il passo «Commit del riepilogo del laboratorio» e committare i 3 parquet (aggiornare `docs/STATO.md`
+col run).
+
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-**#59 (2026-09-19)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), **#77 (2026-09-21)**. *(PR #43 e #45: fuse dall'utente.)*
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.

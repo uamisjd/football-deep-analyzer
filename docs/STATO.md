@@ -117,9 +117,22 @@ trovato e fixato in questa PR**: `git add --ignore-missing` senza `--dry-run` �
 passo «Commit del riepilogo del laboratorio» (riga introdotta da `bb99d93` il 15/09, primo lunedì
 successivo = oggi; riprodotto in locale su git 2.39.5; log portati dal workflow `diag`) → fix:
 loop `if [ -f ... ]`. **(c) Residuo** (proposto all'utente, non approvato in questa sessione):
-watchdog anti-stallo per i run **mai partiti** (`ci_alert.py` copre solo i rossi). **Prossimo**:
-merge di questa PR (utente); lunedì 28/09 verificare che il `lab` committi il riepilogo senza
-errori; se i ritardi degli schedule restano di queste ampiezze, riproporre il watchdog (docs/49 §4).
+watchdog anti-stallo per i run **mai partiti** (`ci_alert.py` copre solo i rossi). **(d) Merge**:
+su richiesta esplicita dell'utente («Please merge the pull request», 2026-09-21) e in applicazione
+della regola D (eccezione con deroga esplicita) l'agente ha eseguito `gh pr merge 77 --merge` alle
+**10:17 UTC**, dopo verifica con comando (check `test` **verde**, PR `MERGEABLE`/`CLEAN`, `git status
+--porcelain` vuoto, `git log origin/main..HEAD` = solo lavoro della PR) → **merge commit `ed4de42` in
+`main`**; fix `lab.yml` e `docs/49` verificati presenti su `main`. Deroga registrata in `docs/13`
+§9.15. **Verifica post-merge (dal vivo, 2026-09-21)**: il push del merge ha fatto partire su `main`
+`tests` `35587928624` (**verde**, 2m10s) e `daily` `35587928675` (**verde**, 13m54s; job `run` +
+`deploy` entrambi success) → commit dati **`56585b0`** e sito Pages aggiornato a
+**«AGGIORNATO 21/09/2026 12:25»** (verificato su `uamisjd.github.io/football-deep-analyzer`):
+la pipeline non è stata toccata dal merge. **Prossimo**: lunedì **28/09** verificare che il `lab`
+committi il riepilogo senza errori
+(run `35581890193` era rosso); se i ritardi degli schedule restano di queste ampiezze (06:00 IT →
++4h42…+5h49), riproporre il watchdog anti-stallo di docs/49 §4 (non approvato in questa sessione);
+per i dispatch manuali dal sandbox `gh workflow run daily.yml` resta **403** (serve il click
+dell'utente in UI).
 
 ## Decisioni aperte
 - **Backfill partite finite esteso a tutte le 7 leghe** (deciso 2026-09-09, `arena/01a0864d`, fase 3): prima il backfill completo di stagione riguardava solo NED1/POR1 (per l'xG FotMob); ora vale per tutte (statistiche giocatore complete dall'1ª giornata + report storicizzati). Costo: 97 richieste una tantum (stagione in corso al 9/9), poi ~10/lega a giornata; tetto `--max-backfill=40`/lega/run invariato. In attesa di conferma dal vivo al primo `daily` post-merge.
