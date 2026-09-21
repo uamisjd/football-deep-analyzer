@@ -1,0 +1,41 @@
+lab	Commit del riepilogo del laboratorio	﻿2026-09-21T09:17:27.5404627Z ##[group]Run if [ ! -f data/processed/model_lab.parquet ] && [ ! -f data/processed/xi_league.parquet ] \
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5405278Z ^[[36;1mif [ ! -f data/processed/model_lab.parquet ] && [ ! -f data/processed/xi_league.parquet ] \^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5405934Z ^[[36;1m   && [ ! -f data/processed/source_probe.parquet ]; then^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5406259Z ^[[36;1m  echo "nessun riepilogo da pubblicare"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5406499Z ^[[36;1m  exit 0^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5406684Z ^[[36;1mfi^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5406859Z ^[[36;1mgit config user.name "fda-bot"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5407159Z ^[[36;1mgit config user.email "fda-bot@users.noreply.github.com"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5407621Z ^[[36;1mgit add --ignore-missing data/processed/model_lab.parquet data/processed/xi_league.parquet \^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5408039Z ^[[36;1m  data/processed/source_probe.parquet^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5408309Z ^[[36;1mif git diff --cached --quiet; then^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5408728Z ^[[36;1m  echo "riepilogo invariato"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5408979Z ^[[36;1m  exit 0^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5409145Z ^[[36;1mfi^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5409487Z ^[[36;1mgit commit -m "lab: confronto modelli e ξ per lega $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5409883Z ^[[36;1mpushed=false^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5410089Z ^[[36;1mfor attempt in 1 2 3; do^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5410309Z ^[[36;1m  git fetch origin "main"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5410536Z ^[[36;1m  git rebase "origin/main"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5410785Z ^[[36;1m  if git push origin "HEAD:main"; then^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5411040Z ^[[36;1m    pushed=true^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5411237Z ^[[36;1m    break^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5411406Z ^[[36;1m  fi^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5411660Z ^[[36;1m  echo "push concorrente fallito (tentativo ${attempt}/3), ritento"^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5411986Z ^[[36;1m  sleep $((attempt * 5))^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5412195Z ^[[36;1mdone^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5412381Z ^[[36;1mif [ "$pushed" != true ]; then^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5412715Z ^[[36;1m  echo "impossibile pubblicare il riepilogo dopo 3 tentativi" >&2^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5413088Z ^[[36;1m  exit 1^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5413256Z ^[[36;1mfi^[[0m
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5451963Z shell: /usr/bin/bash -e {0}
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5452223Z env:
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5452451Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.16/x64
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5452840Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib/pkgconfig
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5453214Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5453556Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5453894Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.16/x64
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5454229Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.16/x64/lib
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5454517Z ##[endgroup]
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5545019Z fatal: the option '--ignore-missing' requires '--dry-run'
+lab	Commit del riepilogo del laboratorio	2026-09-21T09:17:27.5554292Z ##[error]Process completed with exit code 128.

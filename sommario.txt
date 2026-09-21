@@ -1,0 +1,3 @@
+41 diag_jobs/passi-falliti.log
+job 106276419707 «lab»: failure
+  passo fallito: Commit del riepilogo del laboratorio
