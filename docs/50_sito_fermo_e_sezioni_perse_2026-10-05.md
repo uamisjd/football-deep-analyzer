@@ -12,7 +12,8 @@ esplicitamente (§7).
 
 ## 0. Verdetto in tre righe
 
-1. **Il sito pubblico è fermo dal 28/09/2026** (15 run `daily` rossi di fila): un **solo
+1. **Il sito pubblico è fermo dal 28/09/2026** (**37 run `daily` rossi consecutivi**, dal
+   28/09 10:45 UTC; ultimo verde 27/09 23:52 UTC): un **solo
    decimale scritto col punto** — le coordinate della sonda Open-Meteo, «45.48,9.12», pubblicate
    verbatim in *Stato fonti* — faceva uscire 1 il gate `verify_site`, che sta **prima** del commit
    dei dati e del deploy. Corretto (§1, §4).
@@ -35,11 +36,12 @@ Suite: **508 passed** (era 500). Gate: `verify_site` **0 problemi · 156.865 con
 ### 1.1 I fatti
 
 ```
-$ gh run list --limit 15
+$ gh run list --workflow daily.yml --limit 80   # estratto
 completed  failure  daily  main  schedule  37302286386  15m27s  6h
 completed  success  lab    main  schedule  37298466696   9m43s  7h
 completed  failure  daily  main  schedule  37245969329  11m13s 17h
-… 15 run `daily` consecutivi falliti, tutti sul passo «Verifica il sito (verify_site)»
+… 37 run `daily` consecutivi falliti (misurato su 80 run: il primo verde a ritroso è
+   2026-09-27T23:52:01Z), tutti sul passo «Verifica il sito (verify_site)»
 ```
 
 Il sito pubblicato (letto con un fetch della pagina reale):
