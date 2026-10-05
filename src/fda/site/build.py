@@ -22,7 +22,15 @@ from ..models.season_sim import mc_percent, mc_se
 from ..store import Store
 from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
 from .audit import audit_match
-from .fmt import ITALIAN_DAYS, ITALIAN_MONTHS, dec_sum, displayed_sum, it_plural, pct_triple
+from .fmt import (
+    ITALIAN_DAYS,
+    ITALIAN_MONTHS,
+    dec_sum,
+    decimali_it,
+    displayed_sum,
+    it_plural,
+    pct_triple,
+)
 from .players import PlayerCatalog
 
 log = logging.getLogger(__name__)
@@ -730,6 +738,15 @@ class SiteBuilder:
 
         # info sulla prossima data utile (per gestire buchi come sosta nazionali)
         next_info = self._next_fixture_info(fx, today_local)
+        # L'ancora «mese-AAAA-MM» esiste solo se quel mese è nel calendario compatto: il
+        # calendario copre CALENDAR_DAYS giorni oltre la finestra breve, quindi con la
+        # prossima gara più lontana della finestra (sosta estiva) — o con un calendario
+        # vuoto — il link «salta a …» punterebbe a un id che la pagina non ha, e il gate
+        # delle ancore interne di `verify_site` fermerebbe il run (stesso meccanismo del
+        # blocco del 28/09/2026). Il flag lo decide chi conosce i mesi pubblicati.
+        if next_info is not None:
+            mese = f"mese-{next_info['date_iso'][:7]}"
+            next_info["anchor"] = mese if any(mo.get("id") == mese for mo in calendar) else None
         # anche per oggi: se oggi è vuoto, serve la prossima data
         next_after_today = next_info
         # per la vista risultati: se ultimi 7 gg vuoti, mostra ultimi 30 gg (fallback utile durante pause)
@@ -1181,14 +1198,19 @@ class SiteBuilder:
                 rows.append({"source": r.source,
                              "run_at": pd.Timestamp(r.run_at).tz_convert(self.tz).strftime("%d/%m %H:%M"),
                              "requests": int(r.requests) if not pd.isna(r.requests) else 0,
-                             "rows": n_rows, "detail": note if isinstance(note, str) else "",
+                             # Testo libero generato dai collettori e pubblicato verbatim:
+                             # i decimali vanno in virgola qui, all'ultimo miglio (vedi
+                             # `fmt.decimali_it`). Senza, una sola cifra scritta col punto a
+                             # monte ferma il `daily` sul gate dei decimali — è successo il
+                             # 28/09/2026 con le coordinate della sonda Open-Meteo.
+                             "rows": n_rows, "detail": decimali_it(note if isinstance(note, str) else ""),
                              "ok": bool(r.ok),
                              "warn": bool(getattr(r, "warn", False)) or "espn standings" in err
                                      or "espn news" in err,
                              # pausa programmata (docs/19 P1.9): si distingue da un guasto
                              # nuovo, così 14 righe identiche non nascondono più un errore
                              "suspended": is_suspended_row(err),
-                             "error": err[:120]})
+                             "error": decimali_it(err[:120])})
         # Sonda settimanale delle fonti di fallback (docs/19 P1.10): la pagina deve dire
         # quando è stata provata l'ultima volta. Un fallback non esercitato non è un
         # fallback funzionante — e la data è parte dell'affermazione, non un dettaglio.
@@ -1201,7 +1223,7 @@ class SiteBuilder:
                 quando = pd.Timestamp(r["run_at"])
                 giorni = max(0, int((pd.Timestamp(self.now) - quando).days))
                 probe.append({"probe": nome, "ok": bool(r["ok"]),
-                              "detail": str(r.get("detail", "")),
+                              "detail": decimali_it(str(r.get("detail", ""))),
                               "when": quando.tz_convert(self.tz).strftime("%d/%m %H:%M"),
                               "days": giorni})
         tables = self.store.summary().to_dict("records") if not self.store.summary().empty else []

@@ -8,6 +8,7 @@ usano queste funzioni, così la formattazione è definita in un solo posto.
 from __future__ import annotations
 
 import math
+import re
 
 import pandas as pd
 
@@ -82,6 +83,33 @@ def dec_sum(a, b, nd: int = 2) -> str:
     if pd.isna(fa) or pd.isna(fb):
         return ""
     return dec(displayed_sum(fa, fb, nd), nd)
+
+
+#: Decimale scritto col punto dentro una stringa libera. È la **stessa** espressione di
+#: ``scripts/verify_site.py`` (``DECIMAL_POINT``): i due devono restare identici, altrimenti
+#: il gate segnala ciò che il sito pubblica (o viceversa). Esclude i separatori di migliaia
+#: (1-3 cifre, punto, esattamente 3 cifre) e i numeri attaccati a una lettera o a una barra
+#: («v1.5», «Chrome/124.0»), che non sono decimali nostri.
+_DECIMALE_PUNTO = re.compile(r"(?<![\w/,\-:])\d{1,3}\.\d{1,2}(?![\w.])|\d{1,3}\.\d{4,}")
+
+
+def decimali_it(testo) -> str:
+    """Stringa libera → stessa stringa coi decimali in virgola italiana.
+
+    Perché serve: le frasi di diagnostica (``source_status.detail``, ``source_probe.detail``,
+    i messaggi d'errore) arrivano in *Stato fonti* **verbatim** e non passano dai filtri
+    numerici. Il 28/09/2026 la sonda Open-Meteo ha pubblicato le coordinate di San Siro come
+    «45.48,9.12»: un decimale col punto su una sola pagina ha fermato il ``daily`` per otto
+    giorni (il gate ``verify_site`` esce 1 prima del commit dei dati e del deploy). Il
+    produttore è stato corretto, ma la pagina pubblica testo generato altrove e già salvato
+    nei Parquet: la conversione all'ultimo miglio rende la pagina indipendente da come il
+    testo è stato scritto a monte.
+
+    Non tocca i separatori di migliaia («84.594»), le versioni («v1.5») né gli URL.
+    """
+    if not isinstance(testo, str) or not testo:
+        return testo if isinstance(testo, str) else ""
+    return _DECIMALE_PUNTO.sub(lambda m: m.group(0).replace(".", ","), testo)
 
 
 def pct_str(v, nd: int = 0) -> str:

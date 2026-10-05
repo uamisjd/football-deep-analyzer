@@ -1040,7 +1040,7 @@ def test_oggi_con_una_partita_sola_concorda_il_singolare(tmp_path):
                  "next_match": None, "next_iso": None, "next_league": None},
         filters=[],
         next_info={"label": "lunedì 21 settembre 2026", "count": 1, "gap_days": 1,
-                   "date_iso": "2026-09-21", "is_break": False},
+                   "date_iso": "2026-09-21", "is_break": False, "anchor": None},
         today_summary_extra={"total": 1, "avg_gol": 2.5, "avg_over": 55, "high_over": 0},
         today_leagues=[{"name": "Serie A", "count": 1}],
         today_timeline=[{"slot": "20–22", "count": 1}],
@@ -1075,7 +1075,7 @@ def test_prossime_con_una_partita_sola_concorda_il_singolare(tmp_path):
                    "label_short": "Ott 26", "count": 1, "matches": []}],
         calendar_missing=1, calendar_days=30, upcoming_count=0,
         next_info={"label": "giovedì 1 ottobre 2026", "count": 1, "gap_days": 1,
-                   "date": date(2026, 10, 1), "is_break": False},
+                   "date": date(2026, 10, 1), "is_break": False, "anchor": "mese-2026-10"},
         upcoming_summary={"total": 1, "avg_gol": 2.5, "avg_over": 55, "high_over": 0},
         upcoming_leagues=[], upcoming_highlights=[], calendar_picks=[])
     h = (out / "prossime.html").read_text(encoding="utf-8")
@@ -1785,4 +1785,108 @@ def test_p28_ogni_tabella_in_un_contenitore_e_le_regole_mobili(tmp_path):
     assert ".match-hero-team .form-dot{width:13px;height:13px}" in css
     assert ".card{padding:16px 14px}" in css
     assert ".gb .x{font-size:9.5px}" in css
+    st.close()
+
+
+def test_previsione_pubblicata_anche_senza_precedenti(tmp_path):
+    """Senza precedenti H2H la scheda deve comunque pubblicare la previsione.
+
+    Difetto trovato il 05/10/2026 (il ``daily`` era rosso dal 28/09): in ``match.html`` il
+    ``{% endif %}`` della card «Precedenti» stava 150 righe più in basso del dovuto, quindi
+    **sei** sezioni — Previsione del modello, Risultati esatti, Come nasce questa
+    probabilità, Quando il favorito aveva questa forza, Dove si colloca questa partita,
+    Quando arriva il primo gol — erano annidate dentro ``{% if c.h2h_pattern or … %}``.
+    Su ogni partita senza scontri diretti in archivio (prima volta che si incontrano, o
+    dettagli non ancora raccolti) spariva il cuore della scheda e l'indice restava con
+    un'ancora ``#previsione`` puntata sul vuoto. Introdotto da ``64998455`` (20/09).
+    """
+    st = _seed(tmp_path)
+    st.write("h2h", st.read("h2h").iloc[0:0])          # nessun precedente per nessuna gara
+    mi = st.read("match_info")                          # né il bilancio sintetico di FotMob
+    for col in ("h2h_home_wins", "h2h_draws", "h2h_away_wins"):
+        if col in mi.columns:
+            mi.loc[mi.match_id == 5749669, col] = None
+    st.write("match_info", mi)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+
+    pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
+    assert 'id="precedenti"' not in pre                # la card resta condizionata ai dati
+    for sezione in ('id="previsione"', "Previsione del modello", "Risultati esatti più probabili"):
+        assert sezione in pre, f"sezione persa senza precedenti: {sezione}"
+
+    # lo stesso controllo del gate di CI: nessuna ancora dell'indice punta sul vuoto
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    assert [f for f in fails if "ancora interna mancante" in f] == []
+    st.close()
+
+
+def test_stato_fonti_pubblica_decimali_italiani_nei_testi_liberi(tmp_path):
+    """*Stato fonti* pubblica verbatim i testi dei Parquet: i decimali vanno in virgola.
+
+    Caso reale del 28/09/2026: la sonda Open-Meteo registrava «previsione per 45.48,9.12»,
+    il gate ``verify_site`` sui decimali usciva 1 e il ``daily`` si è fermato per otto giorni
+    prima del commit dei dati e del deploy. Il produttore è corretto, ma la riga resta nel
+    Parquet fino alla sonda successiva (settimanale): la conversione all'ultimo miglio rende
+    la pagina indipendente da come il testo è stato scritto a monte.
+    """
+    st = Store(tmp_path / "processed")
+    now = datetime.now(UTC)
+    st.upsert("source_probe", [{"run_at": now, "probe": "openmeteo", "ok": True,
+                                "detail": "previsione per 45.48,9.12 alle 10:53 UTC: 21 °C, coperto"}])
+    st.upsert("source_status", [{"run_at": now, "source": "fotmob:ITA1", "requests": 8, "ok": True,
+                                 "warn": False, "error": None, "rows": 20,
+                                 "detail": "calendario 380 · xG medio 2.71 a gara", "digest": ""}])
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_status()
+    h = (out / "stato.html").read_text(encoding="utf-8")
+    assert "45.48" not in h and "2.71" not in h
+    assert "45,48" in h and "2,71" in h
+
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    assert [f for f in fails if "decimale col punto" in f] == []
+    st.close()
+
+
+def test_salto_al_mese_solo_se_il_mese_e_nel_calendario(tmp_path):
+    """Il link «salta a …» verso ``prossime.html#mese-AAAA-MM`` esiste solo se quel mese è
+    davvero nel calendario compatto (che copre ``CALENDAR_DAYS`` giorni oltre la finestra
+    breve).
+
+    Con la prossima gara più lontana della finestra — sosta estiva, o calendario vuoto —
+    l'ancora non esiste e il gate delle ancore interne di ``verify_site`` fermerebbe il
+    ``daily`` prima del deploy: lo stesso meccanismo che ha tenuto il sito congelato dal
+    28/09/2026. Trovato sul seed (calendario vuoto) il 05/10/2026.
+    """
+    st = _seed(tmp_path)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    idx = (out / "index.html").read_text(encoding="utf-8")
+    assert "Oggi nessuna partita in programma" in idx      # il blocco col salto è renderizzato
+    assert "prossime.html#mese-" not in idx                # calendario del seed vuoto: nessuna ancora
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    assert [f for f in fails if "ancora interna mancante" in f] == []
+    st.close()
+
+
+def test_salto_al_mese_presente_quando_il_mese_e_nel_calendario(tmp_path):
+    """Caso positivo: con la prossima gara dentro la finestra del calendario il salto c'è,
+    e punta a un'id che la pagina ha davvero."""
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    fx.loc[fx.match_id == 5749669, "utc_kickoff"] = datetime.now(UTC) + timedelta(days=20)
+    st.write("fixtures", fx)
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build()
+    idx = (out / "index.html").read_text(encoding="utf-8")
+    pross = (out / "prossime.html").read_text(encoding="utf-8")
+    ancore = re.findall(r'prossime\.html#(mese-\d{4}-\d{2})', idx)
+    assert len(ancore) == 1, idx[:400]
+    assert f'id="{ancore[0]}"' in pross
+    vs = _verify_site()
+    fails, _ = vs.check_pages(out)
+    assert [f for f in fails if "ancora interna mancante" in f] == []
     st.close()

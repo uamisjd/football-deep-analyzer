@@ -461,6 +461,7 @@
     {% if c.h2h_trend_note %}<p class="small" style="margin-top:6px;color:var(--amber)">⚠ {{ c.h2h_trend_note }}</p>{% endif %}
     {% endif %}
   </div>
+  {% endif %}
 {% if p %}
 <div class="grid detail-card" id="previsione">
   <div class="card">
@@ -610,7 +611,6 @@
 </div>
 {% endif %}
 
-  {% endif %}
   {% if c.key_stats %}
   <div class="card" id="statistiche">
     <h2>Statistiche</h2>

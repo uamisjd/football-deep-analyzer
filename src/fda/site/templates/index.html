@@ -98,7 +98,7 @@
   <div style="flex:1">
     <strong>Oggi nessuna partita in programma</strong><br>
     <span class="mut small">È pausa per le nazionali o turno infrasettimanale vuoto. Prossima giornata: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} {{ 'partita' if next_info.count == 1 else 'partite' }}</b>{% if next_info.gap_days > 1 %} — tra {{ next_info.gap_days }} giorni{% endif %}. Le previsioni sono già disponibili nel calendario.</span>
-    <div style="margin-top:8px"><a href="{{ root }}prossime.html" style="font-weight:700">Vai a Prossime →</a> <span class="mut small">· <a href="{{ root }}prossime.html#mese-{{ next_info.date_iso[:7] }}">salta a {{ next_info.label }}</a></span></div>
+    <div style="margin-top:8px"><a href="{{ root }}prossime.html" style="font-weight:700">Vai a Prossime →</a>{#- L'ancora del mese esiste solo se quel mese è nel calendario compatto (30 gg): senza `next_info.anchor` il link punterebbe a un id assente e il gate delle ancore di verify_site fermerebbe il run (sosta estiva, calendario vuoto). -#}{% if next_info.anchor %} <span class="mut small">· <a href="{{ root }}prossime.html#{{ next_info.anchor }}">salta a {{ next_info.label }}</a></span>{% endif %}</div>
   </div>
 </div>
 {% elif summary.live == 0 and summary.scheduled > 0 %}
@@ -114,7 +114,7 @@
     <strong>{% if next_info.is_break %}Pausa nazionali{% else %}Nessuna partita nei prossimi {{ calendar_days }} giorni{% endif %}</strong><br>
     <span class="small mut">Domani, dopodomani e i prossimi giorni non hanno partite dei 7 campionati seguiti. È normale durante le soste FIFA/UEFA.
       Prossimo turno disponibile: <b>{{ next_info.label }}</b> con <b>{{ next_info.count }} {{ 'partita' if next_info.count == 1 else 'partite' }}</b>{% if next_info.gap_days %} (tra {{ next_info.gap_days }} {{ 'giorno' if next_info.gap_days == 1 else 'giorni' }}){% endif %}. Sotto trovi già tutto il calendario con le previsioni del modello, ricalcolate ad ogni aggiornamento.</span>
-    <div style="margin-top:8px"><a href="#mese-{{ next_info.date.year }}-{{ '%02d'|format(next_info.date.month) }}" style="font-weight:700">Salta al prossimo turno ↓</a></div>
+    {% if next_info.anchor %}<div style="margin-top:8px"><a href="#{{ next_info.anchor }}" style="font-weight:700">Salta al prossimo turno ↓</a></div>{% endif %}
   </div>
 </div>
 {% endif %}

@@ -105,3 +105,47 @@ def test_pct_triple_somma_esatta_su_molti_vettori_casuali(nd):
         out = pct_triple((a / s, b / s, c / s), nd)
         assert sum(out) == pytest.approx(100.0, abs=1e-9)
         assert all(v >= 0 for v in out), "nessuna percentuale negativa"
+
+
+# ---- decimali col punto dentro il testo libero (blocco del daily del 28/09/2026) ------------
+def test_decimali_it_converte_solo_i_decimali():
+    """La sonda Open-Meteo pubblicava «45.48,9.12» in *Stato fonti*: un decimale col punto
+    su una sola pagina è bastato a fermare il ``daily`` per otto giorni (il gate
+    ``verify_site`` esce 1 prima del commit dei dati e del deploy)."""
+    from fda.site.fmt import decimali_it
+
+    assert decimali_it("previsione per 45.48 · 9.12 alle 10:53") == "previsione per 45,48 · 9,12 alle 10:53"
+    assert decimali_it("xG 1.69 su 3.5") == "xG 1,69 su 3,5"
+    assert decimali_it("") == "" and decimali_it(None) == ""
+    assert decimali_it("nessun numero") == "nessun numero"
+
+
+def test_decimali_it_non_tocca_migliaia_versioni_url():
+    """Falsi positivi da non creare: separatori di migliaia, versioni, URL, orari."""
+    from fda.site.fmt import decimali_it
+
+    for testo in ("84.594 righe", "1.234.567 byte", "v1.5", "Chrome/124.0 Safari/537.36",
+                  "https://www.sportmediaset.mediaset.it/rss/calcio.xml", "HTTP 404",
+                  "ore 10:53 UTC", "3,1 gialli/gara"):
+        assert decimali_it(testo) == testo, testo
+
+
+def test_decimali_it_allineata_al_gate_di_verify_site():
+    """Ciò che :func:`decimali_it` lascia intatto non deve far fallire il gate, e ciò che
+    converte deve essere esattamente ciò che il gate intercetta: le due espressioni vivono
+    in file diversi (``fmt.py`` e ``scripts/verify_site.py``) e devono restare identiche."""
+    import importlib.util
+    import re
+    from pathlib import Path
+
+    from fda.site.fmt import _DECIMALE_PUNTO, decimali_it
+
+    p = Path(__file__).parent.parent / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site_fmt", p)
+    vs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vs)
+    assert _DECIMALE_PUNTO.pattern == vs.DECIMAL_POINT.pattern
+
+    for testo in ("previsione per 45.48,9.12", "xG 1.69", "84.594 righe", "v1.5"):
+        assert bool(vs.DECIMAL_POINT.search(testo)) == bool(_DECIMALE_PUNTO.search(testo))
+        assert not re.search(vs.DECIMAL_POINT, decimali_it(testo)), testo

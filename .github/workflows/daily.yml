@@ -65,6 +65,25 @@ jobs:
       - name: Installa il pacchetto (con dipendenze dev per i test)
         run: pip install -q -e ".[dev]"
 
+      # Cache HTTP su disco fra un run e l'altro (rispetto delle fonti, misurato il
+      # 05/10/2026 su `source_status`): `data/cache/` non è versionato e il checkout
+      # riparte da una cartella vuota (`clean: true`), quindi le TTL dichiarate in
+      # `config/sources.yaml` — notizie 12 h, mercato 24 h, calendario 6 h — valevano solo
+      # **dentro** un run. Costo reale misurato sugli ultimi 8 giorni: 676 richieste/giorno
+      # a FotMob per il mercato (132 squadre × 5 run) e 692 a Google News per le notizie,
+      # quando la TTL dichiarata ne prevede ~132 e ~264. Con la cache persistente è la TTL
+      # a decidere, non il numero di run. `continue-on-error` su entrambi i passi: un
+      # problema di cache (quota, restore) non deve mai fermare il run — la raccolta
+      # funziona identica, solo con più richieste.
+      - name: Ripristina la cache HTTP dei run precedenti
+        id: cache-http
+        continue-on-error: true
+        uses: actions/cache/restore@v6
+        with:
+          path: data/cache
+          key: fda-http-${{ github.run_id }}
+          restore-keys: fda-http-
+
       - name: Test rapidi (parser offline)
         run: python -m pytest -q -x tests/test_fotmob.py tests/test_understat_espn.py tests/test_config.py
 
@@ -85,6 +104,23 @@ jobs:
           name: run-log-${{ github.run_number }}
           path: run.log
           retention-days: 7
+
+      # Dopo `fda daily` la cache è completa (le fasi successive non fanno richieste):
+      # si salva qui, anche se la raccolta è fallita a metà, così il run seguente riparte
+      # da ciò che è già stato scaricato. Chiave nuova a ogni run (le cache di Actions sono
+      # immutabili) e `restore-keys` sul prefisso: GitHub tiene le più recenti ed elimina
+      # le vecchie da solo (LRU, 10 GB per repository).
+      - name: Prepara la cartella della cache HTTP
+        if: always() && steps.cache-http.outcome == 'success'
+        run: mkdir -p data/cache
+
+      - name: Salva la cache HTTP per il run successivo
+        if: always() && steps.cache-http.outcome == 'success'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: data/cache
+          key: fda-http-${{ github.run_id }}
 
       # Invarianti di pubblicazione (docs/19 P0.8, §18.5): verify_site rilegge i numeri
       # pubblicati e li confronta con i Parquet e con il modello. Un numero che non torna
