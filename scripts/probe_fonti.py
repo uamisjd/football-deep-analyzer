@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any
 
 from fda.config import PROCESSED_DIR
+from fda.site.fmt import dec as _dec_it
 from fda.sources.openmeteo import OpenMeteoClient
 from fda.store import Store
 
@@ -47,8 +48,12 @@ def probe_openmeteo(client: Any, now: datetime) -> dict[str, Any]:
     if temp is None or not desc:
         return {"probe": "openmeteo", "ok": False,
                 "detail": f"previsione incompleta: {fc}"}
+    # Le coordinate sono pubblicate in *Stato fonti* con la virgola italiana (`dec`): il
+    # ``:.2f`` originale scriveva «45.48,9.12» e quel decimale col punto — uno solo, su una
+    # sola pagina — ha fermato il `daily` dal 28/09/2026 (gate `verify_site` sui decimali).
     return {"probe": "openmeteo", "ok": True,
-            "detail": (f"previsione per {PROBE_LAT:.2f},{PROBE_LON:.2f} alle {quando:%H:%M} UTC: "
+            "detail": (f"previsione per {_dec_it(PROBE_LAT)} N / {_dec_it(PROBE_LON)} E "
+                       f"alle {quando:%H:%M} UTC: "
                        f"{temp:.0f} °C, {desc}"
                        + (f" · pioggia {fc['precip_prob']:.0f}%" if fc.get("precip_prob") is not None else ""))}
 

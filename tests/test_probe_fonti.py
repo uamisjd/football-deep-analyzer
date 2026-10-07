@@ -35,7 +35,28 @@ def test_sonda_ok_registra_il_valore_vero():
     esito = probe_openmeteo(_ClientOk(), ORA)
     assert esito["ok"] is True
     assert "21 °C" in esito["detail"] and "pioggia 60%" in esito["detail"]
-    assert "45.48,9.12" in esito["detail"]           # coordinate dichiarate, non implicite
+    assert "45,48 N / 9,12 E" in esito["detail"]     # coordinate dichiarate, in virgola italiana
+
+
+def test_sonda_ok_non_pubblica_decimali_col_punto():
+    """Anti-regressione sul blocco del ``daily`` durato otto giorni (dal 28/09/2026).
+
+    La sonda scriveva le coordinate con ``:.2f`` («45.48,9.12»): il dettaglio finisce
+    **verbatim** in *Stato fonti*, il gate ``verify_site`` sui decimali usciva 1 e il run si
+    fermava prima del commit dei dati e del deploy — sito congelato. La riga resta salvata
+    nel Parquet per una settimana, quindi un solo lunedì storto bloccava sette daily.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    p = Path(__file__).resolve().parents[1] / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site_probe", p)
+    vs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vs)
+
+    for client in (_ClientOk(), _ClientRotto(), _ClientVuoto()):
+        esito = probe_openmeteo(client, ORA)
+        assert not vs.DECIMAL_POINT.search(esito["detail"]), esito["detail"]
 
 
 def test_sonda_fallita_dichiara_l_errore():
