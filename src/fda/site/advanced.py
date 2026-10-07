@@ -15,7 +15,6 @@ import pandas as pd
 
 from ..models.dc_grid import tau_grid
 from .fmt import dec as _dec
-from .fmt import int_it as _int_it
 from .fmt import it_plural as _it_plural
 
 # Situazioni FotMob → italiano (valori reali in shots.parquet, 2026-09-11).
