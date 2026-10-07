@@ -12,16 +12,16 @@
 > **Fonte autorevole:** questo handoff, la cima di `docs/STATO.md` e `docs/52_verifica_stato_costi_e_gate_2026-10-07.md` descrivono lo stato corrente. I checkpoint più sotto sono contesto storico: non riprendere le loro vecchie code senza ricontrollare la coda attuale.
 
 - **Progetto:** portale personale statico, in italiano, per analisi e previsioni calcistiche su sette leghe. La pipeline gira in GitHub Actions cinque volte al giorno, raccoglie dati, aggiorna i modelli e pubblica su GitHub Pages.
-- **PR #83:** aperta da `arena/e20f049c-football-deep-analyzer` verso `main`; check `test` verde nel run `37632053256` (1m59s) sull'ultima revisione prima di questo aggiornamento documentale; la PR è `MERGEABLE`. Questo commit di handoff deve generare un nuovo check, da verificare su GitHub prima del merge. Aggiunge Ruff alla CI e documenta stato/costi; **non cambia raccolta, dati o frequenza dei run**. Il merge spetta all'utente: l'agente non deve eseguirlo.
-- **Produzione:** ultimo daily verificato, #217 (`37618498043`), riuscito con commit dei dati, deploy e restore/save della cache; issue #79 chiusa. ESPN resta in backoff dopo risposte 403. Non confondere questo controllo via GitHub con una prova live delle fonti sportive.
+- **PR #83:** fusa il 7/10 alle 15:37:25 UTC, merge commit `c92adf5d`; il check `test` pre-merge è passato (`37633874640`, 1m23s; `CLEAN`). La PR aggiunge Ruff alla CI e questo handoff, senza cambiare collector o frequenza. Il push ha attivato automaticamente il daily #218 (`37645413601`), concluso verde con deploy e commit dati `aa760b9`.
+- **Produzione:** ultimo daily verificato, #218 (`37645413601`), riuscito dopo il merge: raccolta, gate, commit dati `aa760b9` e deploy; restore/save della cache riusciti. Il #217 (`37618498043`) aveva già chiuso l'issue #79. ESPN resta in backoff dopo risposte 403. È verifica del run Actions, non una sonda lanciata dall'agente.
 - **Gate locali già verdi:** 515 test; build (441 schede / 2.364 partite / 7.498 giocatori); `verify_site` (159.546 controlli, zero problemi); parità 66 schede; verifica statica a 375 px (26.492 misure, zero problemi); `ruff check .` pulito. Non ripeterli senza cambi di codice o una ragione specifica.
-- **Crediti e traffico:** nessuna API sportiva a pagamento attiva. Cache GitHub Actions: 1,26 GB in 7 voci. FotMob e notizie hanno limiti 600/200 **per run**, ma non esiste un tetto giornaliero aggregato; la stima di circa 1.100 richieste/giorno dopo la cache non è una misura totale aggiornata. Prima di qualunque raccolta, sonda o benchmark, controllare necessità, cache e limiti; non avviare traffico live superfluo. Dettagli e limiti in `docs/52`.
+- **Crediti e traffico:** nessuna API sportiva a pagamento attiva. Cache Actions: 2,53 GB in 12 voci (di cui 26,5 MB per le cache HTTP `fda-http-*`; il resto è principalmente `setup-python`). FotMob e notizie hanno limiti 600/200 **per run**, ma non esiste un tetto giornaliero aggregato; la stima di circa 1.100 richieste/giorno dopo la cache non è una misura totale aggiornata. Prima di qualunque raccolta, sonda o benchmark, controllare necessità, cache e limiti; non avviare traffico live superfluo. Dettagli e limiti in `docs/52`.
 
 ### Istruzioni per il prossimo agente
 
 1. Leggere questo handoff, `docs/00_regole_di_lavoro.md`, la cima di `docs/STATO.md` e `docs/52`.
 2. Verificare branch e working tree secondo il messaggio di avvio Arena; controllare su GitHub lo stato aggiornato della PR #83 e dell'ultimo daily (non assumere che i dati del briefing siano ancora i più recenti).
-3. Se #83 è ancora aperta, non aprire una PR duplicata e non fare merge: riferire lo stato e attendere l'utente. Se è stata fusa, controllare il primo daily schedulato successivo e il deploy **senza avviare un daily manuale**.
+3. PR #83 è fusa e il daily #218 post-merge è già verde. Non riaprire la PR né lanciare un daily manuale; controlla solo il daily schedulato più recente quando riprendi il lavoro.
 4. La prossima decisione di prodotto è se mantenere i cinque run giornalieri con soli limiti per run oppure introdurre un budget aggregato. Non cambiare frequenza o budget senza decisione dell'utente.
 5. In seguito, la coda non bloccante è: browser reale/Lighthouse (P2.8), ricontrollo della narrativa (P2.4), indicatore dell'età dell'ultimo aggiornamento e valutazione della separazione fra gate numerici e cosmetici. `prossime.html` è sotto il limite dichiarato: paginazione/lazy-loading non è urgente.
 
@@ -60,7 +60,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
 
-- **Verifica 2026-10-07 (`docs/52`):** PR #82 fusa, issue #79 chiusa dal daily #217 verde e deploy riuscito. Gate locali: 515 test, `fda build`, `verify_site` (0 problemi / 159.546 controlli), parità delle 66 schede, resa 375 px (0 problemi) e Ruff pulito. Nessuna raccolta live è stata eseguita in questa sessione. Fonti senza API a pagamento; cache Actions 1,26 GB in 7 cache; tetti FotMob/notizie 600/200 per run. **PR #83 aperta** da `arena/e20f049c-football-deep-analyzer`, check `test` verde nel run `37632053256` (1m59s) prima dell'aggiornamento documentale corrente; questa modifica richiede un nuovo check, da verificare prima del merge. La PR è `MERGEABLE`; il merge spetta all'utente. **Usare `docs/52` per le questioni aperte e i limiti aggiornati.**
+- **Verifica 2026-10-07 (`docs/52`):** PR #82/#83 fuse; issue #79 chiusa; daily #217 e post-merge #218 (`37645413601`) verdi con deploy. Gate locali: 515 test, `fda build`, `verify_site` (0 problemi / 159.546 controlli), parità di 66 schede, resa 375 px (0 problemi) e Ruff pulito. Nessun run live è stato lanciato manualmente dall'agente; il daily #218 è stato attivato automaticamente dal merge. Nessuna API a pagamento; cache Actions 2,53 GB/12 voci, di cui 26,5 MB HTTP; tetti FotMob/notizie 600/200 per run. **Usare `docs/52` per limiti e coda aggiornati.**
 - Le sessioni descritte nei punti successivi sono **storico e contesto**, non la coda operativa di oggi.
 
 
@@ -96,17 +96,16 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 3. Coda operativa attuale (fonte: `docs/STATO.md` e `docs/52`)
 
-1. **Prima del merge:** la PR #83 è pronta, ma il merge spetta all'utente. Il check più recente è `test` verde (`37632053256`, 1m59s) e la PR è `MERGEABLE`; verificare lo stato GitHub aggiornato prima di agire.
-2. **Dopo il merge:** attendere il daily schedulato successivo e verificare via GitHub esito, commit dati e deploy. Non fare dispatch manuale o raccolta live solo per prova: la PR non cambia il percorso dati.
-3. **Decisione ancora aperta:** budget aggregato giornaliero delle richieste e/o frequenza dei run. Oggi sono cinque al giorno, con limiti FotMob/notizie di 600/200 per run e cache; non c'è un tetto globale. Non modificare questi limiti senza scelta dell'utente.
-4. **Miglioramenti non bloccanti:** browser reale/Lighthouse (P2.8), narrativa P2.4, indicatore di freschezza del sito e separazione fra gate numerici e cosmetici (`docs/50` §6). La paginazione di `prossime.html` non è urgente.
-5. **Modelli:** nessun cambio di modello di produzione è in coda immediata; ogni proposta futura segue la griglia pre-registrata e il protocollo in `docs/00` e `docs/19`.
+1. **Già completato:** PR #83 fusa; daily post-merge #218 (`37645413601`) verde, con dati aggiornati e deploy Pages riuscito.
+2. **Decisione ancora aperta:** budget aggregato giornaliero delle richieste e/o frequenza dei run. Oggi sono cinque al giorno, con limiti FotMob/notizie di 600/200 per run e cache; non c'è un tetto globale. Non modificare questi limiti senza scelta dell'utente.
+3. **Miglioramenti non bloccanti:** browser reale/Lighthouse (P2.8), narrativa P2.4, indicatore di freschezza del sito e separazione fra gate numerici e cosmetici (`docs/50` §6). La paginazione di `prossime.html` non è urgente.
+4. **Modelli:** nessun cambio di modello di produzione è in coda immediata; ogni proposta futura segue la griglia pre-registrata e il protocollo in `docs/00` e `docs/19`.
 
 ## 4. Cosa fare appena entri (checklist aggiornata)
 
 1. Leggi l'handoff in cima a questo file, `docs/00_regole_di_lavoro.md`, la cima di `docs/STATO.md` e `docs/52`.
 2. Controlla `git status`, branch e ultimi commit; rispetta il branch indicato dal messaggio di avvio Arena, senza passare a `main`.
-3. Controlla lo stato GitHub attuale di PR #83 e del daily più recente. Se la PR è ancora aperta, non duplicarla e non eseguire il merge; se è stata fusa, verifica il daily schedulato successivo e il deploy.
+3. Controlla lo stato GitHub attuale e il daily più recente. PR #83 risulta fusa e daily #218 post-merge verde al 7/10; se alla ripresa è comparso un run più recente, usa quello. Non duplicare la PR né avviare run manuali.
 4. Non avviare `collect`, `daily`, sonde o benchmark live senza necessità. Prima di un'attività che può consumare richieste, controlla cache e limiti; rispetta la richiesta dell'utente di evitare traffico superfluo.
 5. Non riprendere come attivi i piani datati elencati più sotto: la coda corrente è la sezione 3 e la cima di `docs/STATO.md`. Se manca una decisione di prodotto (in particolare il budget aggregato), chiedila prima di implementarla.
 6. Se apporti modifiche, usa un obiettivo circoscritto, esegui i gate pertinenti, aggiorna `docs/STATO.md`, committa e pusha sul branch corretto. Il merge resta all'utente salvo sua istruzione esplicita.
@@ -176,7 +175,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/49_ritardo_schedule_github_e_bug_lab_2026-09-21.md` | Perché il sito era fermo alle 01:29 (ritardo degli schedule di GitHub, misurato fino a +5h49) e il bug del commit nel workflow `lab` (`git add --ignore-missing`). |
 | `docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md` | **Sito fermo dal 28/09** (un decimale col punto nelle coordinate della sonda fermava `verify_site` prima del deploy) e **sei sezioni perse su 66 schede** (`{% endif %}` di «Precedenti» fuori posto: annidate anche la previsione); §5 = **costo delle fonti misurato** (~1.700 richieste/giorno prima della cache persistente) e §6 = cosa resta. |
 | `docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md` | Correzione di «1 assente/1 giorno» e rimozione del feed RSS Sportmediaset 404; diario della ripartenza del daily, prima della PR #82. |
-| `docs/52_verifica_stato_costi_e_gate_2026-10-07.md` | Verifica post-merge #82 e run #217, gate locali, limiti delle fonti e stato/istruzioni pre-merge della PR #83. |
+| `docs/52_verifica_stato_costi_e_gate_2026-10-07.md` | Verifica post-merge #82/#83, daily #217/#218, gate locali, cache/costi e coda residua. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |

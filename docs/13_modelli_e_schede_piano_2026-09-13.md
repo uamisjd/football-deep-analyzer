@@ -1244,6 +1244,29 @@ campione») senza perdere il separatore («5.791 gare»). Censito il resto: ness
 
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-#59 (2026-09-19), #77 (2026-09-21), **#80 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #77 (2026-09-21), **#80 (2026-10-07), #83 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.17 Deroga al flusso di merge PR #83 — lint CI e handoff (2026-10-07)
+
+**Ordine esplicito dell'utente:** «Please merge the pull request» (07/10/2026). La PR #83
+(`arena/e20f049c-football-deep-analyzer` → `main`) era `OPEN`, `MERGEABLE` e `CLEAN`; il check
+`test` del commit `4da7bc3` era verde nel run `37633874640` (1m23s). Prima del merge, il working
+tree era pulito e `git log --oneline origin/main..HEAD` conteneva i soli tre commit della PR.
+In applicazione della regola D, è stato eseguito `gh pr merge 83 --merge` (exit 0). GitHub
+conferma: merged alle **15:37:25 UTC**, `merged_by=uamisjd`, merge commit
+**`c92adf5d3a08ffd2d134c2f7828e4b12eaaf89cd`**.
+
+**Contenuto della PR:** Ruff `0.16.10` fissato e aggiunto al workflow `tests`; tre pulizie sicure e
+nove eccezioni best-effort motivate; briefing operativo della nuova sessione e verifica documentata
+di gate/fonti/costi. Nessuna modifica alla raccolta o alla schedulazione.
+
+**Verifica post-merge:** il push ha attivato automaticamente il daily **#218** (run
+`37645413601`, evento `push`), non un dispatch manuale. Job `run` e `deploy` verdi; il commit dati
+`aa760b9` è su `main`, restore/save della cache riusciti. Non è stato ricalcolato il totale
+`source_status` del run #218; non attribuire al suo contatore il valore osservato nel #217.
+
+**Cache Actions misurata dopo il daily:** 2.529.424.496 byte in 12 voci. Le tre chiavi
+`fda-http-*` sommano 26.464.202 byte; la maggior parte del resto è cache `setup-python`, non traffico
+verso fonti sportive. Il totale è inferiore al limite di 10 GB menzionato nel workflow.
