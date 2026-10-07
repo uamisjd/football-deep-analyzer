@@ -51,6 +51,51 @@ Gate finali (tutti rifatti da zero dopo l'ultima modifica al sorgente):
 
 ---
 
+## 0.1 La stessa scheda, prima e dopo (`partite/5802947.html`, Lens–Lyon)
+
+Le due versioni della card, testo letto dalla pagina (l'intestazione `Fattore · Lens · Lyon · Delta ·
+Impatto` è la stessa nei due casi). **Prima** — 6 righe, di cui quattro non dicevano ciò che
+sembravano dire:
+
+```
+🛌 Riposo Lyon            100%  —            20 gg        20 giorni          +ampio
+💰 Valore di mercato      100%  56,6 M€      159,3 M€     1/2,8×             Trasferta +6% forza
+🛌 Riposo Lens            100%  21 gg        —            21 giorni          +ampio
+📊 Forma e classifica      50%  4 pt (0,80/g) GD3 -2      11 pt (2,20/g) …   indice -0,97 — contesto…
+🧮 Modello statistico      50%  RPS 0,210 (738 gare)  ξ 0,0018   λ × 1,039   errore fuori campo 0,199
+🏥 Infermeria Lens          0%  5 assenti — 1 titolare -0,9 xG+xA/90         riduce λ di ~0,52 gol
+   (sotto: la stessa tabella riscritta a parole, riga per riga)
+   Fuori dai sei per impatto (soglie comunque superate): Infermeria Lyon.
+```
+
+**Dopo** — 3 righe, una per fattore, con le due squadre nelle due colonne:
+
+```
+💰 Valore di mercato titolari ⓘ   56,6 M€                    159,3 M€                  2,8×            squilibrio a favore di Lyon
+🏥 Indisponibili ⓘ                5 assenti · 1 titolare · −0,86 xG+xA/90  2 assenti · …   +0,77 xG+xA/90  pesa di più su Lens
+📊 Forma e classifica (contesto) ⓘ  4 pt · 0,80/gara · GD3 −2  11 pt · … · GD3 +6   PPG −1,40 · GD3 −8 · pos −13  indice −0,97 — contesto
+🧮 (nota a piè di card) Dixon-Coles + Elo … RPS 0,199 su 5.895 gare, 0,210 su 738 di questa lega …
+Sotto soglia o non calcolabile, non in tabella (casa e ospite): riposo 21 giorni e 20 giorni
+(soglia ≤4) · pressing 1,15× (soglia ≤0,75× o ≥1,33×).
+```
+
+Quattro cose che il lettore vede diverse, sulla stessa partita:
+
+* **Il riposo non è più un «fattore»**: la vecchia card aveva due righe («Riposo Lyon», «Riposo
+  Lens») con lo stesso verdetto «+ampio», e la barra al 100% che sembrava dire «riposo perfetto»;
+  ora è una voce fuori tabella con i due numeri e la soglia, e le righe per squadra sono sparite.
+* **L'«Infermeria» non esce più al 90%**: la riga di Lens (5 assenti, 1 titolare abituale, 0,86
+  xG+xA/90 persi) usciva con la barra al **0%**, e il dato di Lyon comparve per la prima volta solo
+  come «Fuori dai sei per impatto». Ora è **una** riga con le due squadre e il Δ in xG+xA/90.
+* **Il modello non è una riga**: RPS e ξ stavano nelle colonne di Lens e Lyon (dove non
+  significano nulla); ora è la nota in fondo.
+* **La soglia si legge una volta**: nel meteo la stessa frase diceva «oltre la soglia di impatto»
+  due volte e citava il 50% due volte (`… pioggia 75% (oltre la soglia di impatto 50%) (pioggia
+  >50%, temperatura >30 °C, vento >20 km/h)`); ora è `… pioggia 75%` in narrativa e
+  `oltre la soglia di impatto: pioggia 75% · soglie di impatto: pioggia >50%, …` nella card.
+
+---
+
 ## 1. «Fattori che spostano la partita»: una riga per fattore
 
 **Cosa non andava.** La tabella prometteva un confronto casa/ospite (due colonne intestate ai nomi
