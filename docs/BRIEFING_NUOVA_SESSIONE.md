@@ -41,7 +41,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
 
-- **Verifica 2026-10-07 (`docs/52`):** PR #82 fusa, issue #79 chiusa dal daily #217 verde e deploy riuscito. Ultimi gate locali: 515 test, `fda build`, `verify_site` (0 problemi / 159.546 controlli), parità delle 66 schede, resa 375 px (0 problemi) e Ruff pulito. Nessuna raccolta live è stata eseguita in questa sessione. Fonti senza API a pagamento; cache persistente in Actions; tetti FotMob/notizie 600/200 per run. **Usare `docs/52` per le questioni aperte e i limiti aggiornati.**
+- **Verifica 2026-10-07 (`docs/52`):** PR #82 fusa, issue #79 chiusa dal daily #217 verde e deploy riuscito. Gate locali: 515 test, `fda build`, `verify_site` (0 problemi / 159.546 controlli), parità delle 66 schede, resa 375 px (0 problemi) e Ruff pulito. Nessuna raccolta live è stata eseguita in questa sessione. Fonti senza API a pagamento; cache Actions 1,26 GB in 7 cache; tetti FotMob/notizie 600/200 per run. **PR #83 aperta** da `arena/e20f049c-football-deep-analyzer`, check `test` verde, `MERGEABLE`; il merge spetta all'utente. **Usare `docs/52` per le questioni aperte e i limiti aggiornati.**
 - Le sessioni descritte nei punti successivi sono **storico e contesto**, non la coda operativa di oggi.
 
 
