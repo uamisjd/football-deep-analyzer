@@ -1320,3 +1320,41 @@ alle fonti sportive. Prima del merge, la **PR #84 era stata chiusa** (17:51:32Z)
 esplicito dell'utente, perché superata da #87.
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.20 Merge PR #89 — lotto schede pre-partita: P0 Mercato, P0 Meteo, EPV a riga di contesto, M1–M4 (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«Please merge the pull request»* (07/10/2026, 19:2x UTC), in risposta alla
+frase fissa invitata su PR #89. Verifiche pre-merge eseguite con comando, tutte superate: check
+`test` `success` su `b5949b8` (run `37673518719`, 1m43s), PR `MERGEABLE · CLEAN`,
+`git status --porcelain` vuoto, `git log --oneline origin/main..HEAD` con i **soli 2 commit** della
+PR (`1e98478` revisione `docs/55`, `b5949b8` lotto `docs/56`). Eseguito
+`gh api -X PUT .../pulls/89/merge` con `merge_method=merge`. GitHub conferma: `merged=true`,
+`merged_at=2026-10-07T19:27:49Z`, `merged_by=uamisjd`, merge commit
+**`6b3518d71a16a1d920a0bbb4505ca2067ec6e0c2`**.
+
+**Contenuto (15 file, +1.603/−246):** il lotto eseguito (`docs/56`) e la registrazione della
+revisione che l'ha deciso (`docs/55`), più codice e test — `src/fda/store.py` (chiave dell'upsert
+normalizzata per `transfers`), `src/fda/site/analysis.py` (date a formato misto, dedup dei
+movimenti, soglie meteo in una sola fonte, `classifica_forma()`, `backtest_accuracy()`),
+`src/fda/site/templates/match.html`, `tests/test_mercato.py` (14 → 21), `tests/test_oggi_depth.py`,
+`tests/test_site.py`, `scripts/verify_site.py` (invarianti **[39]** e **[40]**) e i due script di
+misura offline `scripts/audit_mercato.py` e `scripts/audit_epv.py`.
+
+**Effetti in produzione: `daily` e `tests` attivati dal push del merge** (a differenza dei merge
+solo-documenti, la PR tocca `src/`, `tests/` e `scripts/`, che **non** sono coperti da
+`paths-ignore`), e **entrambi verdi**:
+
+| Run | ID | Esito | Durata |
+|---|---|---|---|
+| `tests` (push, `6b3518d`) | `37674673264` | **success** | 1m4x |
+| `daily` (push, `6b3518d`) | `37674673310` | **success** (run + deploy) | 19:27:52 → 19:39:22Z |
+
+Il `daily` ha passato tutti gli step, compresi `verify_site`, la parità delle schede e la resa a
+375 px, e ha committato i dati in **`c6b214c`** (deploy Pages riuscito, 0 issue aperte). **Prova che
+il difetto del mercato non solo è corretto in pagina ma non si accumula più:** nella tabella
+committata `data/processed/transfers.parquet` passa da **11.624 a 4.701 righe** (−60%), con
+**4.644 movimenti distinti** (squadra+direzione+giocatore+giorno) **identici prima e dopo** — cioè la
+tabella ora contiene una riga per movimento più i 57 gruppi in cui la fonte scrive la controparte in
+due modi diversi. Nessun loop possibile: i commit dei dati portano `[skip ci]`.
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
