@@ -1208,8 +1208,42 @@ verde, PR `MERGEABLE` / `mergeStateStatus CLEAN`, `git status --porcelain` vuoto
 il passo «Commit del riepilogo del laboratorio» e committare i 3 parquet (aggiornare `docs/STATO.md`
 col run).
 
+### 9.16 Merge PR #80 — il sito fermo dal 28/09 e le sezioni perse (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«Please merge the pull request»* (07/10/2026). Eseguito con
+`gh pr merge 80 --merge`: `state=closed`, `merged=true`, `merge_commit=f5a16f00d`,
+`merged_by=uamisjd`, `merged_at=2026-10-07T11:10:10Z`. Pre-merge verificato: check `test`
+verde (2m14s), PR `mergeable=clean`, head `ce59a09a` = i 2 commit della sessione (14 file).
+
+**Contenuto** (report `docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md`): (1) `fmt.dec` nella
+sonda Open-Meteo + `fmt.decimali_it()` applicata in `build_status` ai testi liberi (stessa
+espressione di `verify_site.DECIMAL_POINT`) + le due righe già salvate riscritte in
+`source_probe.parquet`; (2) la `{% endif %}` di «Precedenti» in `match.html` riportata al suo
+posto (66 schede su 441 avevano perso *Previsione del modello*, *Risultati esatti*, *Come
+nasce questa probabilità*, *Fasce storiche*, *Dove si colloca*, *Primo gol* + 66 ancore
+morte; regressione di `64998455`, sopravvissuta al revert della PR #73); (3)
+`next_info["anchor"]` verificato in `index.html`; (4) `actions/cache/restore@v6` + `save@v6`
+su `data/cache` in `daily.yml` (la cache HTTP non sopravviveva ai run, quindi le TTL di
+`sources.yaml` non si applicavano mai: ~1.700 richieste/giorno misurate, ~un terzo erano
+rifacimenti evitabili).
+
+**Esito del primo `daily` dopo il merge (run `37612264587`, 12m47s) — rosso, ma non per le
+cause di prima:** il gate dei decimali è passato (fix confermato in CI), i due passi della
+cache hanno funzionato (`Cache saved with key: fda-http-37612264587`, 8,8 MB), `fda daily` e
+`fda build` hanno prodotto 441 schede / 2.364 partite / 7.498 giocatori. Il blocco è un caso
+nuovo, visibile **solo con dati freschi**: `PROBLEMI (1): {'concordanza': 1}` →
+`partite/5749692.html: concordanza '1 assenti'`. Causa: `analysis.fattori_chiave` (riga
+«🏥 Infermeria») costruiva `f"{ab['n']} assenti"` senza concordare, mentre lo stesso dato
+nello stesso sito era già scritto bene (`_matchlist.html` usa `it_plural('assente')`). Non si
+era mai visto perché serviva una squadra con **esattamente un assente**: è il primo build con
+la raccolta nuova dopo nove giorni di sito fermo. Fix nella PR successiva:
+`it_plural(ab['n'], 'assente')` nelle tre occorrenze, più il parametro `migliaia=True`
+introdotto in `fmt.it_plural` per le due note di `advanced.py` («1 giorno», «1 gara fuori
+campione») senza perdere il separatore («5.791 gare»). Censito il resto: nessun altro
+`<contatore> <sostantivo-del-gate>` raggiungibile con valore 1.
+
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-#59 (2026-09-19), **#77 (2026-09-21)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #77 (2026-09-21), **#80 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.

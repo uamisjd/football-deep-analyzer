@@ -1615,6 +1615,11 @@ class MatchAnalysis:
                         fattori.append({
                             "icon": "🏥",
                             "label": f"Infermeria {tname}",
+                            # `it_plural` su tutte e tre le occorrenze: con un solo assente la
+                            # card pubblicava «1 assenti» e il gate di concordanza di
+                            # `verify_site` fermava il run (caso reale 07/10/2026, run
+                            # 37612264587, partite/5749692.html — primo build dopo nove giorni
+                            # di sito fermo, quindi il caso non si era mai presentato prima).
                             "home": it_plural(ab["n"], "assente") if side=="home" else "—",
                             "away": it_plural(ab["n"], "assente") if side=="away" else "—",
                             "delta": it_plural(starters, "titolare", "titolari") if starters else f"{ab['n']} fuori",
