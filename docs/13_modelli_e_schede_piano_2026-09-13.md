@@ -1242,8 +1242,25 @@ introdotto in `fmt.it_plural` per le due note di `advanced.py` («1 giorno», «
 campione») senza perdere il separatore («5.791 gare»). Censito il resto: nessun altro
 `<contatore> <sostantivo-del-gate>` raggiungibile con valore 1.
 
+### 9.17 Merge PR #82 — sblocco daily: concordanza singolare, migliaia e rimozione Sportmediaset 404 (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«Please merge the pull request.»* (07/10/2026). Eseguito con
+`gh pr merge 82 --merge`: `state=closed`, `merged=true`, `merge_commit=e292c2e`,
+`merged_by=uamisjd`, `merged_at=2026-10-07T12:05:00Z`. Pre-merge verificato: check `test`
+verde (2m03s), PR `mergeable=clean`, head `503049f`.
+
+**Contenuto** (report `docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md`):
+(1) Concordanza singolare/plurale in `MatchAnalysis.fattori_chiave()` (`src/fda/site/analysis.py`):
+`it_plural(ab['n'], 'assente')` per `home`, `away` e fallback `impact`; `it_plural(rest, 'giorno')`
+per `delta` e `desc` nella card riposo; `it_plural(starters, 'titolare', 'titolari')`.
+(2) Parametro `migliaia=True` in `fmt.it_plural` applicato alle note di `advanced.py` («5.791 gare»).
+(3) Rimozione feed dismesso Sportmediaset da `ITALIAN_DIRECT_FEEDS` in `sources/news.py` (eliminato
+l'errore HTTP 404 permanente).
+(4) Test di regressione dedicati in `test_panchina_notizie.py`, `test_fmt.py` e `test_oggi_depth.py`.
+Suite: 515 passed, verify_site 0 problemi (156.895 controlli), resa_375 0 problemi (25.921 misure).
+
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-#59 (2026-09-19), #77 (2026-09-21), **#80 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #77 (2026-09-21), #80 (2026-10-07), **#82 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
