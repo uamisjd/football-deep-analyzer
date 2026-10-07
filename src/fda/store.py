@@ -74,6 +74,48 @@ TABLE_KEYS: dict[str, list[str]] = {
 }
 
 
+#: Colonne di chiave da confrontare in forma **normalizzata** per le tabelle in cui la fonte
+#: ripubblica lo stesso fatto con la scrittura leggermente diversa. Misurato il 2026-10-07 su
+#: ``transfers.parquet``: la stessa mossa torna con l'ora locale al posto dell'UTC (1-2 ore di
+#: scarto, es. ``2026-08-11T06:47:30Z`` e ``2026-08-11T08:47:30``) e con i diacritici del nome
+#: diversi (``Aleksić``/``Aleksic``): la chiave dell'upsert non collideva mai e la tabella
+#: cresceva di ~1 riga per movimento (2.919 righe in più su 11.624). Con la chiave normalizzata
+#: le due righe sono lo stesso movimento e la seconda sostituisce la prima.
+KEY_NORMALIZERS: dict[str, dict[str, str]] = {
+    # nome giocatore e controparte senza accenti/punteggiatura; data al giorno (l'ora è quella
+    # che la fonte riscrive)
+    "transfers": {"player_name": "soft", "counterpart": "soft", "date": "day"},
+}
+
+
+def _soft(value: Any) -> str:
+    """Nome confrontabile: minuscole, senza accenti, apostrofi, punteggiatura, suffissi."""
+    from .teams import soft_key
+
+    return soft_key(str(value if value is not None else ""))
+
+
+def _day(value: Any) -> str:
+    """Data confrontabile al giorno (l'ora è il campo che la fonte riscrive)."""
+    ts = pd.to_datetime(pd.Series([value]), utc=True, errors="coerce", format="mixed").iloc[0]
+    return "" if pd.isna(ts) else pd.Timestamp(ts).strftime("%Y-%m-%d")
+
+
+def _key_frame(df: pd.DataFrame, table: str, keys: list[str]) -> pd.DataFrame:
+    """Colonne di chiave da confrontare, normalizzate dove la tabella lo prevede."""
+    regole = KEY_NORMALIZERS.get(table, {})
+    out = {}
+    for k in keys:
+        regola = regole.get(k)
+        if regola == "soft":
+            out[k] = df[k].map(_soft)
+        elif regola == "day":
+            out[k] = df[k].map(_day)
+        else:
+            out[k] = df[k].astype(str)
+    return pd.DataFrame(out, index=df.index)
+
+
 class Store:
     def __init__(self, base_dir: Path | None = None) -> None:
         self.base_dir = base_dir or PROCESSED_DIR
@@ -145,12 +187,16 @@ class Store:
                 if col not in new.columns:
                     new[col] = pd.NA
             new = new[old.columns]
-            idx_old = pd.MultiIndex.from_frame(old[keys].astype(str))
-            idx_new = pd.MultiIndex.from_frame(new[keys].astype(str))
+            idx_old = pd.MultiIndex.from_frame(_key_frame(old, table, keys))
+            idx_new = pd.MultiIndex.from_frame(_key_frame(new, table, keys))
             keep = old[~idx_old.isin(idx_new)]
             merged = pd.concat([keep, new], ignore_index=True)
         if keys:
-            merged = merged.drop_duplicates(subset=keys, keep="last")
+            merged = merged.reset_index(drop=True)
+            # la deduplicazione usa la stessa chiave normalizzata dell'indice (una riga per
+            # movimento, non due per la stessa mossa riscritta dalla fonte)
+            idx = _key_frame(merged, table, keys)
+            merged = merged[~idx.duplicated(keep="last")]
         self.write(table, merged)
         return len(new)
 

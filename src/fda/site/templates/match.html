@@ -46,13 +46,13 @@
   <a href="#lettura">{{ 'Lettura' if c.status == 'finished' else 'Analisi' }}</a>
   {% if c.fattori_chiave %}<a href="#fattori">Fattori</a>{% endif %}
   {% if c.clash %}<a href="#scontro">Scontro tattico</a>{% endif %}
-  {% if c.epv %}<a href="#epv">EPV</a>{% endif %}
   {% if c.status != 'finished' and (c.home_arrival or c.away_arrival) %}<a href="#arrivi">Come arrivano</a>{% endif %}
   {% if c.status != 'finished' and (c.home_key_deep or c.away_key_deep or c.home_key_players or c.away_key_players) %}<a href="#giocatori">I giocatori</a>{% endif %}
   <a href="#squadre">Le due squadre</a>
   {% if c.home_bench or c.away_bench %}<a href="#panchina">Panchina</a>{% endif %}
   {% if (c.home_market or c.away_market) and c.status != 'finished' %}<a href="#mercato">Mercato</a>{% endif %}
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}<a href="#notizie">Vita del club</a>{% endif %}
+  {% if c.status != 'finished' and c.insights %}<a href="#fatti">Fatti rilevanti</a>{% endif %}
   {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}<a href="#arbitro-meteo">Arbitro e meteo</a>{% endif %}
   {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}<a href="#precedenti">Precedenti</a>{% endif %}
   {% if c.key_stats %}<a href="#statistiche">Statistiche</a>{% endif %}
@@ -80,7 +80,7 @@
 {% if c.fattori_chiave %}
 <div class="card detail-card" id="fattori">
   <h2>Fattori che spostano la partita</h2>
-  <p class="small mut">Sei fattori quantitativi con soglie esplicite (non giudizi): valore mercato titolari ≥1,5×, infermeria ≥2 assenti o 1 titolare abituale, riposo ≤4 gg o ≥7 gg (≤4 = corto, ricerca UEFA RR 1,32), xPTS gap ≥3 pt, PPDA ratio ≤0,75, modello ξ per lega + λ calibrata. Non cambiano la previsione salvata (Dixon-Coles+Elo tilt 70/30, RPS ~0,20), la spiegano con numeri già raccolti.</p>
+  <p class="small mut">Cinque fattori quantitativi con soglie esplicite (non giudizi): valore di mercato dei titolari ≥1,5×, infermeria ≥2 assenti o 1 titolare abituale, riposo ≤4 o ≥7 giorni (≤4 = corto, ricerca UEFA RR 1,32), pressing PPDA ≤0,75×, e il modello stesso. Più una riga di contesto (classifica e forma recente), dichiarata come tale. Non cambiano la previsione salvata (Dixon-Coles + Elo, inclinazione 70/30): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno nella card della squadra (→ Le due squadre), in un posto solo — l'errore del modello è misurato sulle gare di verifica fuori campione.</p>
   <div class="tablewrap"><table>
     <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto</th></tr>
     {% for f in c.fattori_chiave.rows %}<tr>
@@ -92,7 +92,7 @@
     </tr>{% endfor %}
   </table></div>
   <ul class="narr" style="margin-top:10px">{% for f in c.fattori_chiave.rows %}<li class="small"><b>{{ f.icon }} {{ f.label }}:</b> {{ f.desc }}</li>{% endfor %}</ul>
-  {% if c.fattori_chiave.n > 6 %}<p class="small mut">+{{ c.fattori_chiave.n - 6 }} altri fattori sotto soglia non mostrati in tabella ma disponibili nei dati.</p>{% endif %}
+  {% if c.fattori_chiave.altri %}<p class="small mut">Fuori dai sei per impatto (soglie comunque superate): {{ c.fattori_chiave.altri|join(' · ') }}.</p>{% endif %}
 </div>
 {% endif %}
 
@@ -134,22 +134,6 @@
   <p class="small mut" style="margin-top:8px">{{ c.clash.global_note if c.clash.global_note is defined else c.clash.notes[0] ~ ' ' ~ c.clash.notes[1] }}</p>
 </div>
 {% endif %}
-{% if c.epv %}
-<div class="card" id="epv">
-  <h2>EPV pre-match — {{ c.epv.label }} (score {{ c.epv.epv_score|dec }})</h2>
-  <p class="small mut">Expected Possession Value ispirato a Bundesliga (PMC12640942): point diff 40% SHAP, venue 30%, goal diff ultimi 3 20%, pos 10%. Confronto EPV attesi vs modello DC+Elo. Fonte: classifica FotMob + forma ultimi 3.</p>
-  <div class="tablewrap"><table>
-    <tr><th scope="col"></th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th></tr>
-    <tr><th scope="row">Punti / PPG</th><td>{{ c.epv.home_points }} pt ({{ c.epv.home_ppg|dec }}/g)</td><td>{{ c.epv.away_points }} pt ({{ c.epv.away_ppg|dec }}/g)</td><td>{{ c.epv.point_diff }} pt · PPG {{ c.epv.ppg_diff|dec }}</td></tr>
-    <tr><th scope="row">Posizione</th><td>{{ c.epv.home_rank }}ª</td><td>{{ c.epv.away_rank }}ª</td><td>{{ c.epv.pos_diff }} pos</td></tr>
-    <tr><th scope="row">GD ultimi 3</th><td>{{ c.epv.home_gd3 }}</td><td>{{ c.epv.away_gd3 }}</td><td>{{ c.epv.gd_diff }}</td></tr>
-    <tr><th scope="row">EPV attesi</th><td>{{ c.epv.exp_home|dec }}</td><td>{{ c.epv.exp_away|dec }}</td><td>{{ c.epv.exp_total|dec }} tot (media lega {{ c.epv.league_avg_gf|dec }})</td></tr>
-    {% if c.epv.model_diff is not none %}<tr><th scope="row">Modello vs EPV</th><td colspan="3" class="small">Δ diff gol (modello-EPV) = {{ c.epv.model_diff|dec }} · modello {{ c.prediction.lambda_home|dec }}+{{ c.prediction.lambda_away|dec }}={{ c.prediction.lambda_home|dec_sum(c.prediction.lambda_away) }} vs EPV {{ c.epv.exp_home|dec }}+{{ c.epv.exp_away|dec }}={{ c.epv.exp_total|dec }}</td></tr>{% endif %}
-  </table></div>
-  <div style="margin:8px 0 0"><span class="small mut">EPV score</span> <span style="display:inline-block;height:8px;background:var(--line2);border-radius:999px;width:160px;overflow:hidden;vertical-align:middle;margin:0 6px"><i style="display:block;height:100%;width:{{ ((c.epv.epv_score+1)/2*100)|round|int }}%;background:{% if c.epv.epv_score>0.10 %}var(--accent){% elif c.epv.epv_score<-0.10 %}var(--lose){% else %}var(--mut){% endif %}\"></i></span> <span class="small">{{ c.epv.epv_score|dec }}</span> <span class="small mut" style="margin-left:8px">50% = equilibrata, &gt;0 casa, &lt;0 trasferta</span></div>
-</div>
-{% endif %}
-
 {% if c.status != 'finished' and c.insights %}
 <div class="card" id="fatti">
   <h2>Fatti rilevanti</h2>
@@ -442,7 +426,7 @@
     <h2>Arbitro e meteo</h2>
     <div class="tablewrap"><table>
       {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int|it_plural('gara') }})</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% if c.referee.yellows and c.referee.league_yellows %}<br><span style="display:inline-block;height:6px;background:var(--line2);border-radius:999px;width:120px;overflow:hidden;vertical-align:middle;margin-top:4px"><i style="display:block;height:100%;width:{{ ((c.referee.yellows / (c.referee.league_yellows*1.5) *100) if c.referee.league_yellows else 50)|round|int }}%;background:{% if c.referee.yellows >= c.referee.league_yellows*1.15 %}var(--lose){% elif c.referee.yellows <= c.referee.league_yellows*0.85 %}var(--accent){% else %}var(--mut){% endif %}"></i></span> <span class="small mut">{% if c.referee.yellows >= c.referee.league_yellows*1.15 %}sopra media lega{% elif c.referee.yellows <= c.referee.league_yellows*0.85 %}sotto media{% else %}nella media{% endif %}</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
-      {% if c.weather.desc and c.weather.extreme %}<tr><th scope="row">Meteo ⚠</th><td>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %} <span class="small warn">estremo — può spostare ritmi</span></td></tr>{% elif c.weather.desc %}<tr><th scope="row">Meteo</th><td class="small mut">{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %} — nella norma (precip <30%, 10-28°C, vento <15 km/h), non impattante</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
+      {% if c.weather.desc %}<tr><th scope="row">Meteo{% if c.weather.livello %} ⚠{% endif %}</th><td{% if not c.weather.livello %} class="small mut"{% endif %}>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}{% if c.weather.livello == 'impatto' %} <span class="small warn">oltre la soglia di impatto — {{ c.weather.segnalazioni|join(' · ') }} <span class="mut">({{ c.weather.impatto_testo }})</span></span>{% elif c.weather.livello == 'attenzione' %} <span class="small warn">sopra la soglia di segnalazione — {{ c.weather.segnalazioni|join(' · ') }}</span>{% else %} <span class="small mut">nessun valore oltre le {{ c.weather.soglie_testo }}</span>{% endif %}{% if c.weather.mancanti %} <span class="small mut">· la fonte non pubblica {{ c.weather.mancanti|join(' e ') }} per questa gara</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
     </table></div>
   </div>
   {% endif %}
