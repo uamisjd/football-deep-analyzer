@@ -473,10 +473,11 @@ def collect_news(store: Store, keys: list[str] | None = None,
                  window_days: int = NEWS_RETENTION_DAYS) -> CollectReport:
     """Notizie per squadra (docs/21, P1-5): Google News RSS + ESPN news di lega.
 
-    Una o due richieste RSS per squadra della stagione (cache 12 h: i run successivi allo
-    stesso giorno non ridownloadano): l'edizione italiana e, per i campionati stranieri,
-    l'edizione locale — è quella che porta il materiale di vita del club che la stampa
-    italiana non raccoglie (docs/24 §3.5). Più una JSON ESPN per campionato. Le righe
+    Una richiesta RSS per squadra della stagione, sempre edizione italiana (cache 12 h:
+    i run successivi dello stesso giorno non ridownloadano). La doppia edizione
+    IT+locale di docs/24 §3.5 è stata abbandonata per la regola della lingua
+    (`editions_for()` restituisce solo `EDIZIONE_IT`): 132 squadre = 132 richieste,
+    dentro il tetto di 200. Più una JSON ESPN per campionato. Le righe
     vecchie oltre ``window_days`` vengono potate **dall'archivio**, non solo scartate in
     arrivo: senza quel passo il Parquet cresceva senza limite (docs/26 §2). Fonte isolata
     come le altre: se Google non è raggiungibile il run continua e ``source_status`` mostra
@@ -494,11 +495,17 @@ def collect_news(store: Store, keys: list[str] | None = None,
         report.note("espn", rows=0, detail_text="calendario non disponibile, raccolta saltata")
         store.upsert("source_status", report.as_status_rows())
         return report
+    if keys:
+        # `fda daily ITA1` raccoglieva comunque le notizie di tutte le 132 squadre:
+        # `keys` filtrava solo il ciclo ESPN più sotto, non le squadre (docs/53 §3.2).
+        # I feed diretti della stampa italiana restano sempre (non sono per lega).
+        volute = {lg.fotmob_id for lg in leagues(keys)}
+        fx = fx[fx["league_id"].isin(volute)]
     teams = fx.drop_duplicates("home_id")[["home_id", "home_name", "league_id"]]
     rows: list[dict[str, Any]] = []
     # imbuto delle notizie (docs/21 §15): byte letti, articoli visti, corpi non-RSS,
     # articoli senza titolo, articoli ESPN visti e attribuiti a una squadra. Le ricerche
-    # sono contate dal client (una o due per squadra secondo il campionato, docs/24 §3.5)
+    # sono contate dal client (una per squadra, solo edizione italiana — docs/53 §3.3)
     diag: dict[str, Any] = {}
     paesi = {int(lg.fotmob_id): lg.country for lg in leagues()}
     for tid, name, lid in teams.itertuples(index=False):
@@ -529,8 +536,9 @@ def collect_news(store: Store, keys: list[str] | None = None,
             for r in fx[fx.league_id == lg.fotmob_id][["home_id", "home_name"]].drop_duplicates().itertuples(index=False):
                 ids[canonical(str(r.home_name))] = int(r.home_id)
             rows.extend(parse_espn_news(payload, ids, diag))
-    # Feed RSS diretti della stampa sportiva italiana (ANSA, Sky Sport, Sportmediaset)
-    # Aggiungono rassegna di prima mano in lingua italiana (100% gratuita e verificata)
+    # Feed RSS diretti della stampa sportiva italiana (ANSA, Sky Sport — Sportmediaset
+    # rimosso: feed 404 cronico, PR #82). Aggiungono rassegna di prima mano in lingua
+    # italiana (100% gratuita e verificata)
     name_map: dict[str, int] = {}
     for tid, name, _lid in teams.itertuples(index=False):
         name_map[str(name).lower()] = int(tid)

@@ -163,9 +163,52 @@ in una PR separata dopo l'ok.
 - Live: fetch HTTP della home Pages (07/10 17:40, sosta nazionali corretta).
 - GitHub: `gh run list` (daily/lab/benchmark), `gh pr view 84`, `gh issue list`.
 
+## 7. Esiti (stessa sessione, dopo le risposte dell'utente)
+
+**Decisioni:** D1 **no** (niente watchdog); D2 **resta tutto bloccante** (l'utente
+non aveva capito la domanda: spiegato con l'esempio del fermo 28/9–5/10 e
+raccomandato di non cambiare — nessun intervento); D3 **nessun tetto
+giornaliero** (chiarito l'equivoco: il fermo non fu causato dai limiti di GitHub —
+cache 1,26/10 GB, repo 6,5 MB — ma dal refuso del §D2; restano i tetti per run);
+D4 **niente Lighthouse** (raccomandato: sito statico già coperto dai gate statici).
+
+**Lotto sicuro implementato** (tutto misurato, gate pieni in coda):
+
+- §3.1: footer riscritto sulle fonti reali — «FotMob, Understat, Google News,
+  Open-Meteo, ANSA/Sky Sport, football-data.co.uk (storico modelli)». ESPN tolto
+  (0 righe mai in produzione, verificato: nessuna tabella `espn_*`, 0 notizie
+  ESPN); ANSA/Sky aggiunti (62+50 righe). Nessun test fissava il testo;
+  invariante [35] invariata (lega Info↔moduli, non il footer).
+- §3.2: `collect_news` filtra le squadre per `keys` + test di regressione
+  (prova di morso: fallisce senza il fix).
+- §3.3: commenti aggiornati (edizione solo italiana, feed diretti senza
+  Sportmediaset) in `collect.py` e nei fake dei test.
+- §6.1: la gara senza distinta è Académico Viseu–Estoril (POR1, 10/10),
+  scaricata oggi con `lineup_type` vuoto → la fonte non l'ha ancora pubblicata
+  a 3 giorni dalla gara: **fisiologico**, nessun fix.
+- §6.2: le 11 squadre senza notizie a 7 giorni sono la coda naturale
+  dell'edizione solo italiana (mediana 8 righe/squadra; le big italiane hanno
+  100–289 righe). La card di fallback regge (verificata su PSG–Le Mans:
+  imbuto onesto + fatti «Da sapere» incrociati con l'infermeria). **Difetto vero
+  trovato leggendola:** «2 i titoli più vecchi guardati» (17 schede) e
+  «1 i titolo più vecchio guardato» (3 schede) — articolo vagante nel template,
+  invisibile al gate perché l'imbuto vive nella card `id="notizie"` (esclusa dai
+  controlli lingua) e «1» non era seguito direttamente dal nome. Fix in tre
+  parti: (a) template senza «i»; (b) ramo AGREEMENT «N i + plurale» (misurato:
+  17 prese, 0 falsi positivi su 4.205 pagine); (c) `class="imbuto"` sui 3
+  paragrafi generati + parser che riammette `("sapere", "imbuto")` (precedente:
+  `sapere`, audit 18/09). Il selettore di [20] accetta entrambe le forme.
+  Regressione in `test_verify_scripts.py` + morso end-to-end su pagina reale.
+- §6.3: gare valutate per lega — ITA 23, ENG 19, ESP 33, GER 20, FRA 20,
+  NED 18, POR 20: solo LaLiga sopra le ~30 per lettura stabile. La pagina lo
+  dichiara già: nessun intervento.
+
+**Gate finali:** `pytest` **517 passed** (+2), `ruff` pulito, `fda build` exit 0
+(441/2.364/7.496), `verify_site` **0 problemi · 159.573 controlli** ([20] gira
+sulle 66), `parita_schede` nessuna differenza, `resa_375` 26.490 · 0 problemi.
+
 ## Prossimo passo
 
-1. L'utente decide su D1–D4 (sotto le domande di questa sessione).
-2. Intanto si implementa il lotto sicuro: §3.1 (footer + invariante [35]),
-   §3.2 (filtro leghe notizie + test), §3.3 (commenti), §6.1–6.3 (misure).
-3. Gate pieni → una sola PR (regola «PR ricca») → merge dell'utente.
+Una sola PR con questo lotto (regola «PR ricca») → merge dell'utente → controllo
+del daily successivo. D1–D4 restano decisioni registrate: non riproporre senza
+nuovi motivi.
