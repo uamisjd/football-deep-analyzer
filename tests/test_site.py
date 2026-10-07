@@ -228,34 +228,156 @@ def test_insight_drop_stats_senza_scarti_mai_none():
         reset_insight_stats()
 
 
-def test_match_insights_selection_team_and_empty(tmp_path):
-    """Selezione: max 3, squadra corretta, inglese scartato, lista vuota se manca tutto."""
+def test_form_facts_dai_nostri_risultati():
+    """Forma recente ricalcolata dai nostri risultati: soglia minima, strisce, gol sommati."""
+    from fda.site.analysis import form_facts
+
+    assert form_facts([]) == [] and form_facts([(2, 0), (1, 1)]) == []   # sotto 3 gare niente
+    # 3V e 2N, 8 gol: imbattuta da 5 ma nessuna striscia di vittorie
+    per_testo = {r["text"]: r for r in form_facts([(3, 1), (0, 0), (2, 2), (2, 0), (1, 1)])}
+    assert per_testo["ha segnato 8 gol nelle ultime 5 partite"]["kind"] == "goals"
+    assert per_testo["ha segnato 8 gol nelle ultime 5 partite"]["priority"] == 80
+    assert per_testo["imbattuta da 5 partite"]["priority"] == 90
+    assert set(per_testo) == {"ha segnato 8 gol nelle ultime 5 partite", "imbattuta da 5 partite"}
+    # 5 gare senza vittorie, le ultime 3 senza segnare e con gol subiti
+    per_testo = {r["text"]: r for r in form_facts([(0, 2), (1, 1), (0, 1), (0, 3), (0, 1)])}
+    assert per_testo["non segna da 3 partite"]["priority"] == 82
+    assert per_testo["non vince da 5 partite"]["priority"] == 88
+    assert per_testo["ha perso le ultime 3 partite"]["priority"] == 89
+    assert per_testo["non tiene la porta inviolata da 5 partite"]["kind"] == "clean_sheet"
+    assert "imbattuta da" not in per_testo
+    # 3 gare giocate (finestra ridotta) e porta inviolata recente: nessun fatto sui gol subiti
+    testi = {r["text"] for r in form_facts([(2, 0), (3, 0), (1, 0)])}
+    assert "ha segnato 6 gol nelle ultime 3 partite" in testi
+    assert "ha vinto le ultime 3 partite" in testi and "imbattuta da 3 partite" in testi
+    assert "non tiene la porta inviolata da" not in " | ".join(testi)
+
+
+def test_famiglia_forma_non_piu_da_fotmob():
+    """La regex della famiglia «forma» e ``translate_insight`` restano allineate (docs/57 §9)."""
+    from fda.site.analysis import _INSIGHT_FORM_RE, translate_insight
+
+    for raw in ("Have scored 5 goals in their last 5 matches", "Haven't scored in their last 3 matches",
+                "Haven't lost in 19 matches", "Haven't won a match in 6 attempts",
+                "Have lost their last 4 matches", "Have won their last 3 matches",
+                "Haven't kept a clean sheet in 7 matches"):
+        assert _INSIGHT_FORM_RE.fullmatch(raw), raw     # riclassificata come «nostra»...
+        assert translate_insight(raw) is not None       # ...e la traduzione esiste ancora
+    assert _INSIGHT_FORM_RE.fullmatch("Have kept the most clean sheets in the competition (4)") is None
+    assert _INSIGHT_FORM_RE.fullmatch("Atalanta haven't lost to Roma in their last 8 meetings (6W, 2D).") is None
+
+
+def test_match_insights_due_origini_e_record_verificato(tmp_path):
+    """Fatti: forma nostra ricalcolata, FotMob solo per ciò che non sappiamo fare e verificato."""
+    from fda.site.analysis import INSIGHT_SEEN, reset_insight_stats
+
     st = Store(tmp_path / "processed")
+    now = datetime.now(UTC)
+
+    def gara(mid, giorni, hid, hname, aid, aname, gf, ga):
+        return {"match_id": mid, "league_id": 55, "season": "2026/2027", "round": None,
+                "utc_kickoff": now - timedelta(days=giorni), "home_id": hid, "home_name": hname,
+                "away_id": aid, "away_name": aname, "home_goals": gf, "away_goals": ga,
+                "status": "finished", "source": "test"}
+
+    # Casa (10): 2V 2N 1V, 7 gol fatti; Trasferta (20): solo sconfitte e pareggi
+    st.upsert("fixtures", [
+        gara(101, 40, 10, "Casa", 30, "Avv A", 3, 1), gara(102, 35, 31, "Avv B", 10, "Casa", 0, 0),
+        gara(103, 30, 10, "Casa", 32, "Avv C", 2, 2), gara(104, 25, 33, "Avv D", 10, "Casa", 0, 1),
+        gara(105, 20, 10, "Casa", 34, "Avv E", 1, 0),
+        gara(106, 40, 20, "Trasferta", 35, "Avv F", 0, 2), gara(107, 35, 36, "Avv G", 20, "Trasferta", 1, 1),
+        gara(108, 30, 20, "Trasferta", 37, "Avv H", 0, 0), gara(109, 25, 38, "Avv I", 20, "Trasferta", 1, 0),
+    ])
     st.upsert("insights", [
         {"match_id": 1, "team_id": 10, "player_id": None,
          "text": "Home haven't lost to Away in their last 8 meetings (6W, 2D)."},
+        # famiglia «forma»: NON si pubblica (la ricalcoliamo noi)
         {"match_id": 1, "team_id": 10, "player_id": None, "text": "Haven't lost in 5 matches"},
-        {"match_id": 1, "team_id": 20, "player_id": None, "text": "Have scored 7 goals in their last 5 matches"},
-        {"match_id": 1, "team_id": 20, "player_id": None, "text": "Haven't kept a clean sheet in 4 matches"},
-        {"match_id": 1, "team_id": 20, "player_id": None, "text": "Have kept the most clean sheets in the competition (3)"},
-        {"match_id": 1, "team_id": 20, "player_id": 99, "text": "Hero is the competition's top scorer (9)"},
+        {"match_id": 1, "team_id": 20, "player_id": None,
+         "text": "Have scored 7 goals in their last 5 matches"},
+        # record di stagione non verificabile (nessuna porta inviolata nei nostri dati) → rifiutato
+        {"match_id": 1, "team_id": 20, "player_id": None,
+         "text": "Have kept the most clean sheets in the competition (3)"},
+        {"match_id": 1, "team_id": 20, "player_id": 99,
+         "text": "Hero is the competition's top scorer (9)"},
         {"match_id": 1, "team_id": 77, "player_id": None, "text": "Have won their last 4 matches"},
     ])
+    reset_insight_stats()
     ma = MatchAnalysis(st)
-    got = ma.match_insights(1, 10, 20, "Casa", "Trasferta")
-    assert len(got) == 3
-    assert all("team" in x and "text" in x for x in got)
-    assert {x["team"] for x in got} <= {"Casa", "Trasferta"}
-    kinds = [x["kind"] for x in got]
-    assert kinds[0] == "h2h" and got[0]["team"] == "Casa"
-    assert "non perde contro Away da 8 incontri (6V, 2N)" in got[0]["text"]
-    assert "imbattuta da 5 partite" in {x["text"] for x in got}
-    assert "ha segnato 7 gol nelle ultime 5 partite" in {x["text"] for x in got}
-    # hype e squadra estranea esclusi; capocannoniere è 4° (scartato dal tetto)
-    blob = " ".join(x["text"] for x in got)
-    assert "clean sheets" not in blob and "Hero" not in blob and "Haven't" not in blob
-    assert ma.match_insights(999, 10, 20, "Casa", "Trasferta") == []
-    assert MatchAnalysis(Store(tmp_path / "empty")).match_insights(1, 10, 20, "A", "B") == []
+    got = ma.match_insights(1, 10, 20, "Casa", "Trasferta", now, n=5, league_id=55)
+    assert all({"team", "text", "kind", "priority", "source"} <= set(x) for x in got)
+    assert {x["source"] for x in got} == {"dati", "fotmob"}      # i due gruppi convivono
+    nostri = [x for x in got if x["source"] == "dati"]
+    assert {x["team"] for x in nostri} == {"Casa", "Trasferta"}   # entrambe le squadre hanno i nostri
+    testi = {x["text"] for x in nostri}
+    # Casa: 7 gol (3+0+2+1+1) e 5 gare senza sconfitte; la striscia più forte è «vinte le ultime 2»
+    assert "ha segnato 7 gol nelle ultime 5 partite" in testi
+    assert "ha vinto le ultime 2 partite" in testi
+    # Trasferta: ultime 4 gare = P, N, N, P → non vince da 4 e non segna da 2
+    assert "non vince da 4 partite" in testi and "non segna da 2 partite" in testi
+    fotmob = [x for x in got if x["source"] == "fotmob"]
+    blob = " ".join(x["text"] for x in fotmob)
+    assert "non perde contro Away da 8 incontri (6V, 2N)" in blob                  # h2h resta FotMob
+    assert "porte inviolate" not in blob      # record rifiutato: non torna coi nostri
+    assert "imbattuta da 5 partite" not in blob and "ha segnato 7 gol" not in blob  # mai la fotografia
+    assert INSIGHT_SEEN["forma_ricalcolata"] == 2 and INSIGHT_SEEN["record_rifiutati"] == 1
+    # con un tetto più alto entra anche il capocannoniere (FotMob, priorità 55)
+    largo = ma.match_insights(1, 10, 20, "Casa", "Trasferta", now, n=6, league_id=55)
+    assert "capocannoniere" in " ".join(x["text"] for x in largo)
+    # tetto, e casi limite: senza insights FotMob restano i NOSTRI fatti (la card non sparisce
+    # quando la fonte tace), mentre senza né gare né insights la lista è vuota — mai riempita
+    assert len(got) <= 5
+    solo_nostri = ma.match_insights(999, 10, 20, "Casa", "Trasferta", now, league_id=55)
+    assert solo_nostri and all(x["source"] == "dati" for x in solo_nostri)
+    assert MatchAnalysis(Store(tmp_path / "empty")).match_insights(1, 10, 20, "A", "B", now) == []
+    # senza kickoff restano solo i fatti FotMob: i nostri (e i record da verificare) si tacciono
+    senza_kickoff = ma.match_insights(1, 10, 20, "Casa", "Trasferta", None)
+    assert senza_kickoff and all(x["source"] == "fotmob" for x in senza_kickoff)
+    st.close()
+
+
+def test_fatti_rilevanti_due_gruppi_in_pagina(tmp_path):
+    """La card rende i due gruppi dichiarati: prima i nostri numeri, poi la fotografia FotMob.
+
+    Il campione dei test non ha storico di campionato (3 gare), quindi la forma ricalcolata si
+    prova qui con sei gare finite in più per le due squadre della gara futura 5749669.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    lid = int(st.read("fixtures").iloc[0]["league_id"])
+
+    def finita(mid, giorni, hid, hname, aid, aname, gf, ga):
+        return {"match_id": mid, "league_id": lid, "season": "2026/2027", "round": None,
+                "utc_kickoff": now - timedelta(days=giorni), "home_id": hid, "home_name": hname,
+                "away_id": aid, "away_name": aname, "home_goals": gf, "away_goals": ga,
+                "status": "finished", "source": "test"}
+
+    st.upsert("fixtures", [
+        # Udinese (8600): tre vittorie con 6 gol fatti
+        finita(5910001, 30, 8600, "Udinese", 9001, "Alfa", 3, 0),
+        finita(5910002, 25, 9002, "Beta", 8600, "Udinese", 1, 2),
+        finita(5910003, 20, 8600, "Udinese", 9003, "Gamma", 1, 0),
+        # Lazio (8543): sconfitta, pareggio, sconfitta — con gol subiti in tutte e tre
+        finita(5910004, 30, 8543, "Lazio", 9004, "Delta", 0, 2),
+        finita(5910005, 25, 9005, "Epsilon", 8543, "Lazio", 1, 1),
+        finita(5910006, 20, 8543, "Lazio", 9006, "Zeta", 0, 1),
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    h = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    i = h.index('id="fatti"')
+    sec = h[i:h.index('<div class="card', i + 10)]
+
+    assert "<b>Dai nostri risultati</b>" in sec and "<b>FotMob</b>" in sec
+    assert "· campionato, ricalcolati a ogni build" in sec
+    assert "· fotografia al momento della raccolta" in sec
+    # i numeri nostri, ricalcolati dalle sei gare seminate
+    assert "ha segnato 6 gol nelle ultime 3 partite" in sec        # Udinese: 3+2+1
+    assert "ha vinto le ultime 3 partite" in sec
+    assert "non vince da 3 partite" in sec                         # Lazio: P, N, P
+    # la fotografia FotMob resta, ma dopo i nostri numeri e dichiarata
+    assert sec.index("Dai nostri risultati") < sec.index("<b>FotMob</b>")
+    assert "non perde contro Lazio da 8 incontri" in sec
     st.close()
 
 
@@ -421,12 +543,18 @@ def test_site_build_end_to_end(tmp_path):
     assert "Risultati esatti" in pre and "1-1" in pre
     # card «I giocatori che decidono» solo in pre-partita: contributo per 90 e media di stagione
     assert "I giocatori che decidono" in pre
-    # card «Fatti rilevanti» solo in pre-partita: tradotti, tetto a 5, niente inglese
+    # card «Fatti rilevanti» solo in pre-partita: tradotti, tetto a 5, niente inglese.
+    # Due gruppi dichiarati: qui il campione dei test non ha storico di campionato (3 gare in
+    # tutto), quindi resta il solo gruppo FotMob — che è dichiarato come fotografia.
     assert "Fatti rilevanti" in pre
+    assert "fotografia al momento della raccolta" in pre
     assert "non perde contro Lazio da 8 incontri (3V, 5N)" in pre
-    assert "ha segnato 8 gol nelle ultime 5 partite" in pre
-    assert "imbattuta da 19 partite" in pre          # insight del campione FotMob (team remappato)
     assert "capocannoniere" in pre                   # 4° fatto: il tetto è salito da 3 a 5
+    # la famiglia «forma» non si pubblica più da FotMob (la ricalcoliamo noi): quei numeri
+    # vecchi non devono più comparire, e il record non verificabile è rifiutato
+    assert "ha segnato 8 gol nelle ultime 5 partite" not in pre
+    assert "imbattuta da 19 partite" not in pre
+    assert "porte inviolate" not in pre
     # la stringa appare due volte **nella stessa card**: titolo e indice laterale che la linka
     # (voce di nav aggiunta l'8/10/2026, M4 di `docs/55` §6)
     assert pre.count('id="fatti"') == 1
@@ -1010,10 +1138,11 @@ def test_stato_senza_scarti_non_pubblica_none(tmp_path):
     SiteBuilder(store=st, out_dir=out)._render(
         "status.html", "stato.html", sources=[], tables=[], probe=[], audit=[],
         audit_counts={"presente": 0, "atteso": 0, "mancante": 0},
-        insight_stats={"tradotti": 3, "scartati": 0, "n_shapes": 0,
-                       "top_shape": "", "top_n": 0})
+        insight_stats={"tradotti": 3, "scartati": 0, "forma_ricalcolata": 2,
+                       "record_rifiutati": 0, "n_shapes": 0, "top_shape": "", "top_n": 0})
     h = (out / "stato.html").read_text(encoding="utf-8")
     assert "None" not in h
+    assert "2 della famiglia «forma recente»" in h   # i ricalcolati si vedono nel conteggio
     assert "Nessuno scarto registrato" in h
     assert "Scarto più frequente" not in h
     vs = _verify_site()

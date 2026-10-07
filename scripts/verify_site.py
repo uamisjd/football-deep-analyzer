@@ -25,6 +25,11 @@ from typing import Any
 # ---- residui che non devono mai arrivare a schermo -----------------------------------------
 BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp\()(?![\w.])")
 TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
+# Intervalli fra decimali scritti col trattino ASCII («xG (0,75-0,94)», «0,19-0,20»): il sito usa
+# il trattino tipografico «–» per gli intervalli (i punteggi «2-1» restano col trattino corto).
+# Misurato il 2026-10-07: 375 occorrenze nelle 375 schede post-partita + 1 in info.html — e le
+# due pagine che citavano lo stesso numero di RPS dei bookmaker lo scrivevano in due modi.
+RANGE_ASCII = re.compile(r"\d+,\d+-\d+,\d+")
 
 
 def record_campo(fx: Any, team_id: int, in_casa: bool, kickoff: Any) -> tuple[int, int, int, int]:
@@ -268,6 +273,8 @@ def check_pages(site: Path) -> tuple[list[str], int]:
             fails.append(f"{rel}: decimale col punto {m.group(0)!r}")
         for m in AGREEMENT.finditer(text):
             fails.append(f"{rel}: concordanza {m.group(0)!r}")
+        for m in RANGE_ASCII.finditer(text):
+            fails.append(f"{rel}: intervallo col trattino ASCII {m.group(0)!r} (serve «–»)")
 
         # stessa terna di controlli sugli attributi pronunciati dai lettori di schermo
         for attr in parser.readable_attrs:
@@ -2106,6 +2113,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
     # classifica FotMob (fonte unica) e confrontati col testo stampato.
     n_duel = 0
+    n_radar = 0
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
         if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
@@ -2120,7 +2128,59 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             checks += 1
             if cr[key] not in txt:
                 fails.append(f"{pg.name}: riga scontro «{key}» assente o diversa")
-    print(f"[22] duello chiave e graduatorie verificati: {n_duel} pagine")
+        # 22b) radar stile: le 5 barre sono ricalcolate dalla stessa funzione del sito. Un
+        # dato mancante vale «n.d.» SENZA barra né numero: l'80 celle con un 50 neutro accanto
+        # a «(n.d.)» (docs/57 §8) erano valori inventati in pagina.
+        n_radar += 1
+        cr_radar = ma19.clash_radar(str(fr.home_name), int(fr.home_id),
+                                    str(fr.away_name), int(fr.away_id))
+        k = html.find("Radar stile")
+        tab = html.find("<table", k) if k >= 0 else -1
+        fine = html.find("</table>", tab) if tab >= 0 else -1
+        if cr_radar is None:
+            checks += 1
+            if k >= 0:
+                fails.append(f"{pg.name}: radar in pagina senza dati ricalcolabili")
+            continue
+        if tab < 0 or fine < 0:
+            fails.append(f"{pg.name}: radar atteso e non trovato in pagina")
+            continue
+        righe = re.findall(r"<tr>\s*<th scope=\"row\" class=\"small\">(.*?)</tr>",
+                           html[tab:fine], re.DOTALL)
+        checks += 1
+        if len(righe) != len(cr_radar["labels"]):
+            fails.append(f"{pg.name}: radar con {len(righe)} righe invece di "
+                         f"{len(cr_radar['labels'])}")
+            continue
+        for i, riga in enumerate(righe):
+            checks += 1
+            etichetta = html_unescape(re.sub(r"<[^>]+>", " ", riga))
+            if cr_radar["labels"][i] not in etichetta:
+                fails.append(f"{pg.name}: radar, riga {i + 1} «{etichetta.strip()[:30]}» "
+                             f"invece di «{cr_radar['labels'][i]}»")
+            celle = re.findall(r"<td>(.*?)</td>", riga, re.DOTALL)
+            checks += 1
+            if len(celle) != 2:
+                fails.append(f"{pg.name}: radar, riga {i + 1} con {len(celle)} colonne")
+                continue
+            for lato, cella in zip(("home", "away"), celle):
+                checks += 1
+                atteso = cr_radar[lato][i]
+                barra = re.search(r"flex:0 0 (\d+)%", cella)
+                if atteso is None:
+                    if barra or "n.d." not in cella:
+                        fails.append(f"{pg.name}: radar, «{cr_radar['labels'][i]}» {lato} "
+                                     "senza dato ma con barra o numero")
+                    continue
+                if not barra:
+                    fails.append(f"{pg.name}: radar, «{cr_radar['labels'][i]}» {lato} "
+                                 "senza barra")
+                    continue
+                if int(barra.group(1)) != round(atteso):
+                    fails.append(f"{pg.name}: radar, «{cr_radar['labels'][i]}» {lato}: "
+                                 f"pagina {barra.group(1)}, ricalcolo {round(atteso)}")
+    print(f"[22] duello chiave e graduatorie verificati: {n_duel} pagine · "
+          f"radar ricalcolato: {n_radar}")
 
     # 23) «giocherà?»: i badge titolare/panchina/assente stampati devono coincidere di
     # numero e contenuto coi ruoli della distinta; l'avviso sul top contributor assente
@@ -2984,6 +3044,130 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+def voci_di_gruppo(sec: str, ancora: str) -> list[str]:
+    """Le voci (testo a tag rimossi) del primo elenco che segue ``ancora`` dentro ``sec``."""
+    k = sec.find(ancora)
+    if k < 0:
+        return []
+    ul = sec.find("<ul", k)
+    fine = sec.find("</ul>", ul)
+    if ul < 0 or fine < 0:
+        return []
+    return [html_unescape(re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", li))).strip()
+            for li in re.findall(r"<li>(.*?)</li>", sec[ul:fine], re.DOTALL)]
+
+
+def check_fatti(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[42] «Fatti rilevanti»: i fatti «dai nostri risultati» ricalcolati dai Parquet.
+
+    La card ha due gruppi dichiarati (``id="fatti-dati"`` e ``id="fatti-fotmob"``). Qui:
+
+    - ogni voce del gruppo **nostro** è rifatta con :func:`form_facts` sulle gare finite di
+      campionato prima del calcio d'inizio: se un numero non torna o non è nell'insieme
+      ricalcolato, la pagina sta pubblicando un fatto che i Parquet non sostengono;
+    - la famiglia «forma recente» (``_INSIGHT_FORM_RE``) non compare **mai** nel gruppo
+      FotMob: era la fotografia che invecchiava (79 fatti su 176 verificabili non tornavano
+      il 2026-10-07, docs/57 §9);
+    - i record di stagione verificabili («maggior numero di porte inviolate del campionato»)
+      sono ricalcolati: numero uguale al nostro e pari al massimo della lega;
+    - la card dichiara entrambe le origini (le due intestazioni di gruppo esistono).
+    """
+    import pandas as pd
+
+    from fda.site.analysis import MatchAnalysis, form_facts
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    fx = st.read("fixtures")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if fx.empty or not pages:
+        return fails, checks
+    fx = fx.copy()
+    fx["utc_kickoff"] = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+    ma = MatchAnalysis(st)
+    # le stesse forme italiane dei fatti ricalcolati: se una di queste compare nel gruppo
+    # FotMob, la fotografia è tornata in pagina
+    famiglia = re.compile(
+        r"ha segnato \d+ gol nell|non segna da |imbattuta da |non vince da |"
+        r"ha vinto le ultime |ha perso le ultime |non tiene la porta inviolata da ")
+    record = re.compile(r"ha il maggior numero di porte inviolate del campionato \((\d+)\)")
+    n_dati, n_fotmob = 0, 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        i = html.find('id="fatti"')
+        if i < 0:
+            continue
+        j = html.find('<div class="card', i + 10)
+        sec = html[i:j if j > 0 else len(html)]
+        txt = html_unescape(re.sub(r"<[^>]+>", " ", sec))
+        checks += 1
+        mid = int(pg.stem)
+        riga = fx[fx.match_id == mid]
+        if riga.empty:
+            continue
+        r0 = riga.iloc[0]
+        kickoff = r0["utc_kickoff"]
+        # la card dichiara le due origini: senza, il lettore non sa quale numero invecchia
+        if "Dai nostri risultati" not in txt or "FotMob" not in txt:
+            fails.append(f"{pg.name}: la card dei fatti non dichiara le due origini")
+        checks += 1
+        if ("Dai nostri risultati" in txt) != ('id="fatti-dati"' in sec):
+            fails.append(f"{pg.name}: intestazione «Dai nostri risultati» senza gruppo dati")
+        checks += 1
+        if ("fotografia al momento della raccolta" in txt) != ('id="fatti-fotmob"' in sec):
+            fails.append(f"{pg.name}: gruppo FotMob senza la dichiarazione di fotografia")
+
+        voci_dati = voci_di_gruppo(sec, 'id="fatti-dati"')
+        voci_fotmob = voci_di_gruppo(sec, 'id="fatti-fotmob"')
+        n_dati += len(voci_dati)
+        n_fotmob += len(voci_fotmob)
+        # 1) le voci nostre sono esattamente quelle ricalcolabili dai Parquet
+        for voce in voci_dati:
+            checks += 1
+            # il testo a tag rimossi lascia uno spazio al posto di <b>nome</b>: «Parma : …»
+            nome, _, testo = voce.partition(": ")
+            nome, testo = nome.strip(), re.sub(r"\s+", " ", testo).strip()
+            tid = None
+            for colonna in ("home_name", "away_name"):
+                if str(r0[colonna]) == nome:
+                    tid = int(r0["home_id" if colonna == "home_name" else "away_id"])
+                    break
+            if tid is None:
+                fails.append(f"{pg.name}: fatto «{voce[:60]}» di una squadra non in partita")
+                continue
+            gare = fx[(fx.status == "finished") & (fx.utc_kickoff < kickoff)
+                      & ((fx.home_id == tid) | (fx.away_id == tid))].sort_values("utc_kickoff")
+            giocate = [(r.home_goals, r.away_goals) if r.home_id == tid else (r.away_goals, r.home_goals)
+                       for r in gare.tail(5).itertuples(index=False)]
+            attesi = {f["text"] for f in form_facts([(int(a), int(b)) for a, b in giocate])}
+            if testo not in attesi:
+                fails.append(f"{pg.name}: fatto «{voce[:60]}» non ricalcolabile dai Parquet "
+                             f"(attesi: {sorted(attesi)})")
+        # 2) la famiglia «forma» non si pubblica mai come fotografia
+        for voce in voci_fotmob:
+            checks += 1
+            if famiglia.search(voce):
+                fails.append(f"{pg.name}: fatto FotMob della famiglia «forma» in pagina "
+                             f"«{voce[:60]}» (va ricalcolato da noi)")
+            m = record.search(voce)
+            if m:
+                checks += 1
+                nome = re.sub(r"\s+", " ", voce.split(": ", 1)[0]).strip()
+                tid = None
+                for colonna in ("home_name", "away_name"):
+                    if str(r0[colonna]) == nome:
+                        tid = int(r0["home_id" if colonna == "home_name" else "away_id"])
+                        break
+                if tid is None or not ma.porta_inviolata_record_ok(tid, kickoff, int(m.group(1)),
+                                                                  r0["league_id"]):
+                    fails.append(f"{pg.name}: record di porte inviolate «{voce[:60]}» non torna "
+                                 "coi Parquet")
+    print(f"[42] fatti ricalcolati e fotografia FotMob verificati: {n_dati} nostre · {n_fotmob} FotMob")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -3040,6 +3224,9 @@ def main() -> int:
         fattori, fattori_checks = check_fattori(site)
         fails += fattori
         checks += fattori_checks
+        fatti, fatti_checks = check_fatti(site, Path(args.data) if args.data else None)
+        fails += fatti
+        checks += fatti_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks

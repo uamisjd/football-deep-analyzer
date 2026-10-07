@@ -1,15 +1,20 @@
-# 57 — Schede partita, revisione sezione per sezione: «Analisi pre-partita» + «Fattori che spostano la partita» (2026-10-07)
+# 57 — Schede partita, revisione sezione per sezione (2026-10-07)
 
 Direttiva dell'utente: **«verifica che le schede delle partite siano fatte bene, revisiona ogni
 sezione e controlla che funzioni bene e sia fatta bene, oppure miglioriamo. Inizia con *Analisi
 pre-partita* e *Fattori che spostano la partita*»**.
 
-Questo documento copre **la prima coppia**: i due blocchi in testa alla scheda, che un lettore legge
-per primi e che insieme pesavano il 13,6% del testo visibile di ogni scheda pre-partita. Per ogni
-difetto: **misura prima → correzione → prova**. Le misure sono rifatte sui Parquet già raccolti e
-sulla build generata in locale (`fda build`): **nessuna richiesta alle fonti esterne**, nessuna
-quota bookmaker. Le sezioni successive della scheda restano da revisionare con lo stesso metodo
-(§6).
+Il documento è il verbale della revisione, sezione per sezione. Copre **due coppie**:
+
+* **prima coppia** (§0-§6): «Analisi pre-partita» + «Fattori che spostano la partita», i due blocchi
+  in testa alla scheda, che insieme pesavano il 13,6% del testo visibile di una scheda pre-partita;
+* **seconda coppia** (§8-§9): «Scontro tattico» + «Fatti rilevanti», richiesta dall'utente prima del
+  merge — «come si incontrano gli stili» e i fatti che la scheda racconta.
+
+Per ogni difetto: **misura prima → correzione → prova**. Le misure sono rifatte sui Parquet già
+raccolti e sulla build generata in locale (`fda build`): **nessuna richiesta alle fonti esterne**,
+nessuna quota bookmaker. Le altre sezioni della scheda restano da revisionare con lo stesso metodo
+(§7).
 
 ---
 
@@ -250,8 +255,13 @@ lascia un fattore non nominato — è esattamente ciò che [41] impone.
   backtick nel blocco.
 * **Segni**: i Δ della card usano il meno tipografico `−` (U+2212), non il trattino ASCII, e
   l'indice di contesto è firmato (`indice +0,18`, `indice −0,97`). Nella card: 0 numeri negativi in
-  ASCII. **Residuo, fuori da questa coppia:** `#scontro` (101 occorrenze) e `#scomposizione` (90)
-  usano ancora il trattino ASCII — da uniformare quando si revisionano quelle sezioni.
+  ASCII. **Il residuo del trattino ASCII è chiuso** in §8, con una misura che corregge quella
+  scritta qui nella prima stesura: le «101 occorrenze, 90 in `#scomposizione`» **non si
+  riproducono** — in `#scomposizione` il trattino fra cifre è 0, anche nel sorgente. Gli intervalli
+  veri erano altrove: **375 nelle 375 schede post-partita** (`#lettura`, «Gara equilibrata negli xG
+  (0,75-0,94)», «Risultato coerente con gli xG (2,14-1,50)») e **1 in `info.html`** («0,19-0,20
+  bookmaker», mentre `accuracy.html` scriveva già «0,19–0,20» lo stesso numero). Ora: 0, con
+  l'invariante `RANGE_ASCII` in [27].
 * **Legenda del colore** della colonna «Impatto»: ⓘ nell'intestazione (verde = giova alla squadra
   di casa, rosso = alla trasferta; nessun colore = vantaggio non misurabile).
 
@@ -273,18 +283,98 @@ lascia un fattore non nominato — è esattamente ciò che [41] impone.
 4. **Valore dei titolari assente su 42 schede su 66** (`home_starters_value_eur` presente per 25
    gare su 67 in programma): è una lacuna di **raccolta**, non di scheda — la card lo dichiara. Da
    valutare se la fonte lo pubblica solo a distinta depositata.
-5. **Sezioni successive** della scheda da revisionare con lo stesso metodo: «Scontro tattico»
-   (compreso il trattino ASCII), «Come arrivano», «I giocatori che decidono», «Panchina e posta in
-   gioco», «Mercato: arrivi e partenze», «Vita del club», «Previsione del modello ensemble»,
+5. ~~«Scontro tattico» + «Fatti rilevanti»~~ **chiuso** in §8-§9 (richiesta dell'utente prima del
+   merge).
+6. **Sezioni successive** della scheda da revisionare con lo stesso metodo: «Come arrivano»,
+   «I giocatori che decidono», «Panchina e posta in gioco», «Mercato: arrivi e partenze», «Vita del
+   club», «Previsione del modello ensemble» (con «Come nasce questa probabilità», «Quando il
+   favorito aveva questa forza», «Dove si colloca questa partita», «Quando arriva il primo gol»),
    «Precedenti», «Verifica approfondita».
+7. **Ridondanza (non contraddizione) fra «Scontro tattico» e radar**: i due rapporti del duello
+   chiave (`1,88× la media gol della lega`) sono anche il valore grezzo della riga «Attacco × media»
+   del radar — stesso numero, stessa fonte (classifica FotMob), due posti. Da decidere se togliere
+   uno dei due quando si riprende la card.
+8. **Un difetto trovato fuori dalle due coppie in revisione** e già chiuso: il test
+   `test_transfer_window_stesso_movimento_con_ora_locale` era dipendente dall'ora di esecuzione —
+   con «adesso» dopo le 22 UTC il `+2h` dell'ora locale cade nel giorno dopo e l'atteso non
+   reggeva (fallito il 2026-10-07 alle 22:06 UTC: `06/10/2026` contro `05/10/2026`). Ora l'ora del
+   campione è fissa a metà mattina: il test misura il dedup, non il fuso.
 
 ---
 
-## 8. Appendice — come sono state prese le misure (per riprodurle)
+## 8. «Scontro tattico»: dai numeri inventati alle ancore dichiarate
+
+Build di riferimento: **441 schede** con la card, **66 pre-partita** con il radar (il radar si stampa
+solo prima della gara). Difetti, misure e prove:
+
+| # | Difetto misurato | Prima | Dopo | Prova |
+|---|---|---|---|---|
+| 1 | **Il radar inventava un valore neutro**: dove il dato mancava stampava `50 (n.d.)` — barra al 50% e il numero 50 accanto a «(n.d.)». In `5781759` (Feyenoord–AZ) mancavano pressing **e** profondità, in entrambe le colonne | **80 celle** (66 schede con radar) | `n.d.` **senza barra e senza numero**; `norm_*` restituisce `None`, non 50 | [22b]: 66 radar ricalcolati dai Parquet, **0 problemi**; 80 celle «n.d.» |
+| 2 | **Piè di card falso**: «100 = migliore in lega su quella metrica». Le ancore sono **fisse e scelte a mano** (attacco 0,5×→0 e 1,5×→100; difesa 1,5×→0 e 0,5×→100; PPDA 8→100 e 20→0; profondità 2→0 e 10→100; palle inattive 10%→0 e 60%→100): 100 non è un primato di lega | 66/66 radar | «100 è l'estremo alto della scala, non un primato di lega» + **un ⓘ per riga** con ancora e verso | [22b] confronta le barre col ricalcolo |
+| 3 | **«Palle inattive %» letta come merito**: la scala premia chi ha la quota più alta di xG da palle inattive, che è una **dipendenza**, non una qualità | nessuna nota, e il piè di card diceva «100 = migliore in lega» | ⓘ della riga: «più alta = più dipendenza dalle palle inattive, non un giudizio di qualità» | §8 riga 5 di `helps`, test |
+| 4 | **Banner non verificato**: «Confronto limitato a xG e profondità» — su 21 schede pre-partita con la nota, **19** mancavano di tutto il blocco Understat (anche la profondità): la frase elencava come disponibile un dato assente | 162 schede la stampavano | nota **costruita dai valori presenti**: «manca PPDA, PPDA concesso, passaggi profondi e passaggi profondi subiti per entrambe le squadre» (145) o «per una delle due squadre» (17) + «Le righe presenti restano confrontabili» | test `test_style_rows_copertura_understat_detta_davvero`; 162 schede |
+| 5 | **Trattino ASCII negli intervalli** (residuo dichiarato in §6) | rev. §6: «101 in `#scontro`, 90 in `#scomposizione`» — **misura non riprodotta**: in «#scomposizione» 0, e in `#scontro` gli unici due intervalli erano «0-100» (testata e piè del radar) | en dash «–»; residuo vero corretto altrove: **375 occorrenze in `#lettura`** (375 schede post-partita) e 1 in `info.html` | invariante `RANGE_ASCII` in [27]: 0 in tutto il sito |
+
+Cosa **non** è cambiato, per non allargare la revisione: la struttura della tabella (λ, DC, xG/xGA,
+quote, PPDA, profondità), le graduatorie e il «duello chiave» di [22], la scomposizione xG come quota
+interna a una sola fonte. Un solo dubbio resta **aperto e dichiarato** (§7): i due rapporti del duello
+chiave (`1,88× la media gol della lega`) compaiono anche nel radar come valore grezzo della riga
+«Attacco × media» — stesso numero, stessa fonte (classifica FotMob), due posti: è ridondanza, non
+contraddizione.
+
+Peso della card: 9,0% → **9,2%** del testo visibile di una scheda pre-partita (la nota di copertura
+è più lunga della frase fissa che sostituisce).
+
+---
+
+## 9. «Fatti rilevanti»: due origini, e i numeri ricalcolati
+
+La card diceva «Streak, testa-a-testa e forma recente (FotMob), tradotti e filtrati»: un elenco solo,
+senza dire che erano **una fotografia scattata quando la gara è stata raccolta**. Misurato il
+2026-10-07 su `insights.parquet` (402 righe, 67 gare da giocare, 3 righe per squadra — **nessun
+duplicato**: lo scatto non viene dal nostro upsert):
+
+* **79 fatti su 176 verificabili non tornavano** coi nostri risultati, e **75 su 175** non si
+  riconciliavano con nessuna finestra (stagione in corso, stagione a cavallo dello storico, coppe);
+* prova della staleness: per l'Atalanta il fatto «gol nelle ultime 5» vale **8 → 7 → 5 → 5 → 6 → 4**
+  passando da una gara all'altra della stessa raccolta, mentre i suoi ultimi 5 risultati (23/08 →
+  20/09) sommano **3**;
+* contraddizioni secche (verificate a mano una per una): «Athletic Club imbattuta da 5 partite»
+  (`5868088`) con una sconfitta nelle ultime cinque, «non tiene la porta inviolata da 5 partite» su
+  Aston Villa, Marsiglia e Real Sociedad con un porta inviolata dentro la finestra;
+* composizione delle **272 voci pubblicate** su 67 schede: **181 famiglia «forma» (67%)**, 16 record,
+  75 altro.
+
+| # | Difetto misurato | Prima | Dopo | Prova |
+|---|---|---|---|---|
+| 1 | **I numeri invecchiavano**: la famiglia «forma» (gol nelle ultime N, strisce, porta inviolata) è una foto della raccolta, non il numero di oggi | 181/272 voci (67%) | la famiglia **non si pubblica più da FotMob**: si pubblica il ricalcolo dalle nostre gare di **campionato** (`form_facts`, finestra 5, minimo 3 gare), rifatto a ogni build | [42]: 258 voci nostre su 66 schede, 0 problemi |
+| 2 | **Nessuno sapeva da dove venisse il numero** | un elenco, un'etichetta | **due gruppi dichiarati** (`id="fatti-dati"` · `id="fatti-fotmob"`): «Dai nostri risultati · campionato, ricalcolati a ogni build» e «FotMob · fotografia al momento della raccolta» | [42] verifica le due intestazioni |
+| 3 | **Record di stagione non verificati**: «ha il maggior numero di porte inviolate del campionato (N)» | 16 voci, nessun controllo | pubblicato **solo se** N = conteggio del campionato dal nostro Parquet **e** massimo di lega (`porta_inviolata_record_ok`) | [42]: 11 voci, tutte verificate, 0 rifiutate in questa build |
+| 4 | **La fotografia poteva contraddire i nostri stessi dati** | 4 casi provati (sopra) | impossibile per costruzione: [42] boccia la scheda se una frase della famiglia compare nel gruppo FotMob | [42], test |
+| 5 | **`stato.html` con l'etichetta vecchia** («blocco «Curiosità»») | 1 riga | «Fatti FotMob (blocco «Fatti rilevanti»)» + i due contatori nuovi: **188** voci della famiglia non pubblicate da FotMob (ricalcolate), **0** record rifiutati | `site/stato.html` |
+
+**Effetto sulle pagine** (66 schede pre-partita, prima 67): voci **272 → 326** (nostre 258 · FotMob
+68), tutte con un'origine dichiarata; **59 schede** hanno entrambi i gruppi, **7** solo il nostro
+(prima sarebbero rimaste senza card). Tipi delle voci nostre: gol 128, imbattuta 38, non vince 29,
+porta inviolata 25, perse 19, vinte 15, non segna 4.
+
+**Il sospetto «default `n=3` contro "al più cinque" in pagina» è infondato**: il call site passava già
+`n=5`; il default della funzione è ora 5, così l'uno non contraddice l'altra.
+
+Peso della card: **4,0%** del testo visibile di una scheda pre-partita (`prematch_sections`), con
++0,9 voci per scheda e due intestazioni di gruppo. Il testo visibile mediano di una scheda
+pre-partita passa da **21.084 a 21.680 caratteri** (+2,8%: `parita_schede` prima e dopo, stesse 66
+schede) — l'aumento è tutto qui e nella nota di copertura dello «Scontro tattico» (§8.4). Parità
+invariata: min 19.697 · mediana 21.680.
+
+---
+
+## 10. Appendice — come sono state prese le misure (per riprodurle)
 
 ```bash
 .venv/bin/fda build                                            # 441 / 2.364 / 7.496 (~5 min)
-.venv/bin/python scripts/verify_site.py --site site --data data/processed   # [40] 441 · [41] 66
+.venv/bin/python scripts/verify_site.py --site site --data data/processed   # 0 problemi · 164.729 controlli
+#   [22b] radar ricalcolato 66 · [40] meteo 441 · [41] fattori 66 · [42] fatti 258 nostre + 68 FotMob
 .venv/bin/python scripts/parita_schede.py site --data data/processed
 .venv/bin/python -m scripts.prematch_sections site
 .venv/bin/python -m scripts.resa_375
@@ -292,8 +382,11 @@ lascia un fattore non nominato — è esattamente ciò che [41] impone.
 ```
 
 I conteggi per riga, per etichetta e per voce fuori tabella sono letti dalle pagine generate
-(`site/partite/*.html`, blocchi `id="lettura"` e `id="fattori"`): riepiloghi stampati a schermo,
-mai dati grezzi. Le soglie sono confrontate con le costanti importate da `fda.site.analysis`
+(`site/partite/*.html`, blocchi `id="lettura"`, `id="fattori"`, `id="scontro"`, `id="fatti"`):
+riepiloghi stampati a schermo, mai dati grezzi. I numeri del §9 (79 fatti incoerenti, 181 voci di
+famiglia, 4 contraddizioni, 402 righe con 3 per squadra) vengono da uno script di verifica scritto
+per l'occasione, che confronta `insights.parquet` con `fixtures.parquet`/`history.parquet`/
+`cup_fixtures.parquet`: lo stesso confronto è ora l'invariante [42], che gira a ogni gate. Le soglie sono confrontate con le costanti importate da `fda.site.analysis`
 (`FACTOR_*`, `WEATHER_*`), non riscritte a mano nel controllo.
 
 **Cosa non è verificato da qui** (dichiarato, non taciuto): le fonti esterne non sono raggiungibili

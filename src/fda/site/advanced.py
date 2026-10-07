@@ -582,6 +582,34 @@ def style_rows(home: dict[str, Any] | None, away: dict[str, Any] | None,
         if k not in seen:
             seen.add(k)
             uniq.append(n)
+    # Copertura Understat: la nota in cima alla card deve dire **cosa manca davvero**. Prima era
+    # fissa — «Confronto limitato a xG e profondità» — e la stampava anche su una gara in cui
+    # mancava pure la profondità (Feyenoord–AZ: nessun dato Understat per la lega, docs/57 §8).
+    # Qui l'elenco si costruisce dai valori presenti, riga per riga.
+    def _elenco(voci: list[str]) -> str:
+        if len(voci) == 1:
+            return voci[0]
+        return ", ".join(voci[:-1]) + " e " + voci[-1]
+
+    mancano_entrambe: list[str] = []
+    mancano_una: list[str] = []
+    for etichetta, chiave in (("PPDA", "ppda"), ("PPDA concesso", "ppda_allowed"),
+                              ("passaggi profondi", "deep"), ("passaggi profondi subiti", "deep_allowed")):
+        hv, av = h.get(chiave), a.get(chiave)
+        if hv is None and av is None:
+            mancano_entrambe.append(etichetta)
+        elif hv is None or av is None:
+            mancano_una.append(etichetta)
+    coverage_note = None
+    if mancano_entrambe or mancano_una:
+        pezzi = []
+        if mancano_entrambe:
+            pezzi.append(f"manca {_elenco(mancano_entrambe)} per entrambe le squadre")
+        if mancano_una:
+            pezzi.append(f"manca {_elenco(mancano_una)} per una delle due squadre")
+        coverage_note = ("Understat incompleto per questa gara: " + " · ".join(pezzi)
+                         + ". Le righe presenti restano confrontabili; le altre non compaiono in tabella.")
     # nota globale singola (pattern lasco già applicato) + lista per retro-compatibilità
     global_note = " ".join(uniq[:2])
-    return {"rows": rows, "notes": uniq, "global_note": global_note, "mixed_sources": mixed}
+    return {"rows": rows, "notes": uniq, "global_note": global_note, "mixed_sources": mixed,
+            "coverage_note": coverage_note}

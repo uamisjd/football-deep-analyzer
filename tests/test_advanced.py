@@ -167,6 +167,37 @@ def test_style_rows_split_as_quotas_with_declared_sources():
     assert "2,55" in (by["xG da azione manovrata (quota)"]["help"] or "")
 
 
+def test_style_rows_copertura_understat_detta_davvero():
+    """La nota di copertura elenca ciò che manca **davvero**, riga per riga (docs/57 §8).
+
+    Prima la frase era fissa («Confronto limitato a xG e profondità») e la stampava anche su
+    una gara in cui mancava pure la profondità: Feyenoord–AZ, nessun dato Understat per la
+    lega olandese. Il numero di celle con un 50 neutro accanto a «(n.d.)» era 80 su 441 schede.
+    """
+    pred = {"lambda_home": 1.8, "lambda_away": 1.1}
+    completo = {"source": "Understat", "played": 5, "xg_pm": 1.5, "xga_pm": 1.2,
+                "ppda": 9.0, "ppda_allowed": 12.0, "deep": 9.5, "deep_allowed": 6.0}
+    # copertura completa: nessuna nota
+    assert style_rows(completo, completo, pred)["coverage_note"] is None
+    # lega senza Understat: manca tutto, per entrambe le squadre (il caso olandese)
+    fotmob = {"source": "FotMob", "played": 7, "xg_pm": 2.8, "xga_pm": 0.8}
+    nota = style_rows(fotmob, fotmob, pred)["coverage_note"]
+    assert ("manca PPDA, PPDA concesso, passaggi profondi e passaggi profondi subiti "
+            "per entrambe le squadre") in nota
+    assert "Le righe presenti restano confrontabili" in nota
+    # dato presente solo da un lato: si dice «per una delle due squadre», e solo di quella voce
+    meta = {**completo, "ppda_allowed": None}
+    nota = style_rows(completo, meta, pred)["coverage_note"]
+    assert "manca PPDA concesso per una delle due squadre" in nota
+    assert "PPDA," not in nota and "passaggi profondi" not in nota
+    # un dato presente in una sola delle due colonne non fa sparire la riga, ma la nota lo dice
+    solo_casa = {**completo, "deep": None}
+    righe = {r["label"]: r for r in style_rows(completo, solo_casa, pred)["rows"]}
+    assert righe["Passaggi profondi / gara"]["a"] is None
+    assert "manca passaggi profondi per una delle due squadre" in style_rows(
+        completo, solo_casa, pred)["coverage_note"]
+
+
 def test_style_rows_concordanza_una_sola_gara():
     """«su 1 gara» e «(FotMob, 1 gara finita)»: i tooltip dichiarano il campione (docs/40 §1, 4-5).
 

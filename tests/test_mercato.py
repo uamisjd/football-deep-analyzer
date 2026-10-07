@@ -372,7 +372,11 @@ def test_transfer_window_stesso_movimento_con_ora_locale(tmp_path):
     la Z** che il vecchio parser azzerava in silenzio (il movimento spariva del tutto).
     """
     from datetime import UTC, datetime, timedelta
-    quando = datetime.now(UTC) - timedelta(days=2)
+    # ora fissa a metà mattina: con «adesso» dopo le 22 UTC il +2h dell'ora locale cade nel
+    # giorno dopo e l'atteso (la data di `quando`) non regge — flake trovato il 2026-10-07
+    # alle 22:06 UTC, non un difetto del codice
+    quando = (datetime.now(UTC) - timedelta(days=2)).replace(hour=10, minute=0, second=0,
+                                                            microsecond=0)
     utc = quando.strftime("%Y-%m-%dT%H:%M:%SZ")
     locale = (quando + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")     # ora locale, senza Z
     st = Store(tmp_path / "mercato_ora")

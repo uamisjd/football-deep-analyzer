@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import itertools
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import pairwise
 from typing import Any, ClassVar
@@ -513,6 +514,83 @@ _INSIGHT_EN_LEAK = re.compile(
 # (su 6 partite ~0,6): si pubblicano i numeri, mai l'aggettivo (P1.2, docs/19 §2.6).
 MIN_REFEREE_MATCHES = 15
 
+# Famiglia «forma recente» dei fatti FotMob: sono **gli stessi template che il sito sa
+# ricalcolare** dai propri risultati di campionato (:func:`form_facts`). Restano tradotti
+# (``translate_insight``), ma ``match_insights`` non li pubblica più da FotMob: quella è una
+# fotografia scattata quando la gara è stata raccolta, e invecchia. Misurato il 2026-10-07 su
+# ``insights.parquet``: dei 176 fatti verificabili coi nostri risultati, 79 non tornavano —
+# es. «Atalanta ha segnato 4 gol nelle ultime 5» mentre i suoi ultimi 5 risultati ne sommano 3
+# (docs/57 §9). Al posto loro si pubblica il numero ricalcolato a ogni build.
+_INSIGHT_FORM_RE = re.compile(
+    r"have scored \d+ goals in their last \d+ matches"
+    r"|haven't scored in their last \d+ matches"
+    r"|haven't lost in \d+ matches"
+    r"|haven't won a match in \d+ attempts"
+    r"|have lost their last \d+ matches"
+    r"|have won their last \d+ matches"
+    r"|haven't kept a clean sheet in \d+ matches", re.IGNORECASE)
+
+#: Record di stagione che il sito sa **verificare** sui propri risultati (porta inviolata):
+#: pubblicato solo se il numero regge al ricalcolo, così una fotografia vecchia non resta
+#: in pagina. Gli altri record (rigori, capocannoniere) restano FotMob e la card lo dichiara.
+_INSIGHT_RECORD_CS_RE = re.compile(
+    r"have kept the most clean sheets in the competition \((\d+)\)", re.IGNORECASE)
+
+#: Finestra dei fatti di forma ricalcolati: «ultime N partite» = al più 5, e sotto 3 gare
+#: giocate non si pubblica niente (una «striscia» di due partite è rumore, non forma).
+FORM_FACTS_N = 5
+FORM_FACTS_MIN = 3
+
+
+def form_facts(giocate: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    """Fatti di forma recente dai **nostri** risultati di campionato, in italiano.
+
+    ``giocate`` = ``[(gol fatti, gol subiti), ...]`` in ordine cronologico, al più
+    :data:`FORM_FACTS_N` partite; sotto :data:`FORM_FACTS_MIN` gare non si pubblica nulla.
+    Le chiavi sono quelle di :func:`translate_insight` (``text``/``kind``/``priority``),
+    così selezione e ordinamento della card non cambiano; le priorità sono le stesse dei
+    template FotMob della famiglia, per non spostare il mix dei «Fatti rilevanti».
+    """
+    gare = [(int(gf), int(ga)) for gf, ga in giocate]
+    if len(gare) < FORM_FACTS_MIN:
+        return []
+    k = len(gare)
+    out: list[dict[str, Any]] = [
+        {"text": f"ha segnato {sum(gf for gf, _ in gare)} gol nelle ultime {k} partite",
+         "kind": "goals", "priority": 80}]
+    # «non tiene la porta inviolata da K» = le ultime K gare con almeno un gol subito: è la
+    # striscia dei gol SUBITI, non quella delle porte inviolate (rovesciata nella prima stesura).
+    senza_inviolata = _striscia(gare, lambda gf, ga: ga > 0)
+    if senza_inviolata >= 2:
+        out.append({"text": f"non tiene la porta inviolata da {_n_partite(senza_inviolata)}",
+                    "kind": "clean_sheet", "priority": 70})
+    senza_gol = _striscia(gare, lambda gf, ga: gf == 0)
+    if senza_gol >= 2:
+        out.append({"text": f"non segna da {_n_partite(senza_gol)}", "kind": "goals", "priority": 82})
+    imbattuta = _striscia(gare, lambda gf, ga: gf >= ga)
+    if imbattuta >= 2:
+        out.append({"text": f"imbattuta da {_n_partite(imbattuta)}", "kind": "streak", "priority": 90})
+    senza_vittorie = _striscia(gare, lambda gf, ga: gf <= ga)
+    if senza_vittorie >= 2:
+        out.append({"text": f"non vince da {_n_partite(senza_vittorie)}", "kind": "streak", "priority": 88})
+    vinte = _striscia(gare, lambda gf, ga: gf > ga)
+    if vinte >= 2:
+        out.append({"text": f"ha vinto le ultime {_n_partite(vinte)}", "kind": "streak", "priority": 91})
+    perse = _striscia(gare, lambda gf, ga: gf < ga)
+    if perse >= 2:
+        out.append({"text": f"ha perso le ultime {_n_partite(perse)}", "kind": "streak", "priority": 89})
+    return out
+
+
+def _striscia(gare: list[tuple[int, int]], ok: Callable[[int, int], bool]) -> int:
+    """Lunghezza della striscia finale in cui ``ok(gf, ga)`` è vera (0 se l'ultima gara non lo è)."""
+    n = 0
+    for gf, ga in reversed(gare):
+        if not ok(gf, ga):
+            break
+        n += 1
+    return n
+
 
 def _n_partite(n: int) -> str:
     return "1 partita" if n == 1 else f"{n} partite"
@@ -669,7 +747,11 @@ def translate_insight(text: str) -> dict[str, Any] | None:
 # in silenzio. Il conteggio per forma canonica (numeri → «N») distingue un template nuovo
 # (centinaia di occorrenze identiche) dal caso singolo; il build lo pubblica in stato.html.
 INSIGHT_DROP_LOG: dict[str, int] = {}
-INSIGHT_SEEN: dict[str, int] = {"tradotti": 0, "scartati": 0}
+#: Contatori del build. ``forma_ricalcolata`` e ``record_rifiutati`` dicono quanti fatti FotMob
+#: NON sono stati pubblicati perché li ricalcoliamo noi (``_INSIGHT_FORM_RE``) o perché non
+#: reggevano al ricalcolo (docs/57 §9): sono l'osservabilità della scelta, non scarti.
+INSIGHT_SEEN: dict[str, int] = {"tradotti": 0, "scartati": 0,
+                                "forma_ricalcolata": 0, "record_rifiutati": 0}
 
 
 def insight_dropped(text: str) -> None:
@@ -691,14 +773,16 @@ def insight_drop_stats() -> dict[str, Any] | None:
     top_key, top_n = (max(INSIGHT_DROP_LOG.items(), key=lambda kv: kv[1])
                       if INSIGHT_DROP_LOG else ("", 0))
     return {"tradotti": INSIGHT_SEEN["tradotti"], "scartati": INSIGHT_SEEN["scartati"],
+            "forma_ricalcolata": INSIGHT_SEEN["forma_ricalcolata"],
+            "record_rifiutati": INSIGHT_SEEN["record_rifiutati"],
             "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n}
 
 
 def reset_insight_stats() -> None:
     """Azzera i contatori (per i test e per build multipli nello stesso processo)."""
     INSIGHT_DROP_LOG.clear()
-    INSIGHT_SEEN["tradotti"] = 0
-    INSIGHT_SEEN["scartati"] = 0
+    for chiave in INSIGHT_SEEN:
+        INSIGHT_SEEN[chiave] = 0
 
 
 def select_insights(rows: list[dict[str, Any]], n: int = 3) -> list[dict[str, Any]]:
@@ -1307,6 +1391,46 @@ class MatchAnalysis:
             opp = r.away_name if is_home else r.home_name
             out.append({"date": r.utc_kickoff, "opponent": opp, "home": is_home, "gf": int(gf), "ga": int(ga), "res": res})
         return out
+
+    def form_insights(self, team_id: int, kickoff: Any, team_name: str) -> list[dict[str, Any]]:
+        """Fatti di forma recente **nostri** per una squadra (campionato), con la squadra.
+
+        Le chiavi sono quelle attese da :func:`select_insights` (``kind``/``team_id``/``priority``)
+        più ``source="dati"``, che il template usa per il gruppo «dai nostri risultati».
+        """
+        if kickoff is None:
+            return []
+        giocate = [(r["gf"], r["ga"]) for r in self.form(int(team_id), kickoff, n=FORM_FACTS_N)]
+        return [dict(r, team=team_name, team_id=int(team_id), source="dati")
+                for r in form_facts(giocate)]
+
+    def porta_inviolata_record_ok(self, team_id: int, kickoff: Any, n: int,
+                                  league_id: Any) -> bool:
+        """Il record FotMob «maggior numero di porte inviolate del campionato (N)» regge?
+
+        Si pubblica solo se il numero è **esattamente** quello ricalcolato dai nostri risultati
+        di campionato *prima* di questa gara ed è il massimo del campionato: così una fotografia
+        vecchia (il record di un'altra giornata) non resta in pagina. Misurato il 2026-10-07:
+        i 14 record pubblicati tornavano tutti; il controllo li protegge dal prossimo collect.
+        """
+        if kickoff is None or league_id is None or self.fixtures.empty \
+                or not hasattr(self.fixtures, "league_id"):
+            return False
+        fin = self.fixtures[(self.fixtures.league_id == league_id)
+                            & (self.fixtures.status == "finished")
+                            & (self.fixtures.utc_kickoff < kickoff)]
+        if fin.empty:
+            return False
+        conta: dict[int, int] = {}
+        for r in fin.itertuples(index=False):
+            if r.away_goals == 0:
+                conta[int(r.home_id)] = conta.get(int(r.home_id), 0) + 1
+            if r.home_goals == 0:
+                conta[int(r.away_id)] = conta.get(int(r.away_id), 0) + 1
+        if not conta:
+            return False
+        massimo = max(conta.values())
+        return n == conta.get(int(team_id), 0) == massimo
 
     def rest_days(self, team_id: int, kickoff: datetime) -> int | None:
         fx = self._rest_source()
@@ -4209,48 +4333,68 @@ class MatchAnalysis:
                         "score": f"{hg}-{ag}", "res": res})
         return out
 
-    def match_insights(self, match_id: int, home_id: int, away_id: int,
-                       home_name: str, away_name: str, n: int = 3) -> list[dict[str, Any]]:
-        """Fatti pre-partita: tradotti, filtrati, al più ``n``, mai in inglese.
+    def match_insights(self, match_id: int, home_id: int, away_id: int, home_name: str,
+                       away_name: str, kickoff: pd.Timestamp, n: int = 5,
+                       league_id: Any = None) -> list[dict[str, Any]]:
+        """Fatti rilevanti della scheda: **due origini**, una sola selezione, mai inglese.
 
-        Fonte: tabella ``insights`` (FotMob ``matchFacts.insights``). Si tengono
-        solo streak / gol recenti / testa-a-testa / capocannoniere. I testi non
-        traducibili e i fatti «hype» (most X in the competition) sono scartati.
+        - ``source="dati"``: forma recente ricalcolata dai **nostri** risultati di campionato
+          (:meth:`form_insights`) — «N gol nelle ultime K», strisce di vittorie/sconfitte,
+          imbattibilità, porta inviolata. Sono gli unici numeri che possiamo garantire
+          aggiornati: li rifà a ogni build il verificatore [42] dai Parquet.
+        - ``source="fotmob"``: testa-a-testa, capocannoniere, rigori, record di stagione,
+          media gol, posizione: dati che il nostro archivio non sa produrre. Sono la
+          **fotografia del momento in cui la gara è stata raccolta** e invecchiano: la card
+          lo dichiara accanto al gruppo.
+
+        La famiglia «forma recente» non viene più pubblicata da FotMob (``_INSIGHT_FORM_RE``):
+        al posto suo va il ricalcolo. Il record delle porte inviolate si pubblica solo se il
+        numero regge al ricalcolo (:meth:`porta_inviolata_record_ok`). I testi non traducibili
+        e i fatti «hype» restano scartati.
         """
-        if self.insights_df.empty or "text" not in self.insights_df.columns:
-            return []
-        rows = self.insights_df[self.insights_df.match_id == match_id]
-        if rows.empty:
-            return []
-        names = {int(home_id): home_name, int(away_id): away_name}
         out: list[dict[str, Any]] = []
-        seen_text: set[str] = set()
-        for r in rows.itertuples(index=False):
-            d = r._asdict()
-            tid = _val(d, "team_id")
-            if tid is None or pd.isna(tid):
-                continue
-            try:
-                team_id = int(tid)
-            except (TypeError, ValueError):
-                continue
-            if team_id not in names:
-                continue
-            raw = _val(d, "text")
-            tr = translate_insight(raw if isinstance(raw, str) else "")
-            if not tr:
-                INSIGHT_SEEN["scartati"] += 1
-                continue
-            body = tr["text"]
-            if _INSIGHT_EN_LEAK.search(body):
-                continue  # rete di sicurezza: mai inglese a schermo
-            if body in seen_text:
-                continue
-            seen_text.add(body)
-            INSIGHT_SEEN["tradotti"] += 1
-            out.append({"team": names[team_id], "team_id": team_id,
-                        "side": "home" if team_id == home_id else "away",
-                        "text": body, "kind": tr["kind"], "priority": tr["priority"]})
+        for tid, nome in ((int(home_id), home_name), (int(away_id), away_name)):
+            out += self.form_insights(tid, kickoff, nome)
+        if not self.insights_df.empty and "text" in self.insights_df.columns:
+            rows = self.insights_df[self.insights_df.match_id == match_id]
+            names = {int(home_id): home_name, int(away_id): away_name}
+            seen_text: set[str] = set()
+            for r in rows.itertuples(index=False):
+                d = r._asdict()
+                tid = _val(d, "team_id")
+                if tid is None or pd.isna(tid):
+                    continue
+                try:
+                    team_id = int(tid)
+                except (TypeError, ValueError):
+                    continue
+                if team_id not in names:
+                    continue
+                raw = _val(d, "text")
+                testo = raw.strip() if isinstance(raw, str) else ""
+                if _INSIGHT_FORM_RE.fullmatch(testo):
+                    INSIGHT_SEEN["forma_ricalcolata"] += 1
+                    continue
+                rec = _INSIGHT_RECORD_CS_RE.fullmatch(testo)
+                if rec and not self.porta_inviolata_record_ok(team_id, kickoff, int(rec.group(1)),
+                                                              league_id):
+                    INSIGHT_SEEN["record_rifiutati"] += 1
+                    continue
+                tr = translate_insight(testo)
+                if not tr:
+                    INSIGHT_SEEN["scartati"] += 1
+                    continue
+                body = tr["text"]
+                if _INSIGHT_EN_LEAK.search(body):
+                    continue  # rete di sicurezza: mai inglese a schermo
+                if body in seen_text:
+                    continue
+                seen_text.add(body)
+                INSIGHT_SEEN["tradotti"] += 1
+                out.append({"team": names[team_id], "team_id": team_id,
+                            "side": "home" if team_id == home_id else "away",
+                            "text": body, "kind": tr["kind"], "priority": tr["priority"],
+                            "source": "fotmob"})
         return select_insights(out, n=n)
 
     def h2h_stats(self, match_id: int, home_id: int, away_id: int, kickoff: pd.Timestamp,
@@ -4378,7 +4522,14 @@ class MatchAnalysis:
         }
 
     def clash_radar(self, home_name: str, home_id: int, away_name: str, away_id: int) -> dict[str, Any] | None:
-        """Radar stile 5 metriche normalizzate su lega (P1 audit): attacco, difesa, pressing, deep, set-piece."""
+        """Radar stile 5 metriche normalizzate 0–100 su **ancore fisse** (P1 audit).
+
+        Le ancore sono scelte a mano e dichiarate riga per riga (``helps``): la classifica non
+        è un percentile di lega, quindi 100 significa «estremo alto della scala», non «miglior
+        squadra del campionato» (la vecchia riga lo diceva: docs/57 §8). Un dato mancante resta
+        ``None``: prima diventava un ``50`` neutro, che in pagina è un numero inventato — 80
+        celle su 441 schede (Feyenoord–AZ: pressing e profondità n.d. in tutte e due le colonne).
+        """
         try:
             h_style = self.season_style(home_name, home_id) or {}
             a_style = self.season_style(away_name, away_id) or {}
@@ -4400,20 +4551,20 @@ class MatchAnalysis:
             a_att = a_gf_pg / avg["gf"] if avg["gf"] else 1
             h_def_ratio = h_ga_pg / avg["ga"] if avg["ga"] and h_ga_pg is not None else 1
             a_def_ratio = a_ga_pg / avg["ga"] if avg["ga"] and a_ga_pg is not None else 1
-            # normalizzazione 0-100: attacco 0.5→0, 1.5→100
+            # normalizzazione 0–100 su ancore fisse: attacco 0.5→0, 1.5→100
             def norm_att(r): return max(0, min(100, (r - 0.5) / 1.0 * 100))
             def norm_def(r): return max(0, min(100, (1.5 - r) / 1.0 * 100))  # invertito: meno subiti meglio
-            # PPDA: 8→100, 20→0
+            # PPDA: 8→100, 20→0 (n.d. resta n.d.: mai un 50 neutro)
             def norm_ppda(v):
-                if v is None: return 50
+                if v is None: return None
                 return max(0, min(100, (20 - v) / 12 * 100))
             # deep: 2→0, 10→100
             def norm_deep(v):
-                if v is None: return 50
+                if v is None: return None
                 return max(0, min(100, (v - 2) / 8 * 100))
             # set-piece quota: 10%→0, 60%→100
             def norm_set(v):
-                if v is None: return 50
+                if v is None: return None
                 return max(0, min(100, (v - 10) / 50 * 100))
             h_ppda = h_style.get("ppda"); a_ppda = a_style.get("ppda")
             h_deep = h_style.get("deep"); a_deep = a_style.get("deep")
@@ -4426,7 +4577,15 @@ class MatchAnalysis:
             labels = ["Attacco × media", "Difesa × media (inv)", "Pressing PPDA (inv)", "Profondità", "Palle inattive %"]
             h_vals = [norm_att(h_att), norm_def(h_def_ratio), norm_ppda(h_ppda), norm_deep(h_deep), norm_set(h_set)]
             a_vals = [norm_att(a_att), norm_def(a_def_ratio), norm_ppda(a_ppda), norm_deep(a_deep), norm_set(a_set)]
-            return {"labels": labels, "home": h_vals, "away": a_vals,
+            # ogni riga dichiara la sua ancora e il verso: la scala è fissa, non un percentile
+            helps = [
+                "Rapporto fra gol fatti a gara e media gol della lega: ancora 0,5×→0 e 1,5×→100 (più alto = più prolifico)",
+                "Rapporto fra gol subiti a gara e media gol subiti della lega, invertito: 1,5×→0 e 0,5×→100 (più alto = subisce meno)",
+                "PPDA (Understat) invertito: 8→100 e 20→0 (più alto = pressing più alto)",
+                "Passaggi profondi a gara (Understat): 2→0 e 10→100 (più alto = arriva più vicino all'area)",
+                "Quota degli xG creati da palle inattive (FotMob): 10%→0 e 60%→100 — più alta = più dipendenza dalle palle inattive, non un giudizio di qualità",
+            ]
+            return {"labels": labels, "helps": helps, "home": h_vals, "away": a_vals,
                     "home_raw": {"att": h_att, "def": h_def_ratio, "ppda": h_ppda, "deep": h_deep, "set": h_set},
                     "away_raw": {"att": a_att, "def": a_def_ratio, "ppda": a_ppda, "deep": a_deep, "set": a_set}}
         except Exception:
@@ -4746,12 +4905,12 @@ class MatchAnalysis:
                 exp_w = h if hx > ax + 0.5 else a if ax > hx + 0.5 else None
                 real_w = h if hg > ag else a if ag > hg else None
                 if exp_w and real_w and exp_w != real_w:
-                    s.append(f"Risultato contro il flusso di gioco: xG {_f(hx)}-{_f(ax)} a favore di {exp_w}, "
+                    s.append(f"Risultato contro il flusso di gioco: xG {_f(hx)}–{_f(ax)} a favore di {exp_w}, "
                              f"ma ha vinto {real_w}.")
                 elif exp_w is None and real_w:
-                    s.append(f"Gara equilibrata negli xG ({_f(hx)}-{_f(ax)}): {real_w} ha fatto la differenza nei dettagli.")
+                    s.append(f"Gara equilibrata negli xG ({_f(hx)}–{_f(ax)}): {real_w} ha fatto la differenza nei dettagli.")
                 else:
-                    s.append(f"Risultato coerente con gli xG ({_f(hx)}-{_f(ax)}).")
+                    s.append(f"Risultato coerente con gli xG ({_f(hx)}–{_f(ax)}).")
             if p and hg is not None and ag is not None:
                 ph = p["p_home"] if hg > ag else p["p_draw"] if hg == ag else p["p_away"]
                 s.append(f"Il modello assegnava {_pct(ph)} all'esito verificatosi"
@@ -4819,7 +4978,8 @@ class MatchAnalysis:
             "home_key_players": self.team_key_players(home_id),
             "away_key_players": self.team_key_players(away_id),
             "insights": (self.match_insights(match_id, home_id, away_id,
-                                             f["home_name"], f["away_name"], n=5)
+                                             f["home_name"], f["away_name"], kickoff, n=5,
+                                             league_id=f.get("league_id"))
                          if status != "finished" else []),
             "home_arrival": self.arrival_trend(f["home_name"], home_id) if status != "finished" else None,
             "away_arrival": self.arrival_trend(f["away_name"], away_id) if status != "finished" else None,
