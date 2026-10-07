@@ -1044,7 +1044,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # `it_plural` — 0 match su index/prossime, il controllo sulle liste era morto. Ora rilegge
     # la chip vera (etichetta «Indisponibili», come la card di destinazione).
     inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?class="fact-label">Indisponibili'
-                        r'</span><span>([^<]*?) (\d+) assenti? · ([^<]*?) (\d+) assenti?', re.DOTALL)
+                        r'</span><span>([^<]*?) (\d+) assent[ei] · ([^<]*?) (\d+) assent[ei]', re.DOTALL)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
     un_count: dict[tuple[int, int], int] = {}
     if not lineup.empty:
@@ -3187,7 +3187,8 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
       vecchie: il ramo FotMob prendeva le 6 più vecchie, docs/58 D1) — oltre al confronto
       col ricalcolo, un controllo indipendente vieta gare con xG più recenti della finestra
       mostrata, per entrambe le fonti;
-    - **tendenza**: i due numeri e il verdetto sono rifatti dagli xG mostrati in pagina;
+    - **tendenza**: i due numeri e il verdetto sono rifatti dai valori pieni del ricalcolo
+      (la soglia è quella stampata in pagina);
     - **classifica voti**: «Per media voto di stagione» è la top-3 per media dei voti gara
       sopra la soglia di minutaggio (docs/58 D5: prima usciva su 4 schede su 66) e la soglia
       stampata è quella del codice;
@@ -3327,7 +3328,9 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if any(d > shown_max for d in fresche):
                     fails.append(f"{pg.name}: {tnome}: finestra «Come arrivano» non fresca "
                                  "(gare con xG più recenti fuori dalla tabella)")
-                # tendenza rifatta dagli xG mostrati
+                # tendenza rifatta dai valori pieni del ricalcolo: le medie in pagina sono
+                # arrotondate una sola volta, rifarle dai mostrati accumulerebbe errori (3 casi
+                # oltre 0,005 il 2026-10-07); il verdetto riusa la soglia stampata in pagina
                 if len(mostrate) == 6:
                     m = trend_re.search(col)
                     checks += 1
@@ -3335,13 +3338,15 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                         fails.append(f"{pg.name}: {tnome}: 6 righe senza frase di tendenza")
                     else:
                         checks += 1
-                        xv = [num(r[6]) for r in mostrate]
+                        xv = [riga["xg"] for riga in atteso["rows"]]
                         rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / 3
-                        want = ("in crescita" if rec - prima > 0.15
-                                else ("in calo" if rec - prima < -0.15 else "stabile"))
-                        if (m.group(1) != want or abs(num(m.group(2)) - round(rec, 2)) > 0.005
+                        soglia = num(m.group(4))
+                        want = ("in crescita" if rec - prima > soglia
+                                else ("in calo" if rec - prima < -soglia else "stabile"))
+                        if (m.group(1) != want or atteso["trend"] != want
+                                or abs(num(m.group(2)) - round(rec, 2)) > 0.005
                                 or abs(num(m.group(3)) - round(prima, 2)) > 0.005
-                                or abs(num(m.group(4)) - 0.15) > 1e-9):
+                                or abs(soglia - 0.15) > 1e-9):
                             fails.append(f"{pg.name}: {tnome}: tendenza non ricalcolabile "
                                          f"({m.group(1)} {m.group(2)}/{m.group(3)})")
         # ---- [43b] I giocatori che decidono ----
