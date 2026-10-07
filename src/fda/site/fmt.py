@@ -134,15 +134,19 @@ def plural_it(singular: str) -> str:
     return singular            # invariabili: gol, assist, città
 
 
-def it_plural(v, singular: str, plural: str | None = None) -> str:
+def it_plural(v, singular: str, plural: str | None = None, *, migliaia: bool = False) -> str:
     """Contatore + nome concordato: 1 → '1 gara', 3 → '3 gare'.
 
     Serve perché a schermo comparivano «1 gare», «1 vittorie», «1 pareggi», «1 tiri»
     (1098 occorrenze su 1098 pagine, audit 2026-09-12). ``plural`` va passato solo per le
     forme irregolari.
+
+    Con ``migliaia=True`` il numero resta col separatore delle migliaia («5.791 gare»): la
+    concordanza non deve costare il separatore che ``int_it`` garantisce altrove nel sito.
     """
     n = int(float(v or 0))
-    return f"{n} {singular if n == 1 else (plural or plural_it(singular))}"
+    num = int_it(n) if migliaia else str(n)
+    return f"{num} {singular if n == 1 else (plural or plural_it(singular))}"
 
 
 def or_dash(v) -> str:

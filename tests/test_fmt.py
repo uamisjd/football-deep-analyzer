@@ -149,3 +149,12 @@ def test_decimali_it_allineata_al_gate_di_verify_site():
     for testo in ("previsione per 45.48,9.12", "xG 1.69", "84.594 righe", "v1.5"):
         assert bool(vs.DECIMAL_POINT.search(testo)) == bool(_DECIMALE_PUNTO.search(testo))
         assert not re.search(vs.DECIMAL_POINT, decimali_it(testo)), testo
+
+
+@pytest.mark.parametrize("v,expected", [(5791, "5.791 gare"), (1234, "1.234 gare"), (1, "1 gara"),
+                                        (None, "0 gare"), (0, "0 gare")])
+def test_it_plural_con_separatore_migliaia(v, expected):
+    """La concordanza non deve costare il separatore: «5.791 gare», non «5791 gare»."""
+    from fda.site.fmt import it_plural
+
+    assert it_plural(v, "gara", migliaia=True) == expected

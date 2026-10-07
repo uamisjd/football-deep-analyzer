@@ -1615,12 +1615,17 @@ class MatchAnalysis:
                         fattori.append({
                             "icon": "🏥",
                             "label": f"Infermeria {tname}",
-                            "home": f"{ab['n']} assenti" if side=="home" else "—",
-                            "away": f"{ab['n']} assenti" if side=="away" else "—",
-                            "delta": f"{starters} {'titolare' if starters==1 else 'titolari'}" if starters else f"{ab['n']} fuori",
-                            "impact": f"-{_f(lost,1)} xG+xA/90" if lost else f"{ab['n']} assenti",
+                            # `it_plural` su tutte e tre le occorrenze: con un solo assente la
+                            # card pubblicava «1 assenti» e il gate di concordanza di
+                            # `verify_site` fermava il run (caso reale 07/10/2026, run
+                            # 37612264587, partite/5749692.html — primo build dopo nove giorni
+                            # di sito fermo, quindi il caso non si era mai presentato prima).
+                            "home": it_plural(ab["n"], "assente") if side=="home" else "—",
+                            "away": it_plural(ab["n"], "assente") if side=="away" else "—",
+                            "delta": it_plural(starters, "titolare", "titolari") if starters else f"{ab['n']} fuori",
+                            "impact": f"-{_f(lost,1)} xG+xA/90" if lost else it_plural(ab["n"], "assente"),
                             "tone": tone,
-                            "desc": f"{tname}: {ab['n']} fuori, {starters} {'titolare abituale' if starters==1 else 'titolari abituali'}, {_f(lost,2)} xG+xA/90 in meno — riduce λ di ~{_f(lost*0.6,2)} gol (stima)"
+                            "desc": f"{tname}: {ab['n']} fuori, {it_plural(starters, 'titolare abituale', 'titolari abituali')}, {_f(lost,2)} xG+xA/90 in meno — riduce λ di ~{_f(lost*0.6,2)} gol (stima)"
                         })
         except Exception:
             pass
@@ -1636,10 +1641,10 @@ class MatchAnalysis:
                             "label": f"Riposo {tname}",
                             "home": f"{rest} gg" if side=="home" else "—",
                             "away": f"{rest} gg" if side=="away" else "—",
-                            "delta": f"{rest} giorni",
+                            "delta": it_plural(rest, "giorno"),
                             "impact": "-5% energia",
                             "tone": tone,
-                            "desc": f"{tname} gioca dopo {rest} giorni — riposo corto ≤4 gg aumenta rischio infortunio muscolare RR 1,32 (UEFA study) e riduce creazione ~5-8%"
+                            "desc": f"{tname} gioca dopo {it_plural(rest, 'giorno')} — riposo corto ≤4 gg aumenta rischio infortunio muscolare RR 1,32 (UEFA study) e riduce creazione ~5-8%"
                         })
                     elif rest >= 7:
                         tone = "good" if side=="home" else "bad"
@@ -1648,10 +1653,10 @@ class MatchAnalysis:
                             "label": f"Riposo {tname}",
                             "home": f"{rest} gg" if side=="home" else "—",
                             "away": f"{rest} gg" if side=="away" else "—",
-                            "delta": f"{rest} giorni",
+                            "delta": it_plural(rest, "giorno"),
                             "impact": "+ampio",
                             "tone": tone,
-                            "desc": f"{tname} con {rest} giorni di riposo — recupero completo, vantaggio su pressing"
+                            "desc": f"{tname} con {it_plural(rest, 'giorno')} di riposo — recupero completo, vantaggio su pressing"
                         })
         except Exception:
             pass
@@ -1720,7 +1725,7 @@ class MatchAnalysis:
                         "home": f"ξ {xi_s}" if xi is not None else "—",
                         "away": f"λ×{sc_s}" if scale is not None else "—",
                         "delta": prediction.get("model_version",""),
-                        "impact": f"RPS 0,20 tipico",
+                        "impact": "RPS 0,20 tipico",
                         "tone": "neutral",
                         "desc": f"Dixon-Coles tilt-0,4 + Elo (70/30), ξ per lega {xi_s} (time decay), λ×{sc_s} calibrata su {nfit_s} gare fuori campione — bias gol {rr_s}→{rd_s}"
                     })

@@ -925,3 +925,33 @@ def test_elenco_it_mette_la_congiunzione_prima_dell_ultimo_nome():
     assert _elenco_it(["A", "B"]) == "A e B"
     assert _elenco_it(["A", "B", "C"]) == "A, B e C"
     assert _elenco_it([]) == ""
+
+
+def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
+    """«1 assente», mai «1 assenti»: la concordanza è un gate, non un dettaglio.
+
+    Caso reale del 07/10/2026 (run `37612264587`, il primo build dopo nove giorni di sito
+    fermo): `partite/5749692.html` pubblicava «1 assenti» nella card «Fattori che spostano la
+    partita» e `verify_site` fermava il run prima del commit dei dati e del deploy. La riga
+    usava `f"{ab['n']} assenti"` senza concordare; il template dell'elenco partite usava già
+    `it_plural('assente')`, quindi lo stesso dato era scritto bene in un posto e male
+    nell'altro.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    ma = MatchAnalysis(_store(tmp_path))
+    monkeypatch.setattr(ma, "absences_weight",
+                        lambda match_id, team_id: {"n": 1, "starters_out": 1,
+                                                   "contrib_lost_p90": 0.0, "players": []})
+    out = ma.fattori_chiave(100, 10, "Alpha", 20, "Beta", KICK.to_pydatetime(), None)
+    righe = [r for r in out["rows"] if r["icon"] == "🏥"]
+    assert righe, "nessuna riga di infermeria generata: il test non sta provando nulla"
+    testo = " ".join(str(r[k]) for r in righe for k in ("home", "away", "delta", "impact", "desc"))
+    assert "1 assente" in testo and "1 assenti" not in testo
+
+    p = Path(__file__).resolve().parents[1] / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site_oggi", p)
+    vs = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(vs)
+    assert not vs.AGREEMENT.search(testo), testo
