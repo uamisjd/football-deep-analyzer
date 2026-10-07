@@ -118,6 +118,35 @@ def test_verify_site_content_checks(tmp_path):
     assert any("inglese" in k for k in kinds)
 
 
+def test_verify_site_concordanza_numero_articolo_nome(tmp_path):
+    """«2 i titoli», mai: l'articolo fra numero e nome schermava il gate (docs/53 §6.2).
+
+    Caso reale del 07/10/2026: la card «Vita del club» pubblicava «2 i titoli più
+    vecchi guardati» (17 schede) e «1 i titolo più vecchio guardato» (3 schede). Il
+    ramo «1 + plurale» non mordeva perché fra «1» e il nome c'era l'articolo «i».
+    """
+    vs = _site_module()
+    site = tmp_path / "site"
+    site.mkdir()
+    # struttura vera della card: l'imbuto è testo nostro (ricontrollato), i titoli
+    # della stampa restano citazioni verbatim (escluse: «1 gare» lì dentro non morde)
+    (site / "ok.html").write_text(
+        '<div id="notizie">'
+        '<p class="small mut imbuto">(2 titoli più vecchi guardati, oltre la finestra)</p>'
+        '<p class="small mut imbuto">(1 titolo più vecchio guardato, oltre la finestra)</p>'
+        '<ul class="news-list"><li><a href="https://esempio.invalid/x">1 gare strane</a></li></ul>'
+        "</div>", encoding="utf-8")
+    fails, pages = vs.check_pages(site)
+    assert pages == 1 and fails == [], fails
+    (site / "rotta.html").write_text(
+        '<div id="notizie">'
+        '<p class="small mut imbuto">(2 i titoli più vecchi guardati, oltre la finestra)</p>'
+        "</div>", encoding="utf-8")
+    fails, pages = vs.check_pages(site)
+    kinds = {f.split(": ", 1)[1] for f in fails if f.startswith("rotta.html")}
+    assert any("concordanza '2 i titoli'" in k for k in kinds), kinds
+
+
 def test_verify_site_accepts_existing_fragment_and_decimal_plural(tmp_path):
     """Le ancore della jump nav sono link validi; 3,1 gialli non è una concordanza errata."""
     vs = _site_module()

@@ -137,8 +137,17 @@ ENGLISH = re.compile(
 # Misurato sull'estensione: 81 occorrenze intercettate, 0 falsi positivi. Il verso opposto
 # («2 punto») NON è presidiato: l'unico candidato trovato era «Schalke 04 giocatore»,
 # nome di squadra seguito da un'intestazione di tabella — un falso positivo certo.
+# Secondo ramo (07/10/2026, docs/53 §6.2): «N i <plurale>» — «2 i titoli più vecchi
+# guardati» in 17 schede (e «1 i titolo» in 3, al singolare). L'articolo vagante
+# schermava il primo ramo («1» non era seguito direttamente dal nome). Misurato sul
+# sito di oggi (4.205 pagine): il ramo intercetta le 17, 0 falsi positivi — «N i
+# <parola>» non occorre in nessun altro testo. Il singolare «1 i titolo» sparisce col
+# fix del template e resta verificato dalla misura a sito intero, non dalla regex.
 AGREEMENT = re.compile(
     r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
+    r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
+    r"giocatori|campionati|cartellini|allenatori)\b"
+    r"|(?<![\d,])\b\d+ i (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
     r"giocatori|campionati|cartellini|allenatori)\b")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
@@ -165,7 +174,17 @@ class Text(HTMLParser):
     lingua. Risultato misurato: «4 punti su 9, 1.33 a gara» (decimale col punto, 52
     occorrenze su 29 schede) passava indisturbato perché nessun controllo lo leggeva.
     Gli elementi marcati ``sapere`` sono quindi riammessi anche dentro la card.
+
+    **Eccezione ``class="imbuto"`` (07/10/2026, docs/53 §6.2).** Stessa storia un mese
+    dopo: i tre paragrafi generati dell'imbuto per squadra (conteggi «esaminati /
+    pubblicati / scartati / troppo vecchi») vivono nella card ma non citano nessuno —
+    e pubblicavano «2 i titoli più vecchi guardati» in 17 schede senza che il gate li
+    leggesse. I titoli veri della stampa (``ul.news-list`` e le righe «in riserva»)
+    restano esclusi: sono citazioni verbatim.
     """
+
+    #: Classi riammesse nei controlli anche dentro la card delle notizie: solo testo nostro.
+    CLASSI_NOSTRE = ("sapere", "imbuto")
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -175,8 +194,8 @@ class Text(HTMLParser):
         self.skip = 0
         self.news_tag: str | None = None
         self.news_depth = 0
-        self.sapere_tag: str | None = None
-        self.sapere_depth = 0
+        self.nostro_tag: str | None = None
+        self.nostro_depth = 0
         self.readable_attrs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
@@ -186,12 +205,13 @@ class Text(HTMLParser):
             self.news_tag, self.news_depth = tag, 1
         elif self.news_tag == tag:
             self.news_depth += 1
-        # «Da sapere»: testo nostro dentro la card delle notizie → va ricontrollato (vedi docstring)
-        if self.sapere_depth == 0 and any(
-                k == "class" and v and "sapere" in str(v).split() for k, v in attrs):
-            self.sapere_tag, self.sapere_depth = tag, 1
-        elif self.sapere_tag == tag:
-            self.sapere_depth += 1
+        # Testo nostro dentro la card delle notizie → va ricontrollato (vedi docstring)
+        if self.nostro_depth == 0 and any(
+                k == "class" and v and any(c in str(v).split() for c in self.CLASSI_NOSTRE)
+                for k, v in attrs):
+            self.nostro_tag, self.nostro_depth = tag, 1
+        elif self.nostro_tag == tag:
+            self.nostro_depth += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
         for k, v in attrs:
@@ -199,7 +219,7 @@ class Text(HTMLParser):
                 self.ids.add(v)
             if tag == "a" and k == "href" and v:
                 self.hrefs.append(v)
-            if k in ATTR_LEGGIBILI and v and (self.news_depth == 0 or self.sapere_depth > 0):
+            if k in ATTR_LEGGIBILI and v and (self.news_depth == 0 or self.nostro_depth > 0):
                 self.readable_attrs.append(str(v))
 
     def handle_endtag(self, tag: str) -> None:
@@ -209,13 +229,13 @@ class Text(HTMLParser):
             self.news_depth -= 1
             if self.news_depth <= 0:
                 self.news_tag, self.news_depth = None, 0
-        if self.sapere_tag == tag:
-            self.sapere_depth -= 1
-            if self.sapere_depth <= 0:
-                self.sapere_tag, self.sapere_depth = None, 0
+        if self.nostro_tag == tag:
+            self.nostro_depth -= 1
+            if self.nostro_depth <= 0:
+                self.nostro_tag, self.nostro_depth = None, 0
 
     def handle_data(self, data: str) -> None:
-        if not self.skip and (self.news_depth == 0 or self.sapere_depth > 0):
+        if not self.skip and (self.news_depth == 0 or self.nostro_depth > 0):
             self.parts.append(data)
 
 
@@ -1949,7 +1969,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         if riga not in testo_card:
                             fails.append(f"{pg.name}: gol nel finale di {tname[:20]} "
                                          f"assenti o diversi ({tardi}/{totale})")
-        blocchi = re.split(r'<p style="margin:12px 0 6px"><b>', card)[1:]
+        # `class="imbuto"` (docs/53 §6.2) marca l'intestazione come testo nostro da
+        # ricontrollare: il selettore accetta entrambe le forme, con e senza classe.
+        blocchi = re.split(r'<p (?:class="[^"]*" )?style="margin:12px 0 6px"><b>', card)[1:]
         if len(blocchi) != 2:
             fails.append(f"{pg.name}: card con {len(blocchi)} colonne invece di 2")
             continue

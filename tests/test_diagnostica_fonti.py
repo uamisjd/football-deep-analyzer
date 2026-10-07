@@ -142,7 +142,8 @@ class _FakeNews:
         self.http = _FakeHttp(RSS_VUOTO.encode(), start=start)
 
     def team_news(self, team_id, team_name, diag=None, country=None):
-        # ``country`` esiste nella firma del client vero (edizione locale, docs/24 §3.5):
+        # ``country`` esiste nella firma del client vero (oggi solo edizione italiana,
+        # docs/53 §3.3):
         # il finto risponde lo stesso feed perché qui interessa la contabilità.
         raw = self.http.get_bytes(GOOGLE_RSS, params=google_news_params(team_name), ttl_h=12.0,
                                   extra_headers={"Accept": "application/rss+xml"})
@@ -153,7 +154,7 @@ class _FakeNews:
         return json.loads(client.get_bytes(ESPN_NEWS.format(code=espn_code), ttl_h=12.0))
 
     def direct_feed_raw(self, url: str) -> bytes:
-        """Feed RSS diretti della stampa italiana (ANSA, Sky Sport, Sportmediaset).
+        """Feed RSS diretti della stampa italiana (ANSA, Sky Sport).
 
         Senza questo metodo il collettore sollevava ``AttributeError`` su ognuno dei tre
         feed a ogni test: ``_safe`` lo catturava, quindi la suite restava verde mentre il
@@ -383,3 +384,41 @@ def test_guasto_vero_delle_notizie_non_mascherato_da_un_feed_morto():
     riga = {r["source"]: r for r in rep.as_status_rows()}["news:NEWS"]
     assert riga["warn"] is False, "un guasto vero non è un degrado coperto da un'altra fonte"
     assert riga["ok"] is False
+
+
+# ---- 7) il filtro leghe vale anche per le squadre, non solo per ESPN --------------------------
+def test_collect_news_rispetta_il_filtro_leghe_sulle_squadre(tmp_path):
+    """`fda daily ITA1` raccoglieva le notizie di tutte le 132 squadre (docs/53 §3.2).
+
+    `keys` filtrava solo il ciclo ESPN più sotto: qui due squadre italiane e due
+    inglesi, con filtro ITA1 si interroga solo Google News per le italiane.
+    """
+    from fda.config import league as _league
+
+    st = Store(tmp_path / "processed")
+    ita1, eng1 = _league("ITA1"), _league("ENG1")
+    st.write("fixtures", pd.DataFrame([
+        {"league_id": ita1.fotmob_id, "home_id": 1, "home_name": "Roma",
+         "away_id": 2, "away_name": "Inter",
+         "utc_kickoff": pd.Timestamp("2026-09-20 18:00", tz="UTC"), "status": "scheduled"},
+        {"league_id": ita1.fotmob_id, "home_id": 3, "home_name": "Torino",
+         "away_id": 4, "away_name": "Como",
+         "utc_kickoff": pd.Timestamp("2026-09-20 20:45", tz="UTC"), "status": "scheduled"},
+        {"league_id": eng1.fotmob_id, "home_id": 5, "home_name": "Arsenal",
+         "away_id": 6, "away_name": "Chelsea",
+         "utc_kickoff": pd.Timestamp("2026-09-20 18:00", tz="UTC"), "status": "scheduled"},
+        {"league_id": eng1.fotmob_id, "home_id": 7, "home_name": "Brighton",
+         "away_id": 8, "away_name": "Leeds",
+         "utc_kickoff": pd.Timestamp("2026-09-20 20:45", tz="UTC"), "status": "scheduled"},
+    ]))
+
+    chieste: list[str] = []
+
+    class _RegNews(_FakeNews):
+        def team_news(self, team_id, team_name, diag=None, country=None):
+            chieste.append(team_name)
+            return super().team_news(team_id, team_name, diag, country)
+
+    collect_news(st, keys=["ITA1"], news=_RegNews(), espn=_FakeEspn())
+    assert sorted(chieste) == ["Roma", "Torino"], chieste
+    st.close()
