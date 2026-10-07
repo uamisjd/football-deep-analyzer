@@ -212,6 +212,21 @@ python -m venv .venv && .venv/bin/pip install -e '.[dev]'
 
 ---
 
+## 5-bis. Il merge e la prova in produzione (7/10, 19:27–19:39 UTC)
+
+**PR #89 mergiata su ordine esplicito dell'utente** (`docs/13` §9.20): merge commit **`6b3518d`**,
+`merged_at` 19:27:49Z. Il push del merge tocca `src/`, `tests/` e `scripts/` — non coperti da
+`paths-ignore` — quindi **ha attivato `daily` e `tests`**, entrambi **verdi**: `tests` run
+`37674673264`, `daily` run `37674673310` (run + deploy Pages, 19:27:52 → 19:39:22Z), dati committati
+in **`c6b214c`**, 0 issue aperte.
+
+**La prova che conta, sulla tabella committata dal run:** `data/processed/transfers.parquet` passa
+da **11.624 a 4.701 righe** (−60%), con **4.644 movimenti distinti** (squadra+direzione+giocatore+
+giorno) **identici prima e dopo**. Cioè: la correzione dell'upsert non si limita a nascondere i
+duplicati in pagina, **impedisce che si accumulino** nelle prossime raccolte — e la tabella ora
+contiene una riga per movimento più i 57 gruppi in cui la fonte scrive la controparte in due modi
+diversi (§6). Le correzioni sono online nelle schede pubblicate dal `daily` delle 19:38.
+
 ## 6. Cosa resta aperto (dichiarato, non taciuto)
 
 * **Tre fusioni ambigue nel mercato.** Su 4.644 gruppi (stessa squadra, direzione, giocatore,
