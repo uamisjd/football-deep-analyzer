@@ -101,6 +101,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 2. **Coda non bloccante:** (a) audit della card di fallback «Vita del club» per le ~10 squadre senza notizie recenti (`docs/53` §6.2); (b) storico `dc_xg`, in attesa di accumulo dati (`docs/53` §6.4). `prossime.html` è a 531.815 byte su un tetto di 1,8 MB: la paginazione non è urgente.
 3. **Decisioni chiuse il 7/10** (`docs/53` §7): D1 niente watchdog di freschezza, D2 gate tutti bloccanti, D3 nessun tetto giornaliero aggregato (restano i limiti per run: FotMob 600, notizie 200), D4 niente Lighthouse. Non riproporle senza nuovi motivi misurati; non cambiare frequenza dei run o budget senza una nuova decisione dell'utente.
 4. **Modelli:** nessun cambio di modello di produzione è in coda immediata; ogni proposta futura segue la griglia pre-registrata e il protocollo in `docs/00` e `docs/19`.
+5. **Coda nuova (7/10 notte, `docs/55` §7) — schede delle prossime partite:** due difetti misurati da correggere (**P0 Mercato ×1,8** con dedup normalizzata + invariante [39] e test; **P0 meteo** con soglie condivise fra testo e codice + [40]), una **decisione utente sull'EPV** (A riga nei Fattori — raccomandata, B rifatto col laboratorio, C rimosso) e quattro migliorie minori M1–M4 (xPTS in un posto solo, riga «Modello e calibrazione» in parole, nota «+N fattori sotto soglia», «Fatti» nell'indice). Nessun lavoro è partito: si aspetta la risposta dell'utente a `docs/55` §8.
 
 ## 4. Cosa fare appena entri (checklist aggiornata)
 
@@ -119,7 +120,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (63 file al 7/10/2026 sera: **54** documenti numerati — il 09 non è mai esistito — + briefing + `STATO.md` + **4** archivi + 2 audit datati + `_audit_modelli.json`) | |
+| **`docs/` — indice completo** (64 file al 7/10/2026 notte: **55** documenti numerati — il 09 non è mai esistito — + briefing + `STATO.md` + **4** archivi + 2 audit datati + `_audit_modelli.json`) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-09-17.md` | Giri **22-26** (2026-09-16/17): backoff e scoreboard ESPN, numeri pubblicati, stime stabilizzate, «Vita del club». |
@@ -179,6 +180,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/52_verifica_stato_costi_e_gate_2026-10-07.md` | Verifica post-merge #82/#83, daily #217/#218, gate locali, limiti delle fonti e misure delle cache (aggiornata il 7/10 sera). |
 | `docs/53_revisione_totale_qualita_quantita_2026-10-07.md` | **Revisione totale del 7/10** (sessione `arena/336bc217`): salute della pipeline, quantità dei contenuti misurata, 4 difetti trovati e corretti (footer, filtro leghe notizie, commenti, «N i titoli»), decisioni D1–D4 dell'utente, lotto della PR #85 e gate finali. |
 | `docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md` | **Perché la PR #84 è in conflitto e superata**: cronologia #83–#86, conflitti misurati con `git merge-tree`, cosa mancava su `main` (deroga #83) e cosa porta la PR sostitutiva. |
+| `docs/55_revisione_schede_prossime_partite_2026-10-07.md` | **Revisione delle schede delle prossime partite, sezione per sezione** (le 66 pre-partita del 9–11/10, tutto misurato il 7/10): cosa deve fare ogni sezione e verdetto; i tre difetti veri — **Mercato ×1,8** (874 righe duplicate, chiave dell'upsert che non intercetta ora-diversa e diacritici), **EPV** (indice che contraddice il modello in 20/66) e **meteo** (soglie testo≠codice); le migliorie M1–M6 e la coda §7 con le domande §8. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |

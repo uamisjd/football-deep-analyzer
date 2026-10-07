@@ -27,8 +27,9 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/52_verifica_stato_costi_e_gate_2026-10-07.md`](docs/52_verifica_stato_costi_e_gate_2026-10-07.md) — gate ripetuti, limiti/costi delle fonti e misure delle cache.
 - [`docs/53_revisione_totale_qualita_quantita_2026-10-07.md`](docs/53_revisione_totale_qualita_quantita_2026-10-07.md) — **revisione più recente**: salute della pipeline, quantità dei contenuti e decisioni dell'utente.
 - [`docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md`](docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md) — perché la PR #84 è in conflitto e superata, e cosa è stato registrato al suo posto.
+- [`docs/55_revisione_schede_prossime_partite_2026-10-07.md`](docs/55_revisione_schede_prossime_partite_2026-10-07.md) — **revisione più recente**: le sezioni delle schede delle prossime partite, sezione per sezione, con i tre difetti misurati (Mercato ×1,8, EPV, meteo) e la coda.
 
-> L'**indice completo** dei 63 file di `docs/` (54 documenti numerati + briefing + `STATO.md` + 4 archivi + 2 audit datati + `_audit_modelli.json`) è nel briefing, sezione 6.
+> L'**indice completo** dei 64 file di `docs/` (55 documenti numerati + briefing + `STATO.md` + 4 archivi + 2 audit datati + `_audit_modelli.json`) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 
