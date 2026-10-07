@@ -1395,3 +1395,28 @@ ha rimesso a nuovo **23 testi** (24 sostituiti) — la fotografia FotMob si aggi
 **ricalcolata** a ogni build dai nostri Parquet (invariante [42]: 258 voci nostre · 68 FotMob).
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.22 Merge PR #92 — registrazione del merge #91, solo documenti (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** messaggio di avvio della sessione `arena/18575843` (07/10/2026, 23:1x UTC):
+*«Hai una PR da fondere tu: #92, solo documenti — tests verde, MERGEABLE · CLEAN»* con la frase
+fissa *«👉 Tutto verde: è il momento di fare Merge (PR #92).»*. Verifiche pre-merge eseguite con
+comando, tutte superate: check `test` `success` su `e53d50b` (run `37700026749`, pull_request,
+1m46s), PR `MERGEABLE · CLEAN`, `git status --porcelain` vuoto,
+`git log --oneline origin/main..HEAD` vuoto sul ramo di sessione (la PR #92 vive sul ramo
+`arena/aaa98843-football-deep-analyzer`, con il **solo commit** `e53d50b`, 4 file tutti in
+`docs/**`). Eseguito `gh pr merge 92 --merge`. GitHub conferma: `merged=true`,
+`merged_at=2026-10-07T23:12:34Z`, `merged_by=uamisjd`, merge commit
+**`ed4b1191ff278a223bb31ddeebbc682e10941f6e`**.
+
+**Contenuto (solo documenti, 4 file, +54/−13):** `docs/13` §9.21 (deroga #91) con la catena
+aggiornata, `docs/STATO.md` (giro di registrazione del merge #91, con rotazione A5),
+`docs/STATO_archivio_2026-10-07.md` (il giro del merge #89), `docs/BRIEFING_NUOVA_SESSIONE.md`
+(riga delle ultime PR, lotto aperto con le due coppie in produzione).
+
+**Effetti in produzione: nessun run attivato.** Verificato dopo il merge: nessun `tests`/`daily`
+partito dopo le 23:12:34Z — gli ultimi run restano `37700026749` (check della PR #92),
+`37699054654` (`daily` del push #91) e `37699054427` (`tests` del push #91): entrambi i workflow
+hanno `paths-ignore` su `docs/**`, come atteso per i merge solo-documenti.
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
