@@ -183,7 +183,7 @@
       <h3 style="margin:0 0 8px">{{ name }}</h3>
       {% if a %}
       <div class="tablewrap"><table>
-        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
+        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small" title="Posizione e punti in classifica attuale, non alla data della gara">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
         {% for r in a.rows %}
         <tr>
           <td class="mut small">{{ r.date|it_dt_short }}</td>
@@ -196,7 +196,7 @@
         </tr>
         {% endfor %}
       </table></div>
-      {% if a.spark_xg %}<div style="margin:8px 0 0;display:flex;align-items:end;gap:2px;height:28px" title="Andamento xG creati (gara per gara)">{% for v in a.spark_xg %}<span style="display:inline-block;width:12px;background:var(--accent);border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xG {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xG sparkline</span></div><div style="display:flex;gap:2px;margin:2px 0 0;height:14px" title="Sparkline xGA">{% for v in a.spark_xga %}<span style="display:inline-block;width:12px;background:var(--lose);opacity:.6;border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xGA {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xGA per gara</span></div>{% endif %}
+      {% if a.spark_xg %}<div style="margin:8px 0 0;display:flex;align-items:end;gap:2px;height:28px" title="Andamento xG creati (gara per gara)">{% for v in a.spark_xg %}<span style="display:inline-block;width:12px;background:var(--accent);border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xG {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xG per gara</span></div><div style="display:flex;gap:2px;margin:2px 0 0;height:14px" title="Andamento xGA (gara per gara)">{% for v in a.spark_xga %}<span style="display:inline-block;width:12px;background:var(--lose);opacity:.6;border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xGA {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xGA per gara</span></div>{% endif %}
       {#- P1.2: qui c'era la riga di sintesi (xG/xGA a partita e punti contro xPTS): gli stessi
           numeri stanno nella card della squadra e in «Scontro tattico». Resta la serie gara per
           gara con la tendenza, che è l'unica cosa che questa card può dire bene. -#}
