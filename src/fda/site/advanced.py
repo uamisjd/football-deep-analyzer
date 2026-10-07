@@ -260,11 +260,11 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
                 est = str(pred.get("calibration_estimator") or "")
                 win = pred.get("calibration_window_days")
                 if est and win and not pd.isna(win) and float(win) > 0:
-                    come = f" ({est}, ultimi {_int_it(float(win))} giorni)"
+                    come = f" ({est}, ultimi {_it_plural(int(float(win)), 'giorno')})"
                 elif est:
                     come = f" ({est})"
                 note = (f"λ × {_dec(scale, 2)}{come} stimata su "
-                        f"{_int_it(pred.get('calibration_n_fit'))} gare fuori campione")
+                        f"{_it_plural(pred.get('calibration_n_fit'), 'gara', migliaia=True)} fuori campione")
             except (TypeError, ValueError):
                 note = "correzione storica delle λ"
         _append("Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)", note, pub)

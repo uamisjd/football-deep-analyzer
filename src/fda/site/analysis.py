@@ -1615,10 +1615,15 @@ class MatchAnalysis:
                         fattori.append({
                             "icon": "🏥",
                             "label": f"Infermeria {tname}",
-                            "home": f"{ab['n']} assenti" if side=="home" else "—",
-                            "away": f"{ab['n']} assenti" if side=="away" else "—",
+                            # `it_plural` su tutte e tre le occorrenze: con un solo assente la
+                            # card pubblicava «1 assenti» e il gate di concordanza di
+                            # `verify_site` fermava il run (caso reale 07/10/2026, run
+                            # 37612264587, partite/5749692.html — primo build dopo nove giorni
+                            # di sito fermo, quindi il caso non si era mai presentato prima).
+                            "home": it_plural(ab['n'], 'assente') if side=="home" else "—",
+                            "away": it_plural(ab['n'], 'assente') if side=="away" else "—",
                             "delta": f"{starters} {'titolare' if starters==1 else 'titolari'}" if starters else f"{ab['n']} fuori",
-                            "impact": f"-{_f(lost,1)} xG+xA/90" if lost else f"{ab['n']} assenti",
+                            "impact": f"-{_f(lost,1)} xG+xA/90" if lost else it_plural(ab['n'], 'assente'),
                             "tone": tone,
                             "desc": f"{tname}: {ab['n']} fuori, {starters} {'titolare abituale' if starters==1 else 'titolari abituali'}, {_f(lost,2)} xG+xA/90 in meno — riduce λ di ~{_f(lost*0.6,2)} gol (stima)"
                         })
