@@ -1337,6 +1337,24 @@ class MatchAnalysis:
         cup = cup[keep]
         return pd.concat([fx, cup], ignore_index=True, sort=False)
 
+    def rest_last(self, team_id: int, kickoff: datetime) -> str | None:
+        """Data dell'ultima gara giocata dalla squadra prima di ``kickoff`` («18/09»), o ``None``.
+
+        Sta accanto ai giorni di riposo in «Le due squadre»: un «21 giorni di riposo» senza la
+        data fa pensare a un dato vecchio, mentre la data mostra che è la **sosta** del
+        campionato (l'ultimo turno è stato il 19-20/09 e il prossimo è il 09-11/10 — misurato su
+        due fonti indipendenti, `docs/57` §2). Stessa base di ``rest_days``: calendario di
+        stagione + coppe (`_rest_source`), non la finestra dei dettagli.
+        """
+        src = self._rest_source()
+        if src.empty:
+            return None
+        prev = src[(src.utc_kickoff < kickoff) & (src.status == "finished")
+                   & ((src.home_id == team_id) | (src.away_id == team_id))]
+        if prev.empty:
+            return None
+        return pd.Timestamp(prev.utc_kickoff.max()).strftime("%d/%m")
+
     def rest_cup(self, team_id: int, kickoff: datetime) -> str | None:
         """Nome della coppa se l'ultima gara giocata dalla squadra era europea, altrimenti None."""
         src = self._rest_source()
@@ -4788,6 +4806,8 @@ class MatchAnalysis:
             "away_form_badge": self.form_summary(away_form) if len(away_form) >= 3 else None,
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
             "home_rest_cup": self.rest_cup(home_id, kickoff), "away_rest_cup": self.rest_cup(away_id, kickoff),
+            "home_rest_on": self.rest_last(home_id, kickoff),
+            "away_rest_on": self.rest_last(away_id, kickoff),
             # post-partita: quando si rigioca (campionato + coppe) e con quanto riposo
             "home_next": self.next_commitment(home_id, kickoff) if status == "finished" else None,
             "away_next": self.next_commitment(away_id, kickoff) if status == "finished" else None,

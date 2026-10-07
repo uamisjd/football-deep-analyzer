@@ -263,7 +263,7 @@
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pressing · riposo</div>
         <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">PPDA {% if xg.ppda %}{{ xg.ppda|dec(1) }}{% else %}n.d.{% endif %} <span class="mut small" style="font:600 10px var(--font-body);text-transform:none;letter-spacing:0">{% if xg.ppda %}{% if xg.ppda < 10 %}alto{% elif xg.ppda < 13 %}medio-alto{% elif xg.ppda < 16 %}medio{% else %}basso{% endif %}{% endif %}</span></div>
-        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_cup'] %} · coppe incluse{% elif c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
+        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_on'] and c[side ~ '_rest'] >= 6 %} (ultima gara {{ c[side ~ '_rest_on'] }}){% endif %}{% if c[side ~ '_rest_cup'] %} · coppe incluse{% elif c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
       </div>
     </div>
     {% endif %}

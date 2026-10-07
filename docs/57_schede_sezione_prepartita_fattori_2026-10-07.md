@@ -49,6 +49,10 @@ Gate finali (tutti rifatti da zero dopo l'ultima modifica al sorgente):
 | `resa_375` | 26.424 misure · 0 problemi | **26.424 misure · 0 problemi** |
 | `prematch_sections` | Fattori 10,4% · visibile 21.563 | **Fattori 6,6% · visibile 20.634** |
 
+Riferimenti delle sezioni: `docs/57` §1 (una riga per fattore, invariante **[41]**), §2 (riposo:
+perché 19–23 giorni sono corretti), §3 (meteo), §4–§5 (narrativa e fattori dichiarati), §6
+(rifiniture).
+
 ---
 
 ## 0.1 La stessa scheda, prima e dopo (`partite/5802947.html`, Lens–Lyon)
@@ -142,13 +146,32 @@ dello studio UEFA già citato, RR 1,32) e negli altri casi il fattore è dichiar
 **Misura.** Righe «Riposo»: **132 → 0**; schede che nominano il riposo fuori tabella: **66**;
 schede con la riga: 0 (sul dataset attuale nessuna squadra è sotto i 5 giorni).
 
-**Residuo dichiarato (decisione dell'utente).** I 19–23 giorni non sono un dato della partita ma
-della **finestra di raccolta**: `collect` tiene i dettagli di `[oggi−3, oggi+future]`, quindi
-l'ultima gara *raccolta* è il 20/09/2026 e il riposo risulta di tre settimane su tutte le schede.
-Il numero pubblicato è quello che il progetto ha raccolto, non necessariamente quello vero. Tre
-strade: **(A)** allargare la finestra (più richieste alle fonti), **(B)** dichiarare in pagina che
-il riposo è calcolato sulla finestra raccolta, **(C)** lasciare com'è. Nessuna delle tre è stata
-applicata: cambiare la finestra di raccolta muove anche i costi verso FotMob.
+**Verificato: i 19–23 giorni sono il numero giusto, non un difetto (7/10/2026).** In una prima
+lettura avevo attribuito il valore alla finestra di raccolta (`collect`, `past_days=3`): **era
+sbagliato**, e i dati lo dicono in tre modi.
+
+1. **Il codice legge il calendario di stagione, non la finestra.** `rest_days()` (e `rest_last()`)
+   partono da `_rest_source()` = `fixtures` (tutte le 2.364 partite della stagione, con data e
+   stato) più `cup_fixtures`; la finestra `[oggi−3, oggi+future]` decide **solo quali partite
+   ricevono i dettagli** (formazioni, indisponibili, meteo, arbitro), non quali gare la scheda
+   conosce.
+2. **Due fonti indipendenti dicono la stessa cosa.** Calendario FotMob (`fixtures.parquet`): 375
+   gare finite, l'ultima il **20/09/2026**; 1.989 programmate, la prima il **09/10**. Mirror dei
+   risultati (`history.parquet`, scaricato da un'altra fonte): 212 gare dal 01/09, ultima il
+   **20/09**, e nulla dopo. Anche le coppe si fermano: giornate di Champions/Europa il 07–13/09 e
+   il 14–20/09, poi il **12/10**. Il calendario non ha buchi altrove (61–83 gare a settimana dal
+   17/08 al 20/09, poi 61 dal 05/10): il vuoto di tre settimane è nell'**ordine del calendario**,
+   non nei dati raccolti — è la sosta delle nazionali, come quella del 25/10→16/11.
+3. **Conto rifatto a mano** su `partite/5802947.html` (Lens–Lyon, fischio 09/10): Lens ultima gara
+   **18/09** (Monaco–Lens) → 21 giorni, Lyon **19/09** (Lyon–Rennes) → 20 giorni: sono esattamente
+   i due valori in pagina.
+
+Non c'è quindi niente da correggere nel calcolo, e trattare il riposo come *non fattore* (uguale
+per le due squadre in una sosta) resta giusto. L'unico residuo era **visivo**: «21 giorni di
+riposo · ampio» senza la data fa pensare a un dato vecchio. Il 7/10 la riga della card «Le due
+squadre» è diventata «21 giorni di riposo (ultima gara 18/09) · ampio» — la data compare solo
+quando il riposo è ampio (≥6 giorni), così non appesantisce i casi normali; `rest_last()` legge la
+stessa base di `rest_days()` e ha il suo test.
 
 ---
 
@@ -236,9 +259,9 @@ lascia un fattore non nominato — è esattamente ciò che [41] impone.
 
 ## 7. Aperti, per l'utente
 
-1. **Riposo e finestra di raccolta** (§2): (A) allargare la finestra di `collect`, (B) dichiarare in
-   pagina che il riposo è calcolato sulla finestra raccolta, (C) lasciare com'è. *Consigliata B: non
-   costa richieste e non lascia un numero che sembra del campionato quando è della raccolta.*
+1. ~~Riposo e finestra di raccolta~~ **chiuso**: il numero è corretto (sosta del calendario,
+   verificata su due fonti indipendenti e ricalcolata a mano) e la card «Le due squadre» ora cita
+   anche la data dell'ultima gara. Nessuna modifica a `collect` necessaria.
 2. **I tre tilt** (`absences_tilt`, `rest_tilt`, `market_value_tilt` in `models/predict.py`)
    esistono, sono misurati da `scripts/audit_modelli.py`… e **non sono chiamati da
    `predict_matches()`**: la card «Fattori» descrive, non sposta la previsione. Tre strade: (A)
