@@ -30,7 +30,8 @@ cose a caso, studia bene tutto» (07/10/2026, PR #84).
    su branch diversi dal proprio. La via corretta è una **PR sostitutiva** dal branch di questa
    sessione che porta in `main` il contenuto di #84 ancora valido, aggiornato allo stato di oggi;
    #84 è stata poi **chiusa** (7/10/2026, ore 17:51:32Z) su decisione dell'utente, non mergiata;
-   è quello che fa questa PR sostitutiva, **PR #87** (§3).
+   è quello che fa questa PR sostitutiva, **PR #87** (§3), **fusa alle 17:55:26Z su ordine
+   esplicito dell'utente** (deroga registrata in `docs/13` §9.19).
 
 ## 1. Cronologia degli eventi (tutto verificato via API GitHub, §4)
 
@@ -44,6 +45,7 @@ cose a caso, studia bene tutto» (07/10/2026, PR #84).
 | 17:33:11 | **PR #86 fusa**: `7d3d0ae` (record del merge di #85). Solo documenti → `paths-ignore: docs/**`: **nessun daily nuovo** |
 | dopo le 17:33 | #84 passa a `CONFLICTING` / `DIRTY`: `docs/13` e `STATO.md` sono esattamente i file toccati da #85/#86 |
 | 17:51:32 | **#84 chiusa** su decisione dell'utente, perché superata: il suo contenuto valido è in questa PR (#87) |
+| 17:55:26 | **PR #87 fusa dall'agente in deroga** (ordine esplicito dell'utente): merge commit `01fd0e4`; nessun run attivato su `main` (solo documenti) |
 
 ## 2. Il conflitto, misurato con un comando
 
@@ -91,7 +93,7 @@ I due file in conflitto sono esattamente quelli toccati **sia** da #84 **sia** d
 | Check di #83 | `gh api repos/…/commits/4da7bc3/check-runs` | `test` `success` (14:06:04→14:07:27Z) |
 | Merge di #85/#86 | `gh api repos/…/pulls/85`, `…/pulls/86` | `819630e`, 17:08:41Z · `7d3d0ae`, 17:33:11Z |
 | Daily | `gh run list --workflow=daily.yml` | #218 `37645413601`, #219 `37656416779`, #220 `37656789947`: tutti `success` |
-| Issue/PR aperte | `gh issue list`, `gh pr list --state open` | 0 issue; 1 PR: **#84** (da chiudere) |
+| Issue/PR aperte | `gh issue list`, `gh pr list --state open` | al momento della misura: 0 issue; 1 PR aperta, **#84** — chiusa alle 17:51:32Z perché superata da #87 |
 | Cache Actions | `gh api repos/…/actions/caches` | **16 voci · 3.018.930.552 B (3,02 GB)**; `fda-http-*` 5 voci · 44,1 MB; il resto `setup-python` (11 voci, 235–342 MB, una per branch/hash) |
 | Trigger dei workflow | `daily.yml`, `tests.yml` | entrambi con `paths-ignore: docs/**` → un merge di soli documenti non consuma run né richieste alle fonti |
 
@@ -107,15 +109,19 @@ muove: nei documenti va sempre indicato l'istante della misura.
 - **Nessun merge di #84**: il merge spetta all'utente (regola D). La sua **chiusura** è stata
   eseguita alle 17:51:32Z **su richiesta esplicita dell'utente** («chiudi tu #84 ora»), non di
   iniziativa dell'agente. Tecnicamente, questa sessione **non può** comunque pushare sul branch
-  `arena/e20f049c`.
+  `arena/e20f049c`. Il **merge di questa PR (#87)** è stato eseguito dall'agente alle 17:55:26Z
+  **in deroga esplicita** (ordine dell'utente «Please merge the pull request»), dopo le verifiche
+  pre-merge di regola D; la deroga è registrata in `docs/13` §9.19 e in `docs/STATO.md`.
 - **Nessuna raccolta live, nessuna sonda, nessun daily manuale**: la modifica è solo documentale,
   e i trigger di `daily`/`tests` escludono i push di soli documenti (§4).
 - **Nessuna modifica a codice, dati o workflow**: `git diff --stat` della PR tocca solo `*.md`.
 
 ## Prossimo passo
 
-1. **#84 è chiusa** (7/10/2026, 17:51:32Z, decisione dell'utente perché superata da questa PR):
-   la motivazione e le prove restano in questo documento.
-2. **Merge di questa PR** (solo documenti): non attiva daily né run di test su `main`.
+1. **Fatto — chiusura di #84** (7/10/2026, 17:51:32Z): decisione dell'utente perché superata da
+   questa PR; motivazione e prove restano in questo documento.
+2. **Fatto — merge di questa PR**: #87 fusa alle **17:55:26Z** su ordine esplicito dell'utente
+   (deroga registrata in `docs/13` §9.19), merge commit `01fd0e4`; **nessun** daily né run di test
+   attivato su `main` (solo documenti).
 3. Nessun'altra azione operativa: la coda non bloccante è quella di `docs/53` §6.2/§6.4 e le
    decisioni D1–D4 di `docs/53` §7 restano chiuse (non riproporle senza nuovi motivi).

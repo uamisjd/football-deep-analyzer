@@ -1244,7 +1244,7 @@ campione») senza perdere il separatore («5.791 gare»). Censito il resto: ness
 
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-#59 (2026-09-19), #77 (2026-09-21), #80, **#83, #85 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #77 (2026-09-21), #80, **#83, #85, #87 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
 
 ### 9.17 Merge PR #83 — lint in CI e handoff (2026-10-07, deroga esplicita)
 
@@ -1294,5 +1294,29 @@ test di regressione; (3) commenti stali aggiornati; (4) fix «N i titoli più ve
 riammette il testo nostro nella card notizie (selettore di [20] adeguato); (5) P2.4 chiusa
 con misura e decisioni D1–D4 dell'utente registrate (niente watchdog, gate tutti bloccanti,
 nessun tetto giornaliero, niente Lighthouse).
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.19 Merge PR #87 — diagnosi di #84 e registrazione della deroga di #83 (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«Please merge the pull request»* (07/10/2026), in risposta alla frase fissa
+invitata su PR #87. Verifiche pre-merge eseguite con comando, tutte superate: check `test`
+`success` su `3ffb786` (run `37662365513`, 2m09s; più i due run precedenti `37661725877` e
+`37661750943`), PR `MERGEABLE · CLEAN`, `git status --porcelain` vuoto,
+`git log --oneline origin/main..HEAD` con i **soli 3 commit** della PR, `HEAD..origin/<branch>`
+vuoto. Eseguito `gh pr merge 87 --merge`. GitHub conferma: `merged=true`,
+`merged_at=2026-10-07T17:55:26Z`, `merged_by=uamisjd`, merge commit
+**`01fd0e421dcaafe915f1615d7788c18ce95571c2`**.
+
+**Contenuto (solo documenti, 6 file `*.md`, +204/−35):** `docs/54` (diagnosi del conflitto di #84 e
+cronologia #83–#86), `docs/13` §9.17 (deroga #83) + §9.18 (deroga #85, rinumerata) + catena
+aggiornata, `docs/52` (post-merge #83, daily #218–#220, misure delle cache con istante),
+`docs/BRIEFING_NUOVA_SESSIONE.md` riscritto allo stato del 7/10 sera (`docs/53`, D1–D4, indice),
+`docs/STATO.md` e `README.md`.
+
+**Effetti in produzione: nessun run attivato.** Il push del merge non ha fatto partire né `daily`
+né `tests`: entrambi hanno `paths-ignore` su `docs/**` e `*.md` — zero raccolte, zero richieste
+alle fonti sportive. Prima del merge, la **PR #84 era stata chiusa** (17:51:32Z) su ordine
+esplicito dell'utente, perché superata da #87.
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
