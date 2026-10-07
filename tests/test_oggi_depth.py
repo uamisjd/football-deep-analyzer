@@ -836,26 +836,29 @@ def test_peso_infermeria_con_stima_stabilizzata(tmp_path):
 
 
 @pytest.mark.parametrize("diff", [-3.0, -3.1, -5.4, -9.9])
-def test_narrative_xpts_negativo_non_stampa_il_segno_meno(diff):
-    """«ha −3,0 punti rispetto agli xPTS» non è italiano: si dice «3,0 punti in meno».
+def test_narrative_xpts_negativo_senza_numeri(diff):
+    """M2 (`docs/55` §6): la frase dice il verso, non ripete il numero di stagione.
 
-    Caso esplicitamente chiesto dall'audit (`diff=-3.0`). Il segno si porta nelle parole,
-    il numero resta in valore assoluto.
+    Il numero dei punti contro gli xPTS sta **solo** nella card della squadra (regola di
+    `docs/30` P1.2): prima lo stesso dato compariva in quattro riquadri della stessa scheda.
+    Il verso, però, deve restare leggibile.
     """
     ctx = {"home_name": "Inter", "away_name": "Milan",
            "home_xg": {"xpts": 40.0, "pts": 40.0 + diff, "played": 10}}
     frase = next(s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s)
-    assert "punti in meno" in frase
-    assert "−" not in frase and "-" not in frase, f"segno meno rimasto nella frase: {frase}"
-    assert f"{abs(diff):.1f}".replace(".", ",") in frase
+    assert "rende meno di ciò che crea" in frase
+    assert "Le due squadre" in frase                       # il rimando al posto canonico
+    assert "3,0" not in frase and "3,1" not in frase       # nessun numero ripetuto
+    assert "−" not in frase and "-" not in frase
 
 
 def test_narrative_xpts_positivo_resta_esplicito():
-    """Il verso opposto deve restare distinguibile: «in più», non solo un segno."""
+    """Il verso opposto deve restare distinguibile: «più di quanto crei», non solo un segno."""
     ctx = {"home_name": "Inter", "away_name": "Milan",
            "home_xg": {"xpts": 40.0, "pts": 44.2, "played": 10}}
     frase = next(s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s)
-    assert "punti in più" in frase and "4,2" in frase
+    assert "rende più di quanto crei" in frase
+    assert "4,2" not in frase and "Le due squadre" in frase
 
 
 @pytest.mark.parametrize(("n", "titolari"), [(1, 1), (1, 0), (2, 1), (3, 3), (5, 2)])

@@ -232,6 +232,86 @@ def _weather_it(desc: str | None) -> str | None:
     return t
 
 
+# ---- soglie meteo della scheda -----------------------------------------------------------------
+# Difetto misurato il 2026-10-07 (docs/55 §4.3, docs/56 §3): il testo della card dichiarava
+# «nella norma (precip <30%, 10-28 °C, vento <15 km/h)» mentre il codice segnalava ≥30%,
+# ≥30 °C o ≤5 °C, ≥15 km/h, e chiamava «estremo — può spostare ritmi» una probabilità di
+# pioggia del 31% (14 schede su 66). Qui le soglie sono **una sola cosa**: le legge il codice,
+# le stampa la pagina (testo di norma e messaggi) e le verifica ``scripts/verify_site.py``.
+#: probabilità di pioggia da cui la scheda segnala il dato (%)
+WEATHER_PRECIP_SEGNALA = 30
+#: temperatura da cui la scheda segnala il dato (°C, alta e bassa)
+WEATHER_TEMP_ALTA = 30
+WEATHER_TEMP_BASSA = 5
+#: vento da cui la scheda segnala il dato (km/h)
+WEATHER_VENTO_SEGNALA = 15
+#: soglie di **impatto** indicate dalla letteratura citata nell'audit del 2026-09-20 (checklist
+#: BettorBoss: «weather impact significativo solo con pioggia >50% o temp >30 °C o vento >20
+#: km/h»). Solo oltre queste la scheda dice che il meteo può pesare; l'effetto del freddo non
+#: è dichiarato da quella fonte e quindi non viene affermato.
+WEATHER_PRECIP_IMPATTO = 50
+WEATHER_VENTO_IMPATTO = 20
+
+#: Testo delle soglie, scritto **una volta** e stampato in pagina: prima era scritto a mano
+#: nel template e non corrispondeva al codice.
+WEATHER_SOGLIE_TESTO = (
+    f"soglie di segnalazione della scheda: pioggia ≥{WEATHER_PRECIP_SEGNALA}%, "
+    f"temperatura ≥{WEATHER_TEMP_ALTA} °C o ≤{WEATHER_TEMP_BASSA} °C, "
+    f"vento ≥{WEATHER_VENTO_SEGNALA} km/h"
+)
+#: Testo delle soglie di impatto (citazione della fonte, dichiarata in pagina)
+WEATHER_IMPATTO_TESTO = (
+    f"pioggia >{WEATHER_PRECIP_IMPATTO}%, temperatura >{WEATHER_TEMP_ALTA} °C, "
+    f"vento >{WEATHER_VENTO_IMPATTO} km/h"
+)
+
+
+def weather_flags(weather: dict[str, Any]) -> dict[str, Any]:
+    """Livello del meteo e motivi, solo con i numeri: nessun aggettivo non misurato.
+
+    Ritorna ``livello`` (``None``, ``"attenzione"`` o ``"impatto"``), ``segnalazioni`` (le
+    frasi coi valori e la soglia superata), ``mancanti`` (i valori che la fonte non pubblica
+    per questa gara: la scheda lo dice invece di dare per buono un «nella norma») e i testi
+    delle soglie. La temperatura è pubblicata per tutte le gare, la probabilità di pioggia
+    solo per le future (misurato: 67 righe su 442 in ``match_info.parquet``), il vento per
+    tutte ma in 442 gare non ha mai superato 12 km/h — quindi la sua soglia non è mai scattata.
+    """
+    precip, temp, wind = weather.get("precip"), weather.get("temp"), weather.get("wind")
+    segnalazioni: list[str] = []
+    mancanti: list[str] = []
+    impatto = False
+    if precip is None:
+        mancanti.append("probabilità di pioggia")
+    elif float(precip) > WEATHER_PRECIP_IMPATTO:
+        impatto = True
+        segnalazioni.append(f"pioggia {float(precip):.0f}% (oltre la soglia di impatto "
+                            f"{WEATHER_PRECIP_IMPATTO}%)")
+    elif float(precip) >= WEATHER_PRECIP_SEGNALA:
+        segnalazioni.append(f"pioggia {float(precip):.0f}% (soglia {WEATHER_PRECIP_SEGNALA}%)")
+    if temp is None:
+        mancanti.append("temperatura")
+    elif float(temp) > WEATHER_TEMP_ALTA:
+        impatto = True
+        segnalazioni.append(f"temperatura {float(temp):.0f} °C (oltre la soglia di impatto "
+                            f"{WEATHER_TEMP_ALTA} °C)")
+    elif float(temp) >= WEATHER_TEMP_ALTA or float(temp) <= WEATHER_TEMP_BASSA:
+        segnalazioni.append(f"temperatura {float(temp):.0f} °C (soglia "
+                            f"{WEATHER_TEMP_ALTA} °C / {WEATHER_TEMP_BASSA} °C)")
+    if wind is None:
+        mancanti.append("vento")
+    elif float(wind) > WEATHER_VENTO_IMPATTO:
+        impatto = True
+        segnalazioni.append(f"vento {float(wind):.0f} km/h (oltre la soglia di impatto "
+                            f"{WEATHER_VENTO_IMPATTO} km/h)")
+    elif float(wind) >= WEATHER_VENTO_SEGNALA:
+        segnalazioni.append(f"vento {float(wind):.0f} km/h (soglia {WEATHER_VENTO_SEGNALA} km/h)")
+    return {"livello": "impatto" if impatto else ("attenzione" if segnalazioni else None),
+            "segnalazioni": segnalazioni,
+            "mancanti": mancanti,
+            "soglie_testo": WEATHER_SOGLIE_TESTO,
+            "impatto_testo": WEATHER_IMPATTO_TESTO}
+
+
 # Rientri previsti degli indisponibili (campo expectedReturn di FotMob, in inglese)
 _MONTHS_IT = {"january": "gennaio", "february": "febbraio", "march": "marzo", "april": "aprile",
               "may": "maggio", "june": "giugno", "july": "luglio", "august": "agosto",
@@ -830,6 +910,74 @@ COACH_FORMER_CLUBS: dict[str, set[str]] = {
 }
 
 
+#: Entro quante ore due righe con la stessa chiave (squadra, direzione, giocatore,
+#: controparte) sono lo **stesso** movimento. Misurato il 2026-10-07 su
+#: ``transfers.parquet`` (11.624 righe, ``scripts/audit_mercato.py``): fra due righe della
+#: stessa chiave la distanza è ≤3 ore (2.781 coppie sotto l'ora e 4.322 fra 1 e 3 ore — la
+#: fonte ripubblica lo stesso fatto con l'ora locale al posto dell'UTC) oppure ≥2 giorni
+#: (una ri-pubblicazione vera), e **nessuna coppia** cade fra 3 ore e 2 giorni. La soglia
+#: sta nel vuoto misurato fra i due gruppi, non è una scelta di comodo.
+TRANSFER_DEDUP_HOURS = 3
+
+
+def parse_moments(values: Any) -> pd.Series:
+    """Timestamp UTC da una colonna di date della fonte, con i due formati che convivono.
+
+    Misurato il 2026-10-07 su ``transfers.parquet``: **4.252 righe su 11.624 (36,6%)** hanno
+    la data senza il suffisso ``Z`` (l'ora locale della fonte) e ``pd.to_datetime(...,
+    utc=True)`` le azzera in silenzio quando nella stessa colonna convivono i due formati
+    (con pandas ≥3 serve ``format="mixed"``). L'effetto sulla card era doppio: **134
+    movimenti** non comparivano affatto in pagina, e le righe leggibili erano la sola metà
+    «con la Z», che è la ragione per cui gli stessi movimenti risultavano pubblicati più
+    volte con orari diversi.
+    """
+    if values is None:
+        return pd.Series(dtype="datetime64[ns, UTC]")
+    s = values if isinstance(values, pd.Series) else pd.Series(values)
+    return pd.to_datetime(s, utc=True, errors="coerce", format="mixed")
+
+
+def dedup_transfers(df: pd.DataFrame, hours: int = TRANSFER_DEDUP_HOURS) -> pd.DataFrame:
+    """Una riga per movimento: la stessa mossa ripubblicata dalla fonte vale una volta sola.
+
+    La chiave è ``(team_id, direction, soft_key(player_name), soft_key(counterpart))`` — nome
+    e controparte senza accenti né punteggiatura — e due righe della stessa chiave a meno di
+    :data:`TRANSFER_DEDUP_HOURS` ore sono lo stesso annuncio: si tiene quella con l'importo
+    pubblicato (a parità, la più recente), perché è la riga più informativa. Righe a più di
+    ``hours`` ore di distanza restano movimenti distinti: sono le ri-pubblicazioni vere.
+
+    Perché non basta la chiave dell'upsert (``store.TABLE_KEYS``): la fonte ripubblica lo
+    stesso movimento con l'ora **locale** invece che UTC (1-2 ore di scarto) e con i
+    diacritici del nome diversi (``Aleksić``/``Aleksic``), quindi le due righe non collidono
+    mai. Misurato il 2026-10-07 sulle 66 schede in finestra: il totale pubblicato era
+    gonfiato di circa il doppio e 128 sotto-card su 132 mostravano una riga ripetuta.
+    """
+    if df.empty:
+        return df
+    d = df.copy()
+    d["_dt"] = parse_moments(d.get("date"))
+    d = d[d._dt.notna()]
+    if d.empty:
+        return d
+    for colonna in ("player_name", "counterpart"):
+        d[f"_k_{colonna}"] = d[colonna].map(lambda v: soft_key(str(v or "")))
+    chiave = ["team_id", "direction", "_k_player_name", "_k_counterpart"]
+    tenute: list[pd.DataFrame] = []
+    for _, gruppo in d.groupby(chiave, dropna=False, sort=False):
+        resto = gruppo.sort_values("_dt")
+        while not resto.empty:
+            primo = resto._dt.iloc[0]
+            vicino = resto[(resto._dt - primo) <= pd.Timedelta(hours=hours)]
+            resto = resto[(resto._dt - primo) > pd.Timedelta(hours=hours)]
+            if "fee_text" in vicino.columns:
+                con_importo = vicino[vicino.fee_text.notna()]
+                if not con_importo.empty:
+                    vicino = con_importo
+            scelta = vicino
+            tenute.append(scelta.sort_values("_dt").tail(1))
+    return pd.concat(tenute).sort_values("_dt") if tenute else d.iloc[0:0]
+
+
 class MatchAnalysis:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -1012,6 +1160,40 @@ class MatchAnalysis:
         diff = here - mean
         label = "sopra media" if diff>0.05 else "sotto media" if diff<-0.05 else "in media"
         return {"here": here, "mean": mean, "diff": diff, "label": label, "league": name, "n": len(over)}
+
+    # ---- errore misurato del modello (backtest fuori campione) ------------------------------
+    def backtest_accuracy(self) -> dict[str, Any]:
+        """RPS del modello sulle gare di verifica, in totale e per lega (misurato, non tipico).
+
+        Serve alla riga «Modello statistico» dei Fattori (M1 di ``docs/55`` §6): la card
+        pubblicava «RPS 0,20 tipico», una cifra scritta a mano che nessuno poteva verificare.
+        Qui il punteggio si ricalcola dalla tabella ``backtest`` (previsioni fuori campione)
+        con **la stessa formula del progetto** (``models/calibration.py``: somma dei quadrati
+        delle differenze fra probabilità cumulate previste e osservate, diviso due). Il
+        risultato è memorizzato: la riga lo chiede una volta per scheda e la tabella non
+        cambia durante la build.
+        """
+        cache = getattr(self, "_backtest_accuracy_cache", None)
+        if cache is not None:
+            return cache
+        out: dict[str, Any] = {"n": 0, "rps": None, "per_league": {}}
+        bt = self.backtest
+        if not bt.empty and {"p_home", "p_draw", "p_away", "outcome"} <= set(bt.columns):
+            p = bt[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+            y = pd.to_numeric(bt["outcome"], errors="coerce").to_numpy(dtype=float)
+            ok = np.isfinite(p).all(axis=1) & np.isfinite(y)
+            if ok.any():
+                onehot = np.eye(3)[y[ok].astype(int)]
+                rps_rows = ((np.cumsum(p[ok], axis=1) - np.cumsum(onehot, axis=1)) ** 2).sum(axis=1) / 2.0
+                out["n"] = int(ok.sum())
+                out["rps"] = float(rps_rows.mean())
+                if "league_key" in bt.columns:
+                    leghe = bt["league_key"].astype(str).to_numpy()[ok]
+                    for lg in sorted(set(leghe)):
+                        m = leghe == lg
+                        out["per_league"][lg] = (float(rps_rows[m].mean()), int(m.sum()))
+        self._backtest_accuracy_cache = out
+        return out
 
     # ---- fascia storica del pronostico (backtest fuori campione) ---------------------------
     #: fasce di probabilità del favorito usate per dire «quando il favorito aveva questa
@@ -1494,15 +1676,17 @@ class MatchAnalysis:
         xg = self.season_xg(team_name, team_id)
         if xg and xg.get("xpts") is not None and xg.get("pts") is not None:
             d = float(xg["pts"]) - float(xg["xpts"])
+            # M2 (`docs/55` §6, regola di `docs/30`): il numero sta **solo** nella card della
+            # squadra («xPTS vs punti reali»); qui resta il segnale, col rimando
             if d <= -self.MOOD_XPTS_GAP:
                 out.append({"tone": "warn",
-                            "text": f"raccoglie {str(round(abs(d), 1)).replace('.', ',')} punti "
-                                    f"meno di quanto crea (xPTS): calo di concretezza o sfortuna"})
+                            "text": "raccoglie meno punti di quanto crea (xPTS): calo di "
+                                    "concretezza o sfortuna — i numeri in «Le due squadre»"})
             elif d >= self.MOOD_XPTS_GAP:
                 out.append({"tone": "warn",
-                            "text": f"{str(round(d, 1)).replace('.', ',')} punti più di quanto "
-                                    f"crea: rendimento sopra la qualità del gioco, regressione "
-                                    f"possibile"})
+                            "text": "rende più di quanto crea (xPTS): rendimento sopra la "
+                                    "qualità del gioco, regressione possibile — i numeri in "
+                                    "«Le due squadre»"})
         coach = self.coach(team_id, kickoff)
         if coach and coach.get("prev_name"):
             out.append({"tone": "warn",
@@ -1568,21 +1752,23 @@ class MatchAnalysis:
         PPDA, coach subentro. Soglie documentate, non giudizi.
         """
         fattori: list[dict[str, Any]] = []
-        # 0. EPV (point diff, venue, goal diff) - Bundesliga research
+        # 0. Contesto di classifica e forma recente (era «EPV pre-match»: seconda previsione
+        #    col termine di sede costante, declassata a riga di contesto — docs/56 §4)
         try:
-            epv = self.epv_context(home_name, home_id, away_name, away_id, kickoff, prediction)
-            if epv and abs(epv.get("epv_score",0)) >= 0.10:
-                score = epv["epv_score"]
-                tone = "good" if score>0 else "bad" if score<0 else "neutral"
+            cf = self.classifica_forma(home_name, home_id, away_name, away_id, kickoff)
+            if cf:
                 fattori.append({
-                    "icon": "🧠",
-                    "label": "EPV pre-match (punti/venue/gol)",
-                    "home": f"{epv['home_points']} pt ({_f(epv['home_ppg'])}/g) GD3 {epv['home_gd3']:+d}",
-                    "away": f"{epv['away_points']} pt ({_f(epv['away_ppg'])}/g) GD3 {epv['away_gd3']:+d}",
-                    "delta": f"PPG {_f(epv['ppg_diff'],2)} · GD3 {epv['gd_diff']:+d} · pos {epv['pos_diff']:+d}",
-                    "impact": f"{epv['label']} (score {_f(epv['epv_score'],2)})",
-                    "tone": tone,
-                    "desc": f"EPV ispirato a Bundesliga (PMC12640942): point diff PPG {_f(epv['ppg_diff'],2)} (40% SHAP), venue casa (30%), goal diff ultimi 3 {epv['gd_diff']:+d} (20%), pos diff {epv['pos_diff']:+d} (10%). EPV attesi {_f(epv['exp_home'],2)}+{_f(epv['exp_away'],2)}={_f(epv['exp_total'],2)} vs modello {_f(prediction.get('lambda_home',0),2)}+{_f(prediction.get('lambda_away',0),2)} se disponibile — vantaggio {'casa' if score>0 else 'trasferta'}"
+                    "icon": "📊",
+                    "label": "Forma e classifica (contesto)",
+                    "home": f"{cf['home_points']} pt ({_f(cf['home_ppg'])}/g) GD3 {cf['home_gd3']:+d}",
+                    "away": f"{cf['away_points']} pt ({_f(cf['away_ppg'])}/g) GD3 {cf['away_gd3']:+d}",
+                    "delta": f"PPG {_f(cf['ppg_diff'],2)} · GD3 {cf['gd_diff']:+d} · pos {cf['pos_diff']:+d}",
+                    "impact": f"indice {_f(cf['indice'],2)} — contesto, non pronostico",
+                    "tone": "neutral",
+                    "desc": f"Indice di contesto, pesi fissati a mano ({cf['pesi']}), zero = squadre "
+                            f"pari su quei tre numeri. Non è il pronostico della scheda: sul backtest "
+                            f"fuori campione questo indice da solo azzecca il favorito nel 49% delle "
+                            f"gare, il modello pubblicato nel 52% (5.164 gare, scripts/audit_epv.py)"
                 })
         except Exception:
             pass
@@ -1667,26 +1853,10 @@ class MatchAnalysis:
                         })
         except Exception:
             pass
-        # 4. Forma e xPTS gap
-        try:
-            for side, tid, tname in (("home", home_id, home_name), ("away", away_id, away_name)):
-                xg = self.season_xg(tname, tid)
-                if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg.get("played",0)>=4:
-                    diff = float(xg["pts"]) - float(xg["xpts"])
-                    if abs(diff) >= 3:
-                        tone = "good" if diff>0 and side=="home" or diff<0 and side=="away" else "bad"
-                        fattori.append({
-                            "icon": "📈" if diff>0 else "📉",
-                            "label": f"xPTS {tname}",
-                            "home": f"{xg['pts']} vs {_f(xg['xpts'],1)} xPTS" if side=="home" else "—",
-                            "away": f"{xg['pts']} vs {_f(xg['xpts'],1)} xPTS" if side=="away" else "—",
-                            "delta": f"{_f(diff,1)} pt",
-                            "impact": "sopra atteso" if diff>0 else "sotto atteso",
-                            "tone": tone,
-                            "desc": f'{tname}: {xg["pts"]} {"punto reale" if xg["pts"]==1 else "punti reali"} vs {_f(xg["xpts"],1)} xPTS ({xg["played"]} gare) — {"sovraperformance, regressione possibile (60% luck per research xPTS)" if diff>=3 else "sottoperformance, possibile rimbalzo"}'
-                        })
-        except Exception:
-            pass
+        # 4. (rimossa) xPTS: i punti contro gli xPTS erano ripetuti qui, nella narrativa e
+        #    nella card del clima — 4 riquadri per lo stesso dato di stagione sulle stesse
+        #    schede. Il posto canonico è la card della squadra (`docs/30` P1.2, M2 di
+        #    `docs/55` §6): qui resta solo il rimando scritto nell'intro della card.
         # 5. Pressing
         try:
             hs = self.season_xg(home_name, home_id) or {}
@@ -1706,7 +1876,8 @@ class MatchAnalysis:
                     })
         except Exception:
             pass
-        # 6. Modello: xi per lega e calibrazione
+        # 6. Modello: in parole, con l'errore **misurato** sulle gare di verifica
+        #    (prima: «RPS 0,20 tipico», che era una cifra scritta a mano mai misurata — M1)
         try:
             if prediction:
                 lg = prediction.get("league_key")
@@ -1717,24 +1888,36 @@ class MatchAnalysis:
                 except Exception:
                     xi = None
                 scale = prediction.get("lambda_scale")
-                nfit = prediction.get("calibration_n_fit")
-                rho_raw = prediction.get("rho_raw")
-                rho_dc = prediction.get("dc_rho")
-                if xi or scale:
-                    xi_s = f"{_f(xi,4)}" if xi is not None else "—"
-                    sc_s = f"{_f(scale,3)}" if scale is not None else "—"
-                    rr_s = f"{_f(rho_raw,4)}" if isinstance(rho_raw,(int,float)) else str(rho_raw or "—")
-                    rd_s = f"{_f(rho_dc,4)}" if isinstance(rho_dc,(int,float)) else str(rho_dc or "—")
-                    nfit_s = f"{int(nfit):,}".replace(",", ".") if nfit else "—"
+                acc = self.backtest_accuracy()
+                rps_lega = (acc.get("per_league") or {}).get(str(lg))
+                rps_tot = acc.get("rps")
+                if xi or scale or rps_tot:
+                    # il peso del passato recente, detto in parole: con ξ una gara di un
+                    # mese fa pesa exp(-ξ·30) di una di ieri
+                    peso = f"{100 * np.exp(-float(xi) * 30):.0f}%" if xi else None
+                    nfit_s = f"{int(acc['n']):,}".replace(",", ".") if acc.get("n") else "—"
+                    desc = (f"Dixon-Coles + Elo (inclinazione 70/30), λ corrette del "
+                            f"{_f((scale - 1) * 100, 1) if scale is not None else '—'}% dalla calibrazione. "
+                            f"Errore del modello sulle gare di verifica fuori campione: RPS "
+                            f"{_f(rps_tot,3)} su {nfit_s} gare")
+                    if rps_lega:
+                        desc += f", {_f(rps_lega[0],3)} su {int(rps_lega[1])} di questa lega"
+                    if xi:
+                        desc += (f". ξ {_f(xi,4)} è il peso del passato recente: una gara di un "
+                                 f"mese fa pesa {peso} di una di ieri.")
+                    else:
+                        desc += "."
                     fattori.append({
                         "icon": "🧮",
-                        "label": "Modello e calibrazione",
-                        "home": f"ξ {xi_s}" if xi is not None else "—",
-                        "away": f"λ×{sc_s}" if scale is not None else "—",
-                        "delta": prediction.get("model_version",""),
-                        "impact": "RPS 0,20 tipico",
+                        "label": "Modello statistico",
+                        "home": (f"RPS {_f(rps_lega[0],3)} ({int(rps_lega[1])} gare)"
+                                 if rps_lega else "—"),
+                        "away": f"ξ {_f(xi,4)}" if xi is not None else "—",
+                        "delta": f"λ × {_f(scale,3)}" if scale is not None else "",
+                        "impact": (f"errore fuori campo {_f(rps_tot,3)}" if rps_tot
+                                   else "modello salvato"),
                         "tone": "neutral",
-                        "desc": f"Dixon-Coles tilt-0,4 + Elo (70/30), ξ per lega {xi_s} (time decay), λ×{sc_s} calibrata su {nfit_s} gare fuori campione — bias gol {rr_s}→{rd_s}"
+                        "desc": desc,
                     })
         except Exception:
             pass
@@ -1781,7 +1964,11 @@ class MatchAnalysis:
             f["bar_pct"] = round(100 * f["weight"] / max_w) if max_w else 0
         order_tone = {"bad":0, "good":1, "neutral":2}
         fattori_sorted = sorted(fattori, key=lambda x: (-x["weight"], order_tone.get(x["tone"],9), x["label"]))
-        return {"rows": fattori_sorted[:6], "n": len(fattori_sorted), "max_weight": max_w}
+        # M3 (docs/55 §6): i fattori oltre i sei mostrati si **nominano**, invece di dire
+        # «+N altri fattori sotto soglia» (che era anche sbagliato: hanno superato la soglia,
+        # semplicemente non entrano nelle prime sei righe)
+        return {"rows": fattori_sorted[:6], "n": len(fattori_sorted), "max_weight": max_w,
+                "altri": [f["label"] for f in fattori_sorted[6:]]}
 
     # ---- notizie per partita (docs/21 P1-5, rifatte in docs/24 §3 e §3.5) -------------------
     # ---- notizie per partita (docs/21 P1-5, rifatte in docs/24 §3 e §3.5) -------------------
@@ -2498,6 +2685,13 @@ class MatchAnalysis:
     # ---- mercato: arrivi e partenze (docs/21 P2-7, rifatto in docs/24 §4) ---------------------
     TRANSFER_GAP_DAYS: ClassVar[int] = 21
     TRANSFER_STALE_DAYS: ClassVar[int] = 90
+    #: Entro quanti giorni due annunci dello stesso giocatore nella stessa direzione sono la
+    #: stessa mossa ripubblicata con la data aggiornata. Misurato il 2026-10-07: le
+    #: ri-pubblicazioni con data spostata stanno entro 25 giorni (0, 7, 11, 12, 13, 14, 15,
+    #: 22, 24, 25), quindi la soglia tonda a 30 giorni non taglia nessun movimento vero.
+    TRANSFER_REPUBLISH_DAYS: ClassVar[int] = 30
+    #: alias della costante di modulo (vedi :data:`TRANSFER_DEDUP_HOURS`)
+    TRANSFER_DEDUP_HOURS: ClassVar[int] = TRANSFER_DEDUP_HOURS
 
     @staticmethod
     def fee_eur(value: Any) -> float | None:
@@ -2587,8 +2781,11 @@ class MatchAnalysis:
         df = self.transfers[self.transfers.team_id == team_id].copy()
         if df.empty:
             return None
-        df["_date"] = pd.to_datetime(df.get("date"), utc=True, errors="coerce")
-        df = df[df._date.notna()]
+        # due difetti misurati il 2026-10-07 (docs/56 §2): le date della fonte hanno due
+        # formati e il parser li azzerava in silenzio, e lo stesso movimento è pubblicato
+        # più volte (ora locale vs UTC, diacritici nel nome) → una riga per movimento.
+        df = dedup_transfers(df)
+        df = df.rename(columns={"_dt": "_date"})
         if df.empty:
             return None
         df = df.sort_values("_date", ascending=False)
@@ -2609,31 +2806,67 @@ class MatchAnalysis:
             return out
 
         def entries(direction: str) -> list[dict[str, Any]]:
+            """Una riga per giocatore: la versione più recente pubblicata dalla fonte.
+
+            La finestra è concatenata (finché fra due movimenti non passano più di
+            :data:`TRANSFER_GAP_DAYS` giorni), quindi la stessa mossa può comparire due
+            volte con date diverse o col nome del club scritto in modi diversi. Misurato il
+            2026-10-07 sui 132 club in finestra: su 2.902 annunci (già deduplicati entro 3
+            ore) le righe in più per lo stesso giocatore erano **111** — 103 la stessa mossa
+            con la data aggiornata o il nome del club riscritto, 5 due versioni della stessa
+            cessione (prestito e cessione definitiva), 3 l'importo pubblicato dopo — e
+            **nessuna** era un secondo movimento vero nella stessa direzione (0 casi con
+            controparte diversa e più di 30 giorni di distanza). Si tiene la riga più
+            recente, con la sua data e il suo importo: mai campi mescolati da righe diverse.
+            Due movimenti dello stesso giocatore verso club diversi a più di
+            :data:`TRANSFER_REPUBLISH_DAYS` giorni restano due righe (misurato: nel finestra
+            attuale non ce ne sono, ma la regola non li nasconde).
+            """
             d = finestra[finestra.direction == direction]
             if d.empty:
                 return []
-            rows = []
-            for r in d.to_dict("records"):
+            def riga(r: dict[str, Any]) -> dict[str, Any]:
                 date = pd.Timestamp(r["_date"])
-                rows.append({"name": str(r["player_name"]),
-                             "counterpart": str(r.get("counterpart") or ""),
-                             "fee": self.fee_it(r.get("fee_text")),
-                             "fee_eur": self.fee_eur(r.get("fee_text")),
-                             "date_it": date.strftime("%d/%m/%Y"),
-                             "date": int(date.timestamp())})
+                return {"name": str(r["player_name"]),
+                        "counterpart": str(r.get("counterpart") or ""),
+                        "fee": self.fee_it(r.get("fee_text")),
+                        "fee_eur": self.fee_eur(r.get("fee_text")),
+                        "date_it": date.strftime("%d/%m/%Y"),
+                        "date": int(date.timestamp()),
+                        "_club": soft_key(str(r.get("counterpart") or ""))}
+
+            scelte: dict[str, dict[str, Any]] = {}
+            for r in d.sort_values("_date", ascending=False).to_dict("records"):
+                # dalla più recente: la versione pubblicata per ultima vince. Le righe più
+                # vecchie dello stesso giocatore si fondono solo se sono la stessa mossa —
+                # stesso club (anche scritto in modi diversi) o a meno di
+                # :data:`TRANSFER_REPUBLISH_DAYS` giorni — altrimenti restano due movimenti.
+                k = soft_key(str(r.get("player_name") or ""))
+                nuova = riga(r)
+                tenuta = scelte.get(k)
+                if tenuta is None:
+                    scelte[k] = nuova
+                    continue
+                stessa_mossa = (nuova["_club"] and nuova["_club"] == tenuta["_club"]) or \
+                    (tenuta["date"] - nuova["date"]) <= self.TRANSFER_REPUBLISH_DAYS * 86400
+                if not stessa_mossa:
+                    # secondo movimento dello stesso giocatore nella stessa direzione
+                    scelte[f"{k}|{nuova['date']}"] = nuova
+            rows = list(scelte.values())
             # importo pubblicato prima, poi il più recente: i colpi si vedono
             rows.sort(key=lambda x: (-(x["fee_eur"] or 0.0), -x["date"]))
             return rows
 
+        movimenti = {d: entries(d) for d in ("in", "out")}
         for direction, chiave, count in (("in", "arrivals", "n_in"), ("out", "departures", "n_out")):
-            rows = entries(direction)
+            rows = movimenti[direction]
             out[chiave] = rows[:n]
             out[count] = len(rows)
-        importi = [r["fee_eur"] for r in entries("in") + entries("out")]
+        importi = [r["fee_eur"] for r in movimenti["in"] + movimenti["out"]]
         out["importi_noti"] = sum(1 for v in importi if v)
         out["importi_mancanti"] = sum(1 for v in importi if not v)
-        spesa = sum(v for v in (r["fee_eur"] for r in entries("in")) if v)
-        incasso = sum(v for v in (r["fee_eur"] for r in entries("out")) if v)
+        spesa = sum(v for v in (r["fee_eur"] for r in movimenti["in"]) if v)
+        incasso = sum(v for v in (r["fee_eur"] for r in movimenti["out"]) if v)
         out["spesa"] = spesa if out["importi_noti"] else None
         out["incasso"] = incasso if out["importi_noti"] else None
         out["saldo"] = (spesa - incasso) if out["importi_noti"] else None
@@ -2711,18 +2944,9 @@ class MatchAnalysis:
         weather = self._weather(match_id, _val(info, "weather_desc"),
                                 _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
         weather["wind"] = _val(info, "weather_wind")
-        # meteo estremo? (P1 audit: nascondere se non estremo)
-        try:
-            precip = weather.get("precip"); temp = weather.get("temp"); wind = weather.get("wind")
-            extreme = False
-            if precip is not None and precip >= 30: extreme = True
-            if temp is not None and (temp >= 30 or temp <= 5): extreme = True
-            if wind is not None and wind >= 15: extreme = True
-            weather["extreme"] = extreme
-            weather["non_extreme"] = not extreme
-        except Exception:
-            weather["extreme"] = False
-            weather["non_extreme"] = True
+        # livello e motivi del meteo: una sola funzione, condivisa con `build` e con la
+        # narrativa (prima le stesse soglie erano scritte in tre punti diversi, docs/56 §3)
+        weather.update(weather_flags(weather))
         h2h_n = len(self._h2h_core(match_id, home_id, away_id, kickoff, n=60))
         # bilancio completo H2H per la card compatta (V/N/P dal punto di vista casa attuale, gol/gara, BTTS)
         try:
@@ -4112,78 +4336,58 @@ class MatchAnalysis:
         except Exception:
             return None
 
-    def epv_context(self, home_name: str, home_id: int, away_name: str, away_id: int,
-                    kickoff, prediction: dict[str, Any] | None = None) -> dict[str, Any] | None:
-        """EPV pre-match ispirato a Bundesliga research (PMC12640942): point diff, venue, goal diff.
+    def classifica_forma(self, home_name: str, home_id: int, away_name: str, away_id: int,
+                         kickoff) -> dict[str, Any] | None:
+        """Contesto di classifica e forma recente: i tre numeri, con un indice dichiarato.
 
-        Features top per SHAP:
-        - average point difference (differenza punti guadagnati vs avversari ultimi 3)
-        - match venue (casa)
-        - recent goal difference
-
-        Qui calcolato con dati disponibili: PPG diff da classifica, goal diff ultimi 3 da form(),
-        venue=1 per casa. Ritorna punteggio EPV e expected goals EPV per confronto con modello.
+        Sostituisce l'«EPV pre-match» uscito dall'audit del 2026-09-20 (docs/55 §4.2,
+        docs/56 §4). L'EPV di quel primo getto era un **secondo pronostico**: somma pesata di
+        PPG, differenza reti recenti e posizione, con un termine di sede **costante** (+0,15
+        fissi alla squadra di casa) e un'etichetta («vantaggio casa/trasferta EPV»,
+        «equilibrata») che **contraddiceva il favorito pubblicato in 20 schede su 66 (30%)**.
+        Misurato sul backtest fuori campione (5.164 gare, ``scripts/audit_epv.py``, rieseguibile
+        offline): il favorito di questo indice azzecca il **49,3%** delle gare, il modello
+        pubblicato il **52,1%**; quando i due sono in disaccordo il modello ha ragione nel
+        **40,1%** dei casi contro il 32,1%. Aggiunto come variabile al modello l'indice non
+        porta informazione nuova (log-loss +0,002, RPS +0,015: peggio). Il vecchio EPV, con la
+        sede costante, dava un verdetto «casa» nel 53,8% delle gare contro il 43,8% di questo
+        indice — la metà del disaccordo con le probabilità pubblicate veniva da lì. Da qui la
+        scelta: **niente verdetto**, restano i numeri e un
+        indice di contesto con pesi dichiarati a mano (non stimati) — 50% punti per gara, 30%
+        differenza reti delle ultime tre, 20% posizione — e **senza** il termine di sede, che
+        era una costante uguale in ogni partita. Anche la vecchia riga «EPV attesi 2,90 tot
+        (media lega 1,45)» è sparita: confrontava un totale con una media per squadra, e i due
+        numeri venivano da costanti scritte a mano (0,18/0,12/0,04) mai misurate.
         """
         try:
             h_st = self.standing(home_name); a_st = self.standing(away_name)
             if not h_st or not a_st:
                 return None
-            # PPG diff
             h_ppg = float(h_st["points"])/float(h_st["played"]) if h_st.get("played") else 0
             a_ppg = float(a_st["points"])/float(a_st["played"]) if a_st.get("played") else 0
             ppg_diff = h_ppg - a_ppg
-            point_diff = float(h_st.get("points",0)) - float(a_st.get("points",0))
-            pos_diff = int(a_st.get("rank",0)) - int(h_st.get("rank",0))  # positivo = casa meglio
-            # recent goal diff last 3
+            point_diff = float(h_st.get("points", 0)) - float(a_st.get("points", 0))
+            pos_diff = int(a_st.get("rank", 0)) - int(h_st.get("rank", 0))  # positivo = casa meglio
             h_form = self.form(home_id, kickoff, n=3)
             a_form = self.form(away_id, kickoff, n=3)
             h_gd3 = sum(r["gf"]-r["ga"] for r in h_form) if h_form else 0
             a_gd3 = sum(r["gf"]-r["ga"] for r in a_form) if a_form else 0
             gd_diff = h_gd3 - a_gd3
-            # league avg for baseline
-            avg = self._league_averages(h_st or a_st)
-            league_avg_gf = avg["gf"] if avg else 1.35
-            # EPV score: weighted sum normalized (paper SHAP: point diff 0.4, venue 0.3, goal diff 0.2, pos 0.1)
-            # normalize: point diff ppg /2 (range ~ -2..2 -> -1..1), gd_diff /6 (~ -2..2)
+            # normalizzazioni invariate rispetto al primo getto (così i numeri restano
+            # confrontabili con quelli già misurati); pesi nuovi e senza la costante di sede
             norm_ppg = max(-1.5, min(1.5, ppg_diff))/1.5
             norm_gd = max(-2, min(2, gd_diff/3))/2
             norm_pos = max(-1, min(1, pos_diff/10))
-            venue = 1.0  # casa
-            epv_score = 0.4*norm_ppg + 0.3*(venue*0.5) + 0.2*norm_gd + 0.1*norm_pos
-            # expected goals EPV: baseline league avg + adjustments
-            # home: +0.25*ppg_diff +0.15*venue +0.08*gd_diff
-            exp_home = league_avg_gf * (1 + 0.18*ppg_diff + 0.12 + 0.04*gd_diff)
-            exp_away = league_avg_gf * (1 - 0.18*ppg_diff - 0.12 + 0.04*(-gd_diff))
-            exp_home = max(0.3, min(4.0, exp_home))
-            exp_away = max(0.3, min(4.0, exp_away))
-            # confronto con modello se disponibile
-            model_diff = None
-            if prediction:
-                try:
-                    mh = float(prediction.get("lambda_home",0)); ma = float(prediction.get("lambda_away",0))
-                    model_diff = (mh - ma) - (exp_home - exp_away)
-                except Exception:
-                    model_diff = None
-            label = "equilibrata"
-            if epv_score > 0.25:
-                label = "vantaggio casa EPV"
-            elif epv_score < -0.25:
-                label = "vantaggio trasferta EPV"
-            elif epv_score > 0.10:
-                label = "leggero vantaggio casa"
-            elif epv_score < -0.10:
-                label = "leggero vantaggio trasferta"
+            indice = 0.5*norm_ppg + 0.3*norm_gd + 0.2*norm_pos
             return {
-                "home_points": int(h_st.get("points",0)), "away_points": int(a_st.get("points",0)),
-                "point_diff": int(point_diff), "ppg_diff": round(ppg_diff,2),
-                "home_ppg": round(h_ppg,2), "away_ppg": round(a_ppg,2),
-                "pos_diff": int(pos_diff), "home_rank": int(h_st.get("rank",0)), "away_rank": int(a_st.get("rank",0)),
+                "home_points": int(h_st.get("points", 0)), "away_points": int(a_st.get("points", 0)),
+                "point_diff": int(point_diff), "ppg_diff": round(ppg_diff, 2),
+                "home_ppg": round(h_ppg, 2), "away_ppg": round(a_ppg, 2),
+                "pos_diff": int(pos_diff), "home_rank": int(h_st.get("rank", 0)),
+                "away_rank": int(a_st.get("rank", 0)),
                 "home_gd3": int(h_gd3), "away_gd3": int(a_gd3), "gd_diff": int(gd_diff),
-                "venue": 1, "epv_score": round(epv_score,3), "label": label,
-                "exp_home": round(exp_home,2), "exp_away": round(exp_away,2),
-                "exp_total": round(exp_home+exp_away,2),
-                "model_diff": round(model_diff,2) if model_diff is not None else None,
-                "league_avg_gf": round(league_avg_gf,2),
+                "indice": round(indice, 3),
+                "pesi": "50% punti/gara · 30% differenza reti ultime 3 · 20% posizione",
             }
         except Exception:
             return None
@@ -4324,11 +4528,13 @@ class MatchAnalysis:
                 # meno». Il segno si porta nelle parole, non davanti al numero: il valore
                 # assoluto va in cifre e il verso nella frase.
                 if diff >= 3:
-                    s.append(f"{name} ha raccolto {_f(diff, 1)} punti in più di quanto dica l'xPTS: "
-                             f"rendimento sopra la qualità del gioco prodotto, regressione possibile.")
+                    # M2: la frase dice il fatto senza ripetere il numero di stagione, che
+                    # vive nella card della squadra (prima lo stesso dato stava in 4 riquadri)
+                    s.append(f"{name} rende più di quanto crei: rendimento sopra la qualità del "
+                             f"gioco prodotto, regressione possibile (punti contro xPTS in «Le due squadre»).")
                 elif diff <= -3:
-                    s.append(f"{name} ha {_f(-diff, 1)} punti in meno di quanto dica l'xPTS: "
-                             f"rende meno di ciò che crea, segnale di sottovalutazione.")
+                    s.append(f"{name} rende meno di ciò che crea: segnale di sottovalutazione "
+                             f"(punti contro xPTS in «Le due squadre»).")
             un = ctx.get(f"{side}_unavailable") or []
             if un:
                 # «Giocatore di peso» = titolare abituale (minuti >= metà della media squadra):
@@ -4421,25 +4627,19 @@ class MatchAnalysis:
                 # i rigori compaiono comunque nella card «Contesto», qui non servono
                 s.append(f"Arbitro {ref['name']}: {_f(y, 1)} ammonizioni a partita su "
                          f"{it_plural(n, 'gara')} designate (campione ridotto, nessuna valutazione).")
-        w = ctx.get("weather")
-        if w and w.get("desc"):
-            precip = w.get("precip"); temp = w.get("temp"); wind = w.get("wind")
-            extreme = False
-            extra = ""
-            if precip is not None and precip >= 30:
-                extreme = True
-                extra = " — pioggia probabile, campo pesante"
-            if temp is not None and (temp >= 30 or temp <= 5):
-                extreme = True
-                if not extra:
-                    extra = " — caldo/freddo intenso, ritmi più bassi"
-            if wind is not None and wind >= 15:
-                extreme = True
-                if not extra:
-                    extra = " — vento forte, gioco aereo condizionato"
-            if extreme:
-                s.append(f"Meteo previsto: {w['desc']}, {_f(temp, 0)}°C{extra}.")
-            # se non estremo, non occupa riga in narrativa (checklist BettorBoss: meteo solo se estremo)
+        w = ctx.get("weather") or {}
+        if w.get("desc") and w.get("segnalazioni"):
+            # solo i numeri col criterio che li segnala: l'aggettivo («estremo», «campo
+            # pesante») è sparito perché non era misurato (docs/55 §4.3)
+            extra = " — oltre la soglia di impatto: " if w.get("livello") == "impatto" \
+                else " — sopra la soglia di segnalazione: "
+            if w.get("livello") == "impatto":
+                extra += f"{', '.join(w['segnalazioni'])} ({WEATHER_IMPATTO_TESTO})."
+            else:
+                extra += f"{', '.join(w['segnalazioni'])}."
+            s.append(f"Meteo previsto: {w['desc']}, {_f(w.get('temp'), 0)}°C{extra}")
+            # senza valori oltre soglia il meteo non occupa riga in narrativa (checklist
+            # BettorBoss: il meteo conta solo quando è estremo)
         if ctx.get("status") == "finished":
             hx, ax = ctx.get("home_xg_match"), ctx.get("away_xg_match")
             hg, ag = ctx.get("home_goals"), ctx.get("away_goals")
@@ -4480,18 +4680,8 @@ class MatchAnalysis:
         weather = self._weather(match_id, _val(info, "weather_desc"),
                                 _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
         weather["wind"] = _val(info, "weather_wind")
-        # meteo estremo? (P1 audit: nascondere se non estremo)
-        try:
-            precip = weather.get("precip"); temp = weather.get("temp"); wind = weather.get("wind")
-            extreme = False
-            if precip is not None and precip >= 30: extreme = True
-            if temp is not None and (temp >= 30 or temp <= 5): extreme = True
-            if wind is not None and wind >= 15: extreme = True
-            weather["extreme"] = extreme
-            weather["non_extreme"] = not extreme
-        except Exception:
-            weather["extreme"] = False
-            weather["non_extreme"] = True
+        # livello e motivi del meteo: stessa funzione usata da `list_context` e dalla narrativa
+        weather.update(weather_flags(weather))
         prediction = self.prediction(match_id, f["home_name"], f["away_name"])
         # insieme condiviso dalle due colonne del bollettino stampa (docs/24 §3): lo stesso
         # articolo non deve comparire due volte nella stessa pagina
@@ -4626,11 +4816,13 @@ class MatchAnalysis:
             ctx["clash_radar"] = self.clash_radar(f["home_name"], home_id, f["away_name"], away_id) if status != "finished" else None
         except Exception:
             ctx["clash_radar"] = None
-        # EPV pre-match (P2)
+        # contesto di classifica e forma (era «EPV pre-match», docs/56 §4)
         try:
-            ctx["epv"] = self.epv_context(f["home_name"], home_id, f["away_name"], away_id, kickoff, prediction) if status != "finished" else None
+            ctx["classifica_forma"] = (self.classifica_forma(f["home_name"], home_id,
+                                                             f["away_name"], away_id, kickoff)
+                                       if status != "finished" else None)
         except Exception:
-            ctx["epv"] = None
+            ctx["classifica_forma"] = None
         # h2h trend BTTS/Over
         try:
             hp = ctx.get("h2h_pattern"); hs = ctx.get("h2h_stats")

@@ -427,7 +427,10 @@ def test_site_build_end_to_end(tmp_path):
     assert "ha segnato 8 gol nelle ultime 5 partite" in pre
     assert "imbattuta da 19 partite" in pre          # insight del campione FotMob (team remappato)
     assert "capocannoniere" in pre                   # 4° fatto: il tetto è salito da 3 a 5
-    assert pre.count("Fatti rilevanti") == 1
+    # la stringa appare due volte **nella stessa card**: titolo e indice laterale che la linka
+    # (voce di nav aggiunta l'8/10/2026, M4 di `docs/55` §6)
+    assert pre.count('id="fatti"') == 1
+    assert pre.count("Fatti rilevanti") == 2
     assert "Haven't" not in pre
     assert "clean sheets" not in pre and "hype phrase" not in pre
     assert "Migliori in campo" not in pre          # card post-partita: non deve apparire prima

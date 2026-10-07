@@ -305,9 +305,18 @@ verificabile da qui.
 
 ---
 
+## Esito (2026-10-07, notte fonda)
+
+Le risposte dell'utente alle tre domande di §8: **due P0 in un unico lotto**, sull'EPV vale la **A**
+(riga dentro «Fattori», non un secondo verdetto), **M1–M4 nello stesso lotto**. Il lotto è stato
+eseguito e misurato: i numeri prima/dopo, le due invarianti nuove (`[39]`, `[40]`) e i residui
+dichiarati sono in **[`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md)**. Nota di
+precisione su §4.1: i conteggi «676+932 pubblicati contro 377+517 reali» erano una prima stima con
+la chiave comprensiva dell'importo; i numeri definitivi (3.132+5.001 → 1.079+1.712) sono in
+`docs/56` §1.
+
 ## Prossimo passo
 
-Nessun file di codice o dato è stato modificato in questa revisione. Su risposta dell'utente alle
-domande di §8, il lotto successivo è: **P0 Mercato** (dedup + invariante [39] + test), **P0 Meteo**
-(soglie condivise + [40]) e la decisione sull'EPV, con i gate pieni (517 test, `verify_site`,
-`parita_schede`, `resa_375`) e un unico giro di PR.
+Nessun file di codice o dato è stato modificato **in questa revisione** (l'esecuzione è il lotto
+successivo, `docs/56`). Restano in coda, non in questo lotto: **M6** (sotto-serie dei precedenti) e
+i residui dichiarati in `docs/56` §6.

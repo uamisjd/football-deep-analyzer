@@ -355,3 +355,168 @@ def test_collect_transfers_isolato_e_tollerante(tmp_path):
     st.close()
 
 
+
+
+# ---------------------------------------------------------------------------------------------
+# Difetto misurato il 2026-10-07 (docs/56 §2): la card pubblicava ~2 volte i movimenti veri.
+# Tre cause, tutte reali nei dati: la data in ora locale invece che UTC (1-2 ore di scarto),
+# i diacritici scritti in due modi, e la stessa mossa ripubblicata con la data aggiornata.
+# ---------------------------------------------------------------------------------------------
+
+
+def test_transfer_window_stesso_movimento_con_ora_locale(tmp_path):
+    """La fonte riscrive la stessa mossa con l'ora locale al posto dell'UTC: una riga sola.
+
+    Forma reale (``transfers.parquet``, Santa Clara/Adriano): ``2026-02-04T16:03:14Z`` e
+    ``2026-02-04T17:03:14`` — stesso movimento, un'ora di scarto, e la seconda data **senza
+    la Z** che il vecchio parser azzerava in silenzio (il movimento spariva del tutto).
+    """
+    from datetime import UTC, datetime, timedelta
+    quando = datetime.now(UTC) - timedelta(days=2)
+    utc = quando.strftime("%Y-%m-%dT%H:%M:%SZ")
+    locale = (quando + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")     # ora locale, senza Z
+    st = Store(tmp_path / "mercato_ora")
+    st.write("transfers", _transfers([
+        {"player_name": "Adriano", "direction": "out", "counterpart": "Wuhan Three Towns",
+         "date": utc},
+        {"player_name": "Adriano", "direction": "out", "counterpart": "Wuhan Three Towns",
+         "date": locale},
+    ]))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1)
+    assert mk["n_out"] == 1
+    assert [t["name"] for t in mk["departures"]] == ["Adriano"]
+    # la data senza Z è leggibile (prima era NaT: il movimento non entrava nella finestra)
+    assert mk["window_end"] == quando.strftime("%d/%m/%Y")
+    st.close()
+
+
+def test_transfer_window_stesso_movimento_con_diacritici_diversi(tmp_path):
+    """``Aleksić``/``Aleksic`` sono lo stesso giocatore: una riga, non due."""
+    from datetime import UTC, datetime, timedelta
+    quando = datetime.now(UTC) - timedelta(days=4)
+    st = Store(tmp_path / "mercato_diacritici")
+    st.write("transfers", _transfers([
+        {"player_name": "Aleksa Aleksić", "direction": "in", "counterpart": "Sarajevo",
+         "date": quando.strftime("%Y-%m-%dT%H:%M:%SZ")},
+        {"player_name": "Aleksa Aleksic", "direction": "in", "counterpart": "Sarajevo",
+         "date": (quando + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S")},
+    ]))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1)
+    assert mk["n_in"] == 1 and len(mk["arrivals"]) == 1
+    st.close()
+
+
+def test_transfer_window_movimenti_diversi_restano_due(tmp_path):
+    """Due movimenti dello stesso giocatore verso club diversi restano due righe.
+
+    Misurato: nel finestra attuale non c'è nessun caso così (0 su 132 club), ma la regola
+    non li nasconde — la soglia di ri-pubblicazione (30 giorni) e quella sui duplicati
+    (3 ore) non li toccano.
+    """
+    from datetime import UTC, datetime, timedelta
+    oggi = datetime.now(UTC)
+    st = Store(tmp_path / "mercato_due")
+    # i movimenti di riempimento tengono la finestra concatenata (fra due movimenti della
+    # squadra non devono passare più di 21 giorni), così le due righe del giocatore cadono
+    # nella stessa finestra
+    righe = [{"player_name": "Doppio Prestito", "direction": "out", "counterpart": "Mantova",
+              "date": (oggi - timedelta(days=60)).strftime("%Y-%m-%dT%H:%M:%SZ")}]
+    for i, gg in enumerate((50, 40, 30, 20)):
+        righe.append({"player_name": f"Riempimento {i}", "direction": "out",
+                      "counterpart": "Altro Club",
+                      "date": (oggi - timedelta(days=gg)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    righe.append({"player_name": "Doppio Prestito", "direction": "out", "counterpart": "Rijeka",
+                  "date": (oggi - timedelta(days=10)).strftime("%Y-%m-%dT%H:%M:%SZ")})
+    st.write("transfers", _transfers(righe))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1, n=10)          # tutti i movimenti, non solo i primi 4
+    doppio = [t for t in mk["departures"] if t["name"] == "Doppio Prestito"]
+    assert len(doppio) == 2
+    assert {t["counterpart"] for t in doppio} == {"Mantova", "Rijeka"}
+    st.close()
+
+
+def test_transfer_window_una_riga_per_giocatore(tmp_path):
+    """La mossa ripubblicata con la **data aggiornata** resta una riga: vince l'ultima versione.
+
+    Caso reale (Braga/Sporting CP, Zalazar): 30/06 e 13/07, stesso importo pubblicato. Il
+    lettore vede un movimento, con la data e l'importo della versione più recente.
+    """
+    from datetime import UTC, datetime, timedelta
+    oggi = datetime.now(UTC)
+    st = Store(tmp_path / "mercato_ripubblicato")
+    st.write("transfers", _transfers([
+        {"player_name": "Rodrigo Zalazar", "direction": "out", "counterpart": "Sporting CP",
+         "fee_text": "30000000", "date": (oggi - timedelta(days=14)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+        {"player_name": "Rodrigo Zalazar", "direction": "out", "counterpart": "Sporting CP",
+         "fee_text": "30000000", "date": (oggi - timedelta(days=2)).strftime("%Y-%m-%dT%H:%M:%SZ")},
+    ]))
+    an = MatchAnalysis(st)
+    mk = an.transfer_window(1)
+    assert mk["n_out"] == 1
+    assert mk["departures"][0]["date_it"] == (oggi - timedelta(days=2)).strftime("%d/%m/%Y")
+    assert mk["departures"][0]["fee"] == "30 M€"
+    assert mk["incasso"] == 30000000.0
+    st.close()
+
+
+def test_upsert_transfers_riconosce_lo_stesso_movimento(tmp_path):
+    """L'upsert non deve creare una seconda riga per la stessa mossa riscritta dalla fonte.
+
+    Misurato sui Parquet committati: 2.919 righe in più su 11.624 con la vecchia chiave. Qui
+    la seconda scrittura ha l'ora locale al posto dell'UTC **e** il nome senza diacritici:
+    deve sostituire la prima, non aggiungersi.
+    """
+    st = Store(tmp_path / "mercato_upsert")
+    st.upsert("transfers", _transfers([
+        {"player_name": "Aleksa Aleksić", "direction": "in", "counterpart": "Sarajevo",
+         "date": "2026-08-20T09:00:00Z"},
+    ]))
+    st.upsert("transfers", _transfers([
+        {"player_name": "Aleksa Aleksic", "direction": "in", "counterpart": "Sarajevo",
+         "date": "2026-08-20T11:00:00"},
+    ]))
+    salvate = st.read("transfers")
+    assert len(salvate) == 1
+    assert str(salvate.iloc[0]["player_name"]) == "Aleksa Aleksic"   # l'ultima versione
+    st.close()
+
+
+def test_parse_moments_legge_i_due_formati():
+    """``parse_moments`` legge le date con e senza ``Z``; una data vuota resta NaT, non zero."""
+    from fda.site.analysis import parse_moments
+    s = pd.Series(["2026-08-11T06:47:30Z", "2026-08-11T08:47:30", "", None])
+    out = parse_moments(s)
+    assert out.notna().sum() == 2
+    assert out.iloc[0] == pd.Timestamp("2026-08-11T06:47:30Z")
+    assert out.iloc[1] == pd.Timestamp("2026-08-11T08:47:30Z")
+    assert pd.isna(out.iloc[2]) and pd.isna(out.iloc[3])
+
+
+def test_dedup_transfers_dati_reali_del_difetto():
+    """Sulle righe reali del difetto: 11.624 → una riga per movimento (nessun doppione)."""
+    from fda.site.analysis import dedup_transfers
+    df = pd.DataFrame([
+        # Santa Clara / Adriano: UTC e ora locale (una riga senza Z)
+        {"team_id": 1, "direction": "out", "player_name": "Adriano",
+         "counterpart": "Wuhan Three Towns", "fee_text": "", "date": "2026-02-04T16:03:14Z"},
+        {"team_id": 1, "direction": "out", "player_name": "Adriano",
+         "counterpart": "Wuhan Three Towns", "fee_text": "", "date": "2026-02-04T17:03:14"},
+        # Atalanta / Djimsiti: tre righe, controparte anche scritta in due modi
+        {"team_id": 2, "direction": "out", "player_name": "Berat Djimsiti",
+         "counterpart": "Al Diriyah", "fee_text": "3000000", "date": "2026-08-11T06:47:30Z"},
+        {"team_id": 2, "direction": "out", "player_name": "Berat Djimsiti",
+         "counterpart": "Al Diriyah", "fee_text": "3000000", "date": "2026-08-11T08:47:30"},
+        {"team_id": 2, "direction": "out", "player_name": "Berat Djimsiti",
+         "counterpart": "Al-Diraiyah", "fee_text": "3000000", "date": "2026-08-11T08:47:30Z"},
+    ])
+    out = dedup_transfers(df)
+    # primo livello: le righe a 1-2 ore l'una dall'altra sono la stessa mossa → una sola
+    # per squadra (Adriano) e due per Djimsiti, perché la controparte è scritta anche
+    # «Al-Diraiyah»: quel caso lo chiude il secondo livello, per giocatore, in
+    # ``transfer_window`` (vedi ``test_transfer_window_una_riga_per_giocatore``)
+    assert len(out) == 3
+    assert set(out[out.team_id == 1].player_name) == {"Adriano"}
+    assert set(out[out.team_id == 2].fee_text.astype(str)) == {"3000000"}

@@ -2339,9 +2339,11 @@ def _testo_confrontabile(s: str) -> str:
 #: Le sezioni che l'indice della scheda partita deve saper raggiungere quando esistono nella
 #: pagina: sono le card pesanti rimaste senza ancora fino alla P1.3 (`docs/28` §2). Da P2.4
 #: «contesto» non c'è più: le due card che ne sono nate hanno ognuna il suo id e la sua voce.
+#: «fatti» è entrata nell'elenco l'8/10/2026 (M4 di `docs/55` §6): la sezione c'era su 66
+#: schede su 66 e non era raggiungibile dall'indice.
 NAV_SEZIONI = ("lettura", "previsione", "scontro", "arrivi", "giocatori", "squadre", "panchina",
-               "mercato", "notizie", "arbitro-meteo", "precedenti", "statistiche", "cronaca",
-               "verifica")
+               "mercato", "notizie", "fatti", "arbitro-meteo", "precedenti", "statistiche",
+               "cronaca", "verifica")
 
 
 def check_nav(site: Path) -> tuple[list[str], int]:
@@ -2680,6 +2682,197 @@ def check_importi_mercato(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+# La card «Mercato» pubblicava ogni movimento due volte (docs/55 §4.1, docs/56 §2): la chiave
+# dell'upsert non intercettava le righe che la fonte riscrive con l'ora locale al posto
+# dell'UTC e con i diacritici diversi, quindi la pagina mostrava la stessa riga due volte e i
+# conteggi erano gonfi di ~1,9×. `verify_site [26]` riconciliava la card **con la stessa
+# funzione** che la costruisce: coerente e sbagliata. Questa invariante rifà il conto dal
+# Parquet, in modo indipendente, e pretende che una riga per giocatore resti una.
+def check_mercato_movimenti(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[39] un movimento per giocatore e direzione: niente righe ripetute, conteggi giusti."""
+    import pandas as pd
+
+    from fda.store import Store
+    from fda.teams import soft_key
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    tr = st.read("transfers")
+    fx = st.read("fixtures")
+    if tr.empty or fx.empty or "player_name" not in tr.columns:
+        return fails, checks
+    date = pd.to_datetime(tr["date"], utc=True, errors="coerce", format="mixed")
+    tr = tr.assign(_dt=date, _pn=tr.player_name.map(lambda v: soft_key(str(v or ""))),
+                   _cn=tr.counterpart.map(lambda v: soft_key(str(v or ""))))
+    tr = tr[tr._dt.notna()]
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    intestazione = re.compile(r"<b>(\d+)</b> (?:arrivo|arrivi) · <b>(\d+)</b> (?:partenza|partenze) "
+                              r"nella finestra dal <b>(\d{2}/\d{2}/\d{4})</b>")
+    n_pagine = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        if 'id="mercato"' not in html or "Analisi pre-partita" not in html:
+            continue
+        mid = int(pg.stem)
+        riga_fx = fx[fx.match_id == mid]
+        if riga_fx.empty:
+            continue
+        f = riga_fx.iloc[0]
+        n_pagine += 1
+        # la card finisce alla card successiva: senza il taglio, `<h3>` di altre sezioni
+        # entravano nella scansione (misurato: 255 blocchi invece di 132)
+        inizio = html.find('id="mercato"')
+        dopo = html.find('<div class="card" id="', inizio + 10)
+        card = html[inizio:dopo if dopo > inizio else len(html)]
+        colonne = re.split(r'<h3 style="margin:0 0 8px">', card)[1:]
+        # (a) nessun nome ripetuto nella stessa colonna e direzione
+        for colonna in colonne:
+            pezzi = colonna.split('class="small" style="margin:8px 0 4px;')[1:]
+            for direzione, pezzo in zip(("arrivi", "partenze"), pezzi, strict=False):
+                nomi = re.findall(r"<tr>\s*<td>([^<]+)</td>", pezzo)
+                checks += 1
+                chiavi = [soft_key(html_unescape(n)) for n in nomi]
+                if len(chiavi) != len(set(chiavi)):
+                    doppi = sorted({n for n, k in zip(nomi, chiavi, strict=True)
+                                    if chiavi.count(k) > 1})
+                    fails.append(f"{pg.name}: mercato {direzione}: riga ripetuta "
+                                 f"({', '.join(doppi)})")
+        # (b) i conteggi pubblicati = giocatori distinti nella finestra dichiarata in pagina
+        for tid, nome in ((int(f.home_id), str(f.home_name)), (int(f.away_id), str(f.away_name))):
+            squadra = tr[tr.team_id == tid]
+            if squadra.empty:
+                continue
+            attesi = {}
+            for direzione, chiave in (("in", "n_in"), ("out", "n_out")):
+                d = squadra[squadra.direction == direzione]
+                attesi[chiave] = int(d._pn.nunique()) if not d.empty else 0
+            m = None
+            for col in colonne:
+                if html_unescape(col.split("</h3>", 1)[0]).strip() == nome:
+                    m = intestazione.search(col)
+                    break
+            if m is None:
+                continue
+            for chiave, idx in (("n_in", 1), ("n_out", 2)):
+                pubblicato = int(m.group(idx))
+                checks += 1
+                # la finestra può escludere i movimenti vecchi: il confronto è sulla stessa
+                # porzione di tabella letta dalla pagina
+                inizio = pd.to_datetime(m.group(3), format="%d/%m/%Y", utc=True)
+                direzione = "in" if chiave == "n_in" else "out"
+                d = squadra[(squadra.direction == direzione) & (squadra._dt >= inizio)]
+                distinti = int(d._pn.nunique()) if not d.empty else 0
+                if pubblicato != distinti:
+                    extra = pubblicato - distinti
+                    spiegato = False
+                    if extra > 0:
+                        # eccezione dichiarata dalla card: due movimenti dello stesso
+                        # giocatore verso club diversi a più di 30 giorni l'uno dall'altro
+                        gruppi = 0
+                        for _, g in d.groupby("_pn"):
+                            if len(g) < 2:
+                                continue
+                            span = (g._dt.max() - g._dt.min()).days
+                            if span > 30 and len({c for c in g._cn}) > 1:
+                                gruppi += len(g) - 1
+                        spiegato = gruppi >= extra
+                    if not spiegato:
+                        fails.append(f"{pg.name}: mercato {nome}: {pubblicato} movimenti "
+                                     f"pubblicati contro {distinti} giocatori distinti nei dati")
+    print(f"[39] card mercato senza movimenti ripetuti: {n_pagine} pagine")
+    return fails, checks
+
+
+# Le soglie del meteo erano scritte in due posti diversi: il testo della card diceva «nella
+# norma (precip <30%, 10-28 °C, vento <15 km/h)», il codice segnalava `≥30`, `≥30/≤5`, `≥15` e
+# chiamava «estremo — può spostare ritmi» una pioggia al 31% (14 schede su 66, docs/55 §4.3).
+# Ora le soglie sono costanti del progetto stampate in pagina: qui si verifica che la pagina
+# dica **quelle** e che il livello dichiarato corrisponda ai valori nel Parquet.
+def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[40] meteo: stesse soglie fra testo e codice, livello coerente coi valori misurati."""
+    import pandas as pd
+
+    from fda.site.analysis import (
+        WEATHER_IMPATTO_TESTO,
+        WEATHER_PRECIP_IMPATTO,
+        WEATHER_PRECIP_SEGNALA,
+        WEATHER_SOGLIE_TESTO,
+        WEATHER_TEMP_ALTA,
+        WEATHER_TEMP_BASSA,
+        WEATHER_VENTO_IMPATTO,
+        WEATHER_VENTO_SEGNALA,
+    )
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    mi = st.read("match_info")
+    if mi.empty:
+        return fails, checks
+    info = mi.set_index("match_id") if "match_id" in mi.columns else mi
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    riga = re.compile(r'<th scope="row">Meteo[^<]*</th><td[^>]*>(.*?)</td></tr>', re.DOTALL)
+    n = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        m = riga.search(html)
+        if not m:
+            continue
+        mid = int(pg.stem)
+        if mid not in info.index:
+            continue
+        n += 1
+        testo = re.sub(r"<[^>]+>", " ", html_unescape(m.group(1)))
+        testo = re.sub(r"\s+", " ", testo).strip()
+        r = info.loc[mid]
+        if isinstance(r, pd.DataFrame):
+            r = r.iloc[0]
+        precip = r.get("weather_precip_chance")
+        temp = r.get("weather_temp_c")
+        wind = r.get("weather_wind")
+        impatto = (precip is not None and float(precip) > WEATHER_PRECIP_IMPATTO) or \
+            (temp is not None and float(temp) > WEATHER_TEMP_ALTA) or \
+            (wind is not None and float(wind) > WEATHER_VENTO_IMPATTO)
+        attenzione = (precip is not None and float(precip) >= WEATHER_PRECIP_SEGNALA) or \
+            (temp is not None and (float(temp) >= WEATHER_TEMP_ALTA
+                                   or float(temp) <= WEATHER_TEMP_BASSA)) or \
+            (wind is not None and float(wind) >= WEATHER_VENTO_SEGNALA)
+        checks += 1
+        # Le soglie si citano in due forme: le righe **dentro** soglia dichiarano l'intervallo
+        # intero (`WEATHER_SOGLIE_TESTO`), quelle oltre soglia citano solo la soglia superata —
+        # `(soglia 30%)` oppure `(oltre la soglia di impatto 50%)`. Qualunque numero fra
+        # parentesi deve essere una costante del codice: è questo che impedisce al testo di
+        # raccontare soglie diverse da quelle che accendono l'avviso.
+        citate = re.findall(r"\((?:oltre la )?soglia (?:di impatto )?([^)]*)\)", testo)
+        ammesse = {
+            f"{WEATHER_PRECIP_SEGNALA}%", f"{WEATHER_PRECIP_IMPATTO}%",
+            f"{WEATHER_TEMP_ALTA} °C", f"{WEATHER_TEMP_ALTA} °C / {WEATHER_TEMP_BASSA} °C",
+            f"{WEATHER_VENTO_SEGNALA} km/h", f"{WEATHER_VENTO_IMPATTO} km/h",
+        }
+        dichiarate = (WEATHER_SOGLIE_TESTO in testo or WEATHER_IMPATTO_TESTO in testo
+                      or "previsione pubblicata a ridosso della gara" in testo)
+        if not dichiarate and not citate:
+            fails.append(f"{pg.name}: il meteo non dichiara le soglie del codice")
+        for soglia in citate:
+            if soglia not in ammesse:
+                fails.append(f"{pg.name}: il meteo cita una soglia che non è nel codice ({soglia})")
+        checks += 1
+        if "estremo" in testo.lower():
+            fails.append(f"{pg.name}: il meteo usa ancora «estremo» (aggettivo non misurato)")
+        checks += 1
+        if impatto and "oltre la soglia di impatto" not in testo:
+            fails.append(f"{pg.name}: valori oltre la soglia di impatto ma la pagina non lo dice")
+        if impatto and WEATHER_IMPATTO_TESTO not in testo:
+            fails.append(f"{pg.name}: soglia di impatto citata in modo diverso dal codice")
+        checks += 1
+        if not impatto and not attenzione and "sopra la soglia di segnalazione" in testo:
+            fails.append(f"{pg.name}: la pagina segnala il meteo ma i valori non superano le soglie")
+    print(f"[40] righe meteo con le soglie del codice: {n} pagine")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -2727,6 +2920,12 @@ def main() -> int:
     fails += importi
     checks += importi_checks
     if not args.content_only:
+        mercato, mercato_checks = check_mercato_movimenti(site, Path(args.data) if args.data else None)
+        fails += mercato
+        checks += mercato_checks
+        meteo, meteo_checks = check_meteo_soglie(site, Path(args.data) if args.data else None)
+        fails += meteo
+        checks += meteo_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks
