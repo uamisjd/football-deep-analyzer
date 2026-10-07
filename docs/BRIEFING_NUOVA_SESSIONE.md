@@ -2,7 +2,7 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-09-19 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo dell'ultimo lavoro è in cima a `docs/STATO.md`.
+> **Ultimo aggiornamento:** 2026-10-07 · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md`; la verifica più recente è [`docs/52`](52_verifica_stato_costi_e_gate_2026-10-07.md).
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
 ---
@@ -23,7 +23,7 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 - Il sito è **statico**: `index.html` (Oggi), `prossime.html`, `risultati.html`, `partite/<id>.html` (tutte le finite di stagione, archivio), `giocatori/` (hub + tabellone per lega + schede giocatore con percentili/radar, fase 3), `accuratezza.html` (RPS/Brier reali), `stagione.html` (proiezioni), `stato.html` (stato fonti). Report in italiano generati dai template `analysis.py` → `narrative`.
 - Il pacchetto è installabile: `pip install -e ".[dev]"`; entry point CLI `fda` (typer).
 
-## 1-bis. Ultimo checkpoint — verifica totale del progetto + backoff esteso allo scoreboard ESPN (2026-09-16, ventitreesimo giro)
+## 1-bis. Storico: checkpoint del 2026-09-16 — backoff esteso allo scoreboard ESPN (non è lo stato attuale)
 
 - **Il progetto è sano, misurato ora** (non presunto): suite **347 passed**, `fda build` exit 0 (**376** schede partita / **2.364** partite / **7.478** giocatori), `verify_site` exit 0 (**0 problemi · 89.448 controlli**, invarianti `[0]`-`[32]` tutte presenti), ruff **173** = baseline (0 nuove), `git status --porcelain` vuoto, **0 file eliminati** negli ultimi 40 commit.
 - **PR #43 fusa dall'utente** (`6404a74`, 18:03Z) e **primo daily post-merge verde** (run `35131980208`): gate `verify_site` **success**, deploy Pages 18:23, dati committati `c969b6b`. Confermate dal vivo le voci che il giro precedente lasciava «da verificare»: **8 righe `espn:*` SOSPESO con 0 richieste** (prima: 76 fallimenti e 1 richiesta), CSS esterno servito (4.131 pagine, 125 MB), **0 tooltip «/90′»** sulle quote, **2.825** schede giocatore con ◇/◎. Il daily schedulato `35131059680` è rosso solo perché è partito prima del merge.
@@ -40,6 +40,10 @@ GitHub Actions (cron 5x/giorno) → collect (FotMob/ESPN/Understat/mirror) →
 - **giri fino al 2026-09-15 sera** in [`STATO_archivio_2026-09-15.md`](STATO_archivio_2026-09-15.md).
 
 ## 2. Stato attuale del lavoro (sintesi — dettaglio sempre in `docs/STATO.md`)
+
+- **Verifica 2026-10-07 (`docs/52`):** PR #82 fusa, issue #79 chiusa dal daily #217 verde e deploy riuscito. Ultimi gate locali: 515 test, `fda build`, `verify_site` (0 problemi / 159.546 controlli), parità delle 66 schede, resa 375 px (0 problemi) e Ruff pulito. Nessuna raccolta live è stata eseguita in questa sessione. Fonti senza API a pagamento; cache persistente in Actions; tetti FotMob/notizie 600/200 per run. **Usare `docs/52` per le questioni aperte e i limiti aggiornati.**
+- Le sessioni descritte nei punti successivi sono **storico e contesto**, non la coda operativa di oggi.
+
 
 - **Sessione `arena/01a0c06a-football-deep-analyzer` (2026-09-20, audit dei modelli — `docs/48`):** misure offline riproducibili (`scripts/audit_modelli.py`): l'Elo non aggiunge nulla di misurabile, il modello è **troppo piatto** agli estremi (temperatura T≈0,86 = −0,0004 RPS walk-forward, candidato di laboratorio da dichiarare), il mercato sta 0,0085 RPS avanti (1.071 gare NED1/POR1). **P0**: i tre correttivi della PR #68 (valore titolari, assenze, riposo) sono in produzione senza laboratorio né calibrazione, il riposo **peggiora** e la scheda chiama «Dixon-Coles» un vettore già corretto. **Bug corretto**: `daily` → `calibrate_cmd()` senza argomenti (OptionInfo) → calibrazione ferma al 13/09. Decisioni aperte in `docs/48` §6.
 
@@ -108,7 +112,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (58 file, misurati il 05/10/2026: **50** documenti numerati — il 09 non è mai esistito — + briefing + `STATO.md` + **4** archivi + 2 audit datati `audit-2026-09-20.md` / `audit-scheda-prepartita-2026-09-20.md`) | |
+| **`docs/` — indice completo** (61 file al 7/10/2026: **52** documenti numerati — il 09 non è mai esistito — + briefing + `STATO.md` + **4** archivi + 2 audit datati + `_audit_modelli.json`) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-09-17.md` | Giri **22-26** (2026-09-16/17): backoff e scoreboard ESPN, numeri pubblicati, stime stabilizzate, «Vita del club». |
@@ -163,7 +167,9 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/46_accuratezza_e_proiezioni_leggibili_2026-09-19.md` | I cinque interventi di leggibilità su *Accuratezza* e *Proiezioni* (colonna mancante, grafico dei mercati, marcatore delle squadre fragili), tutti con prova al contrario. |
 | `docs/47_due_rossi_dopo_il_merge_2026-09-19.md` | I due `daily` rossi dopo il merge di #64: una bomba a orologeria e una scala arrotondata due volte — entrambi preesistenti, visti perché i gate funzionano. |
 | `docs/49_ritardo_schedule_github_e_bug_lab_2026-09-21.md` | Perché il sito era fermo alle 01:29 (ritardo degli schedule di GitHub, misurato fino a +5h49) e il bug del commit nel workflow `lab` (`git add --ignore-missing`). |
-| `docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md` | **Sito fermo dal 28/09** (un decimale col punto nelle coordinate della sonda fermava `verify_site` prima del deploy) e **sei sezioni perse su 66 schede** (`{% endif %}` di «Precedenti» fuori posto: annidate anche la previsione); §5 = **costo delle fonti misurato** (~1.700 richieste/giorno, cache HTTP che non sopravviveva fra i run) e §6 = cosa resta. |
+| `docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md` | **Sito fermo dal 28/09** (un decimale col punto nelle coordinate della sonda fermava `verify_site` prima del deploy) e **sei sezioni perse su 66 schede** (`{% endif %}` di «Precedenti» fuori posto: annidate anche la previsione); §5 = **costo delle fonti misurato** (~1.700 richieste/giorno prima della cache persistente) e §6 = cosa resta. |
+| `docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md` | Correzione di «1 assente/1 giorno» e rimozione del feed RSS Sportmediaset 404; diario della ripartenza del daily, prima della PR #82. |
+| `docs/52_verifica_stato_costi_e_gate_2026-10-07.md` | Stato aggiornato post-merge #82, run #217, gate locali ripetuti, limiti delle fonti e coda concreta di lavoro. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |
@@ -172,8 +178,8 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `scripts/` | **`verify_site.py`** (gate in CI, invarianti `[0]`-`[37]`: 38 controlli numerati, `[37]` è la didascalia del punteggio aggiunta il 19/09), **`prematch_sections.py`** (censimento della scheda pre-partita: sezioni, peso visibile/tendina, ridondanze), `audit_match_sections.py`, `benchmark_quote.py`, `probe_fonti.py` (sonda settimanale), `diagnose_model.py`, `verdetto_lab.py`, `corpus_da_h2h.py`, `anteprima_scheda.py`, `render_preview.py`, `verify_ned_por.py`, `verify_standings.py`, **`font_locali.py`** (scarica i font e li rende locali, `--check` offline). |
 | `config/leagues.yaml` | Le 7 leghe + coppe; aggiungere una lega = aggiungere una voce qui (`datahub_base` per i mirror). |
 | `config/sources.yaml` | Budget di richieste per fonte. |
-| `.github/workflows/` | `daily.yml` (cron 5x/giorno: collect → calibrate → predict → backtest → simulate → build → **gate `verify_site`** → commit dati → Pages), `tests.yml` (pytest a ogni push/PR), `lab.yml` (lunedì 05:30 IT + sonda dei fallback), `benchmark.yml` (mensile: modello vs chiusura), `diag-fetch-log.yml` (log dei run → branch **`diag-logs`**). |
-| `tests/` | **385 test** in 37 file, tutti offline (parser su fixture JSON, config, modelli, sito, store/collect, backoff, contrasto dei temi, integrità del pacchetto). |
+| `.github/workflows/` | `daily.yml` (cron 5x/giorno: collect → calibrate → predict → backtest → simulate → build → gate → commit dati → Pages), `tests.yml` (Ruff + pytest su push/PR; Ruff aggiunto in questa sessione), `lab.yml` (lunedì 05:30 IT + sonda dei fallback), `benchmark.yml` (mensile: modello vs chiusura), `diag-fetch-log.yml` (log dei run → branch **`diag-logs`**). |
+| `tests/` | **515 test** in 44 file, eseguiti offline (parser su fixture JSON, config, modelli, sito, store/collect, backoff, contrasto dei temi, integrità del pacchetto). |
 | `data/processed/` | **26 Parquet** versionati, committati dai run daily. `fda.duckdb` è una vista derivata e **non** è versionato (`docs/26` §5). |
 | `diag/trigger.txt` | Interruttore del workflow `diag`: scrivici `run_id=<id>` e pusha su un branch `arena/**`. |
 

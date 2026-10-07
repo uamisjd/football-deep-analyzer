@@ -22,8 +22,11 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/23_quote_e_rate_stabilizzate_2026-09-16.md`](docs/23_quote_e_rate_stabilizzate_2026-09-16.md) — stime stabilizzate, quote non più rate per 90, difetti del backoff ESPN.
 - [`docs/25_revisione_lingua_e_parita_2026-09-17.md`](docs/25_revisione_lingua_e_parita_2026-09-17.md) — revisione completa del portale: il filtro che pubblicava titoli stranieri come italiani e la parità fra le 7 leghe.
 - [`docs/26_revisione_totale_2026-09-17.md`](docs/26_revisione_totale_2026-09-17.md) — **revisione totale del progetto**: cosa è stato riverificato, i difetti trovati (potatura delle notizie, CSS fuori dalla wheel, anteprima che sovrascriveva il sito, DuckDB derivato versionato) e le decisioni aperte.
+- [`docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md`](docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md) — incidente del daily, sezioni delle schede e misure del costo delle fonti.
+- [`docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md`](docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md) — fix che ha sbloccato il daily e rimosso il feed RSS 404.
+- [`docs/52_verifica_stato_costi_e_gate_2026-10-07.md`](docs/52_verifica_stato_costi_e_gate_2026-10-07.md) — **stato aggiornato**, gate ripetuti, limiti/costi delle fonti e prossimi interventi.
 
-> L'**indice completo** dei 58 file di `docs/` (50 documenti numerati + briefing + `STATO.md` + 4 archivi + 2 audit datati; con l'albero del codice e i workflow) è nel briefing, sezione 6.
+> L'**indice completo** dei 61 file di `docs/` (52 documenti numerati + briefing + `STATO.md` + 4 archivi + 2 audit datati + `_audit_modelli.json`) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 

@@ -933,9 +933,7 @@ def is_low_reputation(source: str | None) -> bool:
     if LOW_REPUTATION_PATTERN.search(s):
         return True
     # aggregatori generici senza redazione
-    if low in {"diretta", "sofascore", "futbol24", "yahoo", "fotmob"}:
-        return True
-    return False
+    return low in {"diretta", "sofascore", "futbol24", "yahoo", "fotmob"}
 
 
 

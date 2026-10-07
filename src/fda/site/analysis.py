@@ -21,7 +21,14 @@ from scipy.stats import poisson
 
 from ..config import leagues, load_leagues_config
 from ..models.predict import wilson_interval
-from ..sources.news import TOPIC_LABELS, TOPIC_WEIGHTS, classify_news, is_italian_news, is_low_reputation, news_value
+from ..sources.news import (
+    TOPIC_LABELS,
+    TOPIC_WEIGHTS,
+    classify_news,
+    is_italian_news,
+    is_low_reputation,
+    news_value,
+)
 from ..store import Store
 from ..teams import canonical, soft_key
 from .advanced import (

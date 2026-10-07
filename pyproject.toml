@@ -28,7 +28,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8",
-    "ruff>=0.5",
+    # Versione fissata per rendere ripetibile il gate `ruff check .` in CI.
+    "ruff==0.16.10",
     # scripts/render_preview.py disegna i PNG di docs/preview (P2-8b): senza libreria
     # di sistema, ma la dipendenza va dichiarata o il tool non gira in un ambiente nuovo
     "pillow>=10",
@@ -64,12 +65,12 @@ line-length = 100
 target-version = "py311"
 
 # Eccezioni deliberate (pulizia ruff del 18/09/2026, vedi docs/27 §5.2): il resto del codice
-# è a zero segnalazioni. Questi moduli usano `except Exception`/`try…pass` come scelta
+# è a zero segnalazioni. Questi moduli usano `except Exception`/`try…pass`/`try…continue` come scelta
 # documentata di progetto («se un passo cade, il run degrada e pubblica comunque», README):
 # ignorarle qui NON le ignora nei file nuovi, dove restano vietate (regola B.4).
 [tool.ruff.lint.per-file-ignores]
-"src/fda/site/build.py" = ["BLE001", "S110"]
-"src/fda/site/analysis.py" = ["BLE001"]
+"src/fda/site/build.py" = ["BLE001", "S110", "S112"]
+"src/fda/site/analysis.py" = ["BLE001", "S110"]
 "src/fda/cli.py" = ["BLE001", "B008"]   # B008: typer.Argument in default è l'idioma di typer
 "src/fda/models/predict.py" = ["BLE001"]
 "src/fda/models/calibration.py" = ["BLE001"]
