@@ -1269,7 +1269,7 @@ documentata di gate/fonti/costi. Nessuna modifica alla raccolta o alla schedulaz
 era stata preparata in PR #84 (stesso branch `arena/e20f049c`); quando #85 e #86 sono state fuse,
 quella PR è diventata `CONFLICTING` con `main` proprio su questo file e su `STATO.md`, e le due
 §9.17 (una per #83, una per #85) si sarebbero sovrapposte. La PR sostitutiva della sessione
-`arena/550df67c` porta qui il record ancora valido, aggiornato; la diagnosi completa, con comandi
+`arena/550df67c` (PR #87) porta qui il record ancora valido, aggiornato; la diagnosi completa, con comandi
 e prove, è in `docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md`. Nota di numerazione:
 questa sezione è la §9.17 **per data reale del merge** (15:37:25Z); la sezione del merge #85, che
 seguiva, è stata rinumerata **§9.18** (era §9.17 fino al 07/10/2026 sera).

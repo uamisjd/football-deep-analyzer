@@ -29,7 +29,8 @@ cose a caso, studia bene tutto» (07/10/2026, PR #84).
    (`arena/e20f049c`) appartiene a un'altra sessione e questa sessione ha il divieto di pushare
    su branch diversi dal proprio. La via corretta è una **PR sostitutiva** dal branch di questa
    sessione che porta in `main` il contenuto di #84 ancora valido, aggiornato allo stato di oggi;
-   #84 va poi **chiusa** (superata), non mergiata. È quello che fa questa PR (§3).
+   #84 va poi **chiusa** (superata), non mergiata. È quello che fa questa PR sostitutiva,
+   **PR #87** (§3).
 
 ## 1. Cronologia degli eventi (tutto verificato via API GitHub, §4)
 
@@ -62,7 +63,7 @@ I due file in conflitto sono esattamente quelli toccati **sia** da #84 **sia** d
 | `docs/52_verifica_stato_costi_e_gate_2026-10-07.md` | solo #84 | nessun conflitto file, ma contenuto da aggiornare (non conosce #85/#86) |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | solo #84 | nessun conflitto file, ma contenuto da aggiornare (idem) |
 
-## 3. Cosa porta questa PR sostitutiva
+## 3. Cosa porta questa PR sostitutiva (PR #87)
 
 1. **`docs/13`** — nuova **§9.17 «Merge PR #83 — lint in CI e handoff (deroga esplicita)»**; la
    vecchia §9.17 (deroga #85) diventa **§9.18**, con nota di rinumerazione; «Catena delle
