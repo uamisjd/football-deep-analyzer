@@ -1244,9 +1244,39 @@ campione») senza perdere il separatore («5.791 gare»). Censito il resto: ness
 
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-#59 (2026-09-19), #77 (2026-09-21), #80, **#85 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #77 (2026-09-21), #80, **#83, #85 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
 
-### 9.17 Merge PR #85 — revisione totale qualità/quantità (2026-10-07, deroga esplicita)
+### 9.17 Merge PR #83 — lint in CI e handoff (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«Please merge the pull request»* (07/10/2026). La PR #83
+(`arena/e20f049c-football-deep-analyzer` → `main`) era `OPEN`, `MERGEABLE` e `CLEAN`; il check
+`test` del commit `4da7bc3` era verde (run `37633874640`, 1m23s; riverificato il 07/10 anche via
+API: `success`, 14:06:04→14:07:27 UTC). Prima del merge, working tree pulito e
+`git log --oneline origin/main..HEAD` con i soli tre commit della PR. Eseguito
+`gh pr merge 83 --merge`. GitHub conferma: `merged=true`, `merged_at=2026-10-07T15:37:25Z`,
+`merged_by=uamisjd`, merge commit **`c92adf5d3a08ffd2d134c2f7828e4b12eaaf89cd`**.
+
+**Contenuto della PR:** Ruff `0.16.10` fissato e aggiunto al workflow `tests`; tre pulizie sicure
+e nove eccezioni best-effort motivate; briefing operativo della nuova sessione e verifica
+documentata di gate/fonti/costi. Nessuna modifica alla raccolta o alla schedulazione.
+
+**Verifica post-merge:** il push del merge ha attivato automaticamente il daily **#218** (run
+`37645413601`, evento `push`), non un dispatch manuale. Job `run` e `deploy` verdi, commit dati
+`aa760b9` su `main`, restore/save della cache riusciti. Il totale `source_status` del run #218 non
+è stato ricalcolato: non attribuirgli il contatore osservato nel #217.
+
+**Il record è arrivato qui in ritardo, e il perché è documentato.** La registrazione della deroga
+era stata preparata in PR #84 (stesso branch `arena/e20f049c`); quando #85 e #86 sono state fuse,
+quella PR è diventata `CONFLICTING` con `main` proprio su questo file e su `STATO.md`, e le due
+§9.17 (una per #83, una per #85) si sarebbero sovrapposte. La PR sostitutiva della sessione
+`arena/550df67c` porta qui il record ancora valido, aggiornato; la diagnosi completa, con comandi
+e prove, è in `docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md`. Nota di numerazione:
+questa sezione è la §9.17 **per data reale del merge** (15:37:25Z); la sezione del merge #85, che
+seguiva, è stata rinumerata **§9.18** (era §9.17 fino al 07/10/2026 sera).
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.18 Merge PR #85 — revisione totale qualità/quantità (2026-10-07, deroga esplicita; rinumerata da §9.17 il 07/10/2026 per fare posto alla §9.17 del merge #83, cronologicamente precedente)
 
 **Ordine dell'utente:** *«Please merge the pull request»* (07/10/2026), confermato con
 *«riprova il merge»* dopo un blocco tecnico del sandbox (errore di ripresa, nessun comando
