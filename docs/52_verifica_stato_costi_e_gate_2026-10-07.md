@@ -69,4 +69,4 @@ I tetti 600/200 sono **per run**, non al giorno; non tutte le fonti hanno oggi u
 
 ## Prossimo passo
 
-La PR #83 (`https://github.com/uamisjd/football-deep-analyzer/pull/83`) è aperta da questo branch; il check GitHub `test` è verde (1m50s) e la PR risulta `MERGEABLE`. La PR non modifica raccolta live o numero dei run. Dopo il merge dell'utente, verificare il daily successivo. Per ridurre ulteriormente il traffico senza rischiare di perdere dati, la prossima decisione utile è scegliere se serve un tetto aggregato giornaliero o se bastano cache e limiti per run.
+La PR #83 (`https://github.com/uamisjd/football-deep-analyzer/pull/83`) è aperta da questo branch; il check GitHub `test` precedente è verde (`37632053256`, 1m59s) e la PR risultava `MERGEABLE`. L'aggiornamento documentale di handoff genera un nuovo check, da verificare su GitHub prima del merge. La PR non modifica raccolta live o numero dei run. Dopo il merge dell'utente, verificare il daily successivo. Per ridurre ulteriormente il traffico senza rischiare di perdere dati, la prossima decisione utile è scegliere se serve un tetto aggregato giornaliero o se bastano cache e limiti per run.
