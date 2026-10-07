@@ -192,9 +192,9 @@ def test_collect_news_pubblica_imbuto_e_contatori_separati(tmp_path):
     assert "articoli 0" in riga["detail"]                  # il motivo, in pagina
     assert "item 0" in riga["digest"] and "rss:" in riga["digest"]
     assert "in finestra 0" in riga["detail"]
-    # le richieste ESPN non finiscono più nel contatore delle notizie. Il totale è 5:
-    # 2 ricerche Google (una per squadra) + 3 feed diretti (ANSA, Sky Sport, Sportmediaset)
-    assert report.requests == {"news": 5, "espn": 1}
+    # le richieste ESPN non finiscono più nel contatore delle notizie. Il totale è 4:
+    # 2 ricerche Google (una per squadra) + 2 feed diretti (ANSA, Sky Sport; Sportmediaset rimosso)
+    assert report.requests == {"news": 4, "espn": 1}
     # il ramo dei feed diretti è esercitato davvero: nessun AttributeError fra gli errori
     assert not [e for e in report.errors if e.startswith("news direct")], report.errors
     riga_espn = stato[stato.source == "espn:NEWS"].iloc[0]

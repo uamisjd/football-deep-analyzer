@@ -609,6 +609,38 @@ def test_concordanza_uno_assente_giorno_gara(mood_analysis, monkeypatch):
     assert punti["h"] == "3 in 1 gara" and punti["a"] == "5 in 4 gare"
 
 
+def test_fattori_chiave_concordanza_singolare(mood_analysis, monkeypatch):
+    """In «Fattori che spostano la partita», 1 assente, 1 titolare e 1 giorno di riposo
+    usano la forma singolare: nessuna violazione di concordanza ('1 assenti', '1 giorni').
+    """
+    from scripts.verify_site import AGREEMENT
+
+    monkeypatch.setattr(MatchAnalysis, "absences_weight",
+                        lambda self, mid, tid: {"n": 1, "starters_out": 1, "contrib_lost_p90": 0.0})
+    monkeypatch.setattr(MatchAnalysis, "rest_days", lambda self, tid, ko: 1)
+
+    res = mood_analysis.fattori_chiave(8, 4, "Lazio", 3, "Milan", KO("2026-09-16 18:00"), None)
+    assert res and res["rows"]
+
+    for row in res["rows"]:
+        for key, val in row.items():
+            if isinstance(val, str):
+                m = AGREEMENT.search(val)
+                assert not m, f"Violazione di concordanza nel campo {key}: {m.group(0)!r} in {val!r}"
+
+    inf_h = next(r for r in res["rows"] if "Infermeria Lazio" in r["label"])
+    assert inf_h["home"] == "1 assente"
+    assert inf_h["impact"] == "1 assente"
+    assert inf_h["delta"] == "1 titolare"
+
+    inf_a = next(r for r in res["rows"] if "Infermeria Milan" in r["label"])
+    assert inf_a["away"] == "1 assente"
+
+    rip_h = next(r for r in res["rows"] if "Riposo Lazio" in r["label"])
+    assert rip_h["delta"] == "1 giorno"
+    assert "dopo 1 giorno" in rip_h["desc"]
+
+
 def test_google_news_params_italian_search_names():
     """Le query di Google News per club esteri usano i nomi comuni della stampa italiana."""
     from fda.sources.news import google_news_params

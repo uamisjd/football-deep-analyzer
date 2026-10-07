@@ -303,12 +303,11 @@ def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_
 
 #: Feed RSS diretti delle principali testate sportive italiane.
 #: Servono a integrare la rassegna di prima mano con articoli verificati in lingua
-#: italiana (ANSA per comunicati e giustizia sportiva, Sky Sport e Sportmediaset per
-#: retroscena, dichiarazioni e spogliatoio).
+#: italiana (ANSA per comunicati e giustizia sportiva, Sky Sport per retroscena,
+#: dichiarazioni e spogliatoio; Sportmediaset rimosso per 404 permanente, docs/25 §5, docs/41 §4).
 ITALIAN_DIRECT_FEEDS: tuple[tuple[str, str], ...] = (
     ("ANSA", "https://www.ansa.it/sito/notizie/sport/calcio/calcio_rss.xml"),
     ("Sky Sport", "https://sport.sky.it/rss/sport_calcio.xml"),
-    ("Sportmediaset", "https://www.sportmediaset.mediaset.it/rss/calcio.xml"),
 )
 
 
