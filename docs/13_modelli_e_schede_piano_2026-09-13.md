@@ -1358,3 +1358,40 @@ tabella ora contiene una riga per movimento più i 57 gruppi in cui la fonte scr
 due modi diversi. Nessun loop possibile: i commit dei dati portano `[skip ci]`.
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.21 Merge PR #91 — revisione delle schede partita: «Analisi pre-partita» + «Fattori» e «Scontro tattico» + «Fatti rilevanti» (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«ok fai merge»* (07/10/2026, 22:5x UTC) — richiesta esplicita in chat, senza
+passare dalla frase fissa: la PR #91 era stata annunciata verde nella sessione `arena/aaa98843` (frase
+fissa invitata, poi «resta il merge, che è tuo») e l'utente ha ordinato il merge. Verifiche pre-merge
+eseguite con comando, tutte superate: check `test` `success` su `e84bf1d` (run `37698233647`,
+22:45:59 → 22:47:47Z, più `37698227823`), PR `MERGEABLE · CLEAN`, `git status --porcelain` vuoto,
+`git log --oneline origin/main..HEAD` con i **soli 6 commit** della PR (`b851c24`, `cbb319d`, `a1856af`,
+`a6e829e`, `f8a29eb`, `e84bf1d`). Eseguito `gh pr merge 91 --merge` (nessuna cancellazione del ramo).
+GitHub conferma: `merged=true`, `merged_at=2026-10-07T22:54:01Z`, `merged_by=uamisjd`, merge commit
+**`f4c4eb65d548a875b27a47b095031b404322e245`**.
+
+**Contenuto (15 file, +1.902/−500):** le **due coppie** della revisione sezione per sezione chiesta
+dall'utente, con le misure riproducibili in `docs/57` (§0–§10): `src/fda/site/analysis.py`,
+`src/fda/site/advanced.py`, `src/fda/site/templates/match.html|info.html|status.html`,
+`scripts/verify_site.py` (invarianti **[41]**, **[42]**, **[22b]** e gate `RANGE_ASCII`), i test
+(524 → **534**), più i documenti (`docs/57`, `docs/STATO.md`, `docs/BRIEFING_NUOVA_SESSIONE.md`).
+
+**Effetti in produzione: `daily` e `tests` attivati dal push del merge** (la PR tocca `src/`, `tests/`
+e `scripts/`, che **non** sono coperti da `paths-ignore`), e **entrambi verdi**:
+
+| Run | ID | Esito | Durata |
+|---|---|---|---|
+| `tests` (push, `f4c4eb6`) | `37699054427` | **success** | 22:54:04 → 22:56:2xZ |
+| `daily` (push, `f4c4eb6`) | `37699054654` | **success** — 17 step, deploy Pages compreso | 22:54:05 → 23:02:25Z |
+
+Il `daily` ha passato tutti gli step — `collect → predict → backtest → simulate → build`,
+`verify_site`, parità delle schede e resa a 375 px — e ha committato i dati in **`0d9fc28`**
+(«data: run 2026-10-07 23:02 UTC [skip ci]», 8 Parquet: `backtest`, `calibration`, `insights`,
+`lineup`, `match_info`, `predictions`, `season_sim`, `source_status`). **Prova che le correzioni
+girano in produzione:** le gare programmate restano 402 righe di `insights` su 66 schede e la raccolta
+ha rimesso a nuovo **23 testi** (24 sostituiti) — la fotografia FotMob si aggiorna a ogni `daily`, che
+è esattamente il motivo per cui la famiglia «forma recente» non si pubblica più da lì ma viene
+**ricalcolata** a ogni build dai nostri Parquet (invariante [42]: 258 voci nostre · 68 FotMob).
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
