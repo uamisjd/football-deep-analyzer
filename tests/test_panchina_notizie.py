@@ -610,8 +610,11 @@ def test_concordanza_uno_assente_giorno_gara(mood_analysis, monkeypatch):
 
 
 def test_fattori_chiave_concordanza_singolare(mood_analysis, monkeypatch):
-    """In «Fattori che spostano la partita», 1 assente, 1 titolare e 1 giorno di riposo
-    usano la forma singolare: nessuna violazione di concordanza ('1 assenti', '1 giorni').
+    """In «Fattori che spostano la partita» 1 assente, 1 titolare e 1 giorno di riposo usano
+    la forma singolare: nessuna violazione di concordanza ('1 assenti', '1 giorni').
+
+    Dal 7/10/2026 (`docs/57` §2) la card ha **una riga per fattore**: gli indisponibili sono una
+    riga con le due squadre, il riposo è «Riposo corto» e c'è solo quando è ≤4 giorni.
     """
     from scripts.verify_site import AGREEMENT
 
@@ -628,17 +631,65 @@ def test_fattori_chiave_concordanza_singolare(mood_analysis, monkeypatch):
                 m = AGREEMENT.search(val)
                 assert not m, f"Violazione di concordanza nel campo {key}: {m.group(0)!r} in {val!r}"
 
-    inf_h = next(r for r in res["rows"] if "Infermeria Lazio" in r["label"])
-    assert inf_h["home"] == "1 assente"
-    assert inf_h["impact"] == "1 assente"
-    assert inf_h["delta"] == "1 titolare"
+    etichette = [r["label"] for r in res["rows"]]
+    assert len(etichette) == len(set(etichette)), f"righe ripetute nella card: {etichette}"
 
-    inf_a = next(r for r in res["rows"] if "Infermeria Milan" in r["label"])
-    assert inf_a["away"] == "1 assente"
+    inf = next(r for r in res["rows"] if r["label"] == "Indisponibili")
+    assert inf["home"] == inf["away"] == "1 assente · 1 titolare"
 
-    rip_h = next(r for r in res["rows"] if "Riposo Lazio" in r["label"])
-    assert rip_h["delta"] == "1 giorno"
-    assert "dopo 1 giorno" in rip_h["desc"]
+    riposo = next(r for r in res["rows"] if r["label"] == "Riposo corto")
+    assert riposo["home"] == riposo["away"] == "1 giorno"
+    assert "≤4 giorni" in riposo["impact"]
+    assert res["soglie_testo"].startswith("valore dei titolari ≥1,5×")
+
+
+def test_fattori_una_riga_per_fattore_e_riposo_solo_se_corto(mood_analysis, monkeypatch):
+    """Il riposo lungo **non** è un fattore: con 20 giorni per entrambe le squadre la riga non
+    esiste (era pubblicata su tutte le 66 schede del 7/10/2026, con due verdetti opposti —
+    verde alla casa, rosso alla trasferta — per la stessa sosta).
+
+    Verifica anche che ogni riga porti le **due** colonne (niente «—» in una delle due) e che
+    il modello non sia una riga della tabella ma la nota in fondo.
+    """
+    monkeypatch.setattr(MatchAnalysis, "absences_weight",
+                        lambda self, mid, tid: {"n": 1, "starters_out": 1, "contrib_lost_p90": 0.0})
+    monkeypatch.setattr(MatchAnalysis, "rest_days", lambda self, tid, ko: 20)
+
+    res = mood_analysis.fattori_chiave(8, 4, "Lazio", 3, "Milan", KO("2026-09-16 18:00"), None)
+    assert res and res["rows"]
+    assert not any("Riposo" in r["label"] for r in res["rows"]), "il riposo lungo non è un fattore"
+    assert any("riposo 20 giorni e 20 giorni" in s for s in res["sotto_soglia"]), res["sotto_soglia"]
+    for row in res["rows"]:
+        assert row["home"] and row["away"], f"riga con una colonna vuota: {row}"
+        assert "bar_pct" not in row, "la barra percentuale non spiegata è stata rimossa (docs/57 §2)"
+    assert "Modello statistico" not in [r["label"] for r in res["rows"]]
+
+
+def test_narrativa_non_ripete_i_fattori_della_tabella(mood_analysis):
+    """«Un dato in un posto»: se il fattore è una riga della tabella dei Fattori, la narrativa
+    dell'analisi pre-partita non lo ricopia con gli stessi numeri (prima il rapporto di valore
+    e il PPDA comparivano due volte nella stessa pagina, `docs/57` §1).
+    """
+    ma = mood_analysis
+    ctx = {
+        "home_name": "Alpha", "away_name": "Beta",
+        "prediction": {"p_home": 0.5, "p_draw": 0.3, "p_away": 0.2, "lambda_home": 1.4,
+                       "lambda_away": 1.1, "p_over25": 0.5, "p_btts": 0.5},
+        "clash": {"rows": [{"label": "PPDA (↓ = più pressing)", "h": 8.0, "a": 14.0},
+                           {"label": "xG da palle inattive (quota)", "h": 30, "a": 30}]},
+        "home_value": 200_000_000, "away_value": 40_000_000,
+        "fattori_chiave": {"rows": [{"label": "Pressing (PPDA)"},
+                                    {"label": "Valore di mercato titolari"}]},
+        "status": "scheduled",
+    }
+    testo = " ".join(ma.narrative(ctx))
+    assert "preme molto più" not in testo, testo
+    assert "squilibrio mercato" not in testo, testo
+
+    # senza la tabella (gara finita o dati mancanti) la narrativa torna a dirlo da sola
+    ctx["fattori_chiave"] = None
+    testo2 = " ".join(ma.narrative(ctx))
+    assert "preme molto più" in testo2 and "squilibrio mercato" in testo2
 
 
 def test_google_news_params_italian_search_names():

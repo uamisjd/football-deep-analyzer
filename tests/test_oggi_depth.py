@@ -939,6 +939,9 @@ def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
     usava `f"{ab['n']} assenti"` senza concordare; il template dell'elenco partite usava già
     `it_plural('assente')`, quindi lo stesso dato era scritto bene in un posto e male
     nell'altro.
+
+    Dal 7/10/2026 la riga è **una sola** per gli indisponibili, con le due squadre nelle due
+    colonne (`docs/57` §2): il test verifica la concordanza su **tutti** i campi pubblicati.
     """
     import importlib.util
     from pathlib import Path
@@ -949,9 +952,10 @@ def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
                                                    "contrib_lost_p90": 0.0, "players": []})
     out = ma.fattori_chiave(100, 10, "Alpha", 20, "Beta", KICK.to_pydatetime(), None)
     righe = [r for r in out["rows"] if r["icon"] == "🏥"]
-    assert righe, "nessuna riga di infermeria generata: il test non sta provando nulla"
-    testo = " ".join(str(r[k]) for r in righe for k in ("home", "away", "delta", "impact", "desc"))
+    assert len(righe) == 1, f"la riga degli indisponibili deve essere una sola, trovate {len(righe)}"
+    testo = " ".join(str(r[k]) for r in righe for k in ("home", "away", "delta", "impact", "help"))
     assert "1 assente" in testo and "1 assenti" not in testo
+    assert righe[0]["home"] == righe[0]["away"] == "1 assente · 1 titolare"
 
     p = Path(__file__).resolve().parents[1] / "scripts" / "verify_site.py"
     spec = importlib.util.spec_from_file_location("verify_site_oggi", p)

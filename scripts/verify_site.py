@@ -2840,21 +2840,22 @@ def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
                                    or float(temp) <= WEATHER_TEMP_BASSA)) or \
             (wind is not None and float(wind) >= WEATHER_VENTO_SEGNALA)
         checks += 1
-        # Le soglie si citano in due forme: le righe **dentro** soglia dichiarano l'intervallo
-        # intero (`WEATHER_SOGLIE_TESTO`), quelle oltre soglia citano solo la soglia superata —
-        # `(soglia 30%)` oppure `(oltre la soglia di impatto 50%)`. Qualunque numero fra
-        # parentesi deve essere una costante del codice: è questo che impedisce al testo di
-        # raccontare soglie diverse da quelle che accendono l'avviso.
+        # Le soglie si dicono **una volta**: la riga dentro soglia dichiara l'intervallo intero
+        # (`WEATHER_SOGLIE_TESTO`), quella oltre soglia il testo delle soglie di impatto
+        # (`WEATHER_IMPATTO_TESTO`). I valori («pioggia 68%») non portano più parentesi con la
+        # soglia: fino al 7/10/2026 la stessa riga diceva «oltre la soglia di impatto» due volte
+        # e il 50% due volte (`docs/57` §1). Qui si verifica che una delle due dichiarazioni ci
+        # sia e che nessun *altro* numero di soglia sia scritto a mano nella riga.
+        dichiarate = (WEATHER_SOGLIE_TESTO in testo or WEATHER_IMPATTO_TESTO in testo
+                      or "previsione pubblicata a ridosso della gara" in testo)
+        if not dichiarate:
+            fails.append(f"{pg.name}: il meteo non dichiara le soglie del codice")
         citate = re.findall(r"\((?:oltre la )?soglia (?:di impatto )?([^)]*)\)", testo)
         ammesse = {
             f"{WEATHER_PRECIP_SEGNALA}%", f"{WEATHER_PRECIP_IMPATTO}%",
             f"{WEATHER_TEMP_ALTA} °C", f"{WEATHER_TEMP_ALTA} °C / {WEATHER_TEMP_BASSA} °C",
             f"{WEATHER_VENTO_SEGNALA} km/h", f"{WEATHER_VENTO_IMPATTO} km/h",
         }
-        dichiarate = (WEATHER_SOGLIE_TESTO in testo or WEATHER_IMPATTO_TESTO in testo
-                      or "previsione pubblicata a ridosso della gara" in testo)
-        if not dichiarate and not citate:
-            fails.append(f"{pg.name}: il meteo non dichiara le soglie del codice")
         for soglia in citate:
             if soglia not in ammesse:
                 fails.append(f"{pg.name}: il meteo cita una soglia che non è nel codice ({soglia})")
@@ -2862,14 +2863,124 @@ def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
         if "estremo" in testo.lower():
             fails.append(f"{pg.name}: il meteo usa ancora «estremo» (aggettivo non misurato)")
         checks += 1
+        if testo.count("oltre la soglia di impatto") > 1 or testo.count("soglie di impatto") > 1:
+            fails.append(f"{pg.name}: la soglia di impatto è ripetuta nella riga del meteo")
         if impatto and "oltre la soglia di impatto" not in testo:
             fails.append(f"{pg.name}: valori oltre la soglia di impatto ma la pagina non lo dice")
         if impatto and WEATHER_IMPATTO_TESTO not in testo:
             fails.append(f"{pg.name}: soglia di impatto citata in modo diverso dal codice")
+        if attenzione and not impatto and "sopra la soglia di segnalazione" not in testo:
+            fails.append(f"{pg.name}: valori sopra la soglia di segnalazione ma la pagina non lo dice")
         checks += 1
         if not impatto and not attenzione and "sopra la soglia di segnalazione" in testo:
             fails.append(f"{pg.name}: la pagina segnala il meteo ma i valori non superano le soglie")
     print(f"[40] righe meteo con le soglie del codice: {n} pagine")
+    return fails, checks
+
+
+# La card «Fattori che spostano la partita» è stata rifatta il 7/10/2026 (`docs/57` §2): una riga
+# per fattore, soglie dalle costanti `FACTOR_*`, criterio nel ⓘ, nessuna barra-percentuale. Qui si
+# verifica che la pagina dica **quelle** soglie e che nessuno dei quattro fattori quantitativi sparisca
+# senza dirlo: o è una riga, o è nella riga «Sotto soglia, non in tabella (casa e ospite)».
+# È l'invariante [41]; senza, un fattore calcolabile ma sotto soglia usciva dalla scheda in silenzio
+# (19 schede su 66 il 7/10/2026: la riga «Sotto soglia» non lo nominava e il lettore non poteva
+# distinguere «squadre simili» da «dato mancante»).
+FACTOR_KEYWORDS = (("valore dei titolari", "Valore di mercato titolari"),
+                   ("indisponibili", "Indisponibili"),
+                   ("riposo", "Riposo corto"),
+                   ("pressing", "Pressing (PPDA)"))
+FACTOR_ROWS_AMMESSE = ("Valore di mercato titolari", "Indisponibili", "Riposo corto",
+                       "Pressing (PPDA)", "Forma e classifica (contesto)")
+
+
+def _valori_di_soglia(testo: str) -> set[float]:
+    """I numeri **di soglia** di una frase, normalizzati a float: «≥1,5×» → 1.5, «≤4 giorni» → 4.0.
+
+    Guarda solo i numeri seguiti dall'unità della soglia (×, assenti, giorni, titolare, xG): un
+    dato misurato come «pressing 1,04×» non è una soglia e non deve entrare nell'insieme.
+    """
+    return {float(m.replace(",", "."))
+            for m in re.findall(r"(\d+(?:,\d+)?)\s*(?:×|assenti|giorni|titolare|xG)", testo)}
+
+
+def _soglie_citate(testo: str) -> set[float]:
+    """I numeri citati **dopo la parola «soglia»** («(soglia ≤0,75× o ≥1,33×)» → {0.75, 1.33})."""
+    out: set[float] = set()
+    for blocco in re.findall(r"soglia([^)]*)", testo):
+        out |= {float(m.replace(",", ".")) for m in re.findall(r"(\d+(?:,\d+)?)", blocco)}
+    return out
+
+
+def check_fattori(site: Path) -> tuple[list[str], int]:
+    """[41] fattori: soglie dalla stessa fonte del codice, nessun fattore che sparisce in silenzio."""
+    from fda.site.analysis import fattori_soglie_testo
+
+    fails: list[str] = []
+    checks = 0
+    soglie = fattori_soglie_testo()
+    # le soglie ammesse sono **quelle del codice**, lette dalla sua stessa frase: un numero che non
+    # c'è qui non può comparire nella riga «sotto soglia» della pagina
+    ammesse = _valori_di_soglia(soglie) | {1.0, 2.0, 4.0}   # «2 assenti», «1 titolare», «≤4 giorni»
+    cartella = site / "partite"
+    pages = sorted(cartella.glob("*.html")) if cartella.is_dir() else []
+    n = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        i = html.find('id="fattori"')
+        if i < 0:
+            continue
+        j = html.find('<div class="card', i + 10)
+        sec = html[i:j if j > 0 else len(html)]
+        n += 1
+        checks += 1
+        if soglie not in html_unescape(sec):
+            fails.append(f"{pg.name}: la card dei Fattori non cita le soglie del codice ({soglie})")
+        righe = re.findall(r"<tr>\s*<th scope=\"row\">(.*?)</tr>", sec, re.DOTALL)
+        if not righe:
+            fails.append(f"{pg.name}: card dei Fattori senza righe")
+        for r in righe:
+            checks += 2
+            celle = re.findall(r"<td[^>]*>(.*?)</td>", r, re.DOTALL)
+            if len(celle) != 4:
+                fails.append(f"{pg.name}: riga dei Fattori con {len(celle)} colonne invece di 4")
+                continue
+            for k, c in enumerate(celle):
+                if not re.sub(r"<[^>]+>", "", html_unescape(c)).strip():
+                    fails.append(f"{pg.name}: riga dei Fattori con la colonna {k + 1} vuota")
+            etichetta = re.sub(r"<[^>]+>", "", html_unescape(r)).strip()
+            nome = next((x for x in FACTOR_ROWS_AMMESSE if x in etichetta), None)
+            if nome is None:
+                fails.append(f"{pg.name}: riga dei Fattori con etichetta fuori standard "
+                             f"({etichetta[:40]})")
+            if 'class="help"' not in r:
+                fails.append(f"{pg.name}: riga «{nome or etichetta[:30]}» senza ⓘ del criterio")
+        checks += 1
+        # niente markdown in pagina: la card scrive il criterio in un attributo `title`, che non
+        # interpreta `**grassetto**` — usciva «**non** un secondo pronostico» in 66 schede su 66
+        if re.search(r"\*\*|`[^`]+`", sec):
+            fails.append(f"{pg.name}: la card dei Fattori ha markdown non reso (asterischi o backtick)")
+        checks += 1
+        # barra-percentuale rimossa: non deve tornare (non era spiegata e su una scheda usciva al 0%)
+        if re.search(r'<i style="display:block;height:100%;width:\d+%', sec):
+            fails.append(f"{pg.name}: la card dei Fattori ha di nuovo la barra-percentuale")
+        checks += 1
+        m = re.search(r"Sotto soglia o non calcolabile, non in tabella \(casa e ospite\): (.*?)\.</p>",
+                      sec, re.DOTALL)
+        sotto = re.sub(r"<[^>]+>", " ", html_unescape(m.group(1))) if m else ""
+        # solo le **righe** contano come «in tabella»: la riga introduttiva nomina tutte le soglie
+        # (quindi tutti e quattro i fattori) e non può valere come presenza del fattore
+        tabella = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(r)).lower() for r in righe)
+        for kw, etichetta in FACTOR_KEYWORDS:
+            checks += 1
+            if etichetta.lower() not in tabella and kw not in sotto.lower():
+                fails.append(f"{pg.name}: fattore «{etichetta}» né in tabella né sotto soglia "
+                             "(sparisce senza dirlo)")
+        checks += 1
+        fuori = {x for x in _soglie_citate(sotto) if x not in ammesse}
+        if fuori:
+            fails.append(f"{pg.name}: «sotto soglia» cita soglie fuori dalle FACTOR_* "
+                         f"({sorted(fuori)})")
+    print(f"[41] schede con la card dei Fattori verificate: {n} pagine")
     return fails, checks
 
 
@@ -2926,6 +3037,9 @@ def main() -> int:
         meteo, meteo_checks = check_meteo_soglie(site, Path(args.data) if args.data else None)
         fails += meteo
         checks += meteo_checks
+        fattori, fattori_checks = check_fattori(site)
+        fails += fattori
+        checks += fattori_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks

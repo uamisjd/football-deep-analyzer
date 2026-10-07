@@ -1294,6 +1294,145 @@ def test_weather_fallback_openmeteo(tmp_path):
     st.close()
 
 
+def test_weather_flags_livelli_e_soglie_del_codice():
+    """Il livello del meteo (e i motivi) vengono dalle costanti ``WEATHER_*``: i casi di confine
+    sono quelli che decidono il testo in pagina.
+
+    Fino al 7/10/2026 nessun test copriva ``weather_flags()``: il testo della card dichiarava
+    «nella norma (precip <30%, 10-28 °C, vento <15 km/h)» mentre il codice segnalava ≥30%,
+    ≥30/≤5 °C e ≥15 km/h (14 schede su 66 con una pioggia al 31% chiamata «estremo»,
+    `docs/55` §4.3). Qui i confini sono inchiodati ai valori delle costanti.
+    """
+    from fda.site.analysis import (
+        WEATHER_IMPATTO_TESTO,
+        WEATHER_PRECIP_IMPATTO,
+        WEATHER_PRECIP_SEGNALA,
+        WEATHER_SOGLIE_TESTO,
+        WEATHER_TEMP_ALTA,
+        WEATHER_TEMP_BASSA,
+        WEATHER_VENTO_IMPATTO,
+        WEATHER_VENTO_SEGNALA,
+        weather_flags,
+    )
+
+    # (precip, temp, vento) → (livello, segnalazioni attese)
+    casi = [
+        (29, 20, 10, None, []),                                   # dentro la norma
+        (WEATHER_PRECIP_SEGNALA, 20, 10, "attenzione", ["pioggia 30%"]),
+        (WEATHER_PRECIP_IMPATTO, 20, 10, "attenzione", ["pioggia 50%"]),
+        (WEATHER_PRECIP_IMPATTO + 1, 20, 10, "impatto", ["pioggia 51%"]),
+        (0, WEATHER_TEMP_ALTA, 10, "attenzione", ["temperatura 30 °C"]),
+        (0, WEATHER_TEMP_ALTA + 1, 10, "impatto", ["temperatura 31 °C"]),
+        (0, WEATHER_TEMP_BASSA, 10, "attenzione", ["temperatura 5 °C"]),
+        (0, WEATHER_TEMP_BASSA - 1, 10, "attenzione", ["temperatura 4 °C"]),
+        (0, 20, WEATHER_VENTO_SEGNALA, "attenzione", ["vento 15 km/h"]),
+        (0, 20, WEATHER_VENTO_IMPATTO + 1, "impatto", ["vento 21 km/h"]),
+    ]
+    for precip, temp, wind, livello, attese in casi:
+        r = weather_flags({"precip": precip, "temp": temp, "wind": wind})
+        assert r["livello"] == livello, (precip, temp, wind, r)
+        assert r["segnalazioni"] == attese, (precip, temp, wind, r)
+        assert r["mancanti"] == []
+        # le segnalazioni sono **valori puri**: il livello e le soglie si dicono una volta sola
+        # (prima ogni voce portava la sua parentesi e la riga diceva «oltre la soglia» due volte)
+        for s in r["segnalazioni"]:
+            assert "(" not in s and "soglia" not in s.lower(), s
+        atteso_testo = ("oltre la soglia di impatto" if livello == "impatto"
+                        else "sopra la soglia di segnalazione" if livello == "attenzione" else "")
+        assert r["livello_testo"] == atteso_testo, r
+
+    # il dato che la fonte non pubblica si dice: non si dà per buono un «nella norma»
+    r = weather_flags({"precip": None, "temp": 20, "wind": 10})
+    assert r["livello"] is None and r["mancanti"] == ["probabilità di pioggia"]
+    r = weather_flags({"precip": 10, "temp": None, "wind": None})
+    assert r["mancanti"] == ["temperatura", "vento"]
+    # il vento non ha mai superato la soglia in 442 gare: se scatta, è la soglia del codice
+    assert weather_flags({"precip": None, "temp": None, "wind": None})["livello"] is None
+
+    # i due testi delle soglie sono le costanti, non numeri scritti a mano
+    assert f"≥{WEATHER_PRECIP_SEGNALA}%" in WEATHER_SOGLIE_TESTO
+    assert f"≥{WEATHER_TEMP_ALTA} °C" in WEATHER_SOGLIE_TESTO
+    assert f"≤{WEATHER_TEMP_BASSA} °C" in WEATHER_SOGLIE_TESTO
+    assert f"≥{WEATHER_VENTO_SEGNALA} km/h" in WEATHER_SOGLIE_TESTO
+    assert f">{WEATHER_PRECIP_IMPATTO}%" in WEATHER_IMPATTO_TESTO
+    assert f">{WEATHER_VENTO_IMPATTO} km/h" in WEATHER_IMPATTO_TESTO
+
+
+def test_fattori_soglie_testo_viene_dalle_costanti():
+    """La frase delle soglie dei «Fattori» è **la stessa** che il codice usa per accendere le righe:
+    se qualcuno cambia una ``FACTOR_*`` senza toccare la frase, questo test cade (e ``verify_site``
+    [41] cade anche se la frase cambia ma la pagina non la cita).
+    """
+    from fda.site.analysis import MatchAnalysis, fattori_soglie_testo
+
+    testo = fattori_soglie_testo()
+    m = MatchAnalysis
+    assert f"≥{str(m.FACTOR_MARKET_RATIO).replace('.', ',')}×" in testo
+    assert f"≥{m.FACTOR_ABSENCE_MIN} assenti" in testo
+    assert f"{str(m.FACTOR_ABSENCE_LOST).replace('.', ',')} xG+xA/90" in testo
+    assert f"riposo ≤{m.FACTOR_REST_SHORT} giorni" in testo
+    assert f"≤{str(m.FACTOR_PRESS_RATIO).replace('.', ',')}×" in testo
+    assert f"≥{str(round(1 / m.FACTOR_PRESS_RATIO, 2)).replace('.', ',')}×" in testo
+
+
+def test_verify_site_fattori_boccia_il_fattore_che_sparisce(tmp_path):
+    """[41] di `verify_site`: se un fattore calcolabile non è né una riga né una voce «sotto
+    soglia», la pagina è bocciata.
+
+    È il difetto misurato il 7/10/2026: su **19 schede su 66** il pressing (PPDA) era calcolabile
+    ma vicino alla pari e non compariva da nessuna parte — il lettore non poteva distinguere
+    «squadre simili» da «dato mancante».
+    """
+    from fda.site.analysis import fattori_soglie_testo
+
+    vs = _verify_site()
+    parte = tmp_path / "partite"
+    parte.mkdir()
+    soglie = fattori_soglie_testo()
+    intestazione = ('<tr><th scope="col">Fattore</th><th scope="col">Casa</th>'
+                    '<th scope="col">Ospite</th><th scope="col">Delta</th>'
+                    '<th scope="col">Impatto</th></tr>')
+    riga = ('<tr><th scope="row">🛌 Riposo corto <span class="help" title="criterio">ⓘ</span></th>'
+            '<td class="small">3 giorni</td><td class="small">4 giorni</td>'
+            '<td class="small"><b>−1</b></td><td class="small">Casa ha ≤4 giorni</td></tr>')
+
+    def pagina(nome, corpo):
+        (parte / nome).write_text(
+            f'<div class="card detail-card" id="fattori"><h2>Fattori che spostano la partita</h2>'
+            f'<p class="small mut">Quattro fattori quantitativi con soglie dichiarate — {soglie} — '
+            f'più una riga di contesto.</p><div class="tablewrap"><table>{intestazione}'
+            f'</table></div>{corpo}</div><div class="card"></div>', encoding="utf-8")
+
+    # senza riposo/pressing/indisponibili/mercato in nessuna forma: quattro fattori spariti
+    pagina("1.html", "")
+    fails, _ = vs.check_fattori(tmp_path)
+    assert sum("sparisce senza dirlo" in f for f in fails) == 4, fails
+
+    # con la riga del riposo e le voci «sotto soglia» degli altri tre: nessun problema
+    pagina("2.html", riga + '<p class="small mut">Sotto soglia o non calcolabile, non in tabella '
+                            '(casa e ospite): valore dei titolari non pubblicato dalla fonte · '
+                            'indisponibili non pubblicati (distinta non disponibile) · '
+                            'pressing 1,04× (soglia ≤0,75× o ≥1,33×).</p>')
+    (parte / "1.html").unlink()
+    fails, checks = vs.check_fattori(tmp_path)
+    assert fails == [], fails
+    assert checks > 5
+
+    # una soglia inventata nella riga «sotto soglia» non passa
+    pagina("3.html", riga + '<p class="small mut">Sotto soglia o non calcolabile, non in tabella '
+                            '(casa e ospite): pressing 0,90× (soglia ≤0,60×).</p>')
+    (parte / "2.html").unlink()
+    fails, _ = vs.check_fattori(tmp_path)
+    assert any("fuori dalle FACTOR_*" in f for f in fails), fails
+
+    # markdown non reso in pagina: il ⓘ è un attributo `title`, che non interpreta `**grassetto**`
+    # (usciva «**non** un secondo pronostico» in 66 schede su 66)
+    (parte / "3.html").write_text((parte / "3.html").read_text(encoding="utf-8")
+                                  .replace("criterio", "**criterio**"), encoding="utf-8")
+    fails, _ = vs.check_fattori(tmp_path)
+    assert any("markdown non reso" in f for f in fails), fails
+
+
 def test_starters_eleven_only_when_the_source_is_ambiguous(tmp_path):
     """La distinta mostra 11 giocatori: con più righe vale chi ha il voto di partita."""
     st = Store(tmp_path / "processed")
