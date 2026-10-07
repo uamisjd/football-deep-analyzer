@@ -72,7 +72,7 @@
         della tabella (`ab` è None a gara finita): senza, il link punterebbe a un'ancora che in
         pagina non esiste — l'ha trovato `verify_site` sulle prime 369 pagine (5781719 e altre),
         e su una gara giocata la narrativa i nomi li tiene perché la tabella non c'è. -#}
-    <ul class="narr">{% for s in c.narrative %}<li>{{ s }}{% if 'deve rinunciare a' in s and c.status != 'finished' %} <a href="#infermeria-{{ 'home' if s.startswith(c.home_name) else 'away' }}" class="small" style="white-space:nowrap">→ Infermeria</a>{% endif %}{% if 'palla inattiva' in s %} <a href="#scontro" class="small" style="white-space:nowrap">→ Scontro tattico</a>{% endif %}</li>{% endfor %}</ul>
+    <ul class="narr">{% for s in c.narrative %}<li>{{ s }}{% if 'deve rinunciare a' in s and c.status != 'finished' %} <a href="#infermeria-{{ 'home' if s.startswith(c.home_name) else 'away' }}" class="small" style="white-space:nowrap">→ Indisponibili</a>{% endif %}{% if 'palla inattiva' in s %} <a href="#scontro" class="small" style="white-space:nowrap">→ Scontro tattico</a>{% endif %}</li>{% endfor %}</ul>
     {% if 'palla inattiva' in c.narrative|join(' ') %}<p class="small mut" style="margin:8px 0 0">Dettaglio xG su palla inattiva e pressing in <a href="#scontro">Scontro tattico</a> ↓</p>{% endif %}
   {% else %}<p class="mut">Dati insufficienti per un'analisi automatica.</p>{% endif %}
 </div>
@@ -80,19 +80,26 @@
 {% if c.fattori_chiave %}
 <div class="card detail-card" id="fattori">
   <h2>Fattori che spostano la partita</h2>
-  <p class="small mut">Cinque fattori quantitativi con soglie esplicite (non giudizi): valore di mercato dei titolari ≥1,5×, infermeria ≥2 assenti o 1 titolare abituale, riposo ≤4 o ≥7 giorni (≤4 = corto, ricerca UEFA RR 1,32), pressing PPDA ≤0,75×, e il modello stesso. Più una riga di contesto (classifica e forma recente), dichiarata come tale. Non cambiano la previsione salvata (Dixon-Coles + Elo, inclinazione 70/30): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno nella card della squadra (→ Le due squadre), in un posto solo — l'errore del modello è misurato sulle gare di verifica fuori campione.</p>
+  {#- §2 di docs/57 (audit del 2026-10-07): **una riga per fattore**. Prima le righe erano una
+      per squadra (132 «Riposo» e 82 «Infermeria» su 66 schede, con «—» nella colonna dell'altra
+      squadra), la barra-percentuale accanto al nome non era spiegata da nessuna parte — e su una
+      scheda usciva al 0% per un numero letto male —, la riga del modello metteva RPS e ξ nelle
+      colonne delle due squadre e il testo citava soglie diverse da quelle del codice. Il criterio
+      di ogni riga sta nel ⓘ (stesso pattern di «Scontro tattico»), l'interpretazione sta una volta
+      sola qui invece di ripetersi in una lista sotto la tabella. -#}
+  <p class="small mut">Quattro fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe sono in ordine di impatto stimato, non sono un secondo pronostico e non cambiano la previsione salvata (Dixon-Coles + Elo): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno in «Le due squadre», in un posto solo.</p>
   <div class="tablewrap"><table>
-    <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto</th></tr>
+    <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto <span class="help" title="Verde: il fattore giova alla squadra di casa; rosso: giova alla trasferta. Nessun colore = vantaggio non misurabile o non attribuibile a un lato, non «nessun fattore».">ⓘ</span></th></tr>
     {% for f in c.fattori_chiave.rows %}<tr>
-      <td><span title="{{ f.desc }}">{{ f.icon }} {{ f.label }}</span><br><span style="display:inline-block;height:4px;background:var(--line2);border-radius:999px;width:80px;overflow:hidden;vertical-align:middle"><i style="display:block;height:100%;width:{{ f.bar_pct }}%;background:{% if f.tone == 'bad' %}var(--lose){% elif f.tone == 'good' %}var(--accent){% else %}var(--mut){% endif %}"></i></span> <span class="small mut">{{ f.bar_pct }}%</span></td>
+      <th scope="row">{{ f.icon }} {{ f.label }}{% if f.help %} <span class="help" title="{{ f.help }}">ⓘ</span>{% endif %}</th>
       <td class="small">{{ f.home }}</td>
       <td class="small">{{ f.away }}</td>
       <td class="small"><b>{{ f.delta }}</b></td>
       <td class="small {% if f.tone == 'bad' %}warn{% elif f.tone == 'good' %}good{% else %}mut{% endif %}">{{ f.impact }}</td>
     </tr>{% endfor %}
   </table></div>
-  <ul class="narr" style="margin-top:10px">{% for f in c.fattori_chiave.rows %}<li class="small"><b>{{ f.icon }} {{ f.label }}:</b> {{ f.desc }}</li>{% endfor %}</ul>
-  {% if c.fattori_chiave.altri %}<p class="small mut">Fuori dai sei per impatto (soglie comunque superate): {{ c.fattori_chiave.altri|join(' · ') }}.</p>{% endif %}
+  {% if c.fattori_chiave.modello %}<p class="small mut" style="margin:10px 0 0">🧮 {{ c.fattori_chiave.modello.testo }}</p>{% endif %}
+  {% if c.fattori_chiave.sotto_soglia %}<p class="small mut" style="margin:6px 0 0">Sotto soglia o non calcolabile, non in tabella (casa e ospite): {{ c.fattori_chiave.sotto_soglia|join(' · ') }}.</p>{% endif %}
 </div>
 {% endif %}
 
@@ -101,29 +108,34 @@
   <h2>Scontro tattico</h2>
   <p class="small mut">Come si incontrano gli stili: λ e parametri del modello, xG di stagione, quota creata su azione manovrata o palle inattive (somma 100, stessa fonte FotMob), pressing (PPDA) e profondità. Ogni ⓘ dichiara la fonte esatta della sua riga: due fornitori xG non danno lo stesso numero, quindi nessuna riga somma quantità di fonti diverse. Il migliore è <span style="color:var(--accent);font-weight:700">verde + ▲</span> (le quote non ne hanno: descrivono uno stile, non un gradimento).</p>
   {% if c.clash.mixed_sources %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">«xG / gara» da due fornitori diversi in questa gara (ⓘ della riga): il confronto è indicativo, le due colonne non sono omogenee.</p>{% endif %}
-  {% if c.home_xg and c.away_xg and (not c.home_xg.ppda or not c.away_xg.ppda) %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">Dati pressing (PPDA) incompleti per questa gara — Understat non copre questa lega per una squadra (FotMob senza PPDA). Confronto limitato a xG e profondità.</p>{% endif %}
+  {#- Copertura Understat: l'elenco di cosa manca lo costruisce `style_rows` dai valori
+      presenti (docs/57 §8). Prima la frase era fissa — «Confronto limitato a xG e profondità»
+      — e la stampava anche dove mancava pure la profondità. -#}
+  {% if c.clash.coverage_note %}<p class="small" style="background:rgba(230,179,74,.08);border:1px solid rgba(230,179,74,.25);border-radius:8px;padding:6px 10px;margin:6px 0 0">{{ c.clash.coverage_note }}</p>{% endif %}
   <div class="tablewrap"><table>
     <tr><th scope="col"></th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th></tr>
     {% for r in c.clash.rows %}
     <tr>
       <th scope="row">{{ r.label }}{% if r.help %} <span class="help" title="{{ r.help }}">ⓘ</span>{% endif %}</th>
-      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra (FotMob senza PPDA)" style="opacity:.55">n.d.</span>{% else %}{{ r.h|dec(r.nd) }}{% if r.suffix %}{{ r.suffix }}{% endif %}{% if r.best == 'h' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
-      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra" style="opacity:.55">n.d.</span>{% else %}{{ r.a|dec(r.nd) }}{% if r.suffix %}{{ r.suffix }}{% endif %}{% if r.best == 'a' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
+      <td{% if r.best == 'h' %} class="best"{% endif %}>{% if r.h is none %}<span title="Dato non disponibile: la fonte di questa riga non lo copre per questa squadra" style="opacity:.55">n.d.</span>{% else %}{{ r.h|dec(r.nd) }}{% if r.suffix %}{{ r.suffix }}{% endif %}{% if r.best == 'h' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
+      <td{% if r.best == 'a' %} class="best"{% endif %}>{% if r.a is none %}<span title="Dato non disponibile — Understat non copre questa lega per questa squadra (FotMob senza PPDA)" style="opacity:.55">n.d.</span>{% else %}{{ r.a|dec(r.nd) }}{% if r.suffix %}{{ r.suffix }}{% endif %}{% if r.best == 'a' %} <span aria-hidden="true" style="font-size:10px">▲</span>{% endif %}{% endif %}</td>
     </tr>
     {% endfor %}
   </table></div>
   {% if c.clash_radar %}
   <div style="margin:14px 0 0">
-    <p class="small mut" style="margin:0 0 6px"><b>Radar stile (5 metriche normalizzate 0-100)</b> — attacco × media, difesa × media (invertita), pressing PPDA (invertito), profondità, palle inattive %</p>
+    <p class="small mut" style="margin:0 0 6px"><b>Radar stile (5 metriche su scala fissa 0–100)</b> — attacco × media, difesa × media (invertita), pressing PPDA (invertito), profondità, palle inattive %</p>
     <div class="tablewrap"><table style="margin:0"><tr><th scope="col">Metrica</th><th scope="col" style="width:36%">{{ c.home_name }}</th><th scope="col" style="width:36%">{{ c.away_name }}</th></tr>
       {% set rd = c.clash_radar %}
-      {% for i in range(5) %}<tr>
-        <th scope="row" class="small">{{ rd.labels[i] }}</th>
-        <td><div style="display:flex;align-items:center;gap:6px"><span style="flex:0 0 {{ rd.home[i]|round|int }}%;height:8px;background:#28c893;border-radius:999px;display:inline-block"></span><span class="small">{{ rd.home[i]|round|int }} <span class="mut">({{ rd.home_raw[ ['att','def','ppda','deep','set'][i] ]|dec if rd.home_raw[ ['att','def','ppda','deep','set'][i] ] is not none else 'n.d.' }})</span></span></div></td>
-        <td><div style="display:flex;align-items:center;gap:6px"><span style="flex:0 0 {{ rd.away[i]|round|int }}%;height:8px;background:#e0605a;border-radius:999px;display:inline-block"></span><span class="small">{{ rd.away[i]|round|int }} <span class="mut">({{ rd.away_raw[ ['att','def','ppda','deep','set'][i] ]|dec if rd.away_raw[ ['att','def','ppda','deep','set'][i] ] is not none else 'n.d.' }})</span></span></div></td>
+      {% for i in range(5) %}{% set chiave = ['att','def','ppda','deep','set'][i] %}<tr>
+        {#- ogni riga dichiara la sua ancora col ⓘ; un dato mancante resta «n.d.», senza barra
+            e senza numero: prima usciva un 50 neutro, cioè un valore inventato (docs/57 §8) -#}
+        <th scope="row" class="small">{{ rd.labels[i] }}{% if rd.helps %} <span class="help" title="{{ rd.helps[i] }}">ⓘ</span>{% endif %}</th>
+        <td>{% if rd.home[i] is none %}<span class="small mut" title="Dato non disponibile: la fonte di questa riga non lo copre per questa squadra">n.d.</span>{% else %}<div style="display:flex;align-items:center;gap:6px"><span style="flex:0 0 {{ rd.home[i]|round|int }}%;height:8px;background:#28c893;border-radius:999px;display:inline-block"></span><span class="small">{{ rd.home[i]|round|int }} <span class="mut">({{ rd.home_raw[chiave]|dec }})</span></span></div>{% endif %}</td>
+        <td>{% if rd.away[i] is none %}<span class="small mut" title="Dato non disponibile: la fonte di questa riga non lo copre per questa squadra">n.d.</span>{% else %}<div style="display:flex;align-items:center;gap:6px"><span style="flex:0 0 {{ rd.away[i]|round|int }}%;height:8px;background:#e0605a;border-radius:999px;display:inline-block"></span><span class="small">{{ rd.away[i]|round|int }} <span class="mut">({{ rd.away_raw[chiave]|dec }})</span></span></div>{% endif %}</td>
       </tr>{% endfor %}
     </table></div>
-    <p class="small mut" style="margin:6px 0 0"><span style="color:var(--leg-home)">●</span> {{ c.home_name }} · <span style="color:var(--leg-away)">●</span> {{ c.away_name }} — barre normalizzate 0-100 (100 = migliore in lega su quella metrica).</p>
+    <p class="small mut" style="margin:6px 0 0"><span style="color:var(--leg-home)">●</span> {{ c.home_name }} · <span style="color:var(--leg-away)">●</span> {{ c.away_name }} — barre normalizzate 0–100 su ancore fisse: 100 è l'estremo alto della scala, non un primato di lega (le ancore sono nell'ⓘ di ogni riga).</p>
   </div>
   {% endif %}
   {% if c.clash_ranks %}
@@ -135,12 +147,28 @@
 </div>
 {% endif %}
 {% if c.status != 'finished' and c.insights %}
+{#- Due origini, dichiarate: «dai nostri risultati» è forma recente ricalcolata a ogni build
+    dai nostri Parquet di campionato (e il verificatore [42] la rifà), «FotMob» è la fotografia
+    scattata quando la gara è stata raccolta — dati che il nostro archivio non sa produrre
+    (testa-a-testa, capocannoniere, rigori, record). Prima erano mescolati in un solo elenco
+    senza dirlo e i numeri FotMob invecchiavano in silenzio (docs/57 §9). -#}
 <div class="card" id="fatti">
   <h2>Fatti rilevanti</h2>
-  <p class="small mut">Streak, testa-a-testa e forma recente (FotMob), tradotti e filtrati. Al più cinque per partita; i testi non traducibili non vengono mostrati.</p>
+  <p class="small mut">Al più cinque per partita, in due gruppi. <b>Dai nostri risultati</b>: forma recente (gol, strisce, imbattibilità, porta inviolata) ricalcolata a ogni build sul campionato e confrontata col Parquet dal verificatore. <b>FotMob</b>: testa-a-testa, capocannoniere, rigori e record di stagione, che il nostro archivio non sa produrre — è la fotografia del momento in cui la partita è stata raccolta e può essere più vecchia di qualche giornata. I testi non traducibili non vengono mostrati.</p>
+  {% set nostri = c.insights|selectattr('source', 'equalto', 'dati')|list %}
+  {% set altrui = c.insights|rejectattr('source', 'equalto', 'dati')|list %}
+  {% if nostri %}
+  <p class="small" id="fatti-dati" style="margin:10px 0 4px"><b>Dai nostri risultati</b> <span class="mut">· campionato, ricalcolati a ogni build</span></p>
   <ul class="narr">
-    {% for i in c.insights %}<li><b>{{ i.team }}</b>: {{ i.text }}{% if 'non perde' in i.text and c.h2h_pattern %} <a href="#precedenti" class="small" style="white-space:nowrap">→ precedenti</a>{% endif %}</li>{% endfor %}
+    {% for i in nostri %}<li><b>{{ i.team }}</b>: {{ i.text }}</li>{% endfor %}
   </ul>
+  {% endif %}
+  {% if altrui %}
+  <p class="small" id="fatti-fotmob" style="margin:10px 0 4px"><b>FotMob</b> <span class="mut">· fotografia al momento della raccolta</span></p>
+  <ul class="narr">
+    {% for i in altrui %}<li><b>{{ i.team }}</b>: {{ i.text }}{% if 'non perde' in i.text and c.h2h_pattern %} <a href="#precedenti" class="small" style="white-space:nowrap">→ precedenti</a>{% endif %}</li>{% endfor %}
+  </ul>
+  {% endif %}
 </div>
 {% endif %}
 
@@ -256,7 +284,7 @@
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pressing · riposo</div>
         <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">PPDA {% if xg.ppda %}{{ xg.ppda|dec(1) }}{% else %}n.d.{% endif %} <span class="mut small" style="font:600 10px var(--font-body);text-transform:none;letter-spacing:0">{% if xg.ppda %}{% if xg.ppda < 10 %}alto{% elif xg.ppda < 13 %}medio-alto{% elif xg.ppda < 16 %}medio{% else %}basso{% endif %}{% endif %}</span></div>
-        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_cup'] %} · coppe incluse{% elif c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
+        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_on'] and c[side ~ '_rest'] >= 6 %} (ultima gara {{ c[side ~ '_rest_on'] }}){% endif %}{% if c[side ~ '_rest_cup'] %} · coppe incluse{% elif c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
       </div>
     </div>
     {% endif %}
@@ -426,7 +454,7 @@
     <h2>Arbitro e meteo</h2>
     <div class="tablewrap"><table>
       {% if c.referee and c.referee.name %}<tr><th scope="row">Arbitro</th><td>{{ c.referee.name }}{% if c.referee.matches %} <span class="small mut">({{ c.referee.matches|int|it_plural('gara') }})</span>{% endif %}{% if c.referee.yellows %} · Gialli/gara {{ c.referee.yellows|dec }}{% if c.referee.league_yellows %} <span class="small mut">(camp. {{ c.referee.league_yellows|dec }})</span>{% endif %}{% if c.referee.yellows and c.referee.league_yellows %}<br><span style="display:inline-block;height:6px;background:var(--line2);border-radius:999px;width:120px;overflow:hidden;vertical-align:middle;margin-top:4px"><i style="display:block;height:100%;width:{{ ((c.referee.yellows / (c.referee.league_yellows*1.5) *100) if c.referee.league_yellows else 50)|round|int }}%;background:{% if c.referee.yellows >= c.referee.league_yellows*1.15 %}var(--lose){% elif c.referee.yellows <= c.referee.league_yellows*0.85 %}var(--accent){% else %}var(--mut){% endif %}"></i></span> <span class="small mut">{% if c.referee.yellows >= c.referee.league_yellows*1.15 %}sopra media lega{% elif c.referee.yellows <= c.referee.league_yellows*0.85 %}sotto media{% else %}nella media{% endif %}</span>{% endif %}{% endif %}{% if c.referee.fouls %} · Falli {{ c.referee.fouls|dec }}{% if c.referee.league_fouls %} <span class="small mut">({{ c.referee.league_fouls|dec }})</span>{% endif %}{% endif %}{% if c.referee.pens is not none %} · {{ c.referee.pens|int }} {{ 'rigore' if c.referee.pens|int == 1 else 'rigori' }}{% endif %}{% if c.referee.reds is not none %} · {{ c.referee.reds|int }} {{ 'rosso' if c.referee.reds|int == 1 else 'rossi' }}{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Arbitro</th><td class="mut small">da definire — la designazione viene resa nota di solito il giorno della gara</td></tr>{% endif %}
-      {% if c.weather.desc %}<tr><th scope="row">Meteo{% if c.weather.livello %} ⚠{% endif %}</th><td{% if not c.weather.livello %} class="small mut"{% endif %}>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}{% if c.weather.livello == 'impatto' %} <span class="small warn">oltre la soglia di impatto — {{ c.weather.segnalazioni|join(' · ') }} <span class="mut">({{ c.weather.impatto_testo }})</span></span>{% elif c.weather.livello == 'attenzione' %} <span class="small warn">sopra la soglia di segnalazione — {{ c.weather.segnalazioni|join(' · ') }}</span>{% else %} <span class="small mut">nessun valore oltre le {{ c.weather.soglie_testo }}</span>{% endif %}{% if c.weather.mancanti %} <span class="small mut">· la fonte non pubblica {{ c.weather.mancanti|join(' e ') }} per questa gara</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
+      {% if c.weather.desc %}<tr><th scope="row">Meteo{% if c.weather.livello %} ⚠{% endif %}</th><td{% if not c.weather.livello %} class="small mut"{% endif %}>{{ c.weather.desc }}{% if c.weather.temp is not none %}, {{ c.weather.temp|round|int }}°C{% endif %}{% if c.weather.precip is not none %}, pioggia {{ c.weather.precip|round|int }}%{% endif %}{% if c.weather.wind is not none %}, vento {{ c.weather.wind|round|int }} km/h{% endif %}{% if c.weather.source == 'Open-Meteo' %} <span class="small mut">(previsione Open-Meteo)</span>{% endif %}{% if c.weather.livello == 'impatto' %} <span class="small warn">oltre la soglia di impatto: {{ c.weather.segnalazioni|join(' · ') }} · soglie di impatto: {{ c.weather.impatto_testo }}</span>{% elif c.weather.livello == 'attenzione' %} <span class="small warn">sopra la soglia di segnalazione: {{ c.weather.segnalazioni|join(' · ') }} · {{ c.weather.soglie_testo }}</span>{% else %} <span class="small mut">nessun valore oltre le {{ c.weather.soglie_testo }}</span>{% endif %}{% if c.weather.mancanti %} <span class="small mut">· la fonte non pubblica {{ c.weather.mancanti|join(' e ') }} per questa gara</span>{% endif %}</td></tr>{% elif c.status != 'finished' %}<tr><th scope="row">Meteo</th><td class="mut small">previsione pubblicata a ridosso della gara</td></tr>{% endif %}
     </table></div>
   </div>
   {% endif %}

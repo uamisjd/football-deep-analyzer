@@ -10,6 +10,7 @@ from __future__ import annotations
 import ast
 import itertools
 import re
+from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import pairwise
 from typing import Any, ClassVar
@@ -117,6 +118,16 @@ def _pct(p: float | None) -> str:
 def _f(x: Any, nd: int = 2) -> str:
     """Numero per il testo narrativo: virgola decimale italiana ('3,12'; '—' se manca)."""
     return "—" if x is None or pd.isna(x) else f"{float(x):.{nd}f}".replace(".", ",")
+
+
+def _sgn(x: Any, nd: int = 2) -> str:
+    """Numero **col segno**, virgola italiana: «+0,60», «−1,40» (per i Δ dei fattori).
+
+    Il meno è quello tipografico (U+2212), come nel resto del sito: il trattino dell'ASCII
+    accanto a un numero in colonna si legge come un separatore.
+    """
+    return "—" if x is None or pd.isna(x) else (f"{float(x):+.{nd}f}".replace(".", ",")
+                                                 .replace("-", "\u2212"))
 
 
 def _elenco_it(items: list[str], max_items: int = 4) -> str:
@@ -269,12 +280,20 @@ WEATHER_IMPATTO_TESTO = (
 def weather_flags(weather: dict[str, Any]) -> dict[str, Any]:
     """Livello del meteo e motivi, solo con i numeri: nessun aggettivo non misurato.
 
-    Ritorna ``livello`` (``None``, ``"attenzione"`` o ``"impatto"``), ``segnalazioni`` (le
-    frasi coi valori e la soglia superata), ``mancanti`` (i valori che la fonte non pubblica
+    Ritorna ``livello`` (``None``, ``"attenzione"`` o ``"impatto"``), ``segnalazioni`` (i soli
+    valori oltre soglia, es. «pioggia 68%»), ``mancanti`` (i valori che la fonte non pubblica
     per questa gara: la scheda lo dice invece di dare per buono un «nella norma») e i testi
     delle soglie. La temperatura è pubblicata per tutte le gare, la probabilità di pioggia
     solo per le future (misurato: 67 righe su 442 in ``match_info.parquet``), il vento per
     tutte ma in 442 gare non ha mai superato 12 km/h — quindi la sua soglia non è mai scattata.
+
+    **La soglia si dice una volta sola** (fix del 2026-10-07, `docs/57` §1). Prima ogni
+    segnalazione portava la sua parentesi («pioggia 68% (oltre la soglia di impatto 50%)») e
+    il consumatore aggiungeva il livello («… oltre la soglia di impatto: …»), il testo delle
+    soglie («… (pioggia >50%, …)») e a volte una terza copia: sulla stessa riga si leggeva
+    «oltre la soglia di impatto» due volte e il numero 50% due volte — su 5 schede su 66.
+    Ora ``segnalazioni`` sono valori puri e chi scrive la frase mette il livello e le soglie
+    una volta (`livello_testo`: «oltre la soglia di impatto» / «sopra la soglia di segnalazione»).
     """
     precip, temp, wind = weather.get("precip"), weather.get("temp"), weather.get("wind")
     segnalazioni: list[str] = []
@@ -284,32 +303,31 @@ def weather_flags(weather: dict[str, Any]) -> dict[str, Any]:
         mancanti.append("probabilità di pioggia")
     elif float(precip) > WEATHER_PRECIP_IMPATTO:
         impatto = True
-        segnalazioni.append(f"pioggia {float(precip):.0f}% (oltre la soglia di impatto "
-                            f"{WEATHER_PRECIP_IMPATTO}%)")
+        segnalazioni.append(f"pioggia {float(precip):.0f}%")
     elif float(precip) >= WEATHER_PRECIP_SEGNALA:
-        segnalazioni.append(f"pioggia {float(precip):.0f}% (soglia {WEATHER_PRECIP_SEGNALA}%)")
+        segnalazioni.append(f"pioggia {float(precip):.0f}%")
     if temp is None:
         mancanti.append("temperatura")
     elif float(temp) > WEATHER_TEMP_ALTA:
         impatto = True
-        segnalazioni.append(f"temperatura {float(temp):.0f} °C (oltre la soglia di impatto "
-                            f"{WEATHER_TEMP_ALTA} °C)")
+        segnalazioni.append(f"temperatura {float(temp):.0f} °C")
     elif float(temp) >= WEATHER_TEMP_ALTA or float(temp) <= WEATHER_TEMP_BASSA:
-        segnalazioni.append(f"temperatura {float(temp):.0f} °C (soglia "
-                            f"{WEATHER_TEMP_ALTA} °C / {WEATHER_TEMP_BASSA} °C)")
+        segnalazioni.append(f"temperatura {float(temp):.0f} °C")
     if wind is None:
         mancanti.append("vento")
     elif float(wind) > WEATHER_VENTO_IMPATTO:
         impatto = True
-        segnalazioni.append(f"vento {float(wind):.0f} km/h (oltre la soglia di impatto "
-                            f"{WEATHER_VENTO_IMPATTO} km/h)")
+        segnalazioni.append(f"vento {float(wind):.0f} km/h")
     elif float(wind) >= WEATHER_VENTO_SEGNALA:
-        segnalazioni.append(f"vento {float(wind):.0f} km/h (soglia {WEATHER_VENTO_SEGNALA} km/h)")
-    return {"livello": "impatto" if impatto else ("attenzione" if segnalazioni else None),
+        segnalazioni.append(f"vento {float(wind):.0f} km/h")
+    livello = "impatto" if impatto else ("attenzione" if segnalazioni else None)
+    return {"livello": livello,
             "segnalazioni": segnalazioni,
             "mancanti": mancanti,
             "soglie_testo": WEATHER_SOGLIE_TESTO,
-            "impatto_testo": WEATHER_IMPATTO_TESTO}
+            "impatto_testo": WEATHER_IMPATTO_TESTO,
+            "livello_testo": ("oltre la soglia di impatto" if impatto
+                              else "sopra la soglia di segnalazione" if segnalazioni else "")}
 
 
 # Rientri previsti degli indisponibili (campo expectedReturn di FotMob, in inglese)
@@ -496,6 +514,83 @@ _INSIGHT_EN_LEAK = re.compile(
 # (su 6 partite ~0,6): si pubblicano i numeri, mai l'aggettivo (P1.2, docs/19 §2.6).
 MIN_REFEREE_MATCHES = 15
 
+# Famiglia «forma recente» dei fatti FotMob: sono **gli stessi template che il sito sa
+# ricalcolare** dai propri risultati di campionato (:func:`form_facts`). Restano tradotti
+# (``translate_insight``), ma ``match_insights`` non li pubblica più da FotMob: quella è una
+# fotografia scattata quando la gara è stata raccolta, e invecchia. Misurato il 2026-10-07 su
+# ``insights.parquet``: dei 176 fatti verificabili coi nostri risultati, 79 non tornavano —
+# es. «Atalanta ha segnato 4 gol nelle ultime 5» mentre i suoi ultimi 5 risultati ne sommano 3
+# (docs/57 §9). Al posto loro si pubblica il numero ricalcolato a ogni build.
+_INSIGHT_FORM_RE = re.compile(
+    r"have scored \d+ goals in their last \d+ matches"
+    r"|haven't scored in their last \d+ matches"
+    r"|haven't lost in \d+ matches"
+    r"|haven't won a match in \d+ attempts"
+    r"|have lost their last \d+ matches"
+    r"|have won their last \d+ matches"
+    r"|haven't kept a clean sheet in \d+ matches", re.IGNORECASE)
+
+#: Record di stagione che il sito sa **verificare** sui propri risultati (porta inviolata):
+#: pubblicato solo se il numero regge al ricalcolo, così una fotografia vecchia non resta
+#: in pagina. Gli altri record (rigori, capocannoniere) restano FotMob e la card lo dichiara.
+_INSIGHT_RECORD_CS_RE = re.compile(
+    r"have kept the most clean sheets in the competition \((\d+)\)", re.IGNORECASE)
+
+#: Finestra dei fatti di forma ricalcolati: «ultime N partite» = al più 5, e sotto 3 gare
+#: giocate non si pubblica niente (una «striscia» di due partite è rumore, non forma).
+FORM_FACTS_N = 5
+FORM_FACTS_MIN = 3
+
+
+def form_facts(giocate: list[tuple[int, int]]) -> list[dict[str, Any]]:
+    """Fatti di forma recente dai **nostri** risultati di campionato, in italiano.
+
+    ``giocate`` = ``[(gol fatti, gol subiti), ...]`` in ordine cronologico, al più
+    :data:`FORM_FACTS_N` partite; sotto :data:`FORM_FACTS_MIN` gare non si pubblica nulla.
+    Le chiavi sono quelle di :func:`translate_insight` (``text``/``kind``/``priority``),
+    così selezione e ordinamento della card non cambiano; le priorità sono le stesse dei
+    template FotMob della famiglia, per non spostare il mix dei «Fatti rilevanti».
+    """
+    gare = [(int(gf), int(ga)) for gf, ga in giocate]
+    if len(gare) < FORM_FACTS_MIN:
+        return []
+    k = len(gare)
+    out: list[dict[str, Any]] = [
+        {"text": f"ha segnato {sum(gf for gf, _ in gare)} gol nelle ultime {k} partite",
+         "kind": "goals", "priority": 80}]
+    # «non tiene la porta inviolata da K» = le ultime K gare con almeno un gol subito: è la
+    # striscia dei gol SUBITI, non quella delle porte inviolate (rovesciata nella prima stesura).
+    senza_inviolata = _striscia(gare, lambda gf, ga: ga > 0)
+    if senza_inviolata >= 2:
+        out.append({"text": f"non tiene la porta inviolata da {_n_partite(senza_inviolata)}",
+                    "kind": "clean_sheet", "priority": 70})
+    senza_gol = _striscia(gare, lambda gf, ga: gf == 0)
+    if senza_gol >= 2:
+        out.append({"text": f"non segna da {_n_partite(senza_gol)}", "kind": "goals", "priority": 82})
+    imbattuta = _striscia(gare, lambda gf, ga: gf >= ga)
+    if imbattuta >= 2:
+        out.append({"text": f"imbattuta da {_n_partite(imbattuta)}", "kind": "streak", "priority": 90})
+    senza_vittorie = _striscia(gare, lambda gf, ga: gf <= ga)
+    if senza_vittorie >= 2:
+        out.append({"text": f"non vince da {_n_partite(senza_vittorie)}", "kind": "streak", "priority": 88})
+    vinte = _striscia(gare, lambda gf, ga: gf > ga)
+    if vinte >= 2:
+        out.append({"text": f"ha vinto le ultime {_n_partite(vinte)}", "kind": "streak", "priority": 91})
+    perse = _striscia(gare, lambda gf, ga: gf < ga)
+    if perse >= 2:
+        out.append({"text": f"ha perso le ultime {_n_partite(perse)}", "kind": "streak", "priority": 89})
+    return out
+
+
+def _striscia(gare: list[tuple[int, int]], ok: Callable[[int, int], bool]) -> int:
+    """Lunghezza della striscia finale in cui ``ok(gf, ga)`` è vera (0 se l'ultima gara non lo è)."""
+    n = 0
+    for gf, ga in reversed(gare):
+        if not ok(gf, ga):
+            break
+        n += 1
+    return n
+
 
 def _n_partite(n: int) -> str:
     return "1 partita" if n == 1 else f"{n} partite"
@@ -652,7 +747,11 @@ def translate_insight(text: str) -> dict[str, Any] | None:
 # in silenzio. Il conteggio per forma canonica (numeri → «N») distingue un template nuovo
 # (centinaia di occorrenze identiche) dal caso singolo; il build lo pubblica in stato.html.
 INSIGHT_DROP_LOG: dict[str, int] = {}
-INSIGHT_SEEN: dict[str, int] = {"tradotti": 0, "scartati": 0}
+#: Contatori del build. ``forma_ricalcolata`` e ``record_rifiutati`` dicono quanti fatti FotMob
+#: NON sono stati pubblicati perché li ricalcoliamo noi (``_INSIGHT_FORM_RE``) o perché non
+#: reggevano al ricalcolo (docs/57 §9): sono l'osservabilità della scelta, non scarti.
+INSIGHT_SEEN: dict[str, int] = {"tradotti": 0, "scartati": 0,
+                                "forma_ricalcolata": 0, "record_rifiutati": 0}
 
 
 def insight_dropped(text: str) -> None:
@@ -674,14 +773,16 @@ def insight_drop_stats() -> dict[str, Any] | None:
     top_key, top_n = (max(INSIGHT_DROP_LOG.items(), key=lambda kv: kv[1])
                       if INSIGHT_DROP_LOG else ("", 0))
     return {"tradotti": INSIGHT_SEEN["tradotti"], "scartati": INSIGHT_SEEN["scartati"],
+            "forma_ricalcolata": INSIGHT_SEEN["forma_ricalcolata"],
+            "record_rifiutati": INSIGHT_SEEN["record_rifiutati"],
             "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n}
 
 
 def reset_insight_stats() -> None:
     """Azzera i contatori (per i test e per build multipli nello stesso processo)."""
     INSIGHT_DROP_LOG.clear()
-    INSIGHT_SEEN["tradotti"] = 0
-    INSIGHT_SEEN["scartati"] = 0
+    for chiave in INSIGHT_SEEN:
+        INSIGHT_SEEN[chiave] = 0
 
 
 def select_insights(rows: list[dict[str, Any]], n: int = 3) -> list[dict[str, Any]]:
@@ -976,6 +1077,23 @@ def dedup_transfers(df: pd.DataFrame, hours: int = TRANSFER_DEDUP_HOURS) -> pd.D
             scelta = vicino
             tenute.append(scelta.sort_values("_dt").tail(1))
     return pd.concat(tenute).sort_values("_dt") if tenute else d.iloc[0:0]
+
+
+def fattori_soglie_testo() -> str:
+    """Le soglie dei «Fattori che spostano la partita» in una frase, dalle costanti ``FACTOR_*``.
+
+    Scritta una volta sola, stampata in pagina (riga introduttiva della card) e confrontata con
+    la pagina dall'invariante [41] di ``scripts/verify_site.py``: così il testo della scheda non
+    può raccontare soglie diverse da quelle che accendono le righe — lo stesso errore che aveva
+    prodotto la card meteo (`docs/55` §4.3, `docs/57` §1-2).
+    """
+    return (f"valore dei titolari ≥{_f(MatchAnalysis.FACTOR_MARKET_RATIO, 2).rstrip('0').rstrip(',')}×"
+            f" (o ≤{_f(1 / MatchAnalysis.FACTOR_MARKET_RATIO, 2)}×), "
+            f"indisponibili ≥{MatchAnalysis.FACTOR_ABSENCE_MIN} assenti o 1 titolare abituale o "
+            f"{_f(MatchAnalysis.FACTOR_ABSENCE_LOST).rstrip('0').rstrip(',')} xG+xA/90 persi, "
+            f"riposo ≤{MatchAnalysis.FACTOR_REST_SHORT} giorni, pressing (PPDA) ≤"
+            f"{_f(MatchAnalysis.FACTOR_PRESS_RATIO, 2)}× (o ≥"
+            f"{_f(1 / MatchAnalysis.FACTOR_PRESS_RATIO, 2)}×)")
 
 
 class MatchAnalysis:
@@ -1274,6 +1392,46 @@ class MatchAnalysis:
             out.append({"date": r.utc_kickoff, "opponent": opp, "home": is_home, "gf": int(gf), "ga": int(ga), "res": res})
         return out
 
+    def form_insights(self, team_id: int, kickoff: Any, team_name: str) -> list[dict[str, Any]]:
+        """Fatti di forma recente **nostri** per una squadra (campionato), con la squadra.
+
+        Le chiavi sono quelle attese da :func:`select_insights` (``kind``/``team_id``/``priority``)
+        più ``source="dati"``, che il template usa per il gruppo «dai nostri risultati».
+        """
+        if kickoff is None:
+            return []
+        giocate = [(r["gf"], r["ga"]) for r in self.form(int(team_id), kickoff, n=FORM_FACTS_N)]
+        return [dict(r, team=team_name, team_id=int(team_id), source="dati")
+                for r in form_facts(giocate)]
+
+    def porta_inviolata_record_ok(self, team_id: int, kickoff: Any, n: int,
+                                  league_id: Any) -> bool:
+        """Il record FotMob «maggior numero di porte inviolate del campionato (N)» regge?
+
+        Si pubblica solo se il numero è **esattamente** quello ricalcolato dai nostri risultati
+        di campionato *prima* di questa gara ed è il massimo del campionato: così una fotografia
+        vecchia (il record di un'altra giornata) non resta in pagina. Misurato il 2026-10-07:
+        i 14 record pubblicati tornavano tutti; il controllo li protegge dal prossimo collect.
+        """
+        if kickoff is None or league_id is None or self.fixtures.empty \
+                or not hasattr(self.fixtures, "league_id"):
+            return False
+        fin = self.fixtures[(self.fixtures.league_id == league_id)
+                            & (self.fixtures.status == "finished")
+                            & (self.fixtures.utc_kickoff < kickoff)]
+        if fin.empty:
+            return False
+        conta: dict[int, int] = {}
+        for r in fin.itertuples(index=False):
+            if r.away_goals == 0:
+                conta[int(r.home_id)] = conta.get(int(r.home_id), 0) + 1
+            if r.home_goals == 0:
+                conta[int(r.away_id)] = conta.get(int(r.away_id), 0) + 1
+        if not conta:
+            return False
+        massimo = max(conta.values())
+        return n == conta.get(int(team_id), 0) == massimo
+
     def rest_days(self, team_id: int, kickoff: datetime) -> int | None:
         fx = self._rest_source()
         if fx.empty:
@@ -1302,6 +1460,24 @@ class MatchAnalysis:
         keep = [c for c in fx.columns] + (["cup_name"] if "cup_name" in cup.columns else [])
         cup = cup[keep]
         return pd.concat([fx, cup], ignore_index=True, sort=False)
+
+    def rest_last(self, team_id: int, kickoff: datetime) -> str | None:
+        """Data dell'ultima gara giocata dalla squadra prima di ``kickoff`` («18/09»), o ``None``.
+
+        Sta accanto ai giorni di riposo in «Le due squadre»: un «21 giorni di riposo» senza la
+        data fa pensare a un dato vecchio, mentre la data mostra che è la **sosta** del
+        campionato (l'ultimo turno è stato il 19-20/09 e il prossimo è il 09-11/10 — misurato su
+        due fonti indipendenti, `docs/57` §2). Stessa base di ``rest_days``: calendario di
+        stagione + coppe (`_rest_source`), non la finestra dei dettagli.
+        """
+        src = self._rest_source()
+        if src.empty:
+            return None
+        prev = src[(src.utc_kickoff < kickoff) & (src.status == "finished")
+                   & ((src.home_id == team_id) | (src.away_id == team_id))]
+        if prev.empty:
+            return None
+        return pd.Timestamp(prev.utc_kickoff.max()).strftime("%d/%m")
 
     def rest_cup(self, team_id: int, kickoff: datetime) -> str | None:
         """Nome della coppa se l'ultima gara giocata dalla squadra era europea, altrimenti None."""
@@ -1741,147 +1917,232 @@ class MatchAnalysis:
 
     def fattori_chiave(self, match_id: int, home_id: int, home_name: str, away_id: int, away_name: str,
                        kickoff: datetime, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
-        """Fattori quantitativi che spostano la partita, ordinati per impatto.
+        """Fattori quantitativi che spostano la partita: **una riga per fattore**.
 
-        Non tocca la previsione salvata (Dixon-Coles+Elo tilt calibrata) — la spiega con numeri
-        già raccolti, senza inventare nulla. Ogni fattore ha:
-        - label, home/away value, delta, impact (gol o %), tone (good/bad/neutral per la squadra di casa)
-        - descrizione breve verificabile
+        Non tocca la previsione salvata (Dixon-Coles + Elo tilt calibrata): la spiega con numeri
+        già raccolti, senza inventare nulla.
 
-        Fonti: market_value_eur titolari, absences_weight, rest_days, xPTS gap, forma punti,
-        PPDA, coach subentro. Soglie documentate, non giudizi.
+        Riscritta il 2026-10-07 (`docs/57` §2) dopo l'audit delle schede pre-partita. I difetti
+        misurati nella versione precedente, tutti sulle 66 schede in finestra:
+
+        * le righe erano **una per squadra**: 132 righe «Riposo …» e 82 «Infermeria …», ognuna con
+          «—» nella colonna dell'altra squadra e un «Delta» che mescolava unità diverse
+          (1,60×, «2 titolari», «21 giorni», «λ × 1,039»);
+        * la barra-percentuale accanto al nome non era spiegata da nessuna parte ed era calcolata
+          da un numero letto male («-0,9 xG+xA/90» → 0,0): una riga con 5 assenti e -0,9 xG+xA
+          usciva al **0%** (`partite/5802947.html`);
+        * la riga «Modello statistico» infilava RPS e ξ nelle colonne delle **due squadre**
+          (57 schede su 66): non è un confronto fra casa e ospite;
+        * il riposo ≥7 giorni scattava su **tutte** le 132 righe (19-23 giorni per ogni squadra
+          delle 7 leghe: una sosta di campionato) e dava due verdetti opposti — verde alla casa,
+          rosso alla trasferta — per la stessa situazione; una sosta uguale per tutti non sposta
+          la partita, e il riposo delle due squadre è già in «Le due squadre»;
+        * l'impatto del mercato era una percentuale inventata: ``abs(ratio - 1) * 10``, cioè
+          «Casa +48% forza» con un rapporto 5,8× — un numero che nessuno ha misurato.
+
+        Ogni riga ha ora: etichetta, i valori delle **due** squadre, un delta nella sua unità,
+        l'impatto in parole e ``help`` (criterio e interpretazione, nel ⓘ). Le soglie stanno
+        nelle costanti ``FACTOR_*``, così il testo della card non può raccontarne altre.
         """
-        fattori: list[dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
+        # fattori calcolabili ma sotto soglia: si nominano (con il valore e la soglia) invece
+        # di sparire — è il vecchio «Fuori dai sei per impatto», ma per quello che è davvero.
+        sotto: list[str] = []
+
+        def _riga(icon: str, label: str, home: str, away: str, delta: str, impact: str,
+                  tone: str, weight: float, help_: str) -> None:
+            rows.append({"icon": icon, "label": label, "home": home, "away": away,
+                         "delta": delta, "impact": impact, "tone": tone,
+                         "weight": float(weight), "help": help_})
+
         # 0. Contesto di classifica e forma recente (era «EPV pre-match»: seconda previsione
         #    col termine di sede costante, declassata a riga di contesto — docs/56 §4)
         try:
             cf = self.classifica_forma(home_name, home_id, away_name, away_id, kickoff)
-            if cf:
-                fattori.append({
-                    "icon": "📊",
-                    "label": "Forma e classifica (contesto)",
-                    "home": f"{cf['home_points']} pt ({_f(cf['home_ppg'])}/g) GD3 {cf['home_gd3']:+d}",
-                    "away": f"{cf['away_points']} pt ({_f(cf['away_ppg'])}/g) GD3 {cf['away_gd3']:+d}",
-                    "delta": f"PPG {_f(cf['ppg_diff'],2)} · GD3 {cf['gd_diff']:+d} · pos {cf['pos_diff']:+d}",
-                    "impact": f"indice {_f(cf['indice'],2)} — contesto, non pronostico",
-                    "tone": "neutral",
-                    "desc": f"Indice di contesto, pesi fissati a mano ({cf['pesi']}), zero = squadre "
-                            f"pari su quei tre numeri. Non è il pronostico della scheda: sul backtest "
-                            f"fuori campione questo indice da solo azzecca il favorito nel 49% delle "
-                            f"gare, il modello pubblicato nel 52% (5.164 gare, scripts/audit_epv.py)"
-                })
         except Exception:
-            pass
-        # 1. Valore di mercato titolari
+            cf = None
+        if cf:
+            _riga("📊", "Forma e classifica (contesto)",
+                  f"{cf['home_points']} pt · {_f(cf['home_ppg'])}/gara · "
+                  f"GD3 {_sgn(cf['home_gd3'], 0)}",
+                  f"{cf['away_points']} pt · {_f(cf['away_ppg'])}/gara · "
+                  f"GD3 {_sgn(cf['away_gd3'], 0)}",
+                  f"PPG {_sgn(cf['ppg_diff'])} · GD3 {_sgn(cf['gd_diff'], 0)} · "
+                  f"pos {_sgn(cf['pos_diff'], 0)}",
+                  f"indice {_sgn(cf['indice'])} — contesto, non pronostico", "neutral", 0.5,
+                  "Contesto di classifica e forma recente, non un secondo pronostico: indice "
+                  f"con pesi dichiarati a mano ({cf['pesi']}), zero = squadre pari su quei tre "
+                  "numeri. Δ in punti per gara (PPG), differenza reti delle ultime 3 gare (GD3) e "
+                  "posizione in classifica, sempre dal punto di vista della squadra di casa. Sul "
+                  "backtest fuori campione (5.164 gare) questo indice da solo azzecca il favorito "
+                  "nel 49,3% dei casi, il modello pubblicato nel 52,1% (scripts/audit_epv.py).")
+
+        # 1. Valore di mercato dei titolari
         try:
-            hv = self.info[self.info.match_id == match_id]
-            if not hv.empty:
-                d = hv.iloc[0].to_dict()
-                home_val = _val(d, "home_starters_value_eur")
-                away_val = _val(d, "away_starters_value_eur")
-                if home_val and away_val and home_val > 0 and away_val > 0:
-                    ratio = float(home_val) / float(away_val)
-                    if ratio >= 1.5 or ratio <= 0.67:
-                        tone = "good" if ratio > 1 else "bad"
-                        delta_s = f"{_f(ratio,1)}×" if ratio >= 1 else f"1/{_f(1/ratio,1)}×"
-                        fattori.append({
-                            "icon": "💰",
-                            "label": "Valore di mercato titolari",
-                            "home": self.fee_it(home_val),
-                            "away": self.fee_it(away_val),
-                            "delta": delta_s,
-                            "impact": f"{'Casa' if ratio>1 else 'Trasferta'} +{(abs(ratio-1)*10):.0f}% forza",
-                            "tone": tone,
-                            "desc": f"{home_name} {self.fee_it(home_val)} vs {away_name} {self.fee_it(away_val)} — squilibrio di mercato, prior che migliora Brier di ~0,02 (world-cup-predictor)"
-                        })
+            d = _first(self.info[self.info.match_id == match_id])
+            home_val = _val(d, "home_starters_value_eur")
+            away_val = _val(d, "away_starters_value_eur")
         except Exception:
-            pass
-        # 2. Infermeria pesante
-        try:
-            for side, tid, tname in (("home", home_id, home_name), ("away", away_id, away_name)):
-                ab = self.absences_weight(match_id, tid)
-                if ab and ab.get("n"):
-                    lost = ab.get("contrib_lost_p90") or 0
-                    starters = ab.get("starters_out") or 0
-                    if ab["n"] >= 2 or starters >= 1 or lost >= 0.4:
-                        tone = "bad" if side == "home" else "good"
-                        fattori.append({
-                            "icon": "🏥",
-                            "label": f"Infermeria {tname}",
-                            # `it_plural` su tutte e tre le occorrenze: con un solo assente la
-                            # card pubblicava «1 assenti» e il gate di concordanza di
-                            # `verify_site` fermava il run (caso reale 07/10/2026, run
-                            # 37612264587, partite/5749692.html — primo build dopo nove giorni
-                            # di sito fermo, quindi il caso non si era mai presentato prima).
-                            "home": it_plural(ab["n"], "assente") if side=="home" else "—",
-                            "away": it_plural(ab["n"], "assente") if side=="away" else "—",
-                            "delta": it_plural(starters, "titolare", "titolari") if starters else f"{ab['n']} fuori",
-                            "impact": f"-{_f(lost,1)} xG+xA/90" if lost else it_plural(ab["n"], "assente"),
-                            "tone": tone,
-                            "desc": f"{tname}: {ab['n']} fuori, {it_plural(starters, 'titolare abituale', 'titolari abituali')}, {_f(lost,2)} xG+xA/90 in meno — riduce λ di ~{_f(lost*0.6,2)} gol (stima)"
-                        })
-        except Exception:
-            pass
-        # 3. Riposo e congestione
-        try:
-            for side, tid, tname in (("home", home_id, home_name), ("away", away_id, away_name)):
-                rest = self.rest_days(tid, kickoff)
-                if rest is not None:
-                    if rest <= 4:
-                        tone = "bad" if side=="home" else "good"
-                        fattori.append({
-                            "icon": "⏱️",
-                            "label": f"Riposo {tname}",
-                            "home": f"{rest} gg" if side=="home" else "—",
-                            "away": f"{rest} gg" if side=="away" else "—",
-                            "delta": it_plural(rest, "giorno"),
-                            "impact": "-5% energia",
-                            "tone": tone,
-                            "desc": f"{tname} gioca dopo {it_plural(rest, 'giorno')} — riposo corto ≤4 gg aumenta rischio infortunio muscolare RR 1,32 (UEFA study) e riduce creazione ~5-8%"
-                        })
-                    elif rest >= 7:
-                        tone = "good" if side=="home" else "bad"
-                        fattori.append({
-                            "icon": "🛌",
-                            "label": f"Riposo {tname}",
-                            "home": f"{rest} gg" if side=="home" else "—",
-                            "away": f"{rest} gg" if side=="away" else "—",
-                            "delta": it_plural(rest, "giorno"),
-                            "impact": "+ampio",
-                            "tone": tone,
-                            "desc": f"{tname} con {it_plural(rest, 'giorno')} di riposo — recupero completo, vantaggio su pressing"
-                        })
-        except Exception:
-            pass
-        # 4. (rimossa) xPTS: i punti contro gli xPTS erano ripetuti qui, nella narrativa e
-        #    nella card del clima — 4 riquadri per lo stesso dato di stagione sulle stesse
-        #    schede. Il posto canonico è la card della squadra (`docs/30` P1.2, M2 di
-        #    `docs/55` §6): qui resta solo il rimando scritto nell'intro della card.
-        # 5. Pressing
+            home_val = away_val = None
+        if home_val and away_val and float(home_val) > 0 and float(away_val) > 0:
+            ratio = float(home_val) / float(away_val)
+            if ratio >= self.FACTOR_MARKET_RATIO or ratio <= 1 / self.FACTOR_MARKET_RATIO:
+                casa = ratio >= 1
+                favore = home_name if casa else away_name
+                _riga("💰", "Valore di mercato titolari", self.fee_it(home_val), self.fee_it(away_val),
+                      f"{_f(ratio if casa else 1 / ratio, 1)}×",
+                      f"squilibrio a favore di {favore}", "good" if casa else "bad",
+                      max(ratio, 1 / ratio),
+                      f"Valore di mercato dei titolari (FotMob): {home_name} {self.fee_it(home_val)} "
+                      f"contro {away_name} {self.fee_it(away_val)} — rapporto {_f(ratio, 2)}×. "
+                      f"Soglia {_f(self.FACTOR_MARKET_RATIO, 2)}× (o 1/{_f(self.FACTOR_MARKET_RATIO, 2)}×). "
+                      "Il valore dei titolari è un prior misurato su un'altra competizione "
+                      "(world-cup-predictor: Brier 0,612 → 0,591) e non cambia la previsione salvata.")
+            else:
+                sotto.append(f"valore dei titolari {_f(ratio, 2)}× (soglia "
+                             f"{_f(self.FACTOR_MARKET_RATIO, 2).rstrip('0').rstrip(',')}×)")
+        else:
+            sotto.append("valore dei titolari non pubblicato dalla fonte")
+
+        # 2. Indisponibili — una riga con le due squadre (prima: una riga per squadra)
+        ab: dict[str, dict[str, Any] | None] = {}
+        for side, tid in (("home", home_id), ("away", away_id)):
+            try:
+                ab[side] = self.absences_weight(match_id, tid)
+            except Exception:
+                ab[side] = None
+
+        def _distinta(tid: int) -> bool:
+            try:
+                return bool(((self.lineup.match_id == match_id) & (self.lineup.team_id == tid)).any())
+            except Exception:
+                return False
+
+        def _cella_assenti(a: dict[str, Any] | None, tid: int) -> str:
+            if a is None or not a.get("n"):
+                return "0 assenti" if _distinta(tid) else "distinta non pubblicata"
+            parti = [it_plural(int(a["n"]), "assente")]
+            if a.get("starters_out"):
+                parti.append(it_plural(int(a["starters_out"]), "titolare", "titolari"))
+            lost = a.get("contrib_lost_p90") or 0
+            if lost:
+                parti.append(f"\u2212{_f(lost)} xG+xA/90")
+            return " · ".join(parti)
+
+        def _sopra_soglia(a: dict[str, Any] | None) -> bool:
+            return bool(a and (int(a.get("n") or 0) >= self.FACTOR_ABSENCE_MIN
+                               or int(a.get("starters_out") or 0) >= 1
+                               or float(a.get("contrib_lost_p90") or 0) >= self.FACTOR_ABSENCE_LOST))
+
+        if _sopra_soglia(ab["home"]) or _sopra_soglia(ab["away"]):
+            lh = float((ab["home"] or {}).get("contrib_lost_p90") or 0)
+            la = float((ab["away"] or {}).get("contrib_lost_p90") or 0)
+            diff = lh - la
+            starters_max = max(int((ab["home"] or {}).get("starters_out") or 0),
+                               int((ab["away"] or {}).get("starters_out") or 0))
+            if lh == 0 and la == 0 and starters_max == 0:
+                # la fonte non pubblica i minuti di chi è fuori: nessun impatto misurabile
+                tone = "neutral"
+                impact = "nessuna stima di rendimento disponibile"
+            elif ab["home"] is None or ab["away"] is None:
+                lato = "home" if _sopra_soglia(ab["home"]) else "away"
+                tone = "bad" if lato == "home" else "good"
+                impact = f"pesa su {home_name if lato == 'home' else away_name}"
+            elif abs(diff) < self.FACTOR_HEAVY_LOST:
+                tone, impact = "neutral", "equilibrio fra le due squadre"
+            else:
+                tone = "bad" if diff > 0 else "good"
+                impact = f"pesa di più su {home_name if diff > 0 else away_name}"
+            _riga("🏥", "Indisponibili", _cella_assenti(ab["home"], home_id),
+                  _cella_assenti(ab["away"], away_id),
+                  f"{_sgn(diff)} xG+xA/90" if ab["home"] is not None and ab["away"] is not None
+                  and (lh or la) else "—",
+                  impact, tone,
+                  max(lh, la) or max(0.6 * starters_max, 0.12 * max(
+                      int((ab["home"] or {}).get("n") or 0), int((ab["away"] or {}).get("n") or 0))),
+                  "Assenze pesate sui numeri reali di stagione (gol+assist e xG+xA per 90, con la "
+                  "stima stabilizzata sotto i 270′): «titolare abituale» = almeno metà dei minuti "
+                  "medi per giocatore della squadra. Soglia: 2 assenti, oppure 1 titolare abituale, "
+                  f"oppure {_f(self.FACTOR_ABSENCE_LOST)} xG+xA/90 persi. Δ = produzione offensiva "
+                  "che manca alla squadra di casa meno quella che manca alla trasferta.")
+        else:
+            if ab["home"] is not None and ab["away"] is not None:
+                sotto.append(f"indisponibili {int(ab['home'].get('n') or 0)} e "
+                             f"{int(ab['away'].get('n') or 0)} (soglia {self.FACTOR_ABSENCE_MIN} "
+                             "assenti o 1 titolare abituale)")
+            else:
+                sotto.append("indisponibili non pubblicati (distinta non disponibile)")
+
+        # 3. Riposo — solo quando è **corto** (≤4 giorni): dopo una sosta vale per tutti e non
+        #    sposta niente; i giorni delle due squadre sono comunque in «Le due squadre».
+        rests: dict[str, int | None] = {}
+        for side, tid in (("home", home_id), ("away", away_id)):
+            try:
+                r = self.rest_days(tid, kickoff)
+            except Exception:
+                r = None
+            rests[side] = None if r is None else int(r)
+        rh, ra = rests["home"], rests["away"]
+        corti = [s for s in ("home", "away") if rests[s] is not None and rests[s] <= self.FACTOR_REST_SHORT]
+        if corti:
+            if rh is None or ra is None:
+                tone = "bad" if "home" in corti else "good"
+            elif len(corti) == 2:
+                tone = "neutral"
+            else:
+                tone = "bad" if corti[0] == "home" else "good"
+            nomi = " e ".join(home_name if s == "home" else away_name for s in corti)
+            _riga("🛌", "Riposo corto",
+                  it_plural(rh, "giorno") if rh is not None else "n.d.",
+                  it_plural(ra, "giorno") if ra is not None else "n.d.",
+                  f"{_sgn(rh - ra, 0)} giorni" if rh is not None and ra is not None else "—",
+                  f"{nomi} " + ("hanno" if len(corti) == 2 else "ha") + " ≤4 giorni",
+                  tone, 2.0 if min(x for x in (rh, ra) if x is not None) <= 2 else 1.5,
+                  "Riposo dall'ultima gara (campionato e coppe): sotto i 5 giorni il rischio di "
+                  "infortunio muscolare sale (RR 1,32, studio UEFA) e la creazione cala. Soglia "
+                  "≤4 giorni. Una sosta lunga uguale per le due squadre non è un fattore: i giorni "
+                  "di entrambe sono nella card «Le due squadre».")
+        else:
+            rtxt = (" e ".join(it_plural(x, "giorno") for x in (rh, ra)) if rh is not None and ra is not None
+                    else "non calcolabile")
+            sotto.append(f"riposo {rtxt} (soglia ≤{self.FACTOR_REST_SHORT})")
+
+        # 4. Pressing (PPDA) — una riga, entrambe le colonne (il verso «ospite pressa di più»
+        #    scatta quanto quello opposto: la vecchia soglia scritta a mano nel testo diceva
+        #    solo ≤0,75× e non copriva il caso, che è la maggioranza delle righe pubblicate).
         try:
             hs = self.season_xg(home_name, home_id) or {}
             aws = self.season_xg(away_name, away_id) or {}
             if hs.get("ppda") and aws.get("ppda"):
-                ratio = float(hs["ppda"]) / float(aws["ppda"]) if aws["ppda"] else 1
-                if ratio <= 0.75 or ratio >= 1.33:
-                    fattori.append({
-                        "icon": "🔥",
-                        "label": "Pressing (PPDA)",
-                        "home": f"{_f(hs['ppda'],1)}",
-                        "away": f"{_f(aws['ppda'],1)}",
-                        "delta": f"{_f(ratio,2)}×",
-                        "impact": f"{home_name if ratio<1 else away_name} pressa di più",
-                        "tone": "neutral",
-                        "desc": f"PPDA basso = pressing alto: {home_name} {_f(hs['ppda'],1)} vs {away_name} {_f(aws['ppda'],1)} — chi pressa crea più xG ma rischia contropiede"
-                    })
+                ratio = float(hs["ppda"]) / float(aws["ppda"])
+                if ratio <= self.FACTOR_PRESS_RATIO or ratio >= 1 / self.FACTOR_PRESS_RATIO:
+                    _riga("🔥", "Pressing (PPDA)",
+                          f"{_f(hs['ppda'], 1)}", f"{_f(aws['ppda'], 1)}", f"{_f(ratio, 2)}×",
+                          f"{home_name if ratio < 1 else away_name} pressa di più", "neutral", 1.2,
+                          f"PPDA (passaggi concessi per azione difensiva): più basso = pressing più "
+                          f"alto. Valori di stagione di entrambe le squadre: "
+                          f"{home_name} {_f(hs['ppda'], 1)} contro {away_name} {_f(aws['ppda'], 1)}. "
+                          f"Soglia: rapporto ≤{_f(self.FACTOR_PRESS_RATIO, 2)}× (o ≥"
+                          f"{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×). Chi pressa crea più xG ma rischia "
+                          "il contropiede.")
+                else:
+                    # calcolabile ma vicino alla pari: si dice **anche questo**, altrimenti il
+                    # fattore sparisce dalla scheda senza che il lettore possa distinguere
+                    # «squadre simili» da «dato mancante» (19 schede su 66 il 7/10/2026).
+                    sotto.append(f"pressing {_f(ratio, 2)}× (soglia ≤"
+                                 f"{_f(self.FACTOR_PRESS_RATIO, 2)}× o ≥"
+                                 f"{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×)")
+            else:
+                sotto.append("pressing non calcolabile")
         except Exception:
-            pass
-        # 6. Modello: in parole, con l'errore **misurato** sulle gare di verifica
-        #    (prima: «RPS 0,20 tipico», che era una cifra scritta a mano mai misurata — M1)
+            sotto.append("pressing non calcolabile")
+
+        # 5. Il modello **non** è una riga della tabella: non si confronta casa/ospite. È la
+        #    nota in fondo alla card (M1 di docs/55: RPS misurato, ξ detto in parole).
+        modello: dict[str, Any] | None = None
         try:
             if prediction:
                 lg = prediction.get("league_key")
-                xi = None
                 try:
                     from ..models.predict import xi_for_league
                     xi = xi_for_league(str(lg)) if lg else None
@@ -1892,83 +2153,32 @@ class MatchAnalysis:
                 rps_lega = (acc.get("per_league") or {}).get(str(lg))
                 rps_tot = acc.get("rps")
                 if xi or scale or rps_tot:
-                    # il peso del passato recente, detto in parole: con ξ una gara di un
-                    # mese fa pesa exp(-ξ·30) di una di ieri
                     peso = f"{100 * np.exp(-float(xi) * 30):.0f}%" if xi else None
                     nfit_s = f"{int(acc['n']):,}".replace(",", ".") if acc.get("n") else "—"
-                    desc = (f"Dixon-Coles + Elo (inclinazione 70/30), λ corrette del "
-                            f"{_f((scale - 1) * 100, 1) if scale is not None else '—'}% dalla calibrazione. "
-                            f"Errore del modello sulle gare di verifica fuori campione: RPS "
-                            f"{_f(rps_tot,3)} su {nfit_s} gare")
+                    testo = ("Dixon-Coles + Elo (inclinazione 70/30), λ corrette del "
+                             f"{_f((scale - 1) * 100, 1) if scale is not None else '—'}% dalla "
+                             f"calibrazione. Errore del modello sulle gare di verifica fuori "
+                             f"campione: RPS {_f(rps_tot, 3)} su {nfit_s} gare")
                     if rps_lega:
-                        desc += f", {_f(rps_lega[0],3)} su {int(rps_lega[1])} di questa lega"
+                        testo += f", {_f(rps_lega[0], 3)} su {int(rps_lega[1])} di questa lega"
                     if xi:
-                        desc += (f". ξ {_f(xi,4)} è il peso del passato recente: una gara di un "
-                                 f"mese fa pesa {peso} di una di ieri.")
+                        testo += (f". ξ {_f(xi, 4)} è il peso del passato recente: una gara di un "
+                                  f"mese fa pesa {peso} di una di ieri.")
                     else:
-                        desc += "."
-                    fattori.append({
-                        "icon": "🧮",
-                        "label": "Modello statistico",
-                        "home": (f"RPS {_f(rps_lega[0],3)} ({int(rps_lega[1])} gare)"
-                                 if rps_lega else "—"),
-                        "away": f"ξ {_f(xi,4)}" if xi is not None else "—",
-                        "delta": f"λ × {_f(scale,3)}" if scale is not None else "",
-                        "impact": (f"errore fuori campo {_f(rps_tot,3)}" if rps_tot
-                                   else "modello salvato"),
-                        "tone": "neutral",
-                        "desc": desc,
-                    })
+                        testo += "."
+                    modello = {"testo": testo}
         except Exception:
-            pass
+            modello = None
 
-        if not fattori:
+        if not rows and not modello and not sotto:
             return None
-        # ordina per impatto stimato su λ (mercato 6× > infermeria 0.9 xA > xPTS 3.6 > riposo)
-        def _impact_weight(f):
-            lab=f.get("label","")
-            delta=f.get("delta","")
-            try:
-                if "Valore" in lab:
-                    # ratio like 6.0× -> weight 6
-                    m=re.search(r"([0-9]+\.?[0-9]*|[0-9]+,[0-9]+)", delta)
-                    if m:
-                        v = m.group(1).replace(",",".")
-                        return float(v)
-                    return 1.5
-                if "Infermeria" in lab:
-                    m=re.search(r"-([0-9]+\.?[0-9]*|[0-9]+,[0-9]+)", f.get("impact",""))
-                    if m:
-                        v = m.group(1).replace(",",".")
-                        return float(v)
-                    return 0.5
-                if "xPTS" in lab:
-                    m=re.search(r"([0-9]+\.?[0-9]*|[0-9]+,[0-9]+)", delta)
-                    if m:
-                        v = m.group(1).replace(",",".")
-                        return float(v)
-                    return 3.0
-                if "Riposo" in lab:
-                    # corto pesa di più
-                    return 2.0 if "corto" in f.get("desc","") or int(re.search(r"(\d+)", delta).group(1))<=4 else 1.0
-                if "Pressing" in lab:
-                    return 1.2
-            except Exception:
-                pass
-            return 0.5
-        # aggiungi peso e barra impatto (P1 audit)
-        for f in fattori:
-            f["weight"] = _impact_weight(f)
-        max_w = max((f["weight"] for f in fattori), default=1)
-        for f in fattori:
-            f["bar_pct"] = round(100 * f["weight"] / max_w) if max_w else 0
-        order_tone = {"bad":0, "good":1, "neutral":2}
-        fattori_sorted = sorted(fattori, key=lambda x: (-x["weight"], order_tone.get(x["tone"],9), x["label"]))
-        # M3 (docs/55 §6): i fattori oltre i sei mostrati si **nominano**, invece di dire
-        # «+N altri fattori sotto soglia» (che era anche sbagliato: hanno superato la soglia,
-        # semplicemente non entrano nelle prime sei righe)
-        return {"rows": fattori_sorted[:6], "n": len(fattori_sorted), "max_weight": max_w,
-                "altri": [f["label"] for f in fattori_sorted[6:]]}
+        order_tone = {"bad": 0, "good": 1, "neutral": 2}
+        rows.sort(key=lambda r: (-r["weight"], order_tone.get(r["tone"], 9), r["label"]))
+        # le soglie in una frase sola, dalla stessa fonte delle righe: il template la stampa
+        # così com'è, e non può raccontare numeri diversi da quelli che accendono le righe.
+        # La funzione è a livello di modulo perché è anche l'oggetto dell'invariante [41].
+        return {"rows": rows, "n": len(rows), "modello": modello, "sotto_soglia": sotto,
+                "soglie_testo": fattori_soglie_testo()}
 
     # ---- notizie per partita (docs/21 P1-5, rifatte in docs/24 §3 e §3.5) -------------------
     # ---- notizie per partita (docs/21 P1-5, rifatte in docs/24 §3 e §3.5) -------------------
@@ -1976,6 +2186,16 @@ class MatchAnalysis:
     # programma, non per l'esempio su cui sono nate. Finestra di 7 giorni pesata sulle ore al
     # fischio d'inizio, rilevanza per questa partita, gate «il fatto deve poter spostare
     # qualcosa», diversità e trasparenza sui conteggi.
+#: Soglie dei «Fattori che spostano la partita» — **una sola fonte**: il testo della card
+    #: le cita da qui e l'invariante [41] di `verify_site.py` le confronta con la pagina, così
+    #: il testo non può raccontare soglie diverse da quelle che accendono la riga (docs/57 §2).
+    FACTOR_MARKET_RATIO: ClassVar[float] = 1.5    # valore titolari: 1,5× (o 1/1,5×)
+    FACTOR_ABSENCE_MIN: ClassVar[int] = 2         # indisponibili: 2 assenti…
+    FACTOR_ABSENCE_LOST: ClassVar[float] = 0.4    # …oppure 0,4 xG+xA/90 persi
+    FACTOR_REST_SHORT: ClassVar[int] = 4          # riposo corto: ≤4 giorni (studio UEFA, RR 1,32)
+    FACTOR_PRESS_RATIO: ClassVar[float] = 0.75    # pressing: rapporto PPDA ≤0,75× (o ≥1,33×)
+    FACTOR_HEAVY_LOST: ClassVar[float] = 0.2      # sotto questa differenza gli indisponibili «pesano uguale»
+
     NEWS_WINDOW_DAYS: ClassVar[int] = 7          # finestra vera: una settimana
     NEWS_OLD_HORIZON_DAYS: ClassVar[int] = 45    # quanto indietro si contano i «troppo vecchi»
     NEWS_LIMIT: ClassVar[int] = 3                # fatti pubblicati per squadra
@@ -4113,48 +4333,68 @@ class MatchAnalysis:
                         "score": f"{hg}-{ag}", "res": res})
         return out
 
-    def match_insights(self, match_id: int, home_id: int, away_id: int,
-                       home_name: str, away_name: str, n: int = 3) -> list[dict[str, Any]]:
-        """Fatti pre-partita: tradotti, filtrati, al più ``n``, mai in inglese.
+    def match_insights(self, match_id: int, home_id: int, away_id: int, home_name: str,
+                       away_name: str, kickoff: pd.Timestamp, n: int = 5,
+                       league_id: Any = None) -> list[dict[str, Any]]:
+        """Fatti rilevanti della scheda: **due origini**, una sola selezione, mai inglese.
 
-        Fonte: tabella ``insights`` (FotMob ``matchFacts.insights``). Si tengono
-        solo streak / gol recenti / testa-a-testa / capocannoniere. I testi non
-        traducibili e i fatti «hype» (most X in the competition) sono scartati.
+        - ``source="dati"``: forma recente ricalcolata dai **nostri** risultati di campionato
+          (:meth:`form_insights`) — «N gol nelle ultime K», strisce di vittorie/sconfitte,
+          imbattibilità, porta inviolata. Sono gli unici numeri che possiamo garantire
+          aggiornati: li rifà a ogni build il verificatore [42] dai Parquet.
+        - ``source="fotmob"``: testa-a-testa, capocannoniere, rigori, record di stagione,
+          media gol, posizione: dati che il nostro archivio non sa produrre. Sono la
+          **fotografia del momento in cui la gara è stata raccolta** e invecchiano: la card
+          lo dichiara accanto al gruppo.
+
+        La famiglia «forma recente» non viene più pubblicata da FotMob (``_INSIGHT_FORM_RE``):
+        al posto suo va il ricalcolo. Il record delle porte inviolate si pubblica solo se il
+        numero regge al ricalcolo (:meth:`porta_inviolata_record_ok`). I testi non traducibili
+        e i fatti «hype» restano scartati.
         """
-        if self.insights_df.empty or "text" not in self.insights_df.columns:
-            return []
-        rows = self.insights_df[self.insights_df.match_id == match_id]
-        if rows.empty:
-            return []
-        names = {int(home_id): home_name, int(away_id): away_name}
         out: list[dict[str, Any]] = []
-        seen_text: set[str] = set()
-        for r in rows.itertuples(index=False):
-            d = r._asdict()
-            tid = _val(d, "team_id")
-            if tid is None or pd.isna(tid):
-                continue
-            try:
-                team_id = int(tid)
-            except (TypeError, ValueError):
-                continue
-            if team_id not in names:
-                continue
-            raw = _val(d, "text")
-            tr = translate_insight(raw if isinstance(raw, str) else "")
-            if not tr:
-                INSIGHT_SEEN["scartati"] += 1
-                continue
-            body = tr["text"]
-            if _INSIGHT_EN_LEAK.search(body):
-                continue  # rete di sicurezza: mai inglese a schermo
-            if body in seen_text:
-                continue
-            seen_text.add(body)
-            INSIGHT_SEEN["tradotti"] += 1
-            out.append({"team": names[team_id], "team_id": team_id,
-                        "side": "home" if team_id == home_id else "away",
-                        "text": body, "kind": tr["kind"], "priority": tr["priority"]})
+        for tid, nome in ((int(home_id), home_name), (int(away_id), away_name)):
+            out += self.form_insights(tid, kickoff, nome)
+        if not self.insights_df.empty and "text" in self.insights_df.columns:
+            rows = self.insights_df[self.insights_df.match_id == match_id]
+            names = {int(home_id): home_name, int(away_id): away_name}
+            seen_text: set[str] = set()
+            for r in rows.itertuples(index=False):
+                d = r._asdict()
+                tid = _val(d, "team_id")
+                if tid is None or pd.isna(tid):
+                    continue
+                try:
+                    team_id = int(tid)
+                except (TypeError, ValueError):
+                    continue
+                if team_id not in names:
+                    continue
+                raw = _val(d, "text")
+                testo = raw.strip() if isinstance(raw, str) else ""
+                if _INSIGHT_FORM_RE.fullmatch(testo):
+                    INSIGHT_SEEN["forma_ricalcolata"] += 1
+                    continue
+                rec = _INSIGHT_RECORD_CS_RE.fullmatch(testo)
+                if rec and not self.porta_inviolata_record_ok(team_id, kickoff, int(rec.group(1)),
+                                                              league_id):
+                    INSIGHT_SEEN["record_rifiutati"] += 1
+                    continue
+                tr = translate_insight(testo)
+                if not tr:
+                    INSIGHT_SEEN["scartati"] += 1
+                    continue
+                body = tr["text"]
+                if _INSIGHT_EN_LEAK.search(body):
+                    continue  # rete di sicurezza: mai inglese a schermo
+                if body in seen_text:
+                    continue
+                seen_text.add(body)
+                INSIGHT_SEEN["tradotti"] += 1
+                out.append({"team": names[team_id], "team_id": team_id,
+                            "side": "home" if team_id == home_id else "away",
+                            "text": body, "kind": tr["kind"], "priority": tr["priority"],
+                            "source": "fotmob"})
         return select_insights(out, n=n)
 
     def h2h_stats(self, match_id: int, home_id: int, away_id: int, kickoff: pd.Timestamp,
@@ -4282,7 +4522,14 @@ class MatchAnalysis:
         }
 
     def clash_radar(self, home_name: str, home_id: int, away_name: str, away_id: int) -> dict[str, Any] | None:
-        """Radar stile 5 metriche normalizzate su lega (P1 audit): attacco, difesa, pressing, deep, set-piece."""
+        """Radar stile 5 metriche normalizzate 0–100 su **ancore fisse** (P1 audit).
+
+        Le ancore sono scelte a mano e dichiarate riga per riga (``helps``): la classifica non
+        è un percentile di lega, quindi 100 significa «estremo alto della scala», non «miglior
+        squadra del campionato» (la vecchia riga lo diceva: docs/57 §8). Un dato mancante resta
+        ``None``: prima diventava un ``50`` neutro, che in pagina è un numero inventato — 80
+        celle su 441 schede (Feyenoord–AZ: pressing e profondità n.d. in tutte e due le colonne).
+        """
         try:
             h_style = self.season_style(home_name, home_id) or {}
             a_style = self.season_style(away_name, away_id) or {}
@@ -4304,20 +4551,20 @@ class MatchAnalysis:
             a_att = a_gf_pg / avg["gf"] if avg["gf"] else 1
             h_def_ratio = h_ga_pg / avg["ga"] if avg["ga"] and h_ga_pg is not None else 1
             a_def_ratio = a_ga_pg / avg["ga"] if avg["ga"] and a_ga_pg is not None else 1
-            # normalizzazione 0-100: attacco 0.5→0, 1.5→100
+            # normalizzazione 0–100 su ancore fisse: attacco 0.5→0, 1.5→100
             def norm_att(r): return max(0, min(100, (r - 0.5) / 1.0 * 100))
             def norm_def(r): return max(0, min(100, (1.5 - r) / 1.0 * 100))  # invertito: meno subiti meglio
-            # PPDA: 8→100, 20→0
+            # PPDA: 8→100, 20→0 (n.d. resta n.d.: mai un 50 neutro)
             def norm_ppda(v):
-                if v is None: return 50
+                if v is None: return None
                 return max(0, min(100, (20 - v) / 12 * 100))
             # deep: 2→0, 10→100
             def norm_deep(v):
-                if v is None: return 50
+                if v is None: return None
                 return max(0, min(100, (v - 2) / 8 * 100))
             # set-piece quota: 10%→0, 60%→100
             def norm_set(v):
-                if v is None: return 50
+                if v is None: return None
                 return max(0, min(100, (v - 10) / 50 * 100))
             h_ppda = h_style.get("ppda"); a_ppda = a_style.get("ppda")
             h_deep = h_style.get("deep"); a_deep = a_style.get("deep")
@@ -4330,7 +4577,15 @@ class MatchAnalysis:
             labels = ["Attacco × media", "Difesa × media (inv)", "Pressing PPDA (inv)", "Profondità", "Palle inattive %"]
             h_vals = [norm_att(h_att), norm_def(h_def_ratio), norm_ppda(h_ppda), norm_deep(h_deep), norm_set(h_set)]
             a_vals = [norm_att(a_att), norm_def(a_def_ratio), norm_ppda(a_ppda), norm_deep(a_deep), norm_set(a_set)]
-            return {"labels": labels, "home": h_vals, "away": a_vals,
+            # ogni riga dichiara la sua ancora e il verso: la scala è fissa, non un percentile
+            helps = [
+                "Rapporto fra gol fatti a gara e media gol della lega: ancora 0,5×→0 e 1,5×→100 (più alto = più prolifico)",
+                "Rapporto fra gol subiti a gara e media gol subiti della lega, invertito: 1,5×→0 e 0,5×→100 (più alto = subisce meno)",
+                "PPDA (Understat) invertito: 8→100 e 20→0 (più alto = pressing più alto)",
+                "Passaggi profondi a gara (Understat): 2→0 e 10→100 (più alto = arriva più vicino all'area)",
+                "Quota degli xG creati da palle inattive (FotMob): 10%→0 e 60%→100 — più alta = più dipendenza dalle palle inattive, non un giudizio di qualità",
+            ]
+            return {"labels": labels, "helps": helps, "home": h_vals, "away": a_vals,
                     "home_raw": {"att": h_att, "def": h_def_ratio, "ppda": h_ppda, "deep": h_deep, "set": h_set},
                     "away_raw": {"att": a_att, "def": a_def_ratio, "ppda": a_ppda, "deep": a_deep, "set": a_set}}
         except Exception:
@@ -4486,11 +4741,15 @@ class MatchAnalysis:
                 s.append(f"Gara da pochi gol: {_f(tot)} gol attesi complessivi, Under 2,5 al {_pct(1 - p['p_over25'])}.")
             if p.get("p_btts") is not None and p["p_btts"] >= 0.58:
                 s.append(f"Entrambe a segno probabile ({_pct(p['p_btts'])}).")
+        # «un dato in un posto» (P1.2 di `docs/28`, §2 di `docs/57`): quando la riga esiste
+        # nella tabella dei Fattori — che la stampa con i due valori e il rapporto — la
+        # narrativa non la ricopia. Resta qui per le gare finite, dove la card non c'è.
+        fattori_labels = {r["label"] for r in (ctx.get("fattori_chiave") or {}).get("rows", [])}
         clash = ctx.get("clash")
         if clash:
             by = {r["label"]: r for r in clash["rows"]}
             ppda = by.get("PPDA (↓ = più pressing)")
-            if ppda and ppda["h"] is not None and ppda["a"] is not None:
+            if "Pressing (PPDA)" not in fattori_labels and ppda and ppda["h"] is not None and ppda["a"] is not None:
                 if ppda["h"] <= 0.75 * ppda["a"]:
                     s.append(f"{h} preme molto più di {a} (PPDA {_f(ppda['h'], 1)} vs {_f(ppda['a'], 1)}).")
                 elif ppda["a"] <= 0.75 * ppda["h"]:
@@ -4592,7 +4851,7 @@ class MatchAnalysis:
             # mercato squilibrio in narrativa quando ratio ≥2 (fattore #1 per audit)
             if side == "home":
                 hv = ctx.get("home_value"); av = ctx.get("away_value")
-                if hv and av and hv>0 and av>0:
+                if hv and av and hv>0 and av>0 and "Valore di mercato titolari" not in fattori_labels:
                     ratio = float(hv)/float(av) if av else 0
                     if ratio >= 2 or ratio <= 0.5:
                         if ratio >= 1:
@@ -4630,14 +4889,13 @@ class MatchAnalysis:
         w = ctx.get("weather") or {}
         if w.get("desc") and w.get("segnalazioni"):
             # solo i numeri col criterio che li segnala: l'aggettivo («estremo», «campo
-            # pesante») è sparito perché non era misurato (docs/55 §4.3)
-            extra = " — oltre la soglia di impatto: " if w.get("livello") == "impatto" \
-                else " — sopra la soglia di segnalazione: "
-            if w.get("livello") == "impatto":
-                extra += f"{', '.join(w['segnalazioni'])} ({WEATHER_IMPATTO_TESTO})."
-            else:
-                extra += f"{', '.join(w['segnalazioni'])}."
-            s.append(f"Meteo previsto: {w['desc']}, {_f(w.get('temp'), 0)}°C{extra}")
+            # pesante») è sparito perché non era misurato (docs/55 §4.3). Il livello si dice
+            # **una volta** e il testo delle soglie non si ripete qui: sta nella card
+            # «Arbitro e meteo», che è il posto del dettaglio (fix del 2026-10-07, `docs/57` §1:
+            # prima la stessa riga diceva «oltre la soglia di impatto» due volte e il 50% due volte).
+            s.append(f"Meteo previsto: {w['desc']}, {_f(w.get('temp'), 0)}°C"
+                     f" — {w.get('livello_testo') or 'sopra la soglia di segnalazione'}: "
+                     f"{', '.join(w['segnalazioni'])}.")
             # senza valori oltre soglia il meteo non occupa riga in narrativa (checklist
             # BettorBoss: il meteo conta solo quando è estremo)
         if ctx.get("status") == "finished":
@@ -4647,12 +4905,12 @@ class MatchAnalysis:
                 exp_w = h if hx > ax + 0.5 else a if ax > hx + 0.5 else None
                 real_w = h if hg > ag else a if ag > hg else None
                 if exp_w and real_w and exp_w != real_w:
-                    s.append(f"Risultato contro il flusso di gioco: xG {_f(hx)}-{_f(ax)} a favore di {exp_w}, "
+                    s.append(f"Risultato contro il flusso di gioco: xG {_f(hx)}–{_f(ax)} a favore di {exp_w}, "
                              f"ma ha vinto {real_w}.")
                 elif exp_w is None and real_w:
-                    s.append(f"Gara equilibrata negli xG ({_f(hx)}-{_f(ax)}): {real_w} ha fatto la differenza nei dettagli.")
+                    s.append(f"Gara equilibrata negli xG ({_f(hx)}–{_f(ax)}): {real_w} ha fatto la differenza nei dettagli.")
                 else:
-                    s.append(f"Risultato coerente con gli xG ({_f(hx)}-{_f(ax)}).")
+                    s.append(f"Risultato coerente con gli xG ({_f(hx)}–{_f(ax)}).")
             if p and hg is not None and ag is not None:
                 ph = p["p_home"] if hg > ag else p["p_draw"] if hg == ag else p["p_away"]
                 s.append(f"Il modello assegnava {_pct(ph)} all'esito verificatosi"
@@ -4707,6 +4965,8 @@ class MatchAnalysis:
             "away_form_badge": self.form_summary(away_form) if len(away_form) >= 3 else None,
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),
             "home_rest_cup": self.rest_cup(home_id, kickoff), "away_rest_cup": self.rest_cup(away_id, kickoff),
+            "home_rest_on": self.rest_last(home_id, kickoff),
+            "away_rest_on": self.rest_last(away_id, kickoff),
             # post-partita: quando si rigioca (campionato + coppe) e con quanto riposo
             "home_next": self.next_commitment(home_id, kickoff) if status == "finished" else None,
             "away_next": self.next_commitment(away_id, kickoff) if status == "finished" else None,
@@ -4718,7 +4978,8 @@ class MatchAnalysis:
             "home_key_players": self.team_key_players(home_id),
             "away_key_players": self.team_key_players(away_id),
             "insights": (self.match_insights(match_id, home_id, away_id,
-                                             f["home_name"], f["away_name"], n=5)
+                                             f["home_name"], f["away_name"], kickoff, n=5,
+                                             league_id=f.get("league_id"))
                          if status != "finished" else []),
             "home_arrival": self.arrival_trend(f["home_name"], home_id) if status != "finished" else None,
             "away_arrival": self.arrival_trend(f["away_name"], away_id) if status != "finished" else None,

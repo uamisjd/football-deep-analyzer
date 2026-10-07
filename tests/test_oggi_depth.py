@@ -930,6 +930,25 @@ def test_elenco_it_mette_la_congiunzione_prima_dell_ultimo_nome():
     assert _elenco_it([]) == ""
 
 
+def test_riposo_mostra_la_data_dell_ultima_gara(tmp_path):
+    """Accanto ai giorni di riposo c'è la **data** dell'ultima gara giocata (solo quando il
+    riposo è ampio, ≥6 giorni): un «21 giorni di riposo» senza data fa pensare a un dato vecchio,
+    mentre la data mostra che è la sosta del campionato (l'ultimo turno è stato il 19-20/09 e il
+    prossimo è il 09-11/10 — `docs/57` §2).
+
+    La data viene dallo **stesso** calendario di stagione di `rest_days()` (campionato + coppe),
+    non dalla finestra dei dettagli: il caso con la coppa verifica che la base sia quella.
+    """
+    ma = MatchAnalysis(_store(tmp_path))
+    # nel fixture sintetico (_fixtures) l'ultimo turno è il 07/09 per entrambe le squadre:
+    # 5 giorni prima del fischio del 12/09, e la data pubblicata è quella
+    assert ma.rest_days(10, KICK.to_pydatetime()) == ma.rest_days(20, KICK.to_pydatetime()) == 5
+    assert ma.rest_last(10, KICK.to_pydatetime()) == ma.rest_last(20, KICK.to_pydatetime()) == "07/09"
+    # nessuna gara precedente → niente data (non si inventa)
+    assert ma.rest_last(999, KICK.to_pydatetime()) is None
+    assert ma.rest_days(999, KICK.to_pydatetime()) is None
+
+
 def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
     """«1 assente», mai «1 assenti»: la concordanza è un gate, non un dettaglio.
 
@@ -939,6 +958,9 @@ def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
     usava `f"{ab['n']} assenti"` senza concordare; il template dell'elenco partite usava già
     `it_plural('assente')`, quindi lo stesso dato era scritto bene in un posto e male
     nell'altro.
+
+    Dal 7/10/2026 la riga è **una sola** per gli indisponibili, con le due squadre nelle due
+    colonne (`docs/57` §2): il test verifica la concordanza su **tutti** i campi pubblicati.
     """
     import importlib.util
     from pathlib import Path
@@ -949,9 +971,10 @@ def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
                                                    "contrib_lost_p90": 0.0, "players": []})
     out = ma.fattori_chiave(100, 10, "Alpha", 20, "Beta", KICK.to_pydatetime(), None)
     righe = [r for r in out["rows"] if r["icon"] == "🏥"]
-    assert righe, "nessuna riga di infermeria generata: il test non sta provando nulla"
-    testo = " ".join(str(r[k]) for r in righe for k in ("home", "away", "delta", "impact", "desc"))
+    assert len(righe) == 1, f"la riga degli indisponibili deve essere una sola, trovate {len(righe)}"
+    testo = " ".join(str(r[k]) for r in righe for k in ("home", "away", "delta", "impact", "help"))
     assert "1 assente" in testo and "1 assenti" not in testo
+    assert righe[0]["home"] == righe[0]["away"] == "1 assente · 1 titolare"
 
     p = Path(__file__).resolve().parents[1] / "scripts" / "verify_site.py"
     spec = importlib.util.spec_from_file_location("verify_site_oggi", p)
