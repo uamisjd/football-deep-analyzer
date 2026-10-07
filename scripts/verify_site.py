@@ -1089,7 +1089,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not path.exists():
             continue
         html = path.read_text(encoding="utf-8")
-        for mid, n1, c1, n2, c2 in inf_re.findall(html):
+        # la regex non deve morire in silenzio una seconda volta: aggancia tutte le chip
+        checks += 1
+        trovat = inf_re.findall(html)
+        if len(trovat) != html.count("fact-absence"):
+            fails.append(f"{lg_page}: regex indisponibili aggancia {len(trovat)} chip su "
+                         f"{html.count('fact-absence')} nella marcatura")
+        for mid, n1, c1, n2, c2 in trovat:
             if int(mid) not in fx_by_id.index:
                 continue
             row = fx_by_id.loc[int(mid)]
@@ -3190,6 +3196,7 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
       «Indisponibili», niente «contributo offensivo atteso» per un valore di stagione e niente
       «titolare probabile» a distinta ufficiale.
     """
+    import datetime
     from zoneinfo import ZoneInfo
 
     import pandas as pd
@@ -3251,6 +3258,7 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
         if r0["status"] == "finished":
             continue
         html = pg.read_text(encoding="utf-8")
+        kick = pd.to_datetime(r0["utc_kickoff"], utc=True)
         squadre = [(int(r0["home_id"]), str(r0["home_name"])),
                    (int(r0["away_id"]), str(r0["away_name"]))]
         # ---- [43a] Come arrivano ----
@@ -3287,7 +3295,6 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                                  f"{len(atteso['rows'])} ricalcolate")
                     continue
                 n_righe += len(mostrate)
-                nuove = []
                 for (gg, _opp, _rank, res, gf, ga, xg, xga), riga in zip(mostrate, atteso["rows"]):
                     checks += 1
                     want_res = "V" if riga["gf"] > riga["ga"] else ("N" if riga["gf"] == riga["ga"] else "P")
@@ -3296,19 +3303,25 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                             or abs(num(xg) - round(riga["xg"], 2)) > 0.005
                             or abs(num(xga) - round(riga["xga"], 2)) > 0.005):
                         fails.append(f"{pg.name}: {tnome}: riga {gg} diversa dal ricalcolo")
-                    nuove.append(riga["date"])
                 # freschezza indipendente dal codice: nessuna gara con xG più recente della finestra
+                # mostrata (le date in pagina sono giorno/mese: l'anno si inferisce dal calcio
+                # d'inizio, la stagione è a cavallo di due anni)
                 checks += 1
-                shown_max = max(pd.to_datetime(d, utc=True) for d in nuove)
+                km, ky = kick.month, kick.year
+                shown_max = max(
+                    datetime.date(ky if int(gg.split("/")[1]) <= km else ky - 1,
+                                  int(gg.split("/")[1]), int(gg.split("/")[0]))
+                    for gg, *_r in mostrate)
                 if atteso["source"] == "FotMob":
                     base = fx[(fx.status == "finished")
                               & ((fx.home_id == tid) | (fx.away_id == tid))]
-                    fresche = [pd.to_datetime(r.utc_kickoff, utc=True) for r in base.itertuples()
+                    fresche = [pd.to_datetime(r.utc_kickoff, utc=True).tz_convert(fuso).date()
+                               for r in base.itertuples()
                                if (int(r.match_id), tid) in xg_ok
                                and (int(r.match_id), int(r.away_id if r.home_id == tid else r.home_id)) in xg_ok]
                 else:
                     usar = us[us.team_name.map(canonical) == canonical(tnome)] if not us.empty else us
-                    fresche = [pd.to_datetime(d, utc=True, errors="coerce")
+                    fresche = [pd.to_datetime(d, utc=True, errors="coerce").tz_convert(fuso).date()
                                for d in usar["date"]] if not usar.empty else []
                     fresche = [d for d in fresche if pd.notna(d)]
                 if any(d > shown_max for d in fresche):
