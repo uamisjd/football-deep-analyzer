@@ -1244,6 +1244,25 @@ campione») senza perdere il separatore («5.791 gare»). Censito il resto: ness
 
 Catena delle deroghe: PR #23 (2026-09-12), #27, #28 (2026-09-13), #29 (2026-09-14), #34, #35
 (2026-09-15), #38, #42, #44 (2026-09-16), #46 (2026-09-17), #53, #54 (2026-09-18),
-#59 (2026-09-19), #77 (2026-09-21), **#80 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
+#59 (2026-09-19), #77 (2026-09-21), #80, **#85 (2026-10-07)**. *(PR #43 e #45: fuse dall'utente.)*
+
+### 9.17 Merge PR #85 — revisione totale qualità/quantità (2026-10-07, deroga esplicita)
+
+**Ordine dell'utente:** *«Please merge the pull request»* (07/10/2026), confermato con
+*«riprova il merge»* dopo un blocco tecnico del sandbox (errore di ripresa, nessun comando
+eseguito nel frattempo). Eseguito con `gh pr merge 85 --merge`: `state=MERGED`,
+`merge_commit=819630e57094c5caabe95d888f1d8244862230b7`, `merged_at=2026-10-07T17:08:41Z`.
+Pre-merge riverificato dopo il rientro: check `test` SUCCESS (2 run), PR
+`mergeable=MERGEABLE`, `mergeStateStatus=CLEAN`, `git status` pulito, solo i 2 commit della
+sessione in `origin/main..HEAD`.
+
+**Contenuto** (report `docs/53_revisione_totale_qualita_quantita_2026-10-07.md`): (1) footer
+con le fonti reali (ESPN tolto: 0 righe mai in produzione; aggiunti Google News, Open-Meteo,
+ANSA/Sky Sport); (2) `collect_news` che rispetta il filtro leghe anche per le squadre +
+test di regressione; (3) commenti stali aggiornati; (4) fix «N i titoli più vecchi guardati»
+(20 schede): template + ramo AGREEMENT «N i + plurale» + `class="imbuto"` col parser che
+riammette il testo nostro nella card notizie (selettore di [20] adeguato); (5) P2.4 chiusa
+con misura e decisioni D1–D4 dell'utente registrate (niente watchdog, gate tutti bloccanti,
+nessun tetto giornaliero, niente Lighthouse).
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
