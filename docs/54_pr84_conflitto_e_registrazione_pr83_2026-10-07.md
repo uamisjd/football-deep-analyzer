@@ -29,8 +29,8 @@ cose a caso, studia bene tutto» (07/10/2026, PR #84).
    (`arena/e20f049c`) appartiene a un'altra sessione e questa sessione ha il divieto di pushare
    su branch diversi dal proprio. La via corretta è una **PR sostitutiva** dal branch di questa
    sessione che porta in `main` il contenuto di #84 ancora valido, aggiornato allo stato di oggi;
-   #84 va poi **chiusa** (superata), non mergiata. È quello che fa questa PR sostitutiva,
-   **PR #87** (§3).
+   #84 è stata poi **chiusa** (7/10/2026, ore 17:51:32Z) su decisione dell'utente, non mergiata;
+   è quello che fa questa PR sostitutiva, **PR #87** (§3).
 
 ## 1. Cronologia degli eventi (tutto verificato via API GitHub, §4)
 
@@ -43,6 +43,7 @@ cose a caso, studia bene tutto» (07/10/2026, PR #84).
 | 17:08:41 | **PR #85 fusa** in deroga: `819630e` → daily **#220**, verde, dati `e01de11` |
 | 17:33:11 | **PR #86 fusa**: `7d3d0ae` (record del merge di #85). Solo documenti → `paths-ignore: docs/**`: **nessun daily nuovo** |
 | dopo le 17:33 | #84 passa a `CONFLICTING` / `DIRTY`: `docs/13` e `STATO.md` sono esattamente i file toccati da #85/#86 |
+| 17:51:32 | **#84 chiusa** su decisione dell'utente, perché superata: il suo contenuto valido è in questa PR (#87) |
 
 ## 2. Il conflitto, misurato con un comando
 
@@ -103,17 +104,18 @@ muove: nei documenti va sempre indicato l'istante della misura.
 
 ## 5. Cosa NON è stato fatto (e perché)
 
-- **Nessun merge di #84 e nessuna sua chiusura**: il merge spetta all'utente (regola D) e la
-  chiusura della PR di un'altra sessione è una decisione dell'utente. Tecnicamente, questa
-  sessione **non può** comunque pushare sul branch `arena/e20f049c`.
+- **Nessun merge di #84**: il merge spetta all'utente (regola D). La sua **chiusura** è stata
+  eseguita alle 17:51:32Z **su richiesta esplicita dell'utente** («chiudi tu #84 ora»), non di
+  iniziativa dell'agente. Tecnicamente, questa sessione **non può** comunque pushare sul branch
+  `arena/e20f049c`.
 - **Nessuna raccolta live, nessuna sonda, nessun daily manuale**: la modifica è solo documentale,
   e i trigger di `daily`/`tests` escludono i push di soli documenti (§4).
 - **Nessuna modifica a codice, dati o workflow**: `git diff --stat` della PR tocca solo `*.md`.
 
 ## Prossimo passo
 
-1. **Chiusura di #84** (superata da questa PR) — decisione dell'utente, con la motivazione e le
-   prove di questo documento.
+1. **#84 è chiusa** (7/10/2026, 17:51:32Z, decisione dell'utente perché superata da questa PR):
+   la motivazione e le prove restano in questo documento.
 2. **Merge di questa PR** (solo documenti): non attiva daily né run di test su `main`.
 3. Nessun'altra azione operativa: la coda non bloccante è quella di `docs/53` §6.2/§6.4 e le
    decisioni D1–D4 di `docs/53` §7 restano chiuse (non riproporle senza nuovi motivi).

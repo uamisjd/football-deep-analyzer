@@ -1267,7 +1267,7 @@ documentata di gate/fonti/costi. Nessuna modifica alla raccolta o alla schedulaz
 
 **Il record è arrivato qui in ritardo, e il perché è documentato.** La registrazione della deroga
 era stata preparata in PR #84 (stesso branch `arena/e20f049c`); quando #85 e #86 sono state fuse,
-quella PR è diventata `CONFLICTING` con `main` proprio su questo file e su `STATO.md`, e le due
+quella PR è diventata `CONFLICTING` con `main` proprio su questo file e su `STATO.md` (e il 7/10 sera è stata chiusa perché superata), e le due
 §9.17 (una per #83, una per #85) si sarebbero sovrapposte. La PR sostitutiva della sessione
 `arena/550df67c` (PR #87) porta qui il record ancora valido, aggiornato; la diagnosi completa, con comandi
 e prove, è in `docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md`. Nota di numerazione:
