@@ -991,10 +991,13 @@ def test_fattori_rendimento_per_sede_finestra_campione_soglia(tmp_path):
 
     res = ma.fattori_chiave(4, 1, "Lazio", 3, "Milan", ko.to_pydatetime(), None)
     riga = next(r for r in res["rows"] if r["label"] == "Rendimento per sede")
-    assert riga["home"] == "3,00 pt/gara in casa (6 gare)"
-    assert riga["away"] == "0,00 pt/gara in trasferta (6 gare)"
+    # la cella porta anche la media per sede della stessa lega nella finestra (docs/59): nel
+    # fixture tutte le gare in finestra sono vinte dalla casa, quindi la base è 3,00 / 0,00
+    assert riga["home"] == "3,00 pt/gara in casa (6 gare · lega 3,00)"
+    assert riga["away"] == "0,00 pt/gara in trasferta (6 gare · lega 0,00)"
     assert riga["delta"] == "+3,00 pt/gara" and riga["tone"] == "good"
     assert "68,2%" in riga["help"] and "scripts/audit_fattori.py" in riga["help"]
+    assert "lega" in riga["help"]            # il ⓘ spiega come leggere il riferimento
 
     # sotto soglia (0,33 < 0,50): niente riga, ma il fattore è dichiarato fuori tabella
     quasi = [(f"2026-07-{d:02d}", "Y", "Milan", 0, 3) for d in range(1, 6)] + \

@@ -1937,14 +1937,19 @@ class MatchAnalysis:
         if h.empty or not {"home", "away", "date", "home_goals", "away_goals"} <= set(h.columns):
             self._hist_venue_df = pd.DataFrame()
             return self._hist_venue_df
-        d = h[["home", "away", "date", "home_goals", "away_goals"]].copy()
+        # ``league_key`` serve al riferimento di lega della riga di sede (docs/59): senza, il PPG
+        # della squadra è un numero assoluto che il lettore non sa collocare.
+        has_lg = "league_key" in h.columns
+        d = h[["home", "away", "date", "home_goals", "away_goals"]
+              + (["league_key"] if has_lg else [])].copy()
         d["date"] = pd.to_datetime(d["date"], utc=True)
         d["hc"] = d["home"].map(canonical)
         d["ac"] = d["away"].map(canonical)
         pari = d.home_goals == d.away_goals
         d["ph"] = np.where(d.home_goals > d.away_goals, 3, np.where(pari, 1, 0))
         d["pa"] = np.where(d.away_goals > d.home_goals, 3, np.where(pari, 1, 0))
-        self._hist_venue_df = d[["date", "hc", "ac", "ph", "pa"]].dropna(subset=["date"])
+        keep = ["date", "hc", "ac", "ph", "pa"] + (["league_key"] if has_lg else [])
+        self._hist_venue_df = d[keep].dropna(subset=["date"])
         return self._hist_venue_df
 
     def venue_form(self, team_name: str, kickoff: datetime) -> dict[str, Any] | None:
@@ -1975,6 +1980,15 @@ class MatchAnalysis:
             out["casa"] = (float(c.ph.mean()), len(c))
         if len(t):
             out["trasferta"] = (float(t.pa.mean()), len(t))
+        # Riferimento di lega (docs/59): il PPG per sede **della stessa lega** nella finestra, così
+        # il numero della squadra si legge contro la sua base — 1,22 in casa è sotto la media se la
+        # lega sta a 1,55. Senza, la cella dà un valore assoluto che il lettore non sa collocare.
+        if "league_key" in w.columns:
+            lg = set(c.league_key.dropna()) | set(t.league_key.dropna())
+            lw = w[w.league_key.isin(lg)] if lg else w.iloc[:0]
+            if len(lw):
+                out["lega_casa"] = (float(lw.ph.mean()), len(lw))
+                out["lega_trasferta"] = (float(lw.pa.mean()), len(lw))
         return out or None
 
     def cards_season(self, team_id: int, kickoff: datetime) -> dict[str, Any] | None:
@@ -2271,11 +2285,13 @@ class MatchAnalysis:
                           f"{away_name} {_f(aws['ppda'], 1)}. Soglia: rapporto "
                           f"≤{_f(self.FACTOR_PRESS_RATIO, 2)}× (o ≥"
                           f"{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×). Misurato sulle 162 gare in "
-                          "archivio con PPDA per entrambe: quando una delle due pressa molto più "
-                          "dell'altra la gara produce 3,43 xG contro i 3,10 delle gare con pressing "
-                          "simile, e chi pressa di più fa 1,70 punti a gara contro 1,07 "
-                          "(scripts/audit_fattori.py). Chi pressa crea più xG ma rischia il "
-                          "contropiede.")
+                          "archivio con PPDA per entrambe, divise per chi pressa: quando la casa "
+                          f"pressa molto più dell'ospite (≤{_f(self.FACTOR_PRESS_RATIO, 2)}×, 40 "
+                          "gare) la gara produce 3,43 xG e la casa fa 1,70 punti; quando è l'ospite "
+                          f"a pressare molto (≥{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×, 28 gare) gli "
+                          "xG sono 3,03 e la casa 1,07; con pressing simile (36 gare) 3,10 xG. Chi "
+                          "pressa di più crea più xG ma rischia il contropiede "
+                          "(scripts/audit_fattori.py).")
                 else:
                     # calcolabile ma vicino alla pari: si dice **anche questo**, altrimenti il
                     # fattore sparisce dalla scheda senza che il lettore possa distinguere
@@ -2299,20 +2315,30 @@ class MatchAnalysis:
                 vf[side] = None
         ph = (vf["home"] or {}).get("casa")
         pa = (vf["away"] or {}).get("trasferta")
+        # riferimento di lega (docs/59): la base casa/trasferta della stessa lega nella finestra,
+        # presa dal lato che ce l'ha (per una gara di campionato è la stessa lega da entrambe).
+        vh, va = vf["home"] or {}, vf["away"] or {}
+        lc = vh.get("lega_casa") or va.get("lega_casa")
+        lt = vh.get("lega_trasferta") or va.get("lega_trasferta")
         if ph and pa and ph[1] >= self.FACTOR_VENUE_MIN and pa[1] >= self.FACTOR_VENUE_MIN:
             diff = ph[0] - pa[0]
             if abs(diff) >= self.FACTOR_VENUE_DELTA:
                 casa_meglio = diff > 0
-                _riga("🏟", "Rendimento per sede",
-                      f"{_f(ph[0])} pt/gara in casa ({it_plural(ph[1], 'gara')})",
-                      f"{_f(pa[0])} pt/gara in trasferta ({it_plural(pa[1], 'gara')})",
+                ch = f"{_f(ph[0])} pt/gara in casa ({it_plural(ph[1], 'gara')}"
+                ch += f" · lega {_f(lc[0])}" if lc else ""
+                ca = f"{_f(pa[0])} pt/gara in trasferta ({it_plural(pa[1], 'gara')}"
+                ca += f" · lega {_f(lt[0])}" if lt else ""
+                _riga("🏟", "Rendimento per sede", ch + ")", ca + ")",
                       f"{_sgn(diff)} pt/gara",
                       f"squilibrio di sede a favore di {home_name if casa_meglio else away_name}",
                       "good" if casa_meglio else "bad", 1.0,
                       f"Punti per gara negli ultimi {self.FACTOR_VENUE_WINDOW} giorni di "
                       f"campionato, per sede: {home_name} in casa contro {away_name} in trasferta, "
                       f"con il numero di gare in cella (minimo {self.FACTOR_VENUE_MIN} per sede, "
-                      f"sotto non si pubblica). Soglia: differenza ≥{_f(self.FACTOR_VENUE_DELTA)} "
+                      f"sotto non si pubblica). «lega» è la media per sede della stessa lega nella "
+                      f"finestra: il valore della squadra va letto contro quella base"
+                      + (f" ({_f(lc[0])} in casa, {_f(lt[0])} in trasferta)" if lc and lt else "")
+                      + f". Soglia: differenza ≥{_f(self.FACTOR_VENUE_DELTA)} "
                       "pt/gara. Misurato su 6.307 gare di 3 stagioni: con ≥1 punto di differenza a "
                       "favore della casa le sue vittorie sono il 68,2%, con ≥1 punto a favore "
                       "dell'ospite scendono al 10,6% — le quote dicono quasi lo stesso (70,4% e "
