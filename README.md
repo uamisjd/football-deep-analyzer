@@ -29,6 +29,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md`](docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md) — perché la PR #84 è in conflitto e superata, e cosa è stato registrato al suo posto.
 - [`docs/55_revisione_schede_prossime_partite_2026-10-07.md`](docs/55_revisione_schede_prossime_partite_2026-10-07.md) — revisione delle schede delle prossime partite, sezione per sezione, con i tre difetti misurati (Mercato ×1,8, EPV, meteo) e la coda.
 - [`docs/56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md`](docs/56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md) — **lotto più recente**: i due P0 (Mercato, Meteo) con le misure prima/dopo, l'EPV declassato a riga di contesto, M1–M4, le due invarianti nuove e i residui dichiarati.
+- [`docs/58_fattori_secondo_giro_misure_2026-10-08.md`](docs/58_fattori_secondo_giro_misure_2026-10-08.md) — **lotto più recente**: secondo giro sulla card «Fattori che spostano la partita» — l'audit `scripts/audit_fattori.py`, due fattori nuovi misurati (rendimento per sede, disciplina e arbitro), tre candidati misurati e non pubblicati.
 
 > L'**indice completo** dei 66 file di `docs/` (56 documenti numerati + briefing + `STATO.md` + 5 archivi + 2 audit datati + `_audit_modelli.json`) è nel briefing, sezione 6.
 
