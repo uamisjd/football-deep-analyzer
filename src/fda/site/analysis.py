@@ -3977,11 +3977,24 @@ class MatchAnalysis:
         away_rows = [r for r in rows if not r["home"]]
         trend = None
         trend_recent = trend_before = None
-        if len(rows) >= 6:                 # ultime 3 contro le precedenti: solo se ci sono 6 gare
-            trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
+        trend_xga = trend_xga_recent = trend_xga_before = None
+        trend_n_before = 0
+        # La direzione del gioco recente è la sintesi unica di questa card (P1.2: i numeri di
+        # stagione e gli xPTS stanno altrove). Prima servivano 6 gare e la tendenza restava fuori
+        # da 38 schede su 66; con 5 (ultime 3 contro le 2 precedenti) la hanno 57 schede, e il
+        # campione è dichiarato in pagina. Si legge su **entrambi** i lati — quanto crea e quanto
+        # concede — perché una squadra può arrivare in crisi solo in difesa (docs/59).
+        if len(rows) >= 5:
+            nb = len(xg) - 3
+            trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / nb
+            trend_xga_recent, trend_xga_before = sum(xga[-3:]) / 3, sum(xga[:-3]) / nb
+            trend_n_before = nb
             if trend_before > 0:
-                delta = trend_recent - trend_before
-                trend = "in crescita" if delta > 0.15 else "in calo" if delta < -0.15 else "stabile"
+                d = trend_recent - trend_before
+                trend = "in crescita" if d > 0.15 else "in calo" if d < -0.15 else "stabile"
+            if trend_xga_before > 0:
+                d = trend_xga_recent - trend_xga_before
+                trend_xga = "in crescita" if d > 0.15 else "in calo" if d < -0.15 else "stabile"
         # sparkline xG + strength avversario (P1 audit)
         spark_xg = [round(float(r["xg"]),2) for r in rows]
         spark_xga = [round(float(r["xga"]),2) for r in rows]
@@ -4005,6 +4018,8 @@ class MatchAnalysis:
                 "home_pm": sum(r["xg"] for r in home_rows) / len(home_rows) if home_rows else None,
                 "away_pm": sum(r["xg"] for r in away_rows) / len(away_rows) if away_rows else None,
                 "trend": trend, "trend_recent": trend_recent, "trend_before": trend_before,
+                "trend_xga": trend_xga, "trend_xga_recent": trend_xga_recent,
+                "trend_xga_before": trend_xga_before, "trend_n_before": trend_n_before,
                 "trend_threshold": 0.15,
                 "spark_xg": spark_xg, "spark_xga": spark_xga}
 

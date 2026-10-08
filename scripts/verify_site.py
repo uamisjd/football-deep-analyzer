@@ -3255,9 +3255,12 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
         r'<td class="r small">(\d+)-(\d+)</td>\s*'
         r'<td class="r small">([\d,]+)</td>\s*'
         r'<td class="r small">([\d,]+)</td>')
+    # docs/59: la tendenza ora copre creato **e** concesso, da 5 gare, con il campione in pagina
     trend_re = re.compile(
-        r"Direzione degli <b>xG creati</b>: <b>([^<]+)</b> — ([\d,]+) a gara nelle ultime 3 "
-        r"contro ([\d,]+) nelle precedenti \(soglia ±([\d,]+) xG\)")
+        r"Gioco recente — xG <b>creati ([^<]+)</b> \(([\d,]+) → ([\d,]+) a gara, "
+        r"ultime 3 contro le (\d+) precedenti\)"
+        r"(?:, xG <b>concessi ([^<]+)</b> \(([\d,]+) → ([\d,]+)\))?"
+        r"; soglia ±([\d,]+) xG\.")
     voti_re = re.compile(r"Per media voto di stagione</b>: (.*?)</p>", re.DOTALL)
     n_arr, n_righe, n_voti, n_voci = 0, 0, 0, 0
 
@@ -3347,22 +3350,33 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                 # tendenza rifatta dai valori pieni del ricalcolo: le medie in pagina sono
                 # arrotondate una sola volta, rifarle dai mostrati accumulerebbe errori (3 casi
                 # oltre 0,005 il 2026-10-07); il verdetto riusa la soglia stampata in pagina
-                if len(mostrate) == 6:
+                if len(mostrate) >= 5:
                     m = trend_re.search(col)
                     checks += 1
                     if not m:
-                        fails.append(f"{pg.name}: {tnome}: 6 righe senza frase di tendenza")
+                        fails.append(f"{pg.name}: {tnome}: {len(mostrate)} righe senza frase di tendenza")
                     else:
                         checks += 1
                         xv = [riga["xg"] for riga in atteso["rows"]]
-                        rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / 3
-                        soglia = num(m.group(4))
+                        xav = [riga["xga"] for riga in atteso["rows"]]
+                        nb = len(xv) - 3
+                        rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / nb
+                        soglia = num(m.group(8))
                         want = ("in crescita" if rec - prima > soglia
                                 else ("in calo" if rec - prima < -soglia else "stabile"))
-                        if (m.group(1) != want or atteso["trend"] != want
-                                or abs(num(m.group(2)) - round(rec, 2)) > 0.005
-                                or abs(num(m.group(3)) - round(prima, 2)) > 0.005
-                                or abs(soglia - 0.15) > 1e-9):
+                        ok = (m.group(1) == want and atteso["trend"] == want
+                              and int(m.group(4)) == nb
+                              and abs(num(m.group(2)) - round(prima, 2)) <= 0.005
+                              and abs(num(m.group(3)) - round(rec, 2)) <= 0.005
+                              and abs(soglia - 0.15) <= 1e-9)
+                        if m.group(5):                    # lato concesso, se la pagina lo stampa
+                            arec, aprima = sum(xav[-3:]) / 3, sum(xav[:-3]) / nb
+                            want_a = ("in crescita" if arec - aprima > soglia
+                                      else ("in calo" if arec - aprima < -soglia else "stabile"))
+                            ok = ok and (m.group(5) == want_a
+                                         and abs(num(m.group(6)) - round(aprima, 2)) <= 0.005
+                                         and abs(num(m.group(7)) - round(arec, 2)) <= 0.005)
+                        if not ok:
                             fails.append(f"{pg.name}: {tnome}: tendenza non ricalcolabile "
                                          f"({m.group(1)} {m.group(2)}/{m.group(3)})")
         # ---- [43b] I giocatori che decidono ----

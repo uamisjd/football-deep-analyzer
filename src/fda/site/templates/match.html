@@ -203,10 +203,10 @@
       {#- P1.2: qui c'era la riga di sintesi (xG/xGA a partita e punti contro xPTS): gli stessi
           numeri stanno nella card della squadra e in «Scontro tattico». Resta la serie gara per
           gara con la tendenza, che è l'unica cosa che questa card può dire bene. -#}
-      {% if a.trend %}<p class="small mut">Direzione degli <b>xG creati</b>: <b>{{ a.trend }}</b> — {{ a.trend_recent|dec }} a gara nelle ultime 3 contro {{ a.trend_before|dec }} nelle precedenti (soglia ±{{ a.trend_threshold|dec }} xG). Valuta il gioco recente, non i punti: le medie di stagione sono nella card della squadra.</p>{% endif %}
+      {% if a.trend %}<p class="small mut">Gioco recente — xG <b>creati {{ a.trend }}</b> ({{ a.trend_before|dec }} → {{ a.trend_recent|dec }} a gara, ultime 3 contro le {{ a.trend_n_before }} precedenti){% if a.trend_xga %}, xG <b>concessi {{ a.trend_xga }}</b> ({{ a.trend_xga_before|dec }} → {{ a.trend_xga_recent|dec }}){% endif %}; soglia ±{{ a.trend_threshold|dec }} xG. Valuta il gioco, non i punti: le medie di stagione sono nella card della squadra.</p>{% endif %}
       {#- il PPDA non si ripete qui: sta nella card della squadra e in «Scontro tattico» (P1.2);
           se non ci sono né lo split casa/trasferta né altro, il riquadro non lascia un <p> vuoto -#}
-      {% if a.home_pm is not none or a.away_pm is not none %}<p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% endif %}</p>{% endif %}
+      {% if a.home_pm is not none or a.away_pm is not none %}<p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% if side == 'home' %} <b>(questa gara)</b>{% endif %}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% if side == 'away' %} <b>(questa gara)</b>{% endif %}{% endif %}</p>{% endif %}
       <p class="small mut">Fonte: {{ a.source }}. Con poche giornate giocate i valori per gara oscillano molto.</p>
       {% else %}<p class="mut small">Nessuna gara precedente con xG disponibile per questa squadra.</p>{% endif %}
     </div>
