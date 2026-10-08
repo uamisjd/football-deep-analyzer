@@ -86,8 +86,11 @@
       scheda usciva al 0% per un numero letto male —, la riga del modello metteva RPS e ξ nelle
       colonne delle due squadre e il testo citava soglie diverse da quelle del codice. Il criterio
       di ogni riga sta nel ⓘ (stesso pattern di «Scontro tattico»), l'interpretazione sta una volta
-      sola qui invece di ripetersi in una lista sotto la tabella. -#}
-  <p class="small mut">Quattro fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe sono in ordine di impatto stimato, non sono un secondo pronostico e non cambiano la previsione salvata (Dixon-Coles + Elo): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno in «Le due squadre», in un posto solo.</p>
+      sola qui invece di ripetersi in una lista sotto la tabella.
+      `docs/58` (2026-10-08) aggiunge due fattori misurati (rendimento per sede, disciplina e
+      arbitro), il numero di gare nelle celle dei fattori di stagione e l'ordine fisso delle righe. -#}
+  <p class="small mut">Sei fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe hanno un ordine fisso e dichiarato: prima ciò che toglie produzione misurabile, poi i fattori con effetto misurato sul nostro archivio, per ultimo il contesto. Dove il fattore è una media di stagione la cella dice su quante gare è calcolata.</p>
+  <p class="small mut" style="margin:6px 0 0">Non sono un secondo pronostico e non cambiano la previsione salvata (Dixon-Coles + Elo): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno in «Le due squadre», in un posto solo. Distanza della trasferta, età dei titolari e turnover per impegno ravvicinato sono stati misurati e <b>non</b> pubblicati, perché la misura non li sostiene: numeri e motivo in <code>docs/58</code>.</p>
   <div class="tablewrap"><table>
     <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto <span class="help" title="Verde: il fattore giova alla squadra di casa; rosso: giova alla trasferta. Nessun colore = vantaggio non misurabile o non attribuibile a un lato, non «nessun fattore».">ⓘ</span></th></tr>
     {% for f in c.fattori_chiave.rows %}<tr>

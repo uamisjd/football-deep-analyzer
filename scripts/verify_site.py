@@ -2960,9 +2960,16 @@ def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
 FACTOR_KEYWORDS = (("valore dei titolari", "Valore di mercato titolari"),
                    ("indisponibili", "Indisponibili"),
                    ("riposo", "Riposo corto"),
-                   ("pressing", "Pressing (PPDA)"))
+                   ("pressing", "Pressing (PPDA)"),
+                   # aggiunti il 2026-10-08 (docs/58 §3-§4): i due fattori misurati prima di entrare
+                   ("rendimento per sede", "Rendimento per sede"),
+                   ("disciplina", "Disciplina e arbitro"))
 FACTOR_ROWS_AMMESSE = ("Valore di mercato titolari", "Indisponibili", "Riposo corto",
-                       "Pressing (PPDA)", "Forma e classifica (contesto)")
+                       "Pressing (PPDA)", "Rendimento per sede", "Disciplina e arbitro",
+                       "Forma e classifica (contesto)")
+#: fattori che sono medie di stagione: la cella deve dire su quante gare (o «n.d.»), altrimenti un
+#: numero su 4 partite sembra solido quanto uno su 30 (docs/58 §2)
+FACTOR_ROWS_CAMPIONE = ("Pressing (PPDA)", "Rendimento per sede", "Disciplina e arbitro")
 
 
 def _valori_di_soglia(testo: str) -> set[float]:
@@ -2972,7 +2979,9 @@ def _valori_di_soglia(testo: str) -> set[float]:
     dato misurato come «pressing 1,04×» non è una soglia e non deve entrare nell'insieme.
     """
     return {float(m.replace(",", "."))
-            for m in re.findall(r"(\d+(?:,\d+)?)\s*(?:×|assenti|giorni|titolare|xG)", testo)}
+            for m in re.findall(r"(\d+(?:,\d+)?)\s*"
+                                r"(?:×|assenti|giorni|gare|titolare|xG|pt/gara|gialli/gara|%)",
+                                testo)}
 
 
 def _soglie_citate(testo: str) -> set[float]:
@@ -3026,6 +3035,13 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
                              f"({etichetta[:40]})")
             if 'class="help"' not in r:
                 fails.append(f"{pg.name}: riga «{nome or etichetta[:30]}» senza ⓘ del criterio")
+            # le medie di stagione devono dichiarare il campione nelle **celle** (non nel ⓘ, che
+            # parla sempre di «gara»): senza, un PPDA su 4 gare sembra solido come uno su 30
+            if nome in FACTOR_ROWS_CAMPIONE:
+                celle_txt = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(c)) for c in celle[:2])
+                checks += 1
+                if not re.search(r"\d+ gare?\)?|n\.d\.", celle_txt):
+                    fails.append(f"{pg.name}: riga «{nome}» senza il numero di gare nelle celle")
         checks += 1
         # niente markdown in pagina: la card scrive il criterio in un attributo `title`, che non
         # interpreta `**grassetto**` — usciva «**non** un secondo pronostico» in 66 schede su 66
@@ -3463,7 +3479,12 @@ def main() -> int:
         fails += assets
         checks += asset_checks
 
-    by_kind: Counter[str] = Counter(f.split(": ", 1)[1].split(" ")[0] for f in fails)
+    # riepilogo per tipo: il prefisso è ciò che segue «<pagina>: ». Un messaggio senza «: »
+    # (ne è arrivato uno il 2026-10-08) faceva cadere il gate **dopo** i controlli, nascondendo
+    # i problemi invece di stamparli: la chiave di ripiego sono le prime parole del messaggio.
+    by_kind: Counter[str] = Counter(
+        f.split(": ", 1)[1].split(" ")[0] if ": " in f else " ".join(f.split(" ")[:3])
+        for f in fails)
     print()
     if fails:
         print(f"PROBLEMI ({len(fails)}): {dict(by_kind)}")

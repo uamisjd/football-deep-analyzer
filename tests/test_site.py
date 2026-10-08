@@ -1538,6 +1538,14 @@ def test_fattori_soglie_testo_viene_dalle_costanti():
     assert f"riposo ≤{m.FACTOR_REST_SHORT} giorni" in testo
     assert f"≤{str(m.FACTOR_PRESS_RATIO).replace('.', ',')}×" in testo
     assert f"≥{str(round(1 / m.FACTOR_PRESS_RATIO, 2)).replace('.', ',')}×" in testo
+    # aggiunte il 2026-10-08 (docs/58 §3-§4): anche le soglie dei due fattori nuovi vengono dalle
+    # costanti, non dal testo scritto a mano
+    assert (f"rendimento per sede ≥{f'{m.FACTOR_VENUE_DELTA:.2f}'.replace('.', ',')} pt/gara"
+            in testo)
+    assert f"≥{m.FACTOR_VENUE_MIN} gare per sede" in testo
+    assert f"disciplina Δ ≥{str(m.FACTOR_CARDS_DELTA).replace('.', ',')} gialli/gara" in testo
+    assert f"arbitro oltre ±{m.FACTOR_REF_DEV * 100:.0f}%" in testo
+    assert f"≥{m.FACTOR_REF_MIN} gare" in testo
 
 
 def test_verify_site_fattori_boccia_il_fattore_che_sparisce(tmp_path):
@@ -1564,24 +1572,41 @@ def test_verify_site_fattori_boccia_il_fattore_che_sparisce(tmp_path):
     def pagina(nome, corpo):
         (parte / nome).write_text(
             f'<div class="card detail-card" id="fattori"><h2>Fattori che spostano la partita</h2>'
-            f'<p class="small mut">Quattro fattori quantitativi con soglie dichiarate — {soglie} — '
+            f'<p class="small mut">Sei fattori quantitativi con soglie dichiarate — {soglie} — '
             f'più una riga di contesto.</p><div class="tablewrap"><table>{intestazione}'
             f'</table></div>{corpo}</div><div class="card"></div>', encoding="utf-8")
 
-    # senza riposo/pressing/indisponibili/mercato in nessuna forma: quattro fattori spariti
+    # senza nessun fattore in nessuna forma: sei fattori spariti (i quattro storici più i due
+    # aggiunti il 2026-10-08, docs/58 §3-§4 — l'invariante vale per tutti, non solo per i vecchi)
     pagina("1.html", "")
     fails, _ = vs.check_fattori(tmp_path)
-    assert sum("sparisce senza dirlo" in f for f in fails) == 4, fails
+    assert sum("sparisce senza dirlo" in f for f in fails) == 6, fails
 
-    # con la riga del riposo e le voci «sotto soglia» degli altri tre: nessun problema
+    # con la riga del riposo e le voci «sotto soglia» degli altri cinque: nessun problema
     pagina("2.html", riga + '<p class="small mut">Sotto soglia o non calcolabile, non in tabella '
                             '(casa e ospite): valore dei titolari non pubblicato dalla fonte · '
                             'indisponibili non pubblicati (distinta non disponibile) · '
-                            'pressing 1,04× (soglia ≤0,75× o ≥1,33×).</p>')
+                            'pressing 1,04× (soglia ≤0,75× o ≥1,33×) · '
+                            'rendimento per sede +0,20 pt/gara (soglia ≥0,50) · '
+                            'disciplina +0,3 gialli/gara (soglia 0,8) · '
+                            'arbitro +4% sulla media di lega (soglia ±10%).</p>')
     (parte / "1.html").unlink()
     fails, checks = vs.check_fattori(tmp_path)
     assert fails == [], fails
     assert checks > 5
+
+    # una media di stagione senza il numero di gare nelle celle non passa (docs/58 §2): il ⓘ non
+    # basta, perché parla di «gara» comunque e il controllo sarebbe vuoto
+    riga_sede = ('<tr><th scope="row">🏟 Rendimento per sede '
+                 '<span class="help" title="criterio">ⓘ</span></th>'
+                 '<td class="small">2,10 pt/gara in casa</td>'
+                 '<td class="small">0,90 pt/gara in trasferta</td>'
+                 '<td class="small"><b>+1,20 pt/gara</b></td>'
+                 '<td class="small">squilibrio di sede</td></tr>')
+    pagina("4.html", riga_sede)
+    fails, _ = vs.check_fattori(tmp_path)
+    assert any("senza il numero di gare" in f for f in fails), fails
+    (parte / "4.html").unlink()
 
     # una soglia inventata nella riga «sotto soglia» non passa
     pagina("3.html", riga + '<p class="small mut">Sotto soglia o non calcolabile, non in tabella '

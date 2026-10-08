@@ -947,3 +947,155 @@ def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
 
     niente = news_quiet_line(_bollettino(), _bollettino(), "Roma", "Inter")
     assert niente["riga"].endswith("negli ultimi 7 giorni.")
+
+
+# ---- card «Fattori»: i due fattori aggiunti il 2026-10-08 (docs/58 §3-§4) ----------------------
+
+def _storia(righe):
+    """Specchio dei risultati sintetico (le colonne che ``venue_form`` legge)."""
+    return pd.DataFrame([{"league_key": "ITA1", "season": "2025/2026", "date": KO(d),
+                          "home": h, "away": a, "home_goals": gh, "away_goals": ga,
+                          "odds_home": 2.0, "odds_draw": 3.4, "odds_away": 3.8}
+                         for d, h, a, gh, ga in righe])
+
+
+def _store_fattori(tmp_path, storia=None, info=None, stats=None):
+    st = Store(tmp_path / "fattori")
+    st.write("fixtures", FX)
+    if storia is not None:
+        st.write("history", storia)
+    if info is not None:
+        st.write("match_info", info)
+    if stats is not None:
+        st.write("team_stats", stats)
+    return MatchAnalysis(st)
+
+
+def test_fattori_rendimento_per_sede_finestra_campione_soglia(tmp_path):
+    """«Rendimento per sede»: finestra di 365 giorni, minimo 5 gare per sede, soglia 0,50 pt/gara.
+
+    Il fattore è nuovo (`docs/58` §3) e ha tre modi di sbagliare che il test chiude: leggere gare
+    **future** o più vecchie della finestra, pubblicare un PPG su due gare, e uscire in tabella
+    quando le due squadre si equivalgono.
+    """
+    dentro = [(f"2026-08-{d:02d}", "Lazio", "X", 2, 0) for d in range(1, 7)]      # 6 vittorie in casa
+    fuori = [("2025-08-01", "Lazio", "Y", 0, 3)]                                   # fuori finestra
+    trasferta = [(f"2026-07-{d:02d}", "Y", "Milan", 2, 0) for d in range(1, 7)]    # 6 sconfitte fuori
+    ma = _store_fattori(tmp_path, _storia(dentro + fuori + trasferta))
+    ko = KO("2026-09-16 18:00")
+
+    vf = ma.venue_form("Lazio", ko)
+    assert vf and vf["casa"] == (3.0, 6), vf          # la gara del 2025 non entra
+    assert "trasferta" not in vf                       # Lazio mai in trasferta nella finestra
+    assert ma.venue_form("Milan", ko)["trasferta"] == (0.0, 6)
+
+    res = ma.fattori_chiave(4, 1, "Lazio", 3, "Milan", ko.to_pydatetime(), None)
+    riga = next(r for r in res["rows"] if r["label"] == "Rendimento per sede")
+    assert riga["home"] == "3,00 pt/gara in casa (6 gare)"
+    assert riga["away"] == "0,00 pt/gara in trasferta (6 gare)"
+    assert riga["delta"] == "+3,00 pt/gara" and riga["tone"] == "good"
+    assert "68,2%" in riga["help"] and "scripts/audit_fattori.py" in riga["help"]
+
+    # sotto soglia (0,33 < 0,50): niente riga, ma il fattore è dichiarato fuori tabella
+    quasi = [(f"2026-07-{d:02d}", "Y", "Milan", 0, 3) for d in range(1, 6)] + \
+            [("2026-06-01", "Y", "Milan", 1, 1)]        # 5 vittorie + 1 pareggio = 2,67 pt/gara
+    ma2 = _store_fattori(tmp_path / "q", _storia(dentro + quasi))
+    res2 = ma2.fattori_chiave(4, 1, "Lazio", 3, "Milan", ko.to_pydatetime(), None)
+    assert not any(r["label"] == "Rendimento per sede" for r in res2["rows"])
+    assert any(s.startswith("rendimento per sede +0,33 pt/gara (soglia ≥0,50)")
+               for s in res2["sotto_soglia"]), res2["sotto_soglia"]
+
+    # meno di 5 gare per sede: non calcolabile, e la pagina lo dice invece di tacere
+    poche = [(f"2026-07-{d:02d}", "Y", "Milan", 2, 0) for d in range(1, 4)]
+    ma3 = _store_fattori(tmp_path / "p", _storia(dentro + poche))
+    res3 = ma3.fattori_chiave(4, 1, "Lazio", 3, "Milan", ko.to_pydatetime(), None)
+    assert not any(r["label"] == "Rendimento per sede" for r in res3["rows"])
+    assert any("rendimento per sede non calcolabile (meno di 5 gare per sede" in s
+               for s in res3["sotto_soglia"]), res3["sotto_soglia"]
+
+
+def test_fattori_disciplina_e_arbitro_due_soglie(tmp_path):
+    """«Disciplina e arbitro»: scatta sui cartellini delle due squadre **oppure** sull'arbitro.
+
+    Misura di riferimento (`docs/58` §4): gli arbitri sopra la mediana dichiarata dànno 3,80
+    gialli/gara contro 3,19; sui rigori la media di carriera non predice nulla, quindi la riga
+    parla di cartellini. Il test copre entrambi i trigger e il caso «nessuno dei due».
+    """
+    ko = KO("2026-09-16 18:00")
+    base_info = [{"match_id": 100 + d, "league_id": 55, "status": "finished",
+                  "utc_kickoff": KO(f"2026-09-{d:02d} 18:00"), "home_id": 1, "away_id": 2,
+                  "referee_name": f"Arbitro {100 + d}", "referee_matches": 30,
+                  "referee_yellows_per_match": 3.0}
+                 for d in range(1, 7)]
+
+    def _info(yellows, gare_career=30):
+        rows = [dict(r) for r in base_info]
+        rows.append({"match_id": 4, "league_id": 55, "status": "scheduled",
+                     "utc_kickoff": ko, "home_id": 1, "away_id": 2, "referee_name": "Severo",
+                     "referee_matches": gare_career, "referee_yellows_per_match": yellows})
+        return pd.DataFrame(rows)
+
+    def _stats(gialli_casa, gialli_ospite, n=6):
+        righe = []
+        for i in range(n):
+            for tid, val in ((1, gialli_casa), (2, gialli_ospite)):
+                righe.append({"match_id": 101 + i, "team_id": tid, "period": "All",
+                              "key": "yellow_cards", "value": float(val), "text": None})
+                righe.append({"match_id": 101 + i, "team_id": tid, "period": "All",
+                              "key": "fouls", "value": 10.0, "text": None})
+        return pd.DataFrame(righe)
+
+    # arbitro nella media e squadre simili → fattore dichiarato fuori tabella, nessuna riga
+    ma = _store_fattori(tmp_path / "a", info=_info(3.06), stats=_stats(1, 1))
+    res = ma.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
+    assert not any(r["label"] == "Disciplina e arbitro" for r in res["rows"])
+    assert any(s.startswith("disciplina +0,0 gialli/gara (soglia 0,8)") for s in res["sotto_soglia"])
+    assert any(s.startswith("arbitro +2% sulla media di lega (soglia ±10%)")
+               for s in res["sotto_soglia"]), res["sotto_soglia"]
+
+    # arbitro severo (+25% sulla media di lega) → riga, con le celle «n.d.» se i cartellini
+    # di stagione delle due squadre non ci sono
+    ma2 = _store_fattori(tmp_path / "b", info=_info(3.75))
+    res2 = ma2.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
+    r2 = next(r for r in res2["rows"] if r["label"] == "Disciplina e arbitro")
+    assert r2["home"] == r2["away"] == "n.d." and r2["delta"] == "—"
+    assert "più severo della media di lega (+21%)" in r2["impact"]
+
+    # squadre con cartellini molto diversi → riga anche con l'arbitro nella media
+    ma3 = _store_fattori(tmp_path / "c", info=_info(3.06), stats=_stats(3, 1))
+    res3 = ma3.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
+    r3 = next(r for r in res3["rows"] if r["label"] == "Disciplina e arbitro")
+    assert r3["home"].startswith("3,0 gialli") and "(6 gare)" in r3["home"]
+    assert r3["delta"] == "+2,0 gialli/gara" and "più esposta Roma" in r3["impact"]
+
+    # meno di 20 gare in carriera: l'arbitro non è giudicabile, e si dice
+    ma4 = _store_fattori(tmp_path / "d", info=_info(3.75, gare_career=8), stats=_stats(1, 1))
+    res4 = ma4.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
+    assert not any(r["label"] == "Disciplina e arbitro" for r in res4["rows"])
+    assert any(s.startswith("arbitro +21% sulla media di lega (soglia ±10%)")
+               for s in res4["sotto_soglia"]), res4["sotto_soglia"]
+
+
+def test_fattori_ordine_fisso_e_campione_dichiarato(mood_analysis, monkeypatch):
+    """Le righe hanno un ordine **fisso** (``FACTOR_PRIORITY``) e le medie di stagione dicono
+    su quante gare sono calcolate: prima l'ordine dipendeva da un peso ad hoc (il rapporto di
+    mercato saliva a 10,1 e scavalcava tutto) e il PPDA usciva senza campione (`docs/58` §2, §6).
+    """
+    monkeypatch.setattr(MatchAnalysis, "absences_weight",
+                        lambda self, mid, tid: {"n": 2, "starters_out": 0, "contrib_lost_p90": 0.5})
+    monkeypatch.setattr(MatchAnalysis, "rest_days", lambda self, tid, ko: 3)
+    monkeypatch.setattr(MatchAnalysis, "season_xg",
+                        lambda self, nome, tid: {"source": "Understat", "played": 6,
+                                                 "xg_pm": 1.4, "xga_pm": 1.1, "ppda": 9.0}
+                        if tid == 4 else {"source": "Understat", "played": 5,
+                                          "xg_pm": 1.2, "xga_pm": 1.3, "ppda": 15.0})
+    res = mood_analysis.fattori_chiave(8, 4, "Lazio", 3, "Milan", KO("2026-09-16 18:00"), None)
+    etichette = [r["label"] for r in res["rows"]]
+    ordini = [MatchAnalysis.FACTOR_PRIORITY[e] for e in etichette]
+    assert ordini == sorted(ordini), f"righe fuori dall'ordine dichiarato: {etichette}"
+    assert etichette[0] == "Indisponibili"
+    if "Forma e classifica (contesto)" in etichette:      # assente senza classifica nella fixture
+        assert etichette[-1] == "Forma e classifica (contesto)"
+    pressing = next(r for r in res["rows"] if r["label"] == "Pressing (PPDA)")
+    assert pressing["home"] == "9,0 (6 gare)" and pressing["away"] == "15,0 (5 gare)"
+    assert "162 gare" in pressing["help"]
