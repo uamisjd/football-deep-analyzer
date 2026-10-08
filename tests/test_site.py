@@ -452,6 +452,18 @@ def test_season_xg_fotmob_calcola_xpts(tmp_path):
 
 def test_site_build_end_to_end(tmp_path):
     st = _seed(tmp_path)
+    # voti di stagione per la gara futura (Udinese 8600 – Lazio 8543): senza rating_title
+    # la card «I giocatori che decidono» non si stampa (docs/58 D5: la classifica per media
+    # voto si basa sui voti gara, non più sul season_rating della distinta)
+    st.upsert("player_stats", [
+        {"match_id": m, "team_id": tid, "player_id": pid, "player_name": nome, "key": chiave,
+         "value": valore, "total": None}
+        for m in (5749669,)
+        for tid, pid, nome, voto in ((8600, 111, "A1", 7.8), (8600, 112, "A2", 7.2),
+                                     (8600, 113, "A3", 6.9), (8543, 211, "B1", 7.5),
+                                     (8543, 212, "B2", 7.0), (8543, 213, "B3", 6.8))
+        for chiave, valore in (("minutes_played", 270.0), ("rating_title", voto))
+    ])
     out = tmp_path / "site"
     res = SiteBuilder(store=st, out_dir=out).build()
     assert res["matches"] == 2
@@ -1046,6 +1058,18 @@ def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
     """
     st = _seed(tmp_path)
     out = tmp_path / "sito"
+    # voti di stagione per la gara futura (Udinese 8600 – Lazio 8543): senza rating_title
+    # la card «I giocatori che decidono» non si stampa (docs/58 D5: la classifica per media
+    # voto si basa sui voti gara, non più sul season_rating della distinta)
+    st.upsert("player_stats", [
+        {"match_id": m, "team_id": tid, "player_id": pid, "player_name": nome, "key": chiave,
+         "value": valore, "total": None}
+        for m in (5749669,)
+        for tid, pid, nome, voto in ((8600, 111, "A1", 7.8), (8600, 112, "A2", 7.2),
+                                     (8600, 113, "A3", 6.9), (8543, 211, "B1", 7.5),
+                                     (8543, 212, "B2", 7.0), (8543, 213, "B3", 6.8))
+        for chiave, valore in (("minutes_played", 270.0), ("rating_title", voto))
+    ])
     SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
     pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
 

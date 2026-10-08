@@ -481,7 +481,7 @@
     {# larghezze ed etichette dagli stessi tre numeri, somma esattamente 100: prima tre
        arrotondamenti indipendenti facevano 99% o 101% e la barra non chiudeva il contenitore #}
     {% set b1x2 = (p.p_home, p.p_draw, p.p_away)|pct3 %}
-    <div class="bar" role="img" aria-label="Probabilità: vittoria {{ c.home_name }} {{ b1x2[0] }} per cento, pareggio {{ b1x2[1] }} per cento, vittoria {{ c.away_name }} {{ b1x2[2] }} per cento" style="height:30px;font-size:14px"><span class="h" style="width:{{ b1x2[0] }}%">1 · {{ b1x2[0] }}%</span><span class="d" style="width:{{ b1x2[1] }}%">X · {{ b1x2[1] }}%</span><span class="a" style="wids="a" style="width:{{ b1x2[2] }}%">2 · {{ b1x2[2] }}%</span></div>
+    <div class="bar" role="img" aria-label="Probabilità: vittoria {{ c.home_name }} {{ b1x2[0] }} per cento, pareggio {{ b1x2[1] }} per cento, vittoria {{ c.away_name }} {{ b1x2[2] }} per cento" style="height:30px;font-size:14px"><span class="h" style="width:{{ b1x2[0] }}%">1 · {{ b1x2[0] }}%</span><span class="d" style="width:{{ b1x2[1] }}%">X · {{ b1x2[1] }}%</span><span class="a" style="width:{{ b1x2[2] }}%">2 · {{ b1x2[2] }}%</span></div>
     <div class="tablewrap"><table style="margin-top:10px">
       <tr><th scope="col"></th><th scope="col" class="r">{{ c.home_name }}</th><th scope="col" class="r">{{ c.away_name }}</th></tr>
       <tr><th scope="row">Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
