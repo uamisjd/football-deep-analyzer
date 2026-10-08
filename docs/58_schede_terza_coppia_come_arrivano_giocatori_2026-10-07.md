@@ -42,13 +42,13 @@ Gate finali (tutti rifatti da zero dopo l'ultima modifica al sorgente):
 
 | Gate | Prima di questa revisione | Dopo |
 |---|---|---|
-| `pytest -q` | 534 passed | **TODO** |
+| `pytest -q` | 534 passed | 535 passed |
 | `ruff check .` | pulito | pulito |
-| `fda build` | 441 / 2.364 / 7.496 | **TODO** |
-| `verify_site` | 0 problemi · 164.729 controlli | **TODO** |
-| `parita_schede` | 66 · identica (24 id) · min 19.697 · mediana 21.680 | **TODO** |
-| `resa_375` | 26.424 misure · 0 problemi | **TODO** |
-| `prematch_sections` | — | TODO (Come arrivano · Giocatori) |
+| `fda build` | 441 / 2.364 / 7.496 | 441 / 2.364 / 7.496 |
+| `verify_site` | 0 problemi · 164.729 controlli | 0 problemi · 167.255 controlli |
+| `parita_schede` | 66 · identica (24 id) · min 19.697 · mediana 21.680 | 66 · nessuna differenza · min 19.931 · mediana 21.843 · max 25.720 |
+| `resa_375` | 26.424 misure · 0 problemi | 26.424 misure · 0 problemi |
+| `prematch_sections` | — | Come arrivano 5,4% · I giocatori che decidono 8,4% |
 
 ---
 
@@ -172,7 +172,7 @@ La chip nelle liste («Oggi»/«Prossime») diceva **«Infermeria»** (65 occorr
 col colon (la marcatura non ce l'ha) e il plurale su entrambi i lati (`it_plural` fa anche «1
 assente») — **0 match**, controllo silenziosamente spento. Riscritta sulla marcatura reale con un
 **autotest**: il numero di match deve pareggiare il gancio `fact-absence`, così non può morire di
-nuovo in silenzio. Dopo: [5] conta le chip (TODO) e le confronta con la distinta.
+nuovo in silenzio. Dopo: [5] conta le chip (65) e le confronta con la distinta.
 
 Non toccato: «infermeria pesante» (segnale + legenda della card «Panchina», minuscolo, 66 + ~63
 occorrenze) — è la sezione della prossima coppia, decide lei.
@@ -191,7 +191,7 @@ occorrenze) — è la sezione della prossima coppia, decide lei.
 - **Punteggi col trattino** («2-1» in «Come arrivano», forma, precedenti): sono risultati, non
   intervalli — `RANGE_ASCII` (`\d+,\d+-\d+,\d+`) non li copre di proposito.
 - **Deep table**: 396 righe (3 per colonna su 132), tutte sopra soglia; voto = media dei voti gara.
-- **Coerenza dopo D1**: TODO (atteso 66/66).
+- **Coerenza dopo D1**: 66/66 (da script dedicato; il ramo FotMob ora prende la coda).
 
 ---
 
@@ -218,7 +218,7 @@ occorrenze) — è la sezione della prossima coppia, decide lei.
 
 ```bash
 .venv/bin/fda build                                            # 441 / 2.364 / 7.496 (~5 min)
-.venv/bin/python scripts/verify_site.py --site site --data data/processed   # TODO problemi · controlli
+.venv/bin/python scripts/verify_site.py --site site --data data/processed   # 0 problemi · 167.255 controlli
 #   [43] lati/righe/voti · [5] chip nelle liste · [41]/[42]/[22b]/RANGE_ASCII invariati
 .venv/bin/python scripts/parita_schede.py site --data data/processed
 .venv/bin/python -m scripts.prematch_sections site
@@ -237,3 +237,19 @@ dal sandbox e **non sono state interrogate** — niente `collect`, niente sonde,
 manuale; quanto sopra riguarda i dati già raccolti e il sito generato. La resa **visiva** non è
 stata vista in un browser: il gate a 375 px è statico (geometria e caratteri), non un giudizio
 estetico.
+
+---
+
+## 7. Incidente di lavorazione: scrittura parallela corrotta (lezione)
+
+Cinque modifiche al template lanciate in parallelo non si sono solo perse per strada
+(last-wins: 3 «success» erano falsi, §2): una ha anche **corrotto byte altrove nel file** —
+la barra 1X2 della previsione (`style="wids="...`) su tutte le schede pre-partita del build
+23:49Z. L'ha intercettata la suite (`test_barra_1x2...`, più altri due test che leggono la
+barra), non la verifica dei numeri — il gate dei test va rifatto sempre, anche quando «si
+sono toccati solo testi». Riparato byte per byte dall'originale, diff riga per riga contro
+`main` (7 coppie, tutte volute), rebuild e gate pieni rifatti da zero.
+
+Stessa lezione per il seed dei test: `end_to_end` e `p22` presupponevano la card «I giocatori
+che decidono» dai `season_rating` della distinta — con D5 la card vuole i voti gara, e i due
+test ora seminano `rating_title`/`minutes_played` come la raccolta vera.
