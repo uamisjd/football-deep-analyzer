@@ -452,6 +452,18 @@ def test_season_xg_fotmob_calcola_xpts(tmp_path):
 
 def test_site_build_end_to_end(tmp_path):
     st = _seed(tmp_path)
+    # voti di stagione per la gara futura (Udinese 8600 – Lazio 8543): senza rating_title
+    # la card «I giocatori che decidono» non si stampa (docs/58 D5: la classifica per media
+    # voto si basa sui voti gara, non più sul season_rating della distinta)
+    st.upsert("player_stats", [
+        {"match_id": m, "team_id": tid, "player_id": pid, "player_name": nome, "key": chiave,
+         "value": valore, "total": None}
+        for m in (5749669,)
+        for tid, pid, nome, voto in ((8600, 111, "A1", 7.8), (8600, 112, "A2", 7.2),
+                                     (8600, 113, "A3", 6.9), (8543, 211, "B1", 7.5),
+                                     (8543, 212, "B2", 7.0), (8543, 213, "B3", 6.8))
+        for chiave, valore in (("minutes_played", 270.0), ("rating_title", voto))
+    ])
     out = tmp_path / "site"
     res = SiteBuilder(store=st, out_dir=out).build()
     assert res["matches"] == 2
@@ -1046,6 +1058,18 @@ def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
     """
     st = _seed(tmp_path)
     out = tmp_path / "sito"
+    # voti di stagione per la gara futura (Udinese 8600 – Lazio 8543): senza rating_title
+    # la card «I giocatori che decidono» non si stampa (docs/58 D5: la classifica per media
+    # voto si basa sui voti gara, non più sul season_rating della distinta)
+    st.upsert("player_stats", [
+        {"match_id": m, "team_id": tid, "player_id": pid, "player_name": nome, "key": chiave,
+         "value": valore, "total": None}
+        for m in (5749669,)
+        for tid, pid, nome, voto in ((8600, 111, "A1", 7.8), (8600, 112, "A2", 7.2),
+                                     (8600, 113, "A3", 6.9), (8543, 211, "B1", 7.5),
+                                     (8543, 212, "B2", 7.0), (8543, 213, "B3", 6.8))
+        for chiave, valore in (("minutes_played", 270.0), ("rating_title", voto))
+    ])
     SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
     pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
 
@@ -1295,47 +1319,59 @@ def test_top_players_per_team_with_goals(tmp_path):
     st.close()
 
 
-def test_team_key_players_season_rating(tmp_path):
-    """Giocatori da tenere d'occhio: top per media di stagione, dedup per giocatore, gol/assist stagionali."""
+def test_team_key_players_media_voto_sopra_soglia(tmp_path):
+    """Classifica voti: top per media dei voti gara sopra la soglia 40% (docs/58 D5).
+
+    Prima leggeva `season_rating` dalla distinta, che la fonte pubblica quasi mai
+    (73 righe su 18.445): la classifica promessa in testata usciva su 4 schede su 66.
+    Ora usa `rating_avg` dalle statistiche gara, la stessa base della tabella dei decisivi.
+    """
     import pandas as pd
 
     st = Store(tmp_path / "processed")
     st.write("fixtures", pd.DataFrame([
         {"match_id": 1, "league_id": 55, "home_id": 10, "away_id": 20, "home_name": "A", "away_name": "B",
-         "utc_kickoff": pd.Timestamp("2026-09-08 12:00", tz="UTC"), "status": "finished"},
+         "utc_kickoff": pd.Timestamp("2026-09-01 12:00", tz="UTC"), "status": "finished"},
         {"match_id": 2, "league_id": 55, "home_id": 20, "away_id": 10, "home_name": "B", "away_name": "A",
+         "utc_kickoff": pd.Timestamp("2026-09-05 12:00", tz="UTC"), "status": "finished"},
+        {"match_id": 3, "league_id": 55, "home_id": 10, "away_id": 20, "home_name": "A", "away_name": "B",
          "utc_kickoff": pd.Timestamp("2026-09-08 12:00", tz="UTC"), "status": "finished"},
     ]))
     st.write("lineup", pd.DataFrame([
-        # due gare per lo stesso giocatore: deve comparire una sola volta, media più alta
-        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
-         "season_rating": 6.0, "position_id": 64, "usual_position_id": 2},
-        {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "role": "starter",
-         "season_rating": 7.0, "position_id": 64, "usual_position_id": 2},
+        # solo per il ruolo dallo storico: A2 attaccante
         {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "role": "starter",
-         "season_rating": 8.5, "position_id": 115, "usual_position_id": None},   # ruolo da positionId
-        {"match_id": 1, "team_id": 10, "player_id": 103, "player_name": "A3", "role": "starter",
-         "season_rating": None, "position_id": 115, "usual_position_id": 3},     # senza media: escluso
-        {"match_id": 1, "team_id": 10, "player_id": 104, "player_name": "A4", "role": "sub",
-         "season_rating": 7.8, "position_id": 11, "usual_position_id": 0},
+         "usual_position_id": 3, "position_id": 115},
     ]))
+    # soglia = max(90, 0,4 × 270) = 108': A3 (90', voto 9,9) resta fuori comunque
     st.write("player_stats", pd.DataFrame([
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 3, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "rating_title", "value": 7.0, "total": None},
+        {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "rating_title", "value": 7.0, "total": None},
+        {"match_id": 3, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "rating_title", "value": 7.0, "total": None},
         {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "goals", "value": 1.0, "total": None},
         {"match_id": 2, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "goals", "value": 1.0, "total": None},
         {"match_id": 1, "team_id": 10, "player_id": 101, "player_name": "A1", "key": "assists", "value": 2.0, "total": None},
-        {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "key": "goals", "value": 0.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 2, "team_id": 10, "player_id": 102, "player_name": "A2", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 102, "player_name": "A2", "key": "rating_title", "value": 8.5, "total": None},
+        {"match_id": 2, "team_id": 10, "player_id": 102, "player_name": "A2", "key": "rating_title", "value": 8.5, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 103, "player_name": "A3", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 103, "player_name": "A3", "key": "rating_title", "value": 9.9, "total": None},
+        {"match_id": 1, "team_id": 10, "player_id": 104, "player_name": "A4", "key": "minutes_played", "value": 90.0, "total": None},
+        {"match_id": 2, "team_id": 10, "player_id": 104, "player_name": "A4", "key": "minutes_played", "value": 110.0, "total": None},
     ]))
     ma = MatchAnalysis(st)
     kp = ma.team_key_players(10)
-    # ordina per media di stagione decrescente: A2 (8.5), A4 (7.8), A1 (7.0); A3 senza media escluso
-    assert [p["name"] for p in kp] == ["A2", "A4", "A1"]
-    a1 = next(p for p in kp if p["name"] == "A1")
-    assert a1["season_rating"] == 7.0
-    assert a1["goals"] == 2 and a1["assists"] == 2      # somma delle 2 gare
-    assert a1["pos"] == "centrocampista"          # usualPosition 2
-    assert kp[0]["pos"] == "attaccante"           # positionId 115 → attaccante (fallback)
+    # A2 (8,5) prima di A1 (7,0); A3 fuori per i minuti, A4 fuori perché senza voto
+    assert [p["name"] for p in kp] == ["A2", "A1"]
+    assert kp[0]["rating_avg"] == 8.5 and kp[0]["minutes"] == 180
+    assert kp[0]["pos"] == "attaccante"          # dallo storico distinte
+    assert kp[1]["rating_avg"] == 7.0
+    assert kp[1]["goals"] == 2 and kp[1]["assists"] == 2      # somma delle 3 gare
     # limite n e nessun dato → lista vuota
-    assert len(ma.team_key_players(10, 2)) == 2
+    assert len(ma.team_key_players(10, 1)) == 1
     assert ma.team_key_players(999) == []
     st.close()
 

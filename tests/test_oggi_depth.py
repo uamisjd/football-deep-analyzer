@@ -457,6 +457,34 @@ def test_arrival_trend_falls_back_to_fotmob(tmp_path):
     assert a["rows"][0]["opp"] == "Beta" and a["rows"][0]["res"] == "V"
 
 
+def test_arrival_trend_fotmob_tiene_le_piu_recenti(tmp_path):
+    """D1 (docs/58): il ramo FotMob mostra le n più recenti, non le più vecchie.
+
+    Con 7 finite e n=6 la finestra deve scartare la più vecchia (01/09) e tenere la più
+    recente (07/09): il vecchio `break` nel ciclo in ordine di data teneva le 6 più vecchie
+    e «Come arrivano» restava indietro di una giornata (18 schede NED1/POR1 incoerenti).
+    """
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", pd.DataFrame([
+        {"match_id": i, "league_id": 61, "home_id": 10, "away_id": 20,
+         "home_name": "Alpha", "away_name": "Beta",
+         "utc_kickoff": pd.Timestamp(f"2026-09-{i:02d} 18:00", tz="UTC"),
+         "status": "finished", "round": str(i), "home_goals": 1, "away_goals": 0}
+        for i in range(1, 8)]))
+    st.write("team_stats", pd.DataFrame([
+        {"match_id": m, "team_id": t, "period": "All", "key": "expected_goals",
+         "value": v, "text": str(v)}
+        for m in range(1, 8) for t, v in ((10, 1.5), (20, 0.5))]))
+    # niente understat_team_matches: ramo FotMob (Store.read di una tabella assente → vuota)
+    ma = MatchAnalysis(st)
+    a = ma.arrival_trend("Alpha", 10, n=6)
+    assert a["source"] == "FotMob" and len(a["rows"]) == 6
+    assert str(a["rows"][0]["date"])[:10] == "2026-09-02"    # la più vecchia è fuori
+    assert str(a["rows"][-1]["date"])[:10] == "2026-09-07"   # la più recente è dentro
+    assert [str(r["date"])[:10] for r in a["rows"]] == sorted(str(r["date"])[:10] for r in a["rows"])
+    st.close()
+
+
 def test_h2h_pattern_from_current_home_side(tmp_path):
     """Precedenti: esiti dal punto di vista della squadra di casa attuale, riga anomala esclusa."""
     ma = MatchAnalysis(_store(tmp_path))

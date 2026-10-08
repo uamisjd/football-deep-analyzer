@@ -183,7 +183,7 @@
       <h3 style="margin:0 0 8px">{{ name }}</h3>
       {% if a %}
       <div class="tablewrap"><table>
-        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
+        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small" title="Posizione e punti in classifica attuale, non alla data della gara">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
         {% for r in a.rows %}
         <tr>
           <td class="mut small">{{ r.date|it_dt_short }}</td>
@@ -196,11 +196,11 @@
         </tr>
         {% endfor %}
       </table></div>
-      {% if a.spark_xg %}<div style="margin:8px 0 0;display:flex;align-items:end;gap:2px;height:28px" title="Sparkline xG creati (gara per gara)">{% for v in a.spark_xg %}<span style="display:inline-block;width:12px;background:var(--accent);border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xG {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xG sparkline</span></div><div style="display:flex;gap:2px;margin:2px 0 0;height:14px" title="Sparkline xGA">{% for v in a.spark_xga %}<span style="display:inline-block;width:12px;background:var(--lose);opacity:.6;border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xGA {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xGA</span></div>{% endif %}
+      {% if a.spark_xg %}<div style="margin:8px 0 0;display:flex;align-items:end;gap:2px;height:28px" title="Andamento xG creati (gara per gara)">{% for v in a.spark_xg %}<span style="display:inline-block;width:12px;background:var(--accent);border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xG {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xG per gara</span></div><div style="display:flex;gap:2px;margin:2px 0 0;height:14px" title="Andamento xGA (gara per gara)">{% for v in a.spark_xga %}<span style="display:inline-block;width:12px;background:var(--lose);opacity:.6;border-radius:2px 2px 0 0;height:{{ (v/3*100)|round|int if v<3 else 100 }}%" title="xGA {{ v|dec }}"></span>{% endfor %}<span class="small mut" style="margin-left:6px">xGA per gara</span></div>{% endif %}
       {#- P1.2: qui c'era la riga di sintesi (xG/xGA a partita e punti contro xPTS): gli stessi
           numeri stanno nella card della squadra e in «Scontro tattico». Resta la serie gara per
           gara con la tendenza, che è l'unica cosa che questa card può dire bene. -#}
-      {% if a.trend %}<p class="small mut">Direzione degli <b>xG creati</b>: <b>{{ a.trend }}</b> — {{ a.trend_recent|dec }} a gara nelle ultime 3 contro {{ a.trend_before|dec }} nelle precedenti (soglia ±{{ a.trend_threshold|dec }} xG). Valuta il gioco recente, non i punti: la riga sopra misura l'intero campione.</p>{% endif %}
+      {% if a.trend %}<p class="small mut">Direzione degli <b>xG creati</b>: <b>{{ a.trend }}</b> — {{ a.trend_recent|dec }} a gara nelle ultime 3 contro {{ a.trend_before|dec }} nelle precedenti (soglia ±{{ a.trend_threshold|dec }} xG). Valuta il gioco recente, non i punti: le medie di stagione sono nella card della squadra.</p>{% endif %}
       {#- il PPDA non si ripete qui: sta nella card della squadra e in «Scontro tattico» (P1.2);
           se non ci sono né lo split casa/trasferta né altro, il riquadro non lascia un <p> vuoto -#}
       {% if a.home_pm is not none or a.away_pm is not none %}<p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% endif %}</p>{% endif %}
@@ -215,7 +215,7 @@
 {% if c.status != 'finished' and (c.home_key_deep or c.away_key_deep or c.home_key_players or c.away_key_players) %}
 <div class="card" id="giocatori">
   <h2>I giocatori che decidono</h2>
-  <p class="small mut">In alto il contributo offensivo atteso: (xG + xA) per 90 minuti, sommati dalle statistiche partita di FotMob (disponibili in tutte e 7 le leghe). Sotto, la classifica per media voto di stagione. In classifica entrano solo i giocatori con almeno il 40% dei minuti del più impiegato della propria squadra (soglia indicata in ogni colonna): con pochi minuti il valore per 90 è rumore.</p>
+  <p class="small mut">In alto il contributo offensivo di stagione: (xG + xA) per 90 minuti, sommati dalle statistiche partita di FotMob (disponibili in tutte e 7 le leghe). Sotto, la classifica per media voto di stagione. In classifica entrano solo i giocatori con almeno il 40% dei minuti del più impiegato della propria squadra (soglia indicata in ogni colonna): con pochi minuti il valore per 90 è rumore.</p>
   {#- P2.1 (`docs/28` §3): la spiegazione della stima stabilizzata si dà **una volta sola**, qui al
       primo punto d'uso; nel resto della pagina resta il marcatore ◎ col suo tooltip (media dei
       pari, peso k, numerosità del caso specifico). Prima la stessa frase compariva in ogni tabella
@@ -232,7 +232,7 @@
         <tr><th scope="col" class="mut small">giocatore</th><th scope="col" class="r" style="width:40px">min</th><th scope="col" class="r" style="width:34px">gol</th><th scope="col" class="r" style="width:38px">assist</th><th scope="col" class="r" style="width:44px">xG</th><th scope="col" class="r" style="width:44px">xA</th><th scope="col" class="r" style="width:52px">xG+xA/90</th><th scope="col" class="r" style="width:44px">voto</th></tr>
         {% for p in kp.rows %}
         <tr>
-          <td>{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if p.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ p.pos }}</span>{% endif %}{% if p.chances %}<span class="small mut"> · {{ p.chances|it_plural('occasione') }}{% if p.big_chances %}, {{ p.big_chances }} {{ 'clamorosa' if p.big_chances == 1 else 'clamorose' }}{% endif %}</span>{% endif %}{% set kst = (c[side ~ '_key_status'] or {}).get(p.id) %}{% if kst %}{% if kst.status == 'unavailable' %} <span class="small warn">· assente: {{ kst.note }}</span>{% elif kst.status == 'starter' %} <span class="small" style="color:var(--accent)">· titolare probabile</span>{% else %} <span class="small mut">· in panchina</span>{% endif %}{% endif %}</td>
+          <td>{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %}{% if p.pos %} <span class="mut small" style="display:inline-block;padding:1px 6px;background:var(--surface2);border:1px solid var(--line);border-radius:999px;font-size:10px">{{ p.pos }}</span>{% endif %}{% if p.chances %}<span class="small mut"> · {{ p.chances|it_plural('occasione') }}{% if p.big_chances %}, {{ p.big_chances }} {{ 'clamorosa' if p.big_chances == 1 else 'clamorose' }}{% endif %}</span>{% endif %}{% set kst = (c[side ~ '_key_status'] or {}).get(p.id) %}{% if kst %}{% if kst.status == 'unavailable' %} <span class="small warn">· assente: {{ kst.note }}</span>{% elif kst.status == 'starter' %} <span class="small" style="color:var(--accent)">· {{ 'titolare' if c.lineup_type == 'official' else 'titolare probabile' }}</span>{% else %} <span class="small mut">· in panchina</span>{% endif %}{% endif %}</td>
           <td class="r small mut">{{ p.minutes }}</td>
           <td class="r">{{ p.goals }}</td>
           <td class="r">{{ p.assists }}</td>
@@ -244,10 +244,10 @@
         {% endfor %}
       </table>
       </div>
-      {% if kp.rows %}{% set k0 = (c[side ~ '_key_status'] or {}).get(kp.rows[0].id) %}{% if k0 and k0.status == 'unavailable' %}<p class="small warn" style="margin:6px 0 0">Il contributo offensivo più alto della lista, {{ kp.rows[0].name }}, è indisponibile — motivo e rientro sono in <a href="#infermeria-{{ side }}">Infermeria</a>: il valore per 90 è stagionale e non vale per questa gara.</p>{% endif %}{% endif %}
+      {% if kp.rows %}{% set k0 = (c[side ~ '_key_status'] or {}).get(kp.rows[0].id) %}{% if k0 and k0.status == 'unavailable' %}<p class="small warn" style="margin:6px 0 0">Il contributo offensivo più alto della lista, {{ kp.rows[0].name }}, è indisponibile — <a href="#infermeria-{{ side }}">motivo e rientro</a>: il valore per 90 è stagionale e non vale per questa gara.</p>{% endif %}{% endif %}
       {% else %}<p class="mut small">Nessun giocatore sopra la soglia di minutaggio con dati xG.</p>{% endif %}
       {% if kp %}<p class="small mut">Soglia di minutaggio: {{ kp.floor }} minuti · {{ kp.eligible }} {{ 'giocatore in classifica' if kp.eligible == 1 else 'giocatori in classifica' }}.</p>{% endif %}
-      {% if rated %}<p class="small" style="margin-top:8px"><b>Per media voto di stagione</b>: {% for p in rated %}{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %} {{ p.season_rating|dec(2)}}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+      {% if rated %}<p class="small" style="margin-top:8px"><b>Per media voto di stagione</b>: {% for p in rated %}{% if p.id %}<a href="{{ root }}giocatori/{{ p.id }}.html">{{ p.name }}</a>{% else %}{{ p.name }}{% endif %} {{ p.rating_avg|dec(2)}}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
     </div>
   {% endfor %}
   </div>

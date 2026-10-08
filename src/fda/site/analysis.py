@@ -3494,57 +3494,37 @@ class MatchAnalysis:
         return out[:8]
 
     def team_key_players(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:
-        """Giocatori da tenere d'occhio di una squadra (card pre-partita).
+        """Classifica per media voto di stagione (card «I giocatori che decidono»).
 
-        Top ``n`` per rating di stagione (FotMob ``season_rating``, media stagionale
-        del ruolo), deduplicati per ``player_id``; arricchiti con gol/assist stagionali
-        sommati dalle statistiche partita (``player_stats``, una riga per partita/giocatore/
-        chiave: nessun doppione) e con la posizione. Nessun dato inventato: solo giocatori
-        con ``season_rating`` disponibile; se manca la lista resta vuota.
+        Top ``n`` per media dei voti gara (``rating_avg`` da ``player_stats``, la stessa base
+        della tabella dei decisivi), sopra la stessa soglia di minutaggio relativa della card
+        (40% dei minuti del più impiegato, minimo 90'): senza soglia un voto alto in una sola
+        gara guiderebbe la classifica. Prima leggeva ``season_rating`` dalla distinta, che la
+        fonte pubblica quasi mai (73 righe su 18.445, 4 squadre su 132): la classifica
+        promessa in testata usciva su 4 schede su 66 (docs/58 D5).
         """
-        if self.lineup.empty:
+        agg = self._season_player_stats(team_id)
+        if agg.empty or "minutes_played" not in agg.columns:
             return []
-        # Una riga per giocatore: prendi il season_rating più recente/rappresentativo.
-        rows = self.lineup[(self.lineup.team_id == team_id)
-                           & (self.lineup.role.isin(["starter", "sub"]))
-                           & self.lineup.season_rating.notna()]
-        if rows.empty:
+        mins = agg.minutes_played.fillna(0.0)
+        floor = max(90.0, 0.4 * float(mins.max()))
+        ok = agg[(mins >= floor) & agg["rating_avg"].notna()].copy()
+        if ok.empty:
             return []
-        rows = rows.sort_values("season_rating").drop_duplicates(subset=["player_id"], keep="last")
-        # Statistiche di stagione per giocatore (gol/assist) su TUTTE le partite della squadra.
-        season_stats: dict[tuple[int, str], float] = {}
-        if not self.player_stats.empty:
-            team_matches = None
-            if not self.fixtures.empty:
-                team_matches = set(self.fixtures[self.fixtures.home_id == team_id].match_id) \
-                    | set(self.fixtures[self.fixtures.away_id == team_id].match_id)
-            ps = self.player_stats if team_matches is None else \
-                self.player_stats[self.player_stats.match_id.isin(team_matches)]
-            for row in ps.itertuples(index=False):
-                if int(row.team_id) != team_id:
-                    continue
-                v = row.value
-                if v is None or pd.isna(v):
-                    continue
-                k = (int(row.player_id), str(row.key))
-                season_stats[k] = season_stats.get(k, 0.0) + float(v)
-
-        def _season_num(player_id: int, key: str) -> float:
-            v = season_stats.get((player_id, key))
-            return float(v) if v is not None and pd.notna(v) else 0.0
-
+        ok = ok.sort_values("rating_avg", ascending=False).head(n)
         out = []
-        for r in rows.itertuples(index=False):
+        for r in ok.itertuples(index=False):
+            d = r._asdict()
             out.append({
                 "id": int(r.player_id),
                 "name": r.player_name,
-                "pos": self._role_it(r.player_id, _val(r._asdict(), "usual_position_id"),
-                                     _val(r._asdict(), "position_id")),
-                "season_rating": float(r.season_rating),
-                "goals": int(_season_num(int(r.player_id), "goals")),
-                "assists": int(_season_num(int(r.player_id), "assists")),
+                "pos": self._role_it(r.player_id),
+                "rating_avg": round(float(r.rating_avg), 2),
+                "minutes": int(self._num(d, "minutes_played")),
+                "goals": int(self._num(d, "goals")),
+                "assists": int(self._num(d, "assists")),
             })
-        return sorted(out, key=lambda p: p["season_rating"], reverse=True)[:n]
+        return out
 
 
     # ---- profondità pre-partita: trend, precedenti, giocatori, assenze, arbitro ---------------
@@ -3629,7 +3609,7 @@ class MatchAnalysis:
             fx = self.fixtures[(self.fixtures.status == "finished")
                                & self.fixtures.home_goals.notna()
                                & ((self.fixtures.home_id == team_id) | (self.fixtures.away_id == team_id))]
-            fx = fx.sort_values("utc_kickoff").tail(n * 2)
+            fx = fx.sort_values("utc_kickoff")  # tutte: la coda si prende dopo il dedup
             ts = self.team_stats[(self.team_stats.period == "All") & (self.team_stats.key == "expected_goals")]
             xg_of = {(int(m), int(t)): float(v) for m, t, v in zip(ts.match_id, ts.team_id, ts.value)}
             for r in fx.itertuples(index=False):
@@ -3647,8 +3627,8 @@ class MatchAnalysis:
                              "xpts": xh if is_home else xa, "pts": pts,
                              "opp": r.home_name if not is_home else r.away_name,
                              "res": "V" if gf > ga else "N" if gf == ga else "P"})
-                if len(rows) == n:
-                    break
+                # niente break a n: il ciclo scorre in ordine di data e fermarsi qui terrebbe
+                # le n più vecchie — la coda si prende dopo il dedup (docs/58 D1)
         # dedup: Understat+FotMob a volte duplicano la stessa gara (es. Lecce 07/09 @ Cagliari 16:00 e 16:30)
         # chiave: giorno + avversario + risultato (ignora ora, che varia per duplicati fonte)
         seen=set()
@@ -3663,7 +3643,7 @@ class MatchAnalysis:
             if key not in seen:
                 seen.add(key)
                 uniq.append(r)
-        rows=uniq
+        rows = uniq[-n:]  # le n più recenti (il ramo Understat già prende la coda)
         if len(rows) < 3:
             return None
         xg = [r["xg"] for r in rows]
@@ -3817,7 +3797,7 @@ class MatchAnalysis:
         return pool, group_label(lg, rl)
 
     def key_players_deep(self, team_id: int, n: int = 3) -> dict[str, Any] | None:
-        """Giocatori decisivi di stagione: contributo offensivo atteso per 90 minuti.
+        """Giocatori decisivi di stagione: contributo offensivo per 90 minuti (di stagione).
 
         Metrica (xG + xA) per 90: FotMob pubblica ``expected_goals`` e ``expected_assists``
         in tutte e 7 le leghe, quindi la card è identica ovunque. Due regole di qualità:

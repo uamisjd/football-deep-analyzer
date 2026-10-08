@@ -1021,7 +1021,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # codifica FotMob indipendente dal codice del sito: usualPosition parte da 0 (616 formazioni)
     role_names = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
     hist: dict[int, int] = {}
-    n_role = n_abs = n_h2h = 0
+    n_role = n_abs = n_h2h = n_list = 0
     if not lineup.empty and lineup.usual_position_id.notna().any():
         h = lineup[lineup.usual_position_id.notna()]
         hist = {int(k): int(v) for k, v in
@@ -1039,8 +1039,12 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # Da P2.4 (`docs/28` §3) la card si chiama «Precedenti» e l'etichetta della riga dice
     # il numero dei casi: «Bilancio (15)» — il titolo non ripete più la riga.
     prev_re = re.compile(r"<th[^>]*>Bilancio \((\d+)\)</th>")
-    inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?Infermeria: ([^<]*?) (\d+) assenti'
-                        r' · ([^<]*?) (\d+) assenti', re.DOTALL)
+    # docs/58 D9: la regex precedente cercava «Infermeria: … N assenti · … M assenti» ma la
+    # marcatura reale è una chip («fact-label») senza due punti, con singolare/plurale da
+    # `it_plural` — 0 match su index/prossime, il controllo sulle liste era morto. Ora rilegge
+    # la chip vera (etichetta «Indisponibili», come la card di destinazione).
+    inf_re = re.compile(r'partite/(\d+)\.html(?:(?!partite/).)*?class="fact-label">Indisponibili'
+                        r'</span><span>([^<]*?) (\d+) assent[ei] · ([^<]*?) (\d+) assent[ei]', re.DOTALL)
     fx_by_id = {} if fixtures.empty else fixtures.set_index("match_id")
     un_count: dict[tuple[int, int], int] = {}
     if not lineup.empty:
@@ -1085,18 +1089,26 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not path.exists():
             continue
         html = path.read_text(encoding="utf-8")
-        for mid, n1, c1, n2, c2 in inf_re.findall(html):
+        # la regex non deve morire in silenzio una seconda volta: aggancia tutte le chip
+        checks += 1
+        trovat = inf_re.findall(html)
+        if len(trovat) != html.count("fact-absence"):
+            fails.append(f"{lg_page}: regex indisponibili aggancia {len(trovat)} chip su "
+                         f"{html.count('fact-absence')} nella marcatura")
+        for mid, n1, c1, n2, c2 in trovat:
             if int(mid) not in fx_by_id.index:
                 continue
             row = fx_by_id.loc[int(mid)]
             checks += 1
+            n_list += 1
             n1, n2 = html_unescape(n1), html_unescape(n2)   # M'gladbach → M&#39;gladbach in HTML
             if (n1.strip(), int(c1)) != (str(row.home_name).strip(),
                                          un_count.get((int(mid), int(row.home_id)), 0)) or \
                (n2.strip(), int(c2)) != (str(row.away_name).strip(),
                                          un_count.get((int(mid), int(row.away_id)), 0)):
-                fails.append(f"{lg_page}: infermeria {n1} {c1} / {n2} {c2} != distinta")
-    print(f"[5] schede oggi: {n_role} ruoli, {n_abs} infermerie, {n_h2h} archivi precedenti")
+                fails.append(f"{lg_page}: chip indisponibili {n1} {c1} / {n2} {c2} != distinta")
+    print(f"[5] schede oggi: {n_role} ruoli, {n_abs} indisponibili, {n_h2h} archivi precedenti, "
+          f"{n_list} chip nelle liste")
 
     # 6) post-partita: assist della cronaca e split primo/secondo tempo contro le tabelle
     events, team_stats = st.read("events"), st.read("team_stats")
@@ -3168,6 +3180,220 @@ def check_fatti(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[43] «Come arrivano» + «I giocatori che decidono» (docs/58).
+
+    - **finestra**: le righe di «Come arrivano» sono le gare finite più recenti (non le più
+      vecchie: il ramo FotMob prendeva le 6 più vecchie, docs/58 D1) — oltre al confronto
+      col ricalcolo, un controllo indipendente vieta gare con xG più recenti della finestra
+      mostrata, per entrambe le fonti;
+    - **tendenza**: i due numeri e il verdetto sono rifatti dai valori pieni del ricalcolo
+      (la soglia è quella stampata in pagina);
+    - **classifica voti**: «Per media voto di stagione» è la top-3 per media dei voti gara
+      sopra la soglia di minutaggio (docs/58 D5: prima usciva su 4 schede su 66) e la soglia
+      stampata è quella del codice;
+    - **testi**: niente «la riga sopra» (riga rimossa), niente «sparkline» in pagina, la colonna
+      «forza avv.» dichiara la classifica attuale, nessun link «Infermeria» verso la card
+      «Indisponibili», niente «contributo offensivo atteso» per un valore di stagione e niente
+      «titolare probabile» a distinta ufficiale.
+    """
+    import datetime
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    from fda.config import load_leagues_config
+    from fda.site.analysis import MatchAnalysis
+    from fda.site.build import it_date_short
+    from fda.store import Store
+    from fda.teams import canonical
+
+    fuso = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    fx = st.read("fixtures")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if fx.empty or not pages:
+        return fails, checks
+    fx = fx.copy()
+    fx["utc_kickoff"] = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+    fx_by_id = fx.set_index("match_id")
+    ts = st.read("team_stats")
+    xg_ok: set[tuple[int, int]] = set()
+    if not ts.empty:
+        good = ts[(ts.period == "All") & (ts.key == "expected_goals") & ts.value.notna()]
+        xg_ok = {(int(m), int(t)) for m, t in zip(good.match_id, good.team_id)}
+    us = st.read("understat_team_matches")
+    info = st.read("match_info")
+    lt_of: dict[int, str] = {}
+    if not info.empty and "lineup_type" in info.columns:
+        lt_of = {int(m): str(v) for m, v in zip(info.match_id, info.lineup_type)}
+    ma = MatchAnalysis(st)
+    riga_re = re.compile(
+        r'<td class="mut small">(\d{2}/\d{2})</td>\s*'
+        r'<td class="small">(?:vs|@) (.*?)</td>\s*'
+        r'<td class="small mut">(.*?)</td>\s*'
+        r'<td class="r"><span class="pill (\w)">\w</span></td>\s*'
+        r'<td class="r small">(\d+)-(\d+)</td>\s*'
+        r'<td class="r small">([\d,]+)</td>\s*'
+        r'<td class="r small">([\d,]+)</td>')
+    trend_re = re.compile(
+        r"Direzione degli <b>xG creati</b>: <b>([^<]+)</b> — ([\d,]+) a gara nelle ultime 3 "
+        r"contro ([\d,]+) nelle precedenti \(soglia ±([\d,]+) xG\)")
+    voti_re = re.compile(r"Per media voto di stagione</b>: (.*?)</p>", re.DOTALL)
+    n_arr, n_righe, n_voti, n_voci = 0, 0, 0, 0
+
+    def num(s: str) -> float:
+        return float(s.replace(",", "."))
+
+    for pg in pages:
+        try:
+            mid = int(pg.stem)
+        except ValueError:
+            continue
+        if mid not in fx_by_id.index:
+            continue
+        r0 = fx_by_id.loc[mid]
+        if r0["status"] == "finished":
+            continue
+        html = pg.read_text(encoding="utf-8")
+        kick = pd.to_datetime(r0["utc_kickoff"], utc=True)
+        squadre = [(int(r0["home_id"]), str(r0["home_name"])),
+                   (int(r0["away_id"]), str(r0["away_name"]))]
+        # ---- [43a] Come arrivano ----
+        ia = html.find('id="arrivi"')
+        if ia >= 0:
+            ig = html.find('id="giocatori"', ia)
+            blocco = html[ia:ig if ig > 0 else len(html)]
+            checks += 1
+            if "la riga sopra" in blocco:
+                fails.append(f"{pg.name}: «Come arrivano» cita ancora «la riga sopra» rimossa")
+            checks += 1
+            if re.search(r"sparkline", blocco, re.IGNORECASE):
+                fails.append(f"{pg.name}: «Come arrivano» con «sparkline» in pagina")
+            checks += 1
+            if blocco.count("forza avv.</th>") != blocco.count("classifica attuale, non alla data"):
+                fails.append(f"{pg.name}: colonna «forza avv.» senza dichiarazione di classifica attuale")
+            colonne = re.split(r"<h3[^>]*>", blocco)[1:3]
+            for (tid, tnome), col in zip(squadre, colonne):
+                atteso = ma.arrival_trend(tnome, tid)
+                if atteso is None:
+                    checks += 1
+                    if "Nessuna gara precedente con xG disponibile" not in col:
+                        fails.append(f"{pg.name}: lato senza arrivi senza il testo onesto")
+                    continue
+                n_arr += 1
+                checks += 1
+                if f"Fonte: {atteso['source']}." not in col:
+                    fails.append(f"{pg.name}: fonte «Come arrivano» diversa dal ricalcolo")
+                    continue
+                mostrate = riga_re.findall(col)
+                checks += 1
+                if len(mostrate) != len(atteso["rows"]):
+                    fails.append(f"{pg.name}: {tnome}: {len(mostrate)} righe in pagina contro "
+                                 f"{len(atteso['rows'])} ricalcolate")
+                    continue
+                n_righe += len(mostrate)
+                for (gg, _opp, _rank, res, gf, ga, xg, xga), riga in zip(mostrate, atteso["rows"]):
+                    checks += 1
+                    want_res = "V" if riga["gf"] > riga["ga"] else ("N" if riga["gf"] == riga["ga"] else "P")
+                    if (res != want_res or int(gf) != riga["gf"] or int(ga) != riga["ga"]
+                            or gg != it_date_short(riga["date"], fuso)
+                            or abs(num(xg) - round(riga["xg"], 2)) > 0.005
+                            or abs(num(xga) - round(riga["xga"], 2)) > 0.005):
+                        fails.append(f"{pg.name}: {tnome}: riga {gg} diversa dal ricalcolo")
+                # freschezza indipendente dal codice: nessuna gara con xG più recente della finestra
+                # mostrata (le date in pagina sono giorno/mese: l'anno si inferisce dal calcio
+                # d'inizio, la stagione è a cavallo di due anni)
+                checks += 1
+                km, ky = kick.month, kick.year
+                shown_max = max(
+                    datetime.date(ky if int(gg.split("/")[1]) <= km else ky - 1,
+                                  int(gg.split("/")[1]), int(gg.split("/")[0]))
+                    for gg, *_r in mostrate)
+                if atteso["source"] == "FotMob":
+                    base = fx[(fx.status == "finished")
+                              & ((fx.home_id == tid) | (fx.away_id == tid))]
+                    fresche = [pd.to_datetime(r.utc_kickoff, utc=True).tz_convert(fuso).date()
+                               for r in base.itertuples()
+                               if (int(r.match_id), tid) in xg_ok
+                               and (int(r.match_id), int(r.away_id if r.home_id == tid else r.home_id)) in xg_ok]
+                else:
+                    usar = us[us.team_name.map(canonical) == canonical(tnome)] if not us.empty else us
+                    fresche = [pd.to_datetime(d, utc=True, errors="coerce").tz_convert(fuso).date()
+                               for d in usar["date"]] if not usar.empty else []
+                    fresche = [d for d in fresche if pd.notna(d)]
+                if any(d > shown_max for d in fresche):
+                    fails.append(f"{pg.name}: {tnome}: finestra «Come arrivano» non fresca "
+                                 "(gare con xG più recenti fuori dalla tabella)")
+                # tendenza rifatta dai valori pieni del ricalcolo: le medie in pagina sono
+                # arrotondate una sola volta, rifarle dai mostrati accumulerebbe errori (3 casi
+                # oltre 0,005 il 2026-10-07); il verdetto riusa la soglia stampata in pagina
+                if len(mostrate) == 6:
+                    m = trend_re.search(col)
+                    checks += 1
+                    if not m:
+                        fails.append(f"{pg.name}: {tnome}: 6 righe senza frase di tendenza")
+                    else:
+                        checks += 1
+                        xv = [riga["xg"] for riga in atteso["rows"]]
+                        rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / 3
+                        soglia = num(m.group(4))
+                        want = ("in crescita" if rec - prima > soglia
+                                else ("in calo" if rec - prima < -soglia else "stabile"))
+                        if (m.group(1) != want or atteso["trend"] != want
+                                or abs(num(m.group(2)) - round(rec, 2)) > 0.005
+                                or abs(num(m.group(3)) - round(prima, 2)) > 0.005
+                                or abs(soglia - 0.15) > 1e-9):
+                            fails.append(f"{pg.name}: {tnome}: tendenza non ricalcolabile "
+                                         f"({m.group(1)} {m.group(2)}/{m.group(3)})")
+        # ---- [43b] I giocatori che decidono ----
+        ig = html.find('id="giocatori"')
+        if ig >= 0:
+            isq = html.find('id="squadre"', ig)
+            blocco = html[ig:isq if isq > 0 else len(html)]
+            checks += 1
+            if ">Infermeria</a>" in blocco:
+                fails.append(f"{pg.name}: link «Infermeria» verso la card «Indisponibili»")
+            checks += 1
+            if "contributo offensivo atteso" in blocco:
+                fails.append(f"{pg.name}: «contributo offensivo atteso» per un valore di stagione")
+            if lt_of.get(mid) == "official":
+                checks += 1
+                if "titolare probabile" in blocco:
+                    fails.append(f"{pg.name}: «titolare probabile» a distinta ufficiale")
+            liste = voti_re.findall(blocco)
+            colonne = re.split(r"<h3[^>]*>", blocco)[1:3]
+            voti = {tid: ma.team_key_players(tid) for tid, _tnome in squadre}
+            for (tid, _tnome), col in zip(squadre, colonne):
+                deep = ma.key_players_deep(tid)
+                if deep is not None:
+                    checks += 1
+                    n_voti += 1
+                    if f"Soglia di minutaggio: {deep['floor']} minuti" not in col:
+                        fails.append(f"{pg.name}: soglia di minutaggio diversa dal ricalcolo")
+                    for mm in re.findall(r'<td class="r small mut">(\d+)</td>', col):
+                        checks += 1
+                        if int(mm) < deep["floor"]:
+                            fails.append(f"{pg.name}: riga dei decisivi sotto la soglia ({mm}′)")
+            for nome in [html_unescape(re.sub(r"<[^>]+>", "", frag)) for frag in liste]:
+                for voce in nome.split(" · "):
+                    if " " not in voce.strip():
+                        continue
+                    chi, voto = voce.strip().rsplit(" ", 1)
+                    checks += 1
+                    n_voci += 1
+                    ok = any(p["name"] == chi and abs(p["rating_avg"] - num(voto)) < 0.005
+                             for _t in voti for p in voti[_t])
+                    if not ok:
+                        fails.append(f"{pg.name}: voto «{voce.strip()[:50]}» non ricalcolabile")
+    print(f"[43] come-arrivano e giocatori-che-decidono: {n_arr} lati ({n_righe} righe), "
+          f"{n_voti} soglie, {n_voci} voci di voto")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -3227,6 +3453,9 @@ def main() -> int:
         fatti, fatti_checks = check_fatti(site, Path(args.data) if args.data else None)
         fails += fatti
         checks += fatti_checks
+        coppia, coppia_checks = check_terza_coppia(site, Path(args.data) if args.data else None)
+        fails += coppia
+        checks += coppia_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks
