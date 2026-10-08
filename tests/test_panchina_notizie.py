@@ -1102,3 +1102,38 @@ def test_fattori_ordine_fisso_e_campione_dichiarato(mood_analysis, monkeypatch):
     pressing = next(r for r in res["rows"] if r["label"] == "Pressing (PPDA)")
     assert pressing["home"] == "9,0 (6 gare)" and pressing["away"] == "15,0 (5 gare)"
     assert "162 gare" in pressing["help"]
+
+
+def test_fattori_contesto_leggibile(mood_analysis, monkeypatch):
+    """«Forma e classifica (contesto)» si legge senza gergo (docs/59).
+
+    Prima la cella diceva «6 pt · 1,20/gara · GD3 −4» (punti totali che da soli fuorviano, «GD3»
+    criptico) e l'impatto era un numero nudo («indice +0,63»). Ora: punti/gara con le gare
+    giocate, posizione, differenza reti ultime 3 scritta per esteso, e l'impatto in parole con la
+    fascia «sostanzialmente pari» sotto ``FACTOR_CONTEXT_PARITY``.
+    """
+    stand = {"Atalanta": {"points": 10, "played": 5, "rank": 3},
+             "Venezia": {"points": 2, "played": 5, "rank": 18}}
+    monkeypatch.setattr(MatchAnalysis, "standing", lambda self, nome: stand.get(nome))
+    monkeypatch.setattr(MatchAnalysis, "form",
+                        lambda self, tid, ko, n=5: ([{"gf": 2, "ga": 0}] * 3 if tid == 4
+                                                    else [{"gf": 0, "ga": 2}] * 3))
+    res = mood_analysis.fattori_chiave(8, 4, "Atalanta", 3, "Venezia",
+                                       KO("2026-09-16 18:00"), None)
+    riga = next(r for r in res["rows"] if r["label"] == "Forma e classifica (contesto)")
+    assert riga["home"] == "2,00 pt/gara (5 gare) · 3ª · reti ult. 3 +6"
+    assert riga["away"] == "0,40 pt/gara (5 gare) · 18ª · reti ult. 3 −6"
+    assert riga["delta"] == "PPG +1,60"
+    assert "GD3" not in riga["home"] + riga["away"] + riga["delta"]      # il gergo è sparito
+    assert riga["impact"] == "contesto a favore di Atalanta (indice +1,00)"
+
+    # sotto la fascia: nessuna direzione dichiarata, e il lettore vede che è un contesto pari
+    stand2 = {"Atalanta": {"points": 6, "played": 5, "rank": 8},
+              "Venezia": {"points": 5, "played": 5, "rank": 9}}
+    monkeypatch.setattr(MatchAnalysis, "standing", lambda self, nome: stand2.get(nome))
+    monkeypatch.setattr(MatchAnalysis, "form", lambda self, tid, ko, n=5: [{"gf": 1, "ga": 1}] * 3)
+    res2 = mood_analysis.fattori_chiave(8, 4, "Atalanta", 3, "Venezia",
+                                        KO("2026-09-16 18:00"), None)
+    r2 = next(r for r in res2["rows"] if r["label"] == "Forma e classifica (contesto)")
+    assert r2["impact"].startswith("contesto sostanzialmente pari")
+    assert "a favore di" not in r2["impact"]

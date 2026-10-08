@@ -24,12 +24,13 @@ fonti esterne.
 | 1 | **Errore nel ⓘ del pressing** — il testo spacciava il solo bucket «casa pressa molto» per «una delle due pressa molto più dell'altra» | «quando una delle due pressa molto più dell'altra la gara produce 3,43 xG […] chi pressa di più fa 1,70 punti contro 1,07» | i tre bucket separati: casa pressa (≤0,75×, 40 gare) 3,43 xG e 1,70 punti; ospite pressa (≥1,33×, 28 gare) 3,03 xG e 1,07; pressing simile (36 gare) 3,10 xG | §1, audit |
 | 2 | **Riferimento di lega nel rendimento per sede** — la cella dà anche la media per sede della stessa lega nella finestra | «2,50 pt/gara in casa (18 gare)»: un numero assoluto che il lettore non sa collocare | «2,50 pt/gara in casa (18 gare · **lega 1,44**)»: si legge subito che è sopra la base | §2, 24/24 righe |
 | 3 | **Intestazione autonoma** — i tre fattori non pubblicati spiegavano il motivo rimandando a `docs/58`, un file che il lettore del sito non può aprire | «numeri e motivo in `docs/58`» | il motivo in pagina: punti dell'ospite piatti con i km, correlazione età-punti 0,02, 16 gare con impegno ravvicinato | §3 |
+| 4 | **Riga di contesto resa leggibile** — l'utente: «non ho capito bene come leggerla» | celle «6 pt · 1,20/gara · **GD3** −4», Delta con tre scarti insieme («pos +9»), impatto = numero nudo («indice +0,63») | celle «1,20 pt/gara (5 gare) · 11ª · **reti ult. 3** −4», Delta = solo «PPG +1,20», impatto in parole («contesto a favore di Atalanta (indice +0,63)») con fascia «sostanzialmente pari» | §7, test nuovo |
 
 Gate finali (rifatti da zero sulla build nuova):
 
 | Gate | Esito |
 |---|---|
-| `pytest -q` | **538 passed** |
+| `pytest -q` | **539 passed** |
 | `ruff check .` | pulito |
 | `fda build` | **441 / 2.364 / 7.494** (EXIT 0) |
 | `verify_site` | **0 problemi · 167.585 controlli** ([41] su 66 schede) |
@@ -127,7 +128,58 @@ classifica» (`docs/58` §8.1), che ripete in sintesi numeri già in «Le due sq
 
 ---
 
-## 6. Come riprodurre
+## 6. La riga di contesto resa leggibile
+
+Domanda dell'utente: **«"Forma e classifica (contesto)" è migliorabile? non ho capito bene come
+leggerla»**. Sì: era la riga meno leggibile della card, per quattro motivi concreti.
+
+**Com'era** (Lecce–Bologna, `partite/5749690.html`):
+
+```
+📊 Forma e classifica (contesto)   6 pt · 1,20/gara · GD3 −4    2 pt · 0,40/gara · GD3 −1
+                                   PPG +0,80 · GD3 +3 · pos +9   indice +0,29 — contesto, non pronostico
+```
+
+1. **«GD3» è gergo**: sta per «differenza reti delle ultime 3 gare», ma in cella non lo dice
+   nessuno e il lettore deve aprire il ⓘ per capirlo.
+2. **I punti totali da soli fuorviano**: «6 pt» contro «2 pt» sembra un divario enorme, ma sono
+   punti **cumulativi** — se una squadra ha giocato una gara in più il confronto è zoppo. Il numero
+   confrontabile è il punti/gara, che c'era già ma accanto a quello grezzo.
+3. **«pos +9» è opaco**: è lo scarto di posizione (posizione dell'ospite meno quella della casa),
+   ma il lettore non vede le posizioni e non conosce la convenzione del segno.
+4. **L'impatto era un numero nudo** («indice +0,63») su una scala che la cella non dichiara, mentre
+   in tutte le altre righe l'impatto è una frase («pesa su X», «squilibrio a favore di Y»).
+
+**Com'è ora:**
+
+```
+📊 Forma e classifica (contesto)   1,20 pt/gara (5 gare) · 11ª · reti ult. 3 −4
+                                   0,00 pt/gara (5 gare) · 20ª · reti ult. 3 −5
+                                   PPG +1,20                      contesto a favore di Atalanta (indice +0,63)
+```
+
+* la cella dà il **punti/gara con le gare giocate** (la classifica normalizzata, coerente col
+  «campione in cella» di `docs/58` §2), la **posizione** vera (11ª, 20ª) e la **differenza reti
+  delle ultime 3** scritta per esteso («reti ult. 3 −4»): i punti grezzi escono, sono già in «Le due
+  squadre» e qui aggiungevano solo rumore;
+* il **Delta** resta un solo numero nella sua unità («PPG +1,20»), come nelle altre righe: le
+  posizioni e le differenze reti sono già visibili nelle due celle, quindi ripetere tre scarti
+  insieme non serviva;
+* l'**impatto** è una frase: «contesto a favore di {squadra} (indice …)», oppure «contesto
+  sostanzialmente pari» quando l'indice è sotto la fascia `FACTOR_CONTEXT_PARITY` = **0,15**. La
+  fascia non è arbitraria: l'indice è debole per costruzione (azzecca il favorito nel 49,3% dei
+  casi, `scripts/audit_epv.py`), quindi una direzione si dichiara solo oltre il rumore. Misurata
+  sulle 66 schede: 11 «pari», 55 con una direzione. Il numero dell'indice resta fra parentesi, con
+  la scala (−1…+1) dichiarata nel ⓘ, per chi vuole la precisione.
+
+Il ⓘ è riscritto in parole piane e dice, nell'ordine: cosa c'è in cella, cos'è il Delta, cos'è
+l'indice e come si legge, e che è un contesto debole (non un pronostico). «GD3» non compare più in
+nessuna delle 66 pagine (verificato a build). Test nuovo:
+`test_fattori_contesto_leggibile` (celle, Delta, impatto nelle due direzioni e nella fascia pari).
+
+---
+
+## 7. Come riprodurre
 
 ```bash
 .venv/bin/python scripts/audit_fattori.py --json /tmp/fattori_audit5.json   # le misure (pressing, sede, …)

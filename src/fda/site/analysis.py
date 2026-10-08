@@ -2108,20 +2108,35 @@ class MatchAnalysis:
         except Exception:
             cf = None
         if cf:
+            def _cella_contesto(ppg: float, played: int, rank: int, gd3: int) -> str:
+                # punti/gara (la classifica normalizzata) con le gare giocate, posizione, e la
+                # differenza reti delle ultime 3: prima la cella diceva «6 pt · 1,20/gara · GD3 −4»,
+                # con i punti totali che da soli fuorviano e «GD3» che è gergo (docs/59).
+                parti = [f"{_f(ppg)} pt/gara ({it_plural(played, 'gara')})"]
+                if rank:
+                    parti.append(f"{rank}ª")
+                parti.append(f"reti ult. 3 {_sgn(gd3, 0)}")
+                return " · ".join(parti)
+            ind = cf["indice"]
+            if abs(ind) < self.FACTOR_CONTEXT_PARITY:
+                impatto = f"contesto sostanzialmente pari (indice {_sgn(ind)})"
+            else:
+                impatto = (f"contesto a favore di {home_name if ind > 0 else away_name} "
+                           f"(indice {_sgn(ind)})")
             _riga("📊", "Forma e classifica (contesto)",
-                  f"{cf['home_points']} pt · {_f(cf['home_ppg'])}/gara · "
-                  f"GD3 {_sgn(cf['home_gd3'], 0)}",
-                  f"{cf['away_points']} pt · {_f(cf['away_ppg'])}/gara · "
-                  f"GD3 {_sgn(cf['away_gd3'], 0)}",
-                  f"PPG {_sgn(cf['ppg_diff'])} · GD3 {_sgn(cf['gd_diff'], 0)} · "
-                  f"pos {_sgn(cf['pos_diff'], 0)}",
-                  f"indice {_sgn(cf['indice'])} — contesto, non pronostico", "neutral", 0.5,
-                  "Contesto di classifica e forma recente, non un secondo pronostico: indice "
-                  f"con pesi dichiarati a mano ({cf['pesi']}), zero = squadre pari su quei tre "
-                  "numeri. Δ in punti per gara (PPG), differenza reti delle ultime 3 gare (GD3) e "
-                  "posizione in classifica, sempre dal punto di vista della squadra di casa. Sul "
-                  "backtest fuori campione (5.164 gare) questo indice da solo azzecca il favorito "
-                  "nel 49,3% dei casi, il modello pubblicato nel 52,1% (scripts/audit_epv.py).")
+                  _cella_contesto(cf["home_ppg"], cf["home_played"], cf["home_rank"], cf["home_gd3"]),
+                  _cella_contesto(cf["away_ppg"], cf["away_played"], cf["away_rank"], cf["away_gd3"]),
+                  f"PPG {_sgn(cf['ppg_diff'])}",
+                  impatto, "neutral", 0.5,
+                  "Contesto di classifica e forma recente, non un pronostico. Per squadra: punti "
+                  "per gara (la classifica normalizzata per gare giocate; fra parentesi le gare), "
+                  "posizione in classifica e differenza reti delle ultime 3 gare («reti ult. 3»). "
+                  "Il Delta è lo scarto di punti per gara, sempre dal punto di vista della casa. "
+                  "L'indice (da −1 a +1, 0 = pari) combina i tre numeri con pesi dichiarati a mano "
+                  f"({cf['pesi']}); sotto ±{_f(self.FACTOR_CONTEXT_PARITY)} il contesto è "
+                  "sostanzialmente pari e la riga non dichiara una direzione. È un contesto debole: "
+                  "sul backtest fuori campione (5.164 gare) azzecca il favorito nel 49,3% dei casi "
+                  "contro il 52,1% del modello pubblicato (scripts/audit_epv.py).")
 
         # 1. Valore di mercato dei titolari
         try:
@@ -2487,6 +2502,11 @@ class MatchAnalysis:
     FACTOR_CARDS_DELTA: ClassVar[float] = 0.8     # differenza di gialli/gara fra le due squadre
     FACTOR_REF_MIN: ClassVar[int] = 20            # gare in carriera dell'arbitro (fonte FotMob)
     FACTOR_REF_DEV: ClassVar[float] = 0.10        # scarto dalla media di lega delle designazioni
+    #: Fascia «sostanzialmente pari» dell'indice di contesto (docs/59): sotto questa soglia la
+    #: riga non dichiara una direzione. È debole per costruzione — sul backtest fuori campione
+    #: azzecca il favorito nel 49,3% dei casi (`scripts/audit_epv.py`) — quindi una direzione si
+    #: dichiara solo oltre il rumore. Misurata sulle 66 schede: 11 «pari», 55 con una direzione.
+    FACTOR_CONTEXT_PARITY: ClassVar[float] = 0.15
     #: Ordine fisso delle righe, dichiarato in pagina: prima ciò che toglie produzione misurabile,
     #: poi i fattori con effetto misurato sull'archivio (dal più forte), per ultimo il contesto.
     #: Le misure che hanno fissato l'ordine sono in `docs/58` §6 (script `audit_fattori.py`).
@@ -4922,6 +4942,7 @@ class MatchAnalysis:
                 "home_points": int(h_st.get("points", 0)), "away_points": int(a_st.get("points", 0)),
                 "point_diff": int(point_diff), "ppg_diff": round(ppg_diff, 2),
                 "home_ppg": round(h_ppg, 2), "away_ppg": round(a_ppg, 2),
+                "home_played": int(h_st.get("played", 0)), "away_played": int(a_st.get("played", 0)),
                 "pos_diff": int(pos_diff), "home_rank": int(h_st.get("rank", 0)),
                 "away_rank": int(a_st.get("rank", 0)),
                 "home_gd3": int(h_gd3), "away_gd3": int(a_gd3), "gd_diff": int(gd_diff),
