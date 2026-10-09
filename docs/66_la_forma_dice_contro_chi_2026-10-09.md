@@ -77,13 +77,42 @@ Nessuna modifica al modello di previsione o alla sua calibrazione.
   di media, riferimento, giudizio, rango e rimozione della riga. La riga è prima verificata
   presente: nessun test verde perché la sostituzione non aveva trovato nulla.
 
-## 5. Verifica finale
+## 5. Verifica finale — osservata offline, non gli attesi dell'handoff
 
-**In corso:** suite completa, build e gate sul sito. I due test unitari nuovi sono verdi e
-Ruff è pulito. I valori attesi dal passaggio di consegne (760 righe, 2.478 ranghi, 182 giudizi)
-non sono ancora dichiarati come osservati su questa build; saranno aggiornati a fine gate.
+| Gate | Esito |
+|---|---|
+| `python -m pytest -q` | **558 passed** (111,91 s) |
+| `ruff check .` | pulito |
+| `python -m fda.cli build` | **464 schede / 2.364 fixture / 7.510 giocatori** |
+| `python scripts/verify_site.py` | **0 problemi · 200.185 controlli** |
+| `python scripts/resa_375.py` | **27.255 misure · 0 problemi** |
+| `python scripts/parita_schede.py` | **89 schede**, 24 id, 14 voci d'indice; nessuna differenza |
+
+Conteggio dell'HTML generato:
+
+| Lega | Schede | Righe «Avversari affrontati» | Ranghi | Giudizi oltre soglia |
+|---|---:|---:|---:|---:|
+| ENG1 | 65 | 110 | 350 | 24 |
+| ESP1 | 83 | 146 | 530 | 28 |
+| FRA1 | 57 | 96 | 300 | 23 |
+| GER1 | 51 | 84 | 228 | 20 |
+| ITA1 | 64 | 108 | 340 | 17 |
+| NED1 | 75 | 132 | 480 | 26 |
+| POR1 | 69 | 120 | 420 | 35 |
+| **Totale** | **464** | **796** | **2.648** | **173** |
+
+I valori **760 / 2.478 / 182** consegnati come attesi **non sono quelli di questa build**.
+La ricostruzione termina dopo le 22 UTC del 9/10 (già 10/10 per il sito, che usa l'ora
+italiana): cambia la finestra delle schede pre-partita, **89 invece di 71**; il checkout ha
+anche dati più recenti (`5b1119b`, daily delle 22:11). Il numero di giudizi resta una misura,
+non un obiettivo a cui adattare la soglia: **173** sono quelli ottenuti e ricalcolati da [44]
+con le letture temporali e la formula dichiarate al §3. Non si attribuisce l'intero scarto
+al cambio di finestra senza il vecchio commit, che non è disponibile.
+
+Nessun dato Parquet modificato, nessuna richiesta sportiva. Il lavoro è stato salvato e
+pushato anche durante i gate (`4a8d073`), senza lasciare un altro commit solo nel workspace.
 
 ## Prossimo passo
 
-Completare i gate e registrare le misure della build; poi voce **D** usando soltanto i Parquet
-locali, senza richieste alle fonti. Aprire una PR dal ramo della sessione; **merge dell'utente**.
+Voce **D** usando soltanto i Parquet locali, senza richieste alle fonti. PR dal ramo della
+sessione, in bozza finché il lotto non è completo; **merge dell'utente**.

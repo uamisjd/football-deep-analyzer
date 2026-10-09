@@ -1,16 +1,21 @@
 ## 2026-10-09 — Sessione `arena/eb94e8df`: recupero e forma degli avversari
 
-**Fatto:** letto l'handoff corrente e `docs/64` §7–§9; `f5dbdf3` non conservato nel
-clone nuovo. Recuperato `8f454cb` dal ramo remoto, cherry-pick **fd5520d** già pushato:
-registrazione del merge #97 (`docs/13` §9.23). Ultimo daily all'ingresso **37996976659 verde**.
-Ricostruita la voce **B** dalle misure già consegnate, senza ripeterle: Elo storico con
-ricerca binaria, rango degli avversari, media e giudizio solo oltre sd/√n; stesso elenco per
-striscia e riepilogo; [44] estesa e due test unitari nuovi verdi. Dettagli in
+**Fatto:** `f5dbdf3` non conservato nel clone nuovo. Recuperato `8f454cb` dal ramo remoto,
+cherry-pick **fd5520d** subito pushato: merge #97 registrato (`docs/13` §9.23).
+Ricostruita e verificata **B**, senza rifare le misure esplorative: Elo storico con ricerca
+binaria, rango degli avversari, media e giudizio solo oltre sd/√n; stesso elenco per
+striscia e riepilogo; [44] ricalcola anche ranghi e soglia. Dettagli e limiti in
 [`docs/66`](66_la_forma_dice_contro_chi_2026-10-09.md).
 
-**In corso:** suite completa, build, verify_site, resa_375 e parita_schede. **Prossimo passo:**
-registrare i risultati, poi voce D (RPS/Brier contro le quote già in history.parquet, offline).
-PR a fine lotto; **il merge lo fa l'utente**. Nessuna raccolta sportiva e nessun dato modificato.
+**Gate osservati:** pytest **558**, Ruff pulito; build **464/2.364/7.510**;
+verify_site **200.185 · 0 problemi**; resa_375 **27.255 · 0**; parità **89 schede · pulita**.
+HTML: **796 righe, 2.648 ranghi, 173 giudizi**, tutte le sette leghe. Non sono i contatori
+attesi dell'handoff: finestra italiana passata al 10/10 e dati aggiornati; scarto dichiarato
+in docs/66 §5, senza adattare la soglia al conteggio.
+
+**In corso / prossimo passo:** PR in bozza, poi voce D (RPS/Brier contro le quote già in
+history.parquet, offline). Nessuna raccolta sportiva e nessun dato modificato.
+**Decisioni:** nessun cambio di modello; **il merge lo fa l'utente**.
 
 ---
 

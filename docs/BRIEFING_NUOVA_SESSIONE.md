@@ -9,6 +9,14 @@
 
 ## Handoff operativo corrente — 2026-10-09 (il più recente: leggere questo per primo)
 
+- **Aggiornamento successivo, sessione `arena/eb94e8df`:** B ricostruita perché `f5dbdf3`
+  non è nel clone; recuperato e pushato il documento di merge #97 (`8f454cb` → `fd5520d`).
+  [**docs/66**](66_la_forma_dice_contro_chi_2026-10-09.md): Elo storico nella forma, ranghi
+  degli avversari e giudizio solo oltre sd/√n; pytest **558**, tutti i gate verdi. Build
+  attuale **464** schede (finestra italiana già al 10/10): **796 righe / 2.648 ranghi /
+  173 giudizi**, non i contatori attesi della sessione precedente. Prossimo passo **D**:
+  confronto offline RPS/Brier con le quote in `history.parquet`; nessun cambio di ricetta.
+
 - **Lotto chiuso:** revisione della card **«Le due squadre»** nelle schede partita, in quattro
   passaggi, con la **PR #97**. Documento unico: [`docs/64`](64_le_due_squadre_2026-10-09.md)
   (§2 primo giro · §5-§7 finestra alla vigilia · §8 infermeria · §9 pressing su 7 leghe).
@@ -223,6 +231,8 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/62_precedenti_fallback_2026-10-09.md` | **Card «Precedenti» sempre presente**: la card e l'ancora sparivano sulle gare senza h2h (1.924 delle 1.989 fixture pre-match) e fermavano `parita_schede` (run 230, 10-08); ora fallback dichiarato. In produzione con la PR #95. |
 | `docs/63_revisione_affidabilita_daily_2026-10-09.md` | **Revisione affidabilità del daily** (richiesta utente 10-09): 26/43 run rossi in 30 giorni classificati per step e causa radice (24×verify_site «1 assenti» + Sportmediaset 404 → `docs/51`; 1×parita → `docs/62`; 1×pip transitorio); riverifiche strutturali con misure; «si aggiorna da solo: sì» con le prove; nessuna modifica di codice (B.10). |
 | `docs/64_le_due_squadre_2026-10-09.md` | **Card «Le due squadre»** (richiesta utente 10-09, tutte le 446 schede): banda di rumore misurata per il verdetto xPTS (1σ = 1,13×√gare su 502 gare-squadra; 19 verdetti di rumore in meno, 24 contraddizioni card↔narrativa azzerate), rapporto «× la media del campionato» su ogni xG con la **stessa fonte** (1.784, anche NED1/POR1), 4 alias Understat (0 schede con fonti miste), ⌀ media voto nella distinta pre-partita (0 → 1.176 celle), PPDA e riposo spiegati, piè di card riscritto; invariante **[44] `check_due_squadre`**. |
+| `docs/65_handoff_e_coda_fonti_2026-10-09.md` | Handoff dopo #97 e coda B–F: fonti, misure del modello, revisioni delle schede. |
+| `docs/66_la_forma_dice_contro_chi_2026-10-09.md` | Voce B: Elo alla vigilia nella forma, ranghi, giudizio oltre l'errore standard, [44] estesa, recupero della sessione e gate. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |
