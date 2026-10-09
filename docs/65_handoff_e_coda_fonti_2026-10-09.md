@@ -25,6 +25,11 @@ copre struttura, fonti, numeri ricalcolati, finestra, pressing e infermeria su *
 
 ### B — forza dell'avversario nella forma (nessuna fonte nuova)
 
+**Completata sul branch della PR #98:** [docs/66](66_la_forma_dice_contro_chi_2026-10-09.md).
+L'Elo si ricostruisce da `history.parquet` **alla vigilia**, non da `predictions.parquet`
+(rating odierno). Le misure esplorative sono state consegnate dall'utente e non ripetute;
+serie, ranghi, media, soglia sd/√n e gate sono implementati. Le righe sotto sono il piano originario.
+
 La striscia «V V V V P» non dice **contro chi**: quattro vittorie con le ultime quattro non
 valgono quanto con le prime. **L'Elo esiste già**: `predictions.parquet` ha `elo_home`/`elo_away`
 per **133 squadre** (modello interno, usato dall'ensemble `dc_elo_tilt` in
@@ -37,6 +42,10 @@ dell'avversario nel corpus attuale: se è poca, pubblicare solo il ⓘ e non un 
 
 ### C — Clubelo come controllo indipendente (fonte già configurata, mai usata)
 
+> **Bloccata in questo sandbox (verificato il 10/10):** `api.clubelo.com` non è fra gli host
+> raggiungibili (solo github.com, codeload, api.github.com, registry.npmjs.org, pypi.org,
+> files.pythonhosted.org). Serve una sessione con accesso alla fonte; la configurazione c'è già.
+
 `config/sources.yaml` ha la sezione `clubelo` e ogni lega ha `clubelo_country` in
 `config/leagues.yaml`, ma **nessuna riga di codice la usa**. Un CSV al giorno, tutte e 7 le
 leghe. Valore reale: confrontare il **nostro** Elo con uno esterno e dichiarare lo scarto
@@ -44,6 +53,19 @@ leghe. Valore reale: confrontare il **nostro** Elo con uno esterno e dichiarare 
 interno è già informativo, C resta un controllo, non un contenuto.
 
 ### D — quote di chiusura per misurare il modello (fonte già configurata)
+
+**Misurata offline sul branch della PR #98:**
+[docs/67](67_modello_contro_mercato_offline_2026-10-09.md),
+`python scripts/benchmark_quote.py --offline`. Quote già in `history.parquet`, ma complete
+solo in NED1/POR1: **1.071 gare appaiate**, ΔRPS **+0,008807**, ΔBrier **+0,019602**
+(modello grezzo − mercato, entrambi a favore del mercato; IC in docs/67). Non «sette leghe
+verificate»; la fonte esatta e il ripiego delle quote non sono tracciati per riga.
+Zero richieste sportive, nessuna modifica al modello o al workflow mensile. Il piano originario segue.
+
+> **Aggiornamento del 10/10:** la parte **online** (footballdata/Pinnacle su tutte e 7 le leghe)
+> resta bloccata in questo sandbox per gli stessi host di C. In più, `docs/69` §4 riconcilia il
+> ΔRPS di docs/67 (+0,008807, probabilità grezze) con quello di `docs/_audit_modelli.json`
+> (+0,008527, calibrate): stesso campione, stesso mercato, differenza spiegata dalla calibrazione.
 
 `footballdata` è in `config/sources.yaml` e ogni lega ha il suo `footballdata_code`
 (I1, E0, SP1, D1, F1, N1, P1: **tutte e 7**). Oggi il modello si valuta solo contro se stesso
@@ -58,6 +80,21 @@ briefing), quindi usarle come **metro di misura**, non come contenuto.
 2. trend ultime 3-5 gare contro la media di stagione;
 3. agganciare l'assente alla notizia che ne parla (`news.parquet`, **3.873 righe**) per sostituire
    i rientri stimati con quelli annunciati — nella card restano **202 assenti senza numeri**.
+
+### B2 — «forza avv.» storica (rimedio misurato il 10/10, nessuna fonte nuova)
+
+L'anacronismo aperto di `docs/60` §5 ha ora una soluzione misurata: su **4.992** righe della
+tabella «Come arrivano», **4.979 (99,7%)** hanno già il rango Elo storico alla vigilia grazie alla
+serie di B. Piano, misure e costi in [`docs/69`](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md) §2.
+
+### G — decisione sui tre tilt (`absences_tilt`, `rest_tilt`, `market_value_tilt`)
+
+Aperta da `docs/57` §7.2 e `docs/48` §4.1.1: esistono in `models/predict.py`, li chiama solo
+`scripts/audit_modelli.py`. Misure rigenerate il 10/10: il riposo **peggiora** ancora
+(ΔRPS +0,0000787, IC [+0,0000154; +0,000141]); valore dei titolari su **341** gare, solo k=0,03
+distinguibile da zero; assenze su **98** gare con miglioramento monotono in k (campione troppo
+piccolo). Resta falso il commento `predict.py:41` («k calibrato su 5.7k gare»). Protocollo
+preregistrato e strade A/B/C in [`docs/69`](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md) §1.
 
 ### F — sezioni ancora da revisionare (metodo: misura prima/dopo → correzione → invariante)
 
@@ -89,9 +126,13 @@ tutte le verifiche. I tetti sono **per run** (FotMob 600, notizie 200) e non c'�
 
 ## 5. Prompt pronto per la sessione nuova
 
-> Continuiamo il lavoro sul portale: leggi `docs/BRIEFING_NUOVA_SESSIONE.md`, la cima di
-> `docs/STATO.md` e `docs/65_handoff_e_coda_fonti_2026-10-09.md`. La revisione della card «Le due
-> squadre» è chiusa e mergiata (PR #97, `docs/64`). Riparti dalla voce **B** della coda: usare
-> l'Elo che già abbiamo per dire contro chi sono arrivati i risultati della forma, con il metodo
-> del progetto (misura prima/dopo → correzione → invariante o test) e parità su tutte e 7 le
-> leghe. Il merge delle PR lo faccio io.
+> **Prompt aggiornato il 2026-10-10 (usare questo).** Continuiamo il lavoro sul portale: leggi
+> `docs/BRIEFING_NUOVA_SESSIONE.md`, la cima di `docs/STATO.md` e
+> `docs/69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md`. B e D sono chiuse nella PR #98
+> (docs/66, docs/67) e revisionate in modo indipendente (docs/68): numeri confermati, tre lacune
+> dei controlli corrette. Parti dalla **voce G** — la decisione sui tre tilt, con la correzione
+> del commento falso in `predict.py:41` e la verifica del campione delle assenze (137 → 98) — e
+> poi dalla **B2**, «forza avv.» storica (rimedio già misurato: 4.979 righe su 4.992). Metodo del
+> progetto: misura prima/dopo → correzione → invariante o test, parità su tutte e 7 le leghe.
+> Le voci C e D-online sono bloccate qui: gli host esterni non sono raggiungibili dal sandbox.
+> Il merge delle PR lo faccio io.

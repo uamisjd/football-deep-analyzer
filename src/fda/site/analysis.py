@@ -11,6 +11,7 @@ import ast
 import itertools
 import math
 import re
+from bisect import bisect_left
 from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -19,10 +20,11 @@ from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
+import penaltyblog as pb
 from scipy.stats import poisson
 
 from ..config import leagues, load_leagues_config
-from ..models.predict import wilson_interval
+from ..models.predict import EloModel, wilson_interval
 from ..sources.news import (
     TOPIC_LABELS,
     TOPIC_WEIGHTS,
@@ -1399,6 +1401,126 @@ class MatchAnalysis:
             res = "V" if gf > ga else ("N" if gf == ga else "P")
             opp = r.away_name if is_home else r.home_name
             out.append({"date": r.utc_kickoff, "opponent": opp, "home": is_home, "gf": int(gf), "ga": int(ga), "res": res})
+        return out
+
+    ELO_MIN_TEAMS: ClassVar[int] = 10  # riferimento di lega, mai due sole avversarie
+
+    def _elo_series(self) -> dict[str, tuple[list[int], list[float]]]:
+        """Elo **prima** di ogni gara, in una passata sullo storico (docs/66).
+
+        Stessa libreria e stessi parametri del modello, nomi canonici fra mirror e
+        calendario. L'ultimo punto, a +infinito, conserva il rating dopo l'ultima gara:
+        fra due gare vale il rating PRIMA della successiva, non quello prima della
+        precedente (che perderebbe un risultato). Nessun fit per scheda né rete.
+        """
+        cache = getattr(self, "_elo_series_cache", None)
+        if cache is not None:
+            return cache
+        series: dict[str, tuple[list[int], list[float]]] = {}
+        self._elo_series_cache = series
+        cols = {"date", "home", "away", "home_goals", "away_goals"}
+        if self.history.empty or not cols <= set(self.history.columns):
+            return series
+        hist = self.history.assign(date=pd.to_datetime(self.history.date, utc=True,
+                                                       errors="coerce"))
+        hist = hist.dropna(subset=sorted(cols)).sort_values("date", kind="stable")
+        elo = pb.ratings.Elo(k=EloModel.k,
+                             home_field_advantage=EloModel.home_field_advantage)
+        for row in hist.itertuples(index=False):
+            home, away = canonical(row.home), canonical(row.away)
+            for team in (home, away):
+                dates, values = series.setdefault(team, ([], []))
+                dates.append(row.date.value)
+                values.append(float(elo.get_team_rating(team)))
+            result = 0 if row.home_goals > row.away_goals else (
+                1 if row.home_goals == row.away_goals else 2)
+            elo.update_ratings(home, away, result)
+        for team, (dates, values) in series.items():
+            dates.append(pd.Timestamp.max.value)
+            values.append(float(elo.get_team_rating(team)))
+        return series
+
+    def team_elo(self, name: str, before: datetime) -> float | None:
+        """Rating alla vigilia, con ricerca binaria; mai l'Elo di oggi su gare passate.
+
+        A parità di istante il risultato è escluso. I CSV più vecchi danno solo la data
+        (mezzanotte): per quei punti non si usa il risultato durante lo stesso giorno,
+        del quale non conosciamo l'ora di gioco. Squadra non censita → nessun numero.
+        """
+        series = self._elo_series().get(canonical(name))
+        cut = pd.to_datetime(before, utc=True)
+        if series is None or pd.isna(cut) or cut.value < series[0][0]:
+            return None
+        dates, values = series
+        day = cut.normalize().value
+        index = bisect_left(dates, day)
+        if dates[index] != day:
+            index = bisect_left(dates, cut.value)
+        return values[index]
+
+    def league_elo(self, league_id: Any, before: datetime) -> dict[str, Any] | None:
+        """Media, sd di popolazione e ranghi Elo delle squadre della lega alla stessa data.
+
+        Il calendario identifica la lega (non ``match_info``, docs/64); non si mescolano
+        leghe né si usa la classifica odierna. I pari rating hanno lo stesso rango.
+        """
+        cut = pd.to_datetime(before, utc=True)
+        cache = getattr(self, "_league_elo_cache", None)
+        if cache is None:
+            cache = self._league_elo_cache = {}
+        key = (league_id, cut)
+        if key in cache:
+            return cache[key]
+        cache[key] = None
+        if league_id is None or pd.isna(cut) or self.fixtures.empty \
+                or "league_id" not in self.fixtures.columns:
+            return None
+        fx = self.fixtures[self.fixtures.league_id == league_id]
+        names = {canonical(t) for t in pd.concat([fx.home_name, fx.away_name]).dropna()}
+        ratings = {t: value for t in sorted(names)
+                   if (value := self.team_elo(t, cut)) is not None}
+        if len(ratings) < self.ELO_MIN_TEAMS:
+            return None
+        ranks = {}
+        rank, previous = 0, None
+        for index, (team, value) in enumerate(
+                sorted(ratings.items(), key=lambda item: (-item[1], item[0])), 1):
+            if value != previous:
+                rank = index
+            ranks[team] = rank
+            previous = value
+        values = list(ratings.values())
+        out = {"avg": float(np.mean(values)), "sd": float(np.std(values)),
+               "n": len(values), "ratings": ratings, "ranks": ranks}
+        cache[key] = out
+        return out
+
+    def form_strength(self, team_id: int, before: datetime, n: int = 5) -> dict[str, Any]:
+        """La stessa forma, arricchita con la forza di chi c'era dall'altra parte.
+
+        Avversari valutati prima di **ognuna delle loro gare** della striscia; riferimento
+        di lega alla vigilia della partita descritta. La soglia è sd_lega/√gare effettive,
+        non un numero di punti arbitrario. Se manca un Elo, non si spaccia la media di un
+        sottoinsieme per quella dell'intera striscia (i ranghi noti restano leggibili).
+        """
+        rows = self.form(team_id, before, n=n)
+        league_id = self._team_league_id(team_id)
+        for row in rows:
+            row["opp_elo"] = self.team_elo(row["opponent"], row["date"])
+            league = self.league_elo(league_id, row["date"])
+            row["opp_rank"] = (league["ranks"].get(canonical(row["opponent"]))
+                               if league else None)
+        out = {"form": rows, "n": len(rows), "avg": None, "league_avg": None,
+               "diff": None, "se": None, "label": None}
+        ref = self.league_elo(league_id, before)
+        if not rows or not ref or any(row["opp_elo"] is None for row in rows):
+            return out
+        avg = float(np.mean([row["opp_elo"] for row in rows]))
+        diff = avg - ref["avg"]
+        se = ref["sd"] / math.sqrt(len(rows))
+        label = (("più duro della media" if diff > 0 else "più morbido della media")
+                 if abs(diff) > se else None)
+        out.update(avg=avg, league_avg=ref["avg"], diff=diff, se=se, label=label)
         return out
 
     def form_insights(self, team_id: int, kickoff: Any, team_name: str) -> list[dict[str, Any]]:
@@ -5630,8 +5752,9 @@ class MatchAnalysis:
         # Calcolata una volta sola: la riusa anche la narrativa, che non ripete più la serie per
         # lettere. Il badge compare da 3 gare giocate in su, come la riga obbligatoria della
         # narrativa (`docs/20` §13): due pallini non sono una forma.
-        home_form = self.form(home_id, kickoff)
-        away_form = self.form(away_id, kickoff)
+        home_strength = self.form_strength(home_id, kickoff)
+        away_strength = self.form_strength(away_id, kickoff)
+        home_form, away_form = home_strength["form"], away_strength["form"]
         ctx: dict[str, Any] = {
             "match_id": match_id, "league_id": int(f["league_id"]), "round": _val(f, "round"),
             "utc_kickoff": kickoff, "status": status,
@@ -5639,6 +5762,7 @@ class MatchAnalysis:
             "home_name": f["home_name"], "away_name": f["away_name"],
             "home_goals": _goals(info, "home_goals", f), "away_goals": _goals(info, "away_goals", f),
             "home_form": home_form, "away_form": away_form,
+            "home_form_strength": home_strength, "away_form_strength": away_strength,
             "home_form_badge": self.form_summary(home_form) if len(home_form) >= 3 else None,
             "away_form_badge": self.form_summary(away_form) if len(away_form) >= 3 else None,
             "home_rest": self.rest_days(home_id, kickoff), "away_rest": self.rest_days(away_id, kickoff),

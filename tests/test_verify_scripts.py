@@ -468,6 +468,18 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
         for tid, pas in ((passata["home_id"], 300.0), (passata["away_id"], 240.0))
         for k, v in (("own_half_passes", pas), ("matchstats.headers.tackles", 40.0),
                      ("interceptions", 10.0), ("fouls", 10.0))])
+    # docs/66: una vera popolazione di lega (≥10 squadre) e uno storico sintetico.
+    # Senza questi dati la riga della forza non uscirebbe e la manomissione sarebbe vacua.
+    st.upsert("fixtures", [dict(_fixture_lontana(5910000 + i, 15, f"Prova {2*i}",
+                                               f"Prova {2*i+1}", now),
+                               home_id=990000 + 2*i, away_id=990001 + 2*i) for i in range(4)])
+    from fda.teams import canonical
+    fx = st.read("fixtures")
+    names = sorted({canonical(t) for t in [*fx.home_name, *fx.away_name]})
+    st.upsert("history", [{"league_key": "ITA1", "season": "2026/2027",
+                           "date": now - timedelta(days=90 - i), "home": name,
+                           "away": names[(i + 1) % len(names)], "home_goals": i % 4,
+                           "away_goals": 1} for i, name in enumerate(names)])
     out = tmp_path / "site"
     SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
     st.close()
@@ -530,6 +542,42 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
                rotta(originale.replace(f'">{press.group(1)}</span>', '">9,99</span>', 1)))
     assert any("indici di pressione stampati" in f for f in
                rotta(originale.replace("Passaggi che l'avversario", "Qualcos'altro", 1)))
+
+    # 10ter) forza degli avversari: media, riferimento, giudizio, rango e assenza della riga.
+    assert 'Avversari affrontati: forza media <b>' in originale
+    assert 'class="form-opp-rank"' in originale
+    altered = re.sub(r'(Avversari affrontati: forza media <b>)[\d.]+',
+                     r'\g<1>9.999', originale, count=1)
+    assert any("forza media avversari 9.999" in f for f in rotta(altered))
+    altered = re.sub(r'(</b> contro )[\d.]+( del campionato)',
+                     r'\g<1>9.999\g<2>', originale, count=1)
+    assert any("media Elo di lega 9.999" in f for f in rotta(altered))
+    altered = re.sub(r'(<span class="form-strength-label">)[^<]+',
+                     r'\g<1>giudizio inventato', originale, count=1)
+    assert any("giudizio della forma" in f for f in rotta(altered))
+    altered = re.sub(r'(class="form-opp-rank" title="[^"]*">)\(\d+ª\)',
+                     r'\g<1>(99ª)', originale, count=1)
+    assert any("ranghi/Elo degli avversari" in f for f in rotta(altered))
+    assert any("righe «Avversari affrontati»" in f for f in
+               rotta(originale.replace('class="form-strength mut small"', 'class="rimossa"', 1)))
+
+    # docs/68: i numeri giusti accanto all'avversario sbagliato non sono una forma corretta.
+    altered, replacements = re.subn(
+        r'(<span class="small mut">\d+-\d+ in (?:casa|trasferta) con )([^<]+?)'
+        r'(<span class="form-opp-rank")',
+        r'\g<1>Avversario inventato \g<3>', originale, count=1)
+    assert replacements == 1
+    assert any("elenco della forma" in f for f in rotta(altered))
+    altered, replacements = re.subn(
+        r'(<span class="small mut">)\d+-\d+( in (?:casa|trasferta) con )',
+        r'\g<1>9-9\g<2>', originale, count=1)
+    assert replacements == 1
+    assert any("elenco della forma" in f for f in rotta(altered))
+    altered, replacements = re.subn(
+        r'(<span class="form-dot [VNP]" title=")[^"]*', r'\g<1>Avversario inventato',
+        originale, count=1)
+    assert replacements == 1
+    assert any("pallini/tooltip della forma" in f for f in rotta(altered))
 
     # 10) infermeria: il totale non è la somma della colonna «impatto» (docs/64 §8)
     pillola = ('<span class="mut small" style="display:inline-block;padding:1px 6px;'
@@ -594,3 +642,73 @@ def test_verify_site_due_squadre_finestra_alla_vigilia(tmp_path):
                       lambda self, nome, tid, before=None: senza_taglio(self, nome, tid)):
         fails, _ = vs.check_due_squadre(out, dati)
     assert any("prima del calcio d'inizio" in f for f in fails), fails[:3]
+
+
+def test_verify_site_elo_reference_fermo_alla_vigilia():
+    """L'oracolo del gate non legge la serie del generatore, né anticipa risultati solo-data."""
+    from fda.models.predict import EloModel
+    from fda.teams import canonical
+
+    vs = _site_module()
+    dates = pd.to_datetime(["2026-08-01 18:00", "2026-08-08 00:00", "2026-08-09 18:00"],
+                           utc=True)
+    history = pd.DataFrame([
+        {"date": dt, "home": name, "away": "Napoli", "home_goals": h, "away_goals": a}
+        for dt, name, h, a in zip(dates, ["Inter", "Internazionale", "Inter"],
+                                 [2, 0, 4], [0, 3, 0], strict=True)])
+    fixtures = pd.DataFrame([{"league_id": 55, "home_name": "Internazionale", "away_name": "Napoli"}])
+    noon = dates[1] + pd.Timedelta(hours=12)
+    tomorrow = dates[1] + pd.Timedelta(days=1)
+    last = dates[-1] + pd.Timedelta(hours=3)
+    cuts = [last, noon, tomorrow, dates[0], dates[0] - pd.Timedelta(days=1)]  # disordinati
+    ratings, leagues = vs.elo_reference_at_dates(history.iloc[::-1], fixtures, cuts, min_teams=2)
+    canonical_history = history.assign(home=history.home.map(canonical))
+    after_first = EloModel().fit(canonical_history.head(1)).ratings["Inter"]
+    after_second = EloModel().fit(canonical_history.head(2)).ratings["Inter"]
+    assert ratings[dates[0] - pd.Timedelta(days=1)] == {}
+    assert ratings[dates[0]]["Inter"] == 1500
+    assert ratings[noon]["Inter"] == after_first
+    assert ratings[tomorrow]["Inter"] == after_second
+    assert ratings[last]["Inter"] == EloModel().fit(canonical_history).ratings["Inter"]
+    assert ratings[noon]["Inter"] != ratings[last]["Inter"]  # copie, non un dizionario mutabile
+    assert leagues[(55, dates[0])]["ranks"] == {"Inter": 1, "Napoli": 1}
+    assert (55, dates[0] - pd.Timedelta(days=1)) not in leagues
+    assert vs.elo_reference_at_dates(history, fixtures, cuts)[1] == {}  # minimo reale = 10
+    assert vs.elo_reference_at_dates(pd.DataFrame(), fixtures, cuts) == ({}, {})
+
+
+def test_verify_site_forma_non_autocertifica_elo_odierno(tmp_path, monkeypatch):
+    """Se generatore e gate condividono team_elo guasto, il vecchio [44] dava ancora verde."""
+    from fda.site.analysis import MatchAnalysis
+    from fda.site.build import SiteBuilder
+    from tests.test_oggi_depth import KICK, _store
+
+    vs = _site_module()
+    st = _store(tmp_path)
+    st.upsert("fixtures", [
+        {"match_id": 200 + i, "league_id": 55, "home_id": 30 + 2*i, "away_id": 31 + 2*i,
+         "home_name": f"Pari {2*i}", "away_name": f"Pari {2*i+1}", "utc_kickoff": KICK,
+         "status": "scheduled"} for i in range(4)])
+    names = ["Alpha", "Beta"] + [f"Pari {i}" for i in range(8)]
+    st.write("history", pd.DataFrame([
+        {"date": KICK - pd.Timedelta(days=100 - i), "home": name,
+         "away": names[(i + 1) % 10], "home_goals": i % 4, "away_goals": 0}
+        for i, name in enumerate(names)] + [
+        {"date": KICK + pd.Timedelta(days=1), "home": "Beta", "away": "Alpha",
+         "home_goals": 10, "away_goals": 0}]))
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({100})
+    assert vs.check_due_squadre(out, tmp_path / "processed")[0] == []
+    page = out / "partite" / "100.html"
+    original = page.read_text()
+    # Il guasto viene lasciato attivo ANCHE durante la verifica: l'oracolo deve essere separato.
+    method = MatchAnalysis.team_elo
+    monkeypatch.setattr(MatchAnalysis, "team_elo", lambda self, name, before:
+                        method(self, name, KICK + pd.Timedelta(days=2)))
+    SiteBuilder(store=st, out_dir=out).build_match_pages({100})
+    assert re.findall(r'class="form-opp-rank"[^>]*>', page.read_text()) != re.findall(
+        r'class="form-opp-rank"[^>]*>', original)
+    fails, _ = vs.check_due_squadre(out, tmp_path / "processed")
+    assert any("ranghi/Elo degli avversari" in f for f in fails)
+    assert any("forza media avversari" in f for f in fails)
+    st.close()

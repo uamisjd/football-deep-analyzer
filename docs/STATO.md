@@ -1,3 +1,100 @@
+## 2026-10-10 — Coda verificata e handoff post-merge (`arena/eb94e8df`)
+
+L'utente ha chiesto se resta altro in sospeso, se le voci sono quelle giuste e se farle ora o
+dopo il merge. **Decisioni registrate: merge della PR #98 dell'utente; nella sessione nuova prima
+la decisione sui tre tilt, poi «forza avv.» storica.** Questo turno non ha toccato il codice di
+produzione: solo verifiche e documenti ([`docs/69`](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md)).
+
+**Verificato nel codice, non solo nei documenti.** `absences_tilt`, `rest_tilt` e
+`market_value_tilt` esistono in `models/predict.py` e li chiama **solo** `scripts/audit_modelli.py`:
+`predict_matches()` no, quindi la card dice ancora il vero. Clubelo è configurato in tutte e 7 le
+leghe e **nessuna riga di codice lo usa**; `api.clubelo.com` non è raggiungibile da questo sandbox
+(come footballdata per il benchmark live e la sonda sul valore dei titolari): le tre voci sono
+bloccate qui, non rimandate per scelta. `docs/58` esiste **due volte** (collisione confermata).
+
+**Misure nuove di oggi.** (1) Rimedio per l'anacronismo di `docs/60` §5: su **4.992** righe della
+tabella «Come arrivano», **4.979 (99,7%)** hanno già rango ed Elo storici alla vigilia con la serie
+di B — zero fonti nuove, una build + gate. (2) Audit dei modelli **rigenerato offline** sui dati
+correnti: il riposo **peggiora ancora** (ΔRPS +0,0000787, IC95 [+0,0000154; +0,000141], 1.591 λ
+modificate su 5.895); il valore dei titolari ha **341** gare e solo k=0,03 distinguibile da zero
+(il k=0,12 in produzione no); le assenze hanno **98** gare con miglioramento monotono in k, senza
+ottimo interno → campione troppo piccolo per promuovere. Il campione delle assenze era 137 nello
+snapshot del 2026-09-20: **causa non isolata, da verificare**. (3) I due ΔRPS «modello contro
+mercato» del repo sono riconciliati: +0,008807 (grezzo, `docs/67`) contro +0,008527 (calibrato,
+audit); ricontando oggi con la calibrazione esce **+0,008530**, il mercato è identico nelle tre
+misure (0,178533802717564) e gli SHA-256 degli input coincidono con `docs/67` — il benchmark
+rieseguito riproduce ogni valore **bit per bit**. (4) Il commento `predict.py:41` («k calibrato su
+5.7k gare») è **ancora falso**: il dato esiste per 341 gare. (5) Il clone è **shallow (1 taglio)**:
+`git log --diff-filter=A` attribuisce ogni file al commit base, non leggere lì la provenienza.
+
+**Prossimo passo:** merge della PR #98 (dell'utente); poi voce **G** (tilt: commento falso,
+campione assenze, protocollo preregistrato) e **B2** («forza avv.» storica). Nessuna raccolta
+sportiva, nessuna modifica di ricetta, nessuna calibrazione nuova in questo turno.
+
+---
+
+## 2026-10-10 — Revisione indipendente della PR #98 (`arena/eb94e8df`)
+
+**Verificato offline:** Elo confrontato con **246 fit su prefissi realmente troncati**,
+305 date, **8.191 confronti · 0 differenze**; tutti i **796 riepiloghi** ricontati dal calendario;
+RPS/Brier indipendenti su 1.071 gare confermano docs/67. **Conteggi chiariti:** con la data
+italiana fissata al 9/10 tornano 446 schede / 760 righe / 2.478 ranghi, ma **169 giudizi**,
+non 182. Al 10/10: 464 / 796 / 2.648 / 173. History e fixtures sono gli stessi byte dello
+snapshot precedente: corretta in docs/66 l'attribuzione generica ai «dati più recenti».
+
+**Corrette tre lacune dei controlli, dimostrate prima del codice:** [44] accettava un nome
+avversario alterato (0 → 1 problema sul caso reale) e poteva condividere una regressione
+all'Elo odierno con il generatore (0 → 9); ora usa un oracolo temporale indipendente e
+ricontrolla lista, punteggi, sede e pallini dal calendario. Il benchmark accettava una lega
+vuota/spazi: ora la rifiuta. **Nessuna modifica a generatori, template, modelli o Parquet**;
+JSON del benchmark prima/dopo identico. Dettagli:
+[`docs/68`](68_revisione_forma_mercato_2026-10-10.md).
+
+**Gate finali della revisione:** **568 test** (117,41 s), Ruff pulito; `verify_site`
+**202.969 · 0 problemi**; resa_375 **27.255 · 0**; parità **89 schede · pulita**. CI del codice
+**4d2d5e9** verde (run `38003264484` / `38003261585`). Gate sul sito già generato, non una nuova
+build: nessun file di `src/` è cambiato. Il benchmark prima/dopo è identico, inclusi gli IC.
+
+**Prossimo passo:** PR #98 aggiornata; verificare i check dell'ultimo commit e lasciare il
+**merge all'utente**. Nessuna richiesta sportiva o nuova calibrazione. Il 182 resta non
+riprodotto, non nascosto nel cambio di data; i 169/173 sono verificati dal calcolo indipendente.
+
+---
+
+## 2026-10-09 — Sessione `arena/eb94e8df`: recupero e forma degli avversari
+
+**Fatto:** `f5dbdf3` non conservato nel clone nuovo. Recuperato `8f454cb` dal ramo remoto,
+cherry-pick **fd5520d** subito pushato: merge #97 registrato (`docs/13` §9.23).
+Ricostruita e verificata **B**, senza rifare le misure esplorative: Elo storico con ricerca
+binaria, rango degli avversari, media e giudizio solo oltre sd/√n; stesso elenco per
+striscia e riepilogo; [44] ricalcola anche ranghi e soglia. Dettagli e limiti in
+[`docs/66`](66_la_forma_dice_contro_chi_2026-10-09.md).
+
+**Gate osservati:** pytest **558**, Ruff pulito; build **464/2.364/7.510**;
+verify_site **200.185 · 0 problemi**; resa_375 **27.255 · 0**; parità **89 schede · pulita**.
+HTML: **796 righe, 2.648 ranghi, 173 giudizi**, tutte le sette leghe. Non sono i contatori
+attesi dell'handoff: finestra italiana passata al 10/10 e dati aggiornati; scarto dichiarato
+in docs/66 §5, senza adattare la soglia al conteggio.
+
+**Voce D completata offline:**
+[`docs/67`](67_modello_contro_mercato_offline_2026-10-09.md). Modalità `--offline` nel benchmark
+esistente: RPS/Brier, IC appaiati, alias su entrambi i lati, join uno-a-uno, copertura e scarti.
+**1.071 gare NED1/POR1** (le altre cinque leghe non hanno quote complete): RPS **0,187340**
+modello contro **0,178534** mercato, Δ **+0,008807**; Brier **0,563247** contro **0,543645**,
+Δ **+0,019602**; IC95 positivi su entrambe le metriche e leghe. Confronto sul **grezzo** fuori
+campione, non sul calibrato odierno; provenienza/ripiego delle quote non tracciati per riga.
+Quattro test tematici verdi, Ruff pulito. Nessuna nuova raccolta, nessun dato o modello modificato.
+
+**Chiusura del lotto:** suite completa finale **562 passed** (106,85 s), Ruff pulito;
+**otto test del benchmark**, compresi i quattro preesistenti. CI del codice finale **d180d09**
+verde (run `38000587938`, 1m23s). Gate del sito sopra già verdi sul codice definitivo:
+D non modifica il sito. **PR #98 completa**, dal ramo `arena/eb94e8df-football-deep-analyzer`;
+verificare sempre i check dell'ultimo commit nella PR prima del merge. Anteprima locale: porta 3000.
+**Prossimo passo / decisioni:** **merge esclusivamente dell'utente**. Nessuna richiesta sportiva
+aggiuntiva necessaria; non promuovere modelli sulla base di questa misura a due leghe.
+
+---
+
 **Ultimo aggiornamento:** 2026-10-09 (sessione `arena/014bd558`, **revisione della card «Le due squadre»**, richiesto dall'utente: «fai una revisione accurata… deve valere per ogni partita, senza dimenticarne nessuna») — **Documento `docs/64`; ramo `arena/014bd558-football-deep-analyzer`.** Sei difetti misurati e corretti sulla card più densa della scheda (446 schede, 892 riquadri, 7 leghe): **(1) il verdetto xPTS era una soglia fissa a ±2 punti sotto il rumore della misura** — sd(punti − xPTS) su una singola gara = **1,133** (502 gare-squadra Understat), quindi la banda 1σ è 1,13×√gare (±2,5 dopo 5 gare, ±3,0 dopo 7): ora card, narrativa pre-partita e «Clima del club» leggono la stessa `xpts_reading()`, **19 verdetti su 64 spariscono perché erano caso** (0 nuovi) e le **24 squadre con verdetto in card negato dalla narrativa della stessa pagina vanno a 0**; **(2) i numeri di stagione non si rapportavano a nulla** → ogni xG creato/concesso esce con «× la media del campionato», calcolata **sulla stessa fonte** (Understat e FotMob non sono confrontabili: Bundesliga 1,959 contro 1,791 xG per gara-squadra) → **1.784 riferimenti, 2 per riquadro, parità piena anche per Eredivisie e Liga Portugal**; **(3) quattro grafie Understat non agganciate** (`Parma Calcio 1913`, `RasenBallsport Leipzig`, `FC Cologne`, `Borussia M.Gladbach`) facevano confrontare **due fonti xG diverse nella stessa scheda** (3 schede) → 0; **(4) la distinta pre-partita aveva la colonna voto sempre vuota** (0 titolari su 1.210: il voto di gara non esiste ancora) → ⌀ media di stagione **nostra**, che copre 1.195 su 1.210 contro il 68% della `seasonRating` FotMob (38% in Serie A) ed è la stessa base della classifica della scheda → **1.176 celle dove c'era il vuoto**; **(5) «PPDA 8,5 alto»** (l'aggettivo sembrava riferito al numero) → «pressing alto · lega 13,3», soglie e media nel ⓘ, e il `n.d.` dice che il PPDA lo pubblica solo Understat, 5 leghe su 7; **(6) riposo**: la data dell'ultima gara esce sempre (760 riquadri) e la coppa si chiama col suo nome (40) invece del generico «coppe incluse» (37 → 0), via gli aggettivi «ampio»/«corto» che erano una terza soglia incoerente. In più: forma con verso dichiarato («Forma (campionato, gol fatti-subiti)», tooltip «in casa contro Monza: 4-1»), valore dei titolari attribuito alla distinta **FotMob** e non a Transfermarkt (mai interrogato), **piè di card riscritto** (spiegava «Ruolo n.d.», stringa mai stampata, e taceva sui quattro riquadri). **Due ipotesi misurate e scartate (B.10):** il campione xG non è in ritardo sulla classifica (gap 0 su 132 squadre; unica eccezione il Cagliari, dichiarata nel ⓘ) e la griglia dentro `{% if xg %}` non fa sparire il riposo in nessuna scheda reale. **Invariante nuova [44] `check_due_squadre`**: su **tutte** le pagine ricalcola dai Parquet fonte, xG creati/concessi, campione, xPTS/punti/scarto, PPDA e rapporti di lega, e confronta il verdetto con `xpts_reading` → **446 pagine, 892 riquadri, 892 riferimenti, 0 problemi**. **Gate:** `pytest` **549 passed** (+9, fra cui 5 test nuovi e la sezione xPTS di `test_oggi_depth` riscritta), `ruff` pulito, `fda build` **446/2.364/7.498** (4m58s), `verify_site` **0 problemi · 185.117 controlli** (erano 169.967), `parita_schede` **71 schede, nessuna differenza** (min 88% della mediana), `resa_375` **26.628 · 0**. HTML letto a mano su entrambe le fonti (`5749694` Understat, `5781769` FotMob). **Nessuna richiesta alle fonti esterne**; nessun file di dati toccato.
 
 **Secondo giro sulla stessa card (richiesta utente: «verifica che sia tutto corretto… mi sembra che ci sia qualche errore»):** l'aritmetica era giusta — **892 celle ricalcolate dai Parquet con codice indipendente, 0 discordanze**, `len(xg)==len(xga)` ovunque, media xG di lega = media xGA a meno di 1e-15, nessuna gara di coppa in `match_info` — ma **la finestra temporale era sbagliata**: `season_xg` leggeva tutta la stagione raccolta, quindi **750 riquadri su 750 delle schede già giocate (100%) mostravano medie che includevano gare successive alla partita descritta** (mediana 3 gare dal futuro, massimo 7; scostamento mediano 0,23 xG/gara, 90° pct 0,74, massimo **3,39**; 130 riquadri descrivevano squadre che a quella data non avevano ancora giocato), mentre la riga «Forma» della stessa card si fermava correttamente alla vigilia — due finestre diverse a cinque centimetri di distanza (es. Frankfurt–Augsburg del 6/9: «Augsburg 2,14 xG su 4 gare», tre delle quali giocate dopo). **Corretto:** `season_xg`/`season_style`/`_season_xg_split`/`_league_xg_reference` accettano `before` e la scheda passa il proprio calcio d'inizio **anche al riferimento di lega**; allineati tutti i consumatori della pagina (card, «Clima del club», «Fattori», «Scontro tattico», radar) così non esistono due versioni dello stesso numero; **sulle 71 schede pre-partita non cambia nulla** (verificato squadra per squadra). In più, due soglie misurate: il **rapporto di lega** si pubblica da **3 gare** in su (sd xG 1,036 su media 1,692 → errore standard del rapporto ±0,61× dopo 1 gara, ±0,43× dopo 2; 253 riquadri ora lo dichiarano invece di stamparlo) e l'**etichetta del pressing** idem (sd PPDA 6,50 → ±6,5 su 1 gara contro fasce larghe 3 punti; 192 riquadri col solo numero, errore standard sempre nel ⓘ); la **griglia non è più annidata in `{% if xg %}`**, così le 130 squadre senza gare precedenti dichiarano il vuoto e **conservano la casella del riposo** (892 su 892) — chiusa anche la fragilità latente di `docs/64` §6; piè di card che dichiara «tutti i numeri sono fermi alla vigilia di questa partita». **[44] estesa**: ricalcola il campione dal calendario e da Understat **senza passare da `season_xg`**, così una regressione del codice si vede anche con l'HTML coerente col codice rotto (test che simula proprio quella regressione). **Gate rifatti:** `pytest` **553 passed**, `ruff` pulito, `fda build` 446/2.364/7.498 (5m22s), `verify_site` **0 problemi · 184.245 controlli** ([44] 446 pagine · 762 riquadri · 498 riferimenti), `parita_schede` nessuna differenza, `resa_375` **26.565 · 0**. Dettaglio in `docs/64` §7.
@@ -31,6 +128,14 @@
 **Ultimo aggiornamento:** 2026-10-07, notte (sessione `arena/aaa98843`, revisione delle schede partita — **seconda coppia, «Scontro tattico» + «Fatti rilevanti»**, richiesta dall'utente prima del merge) — **Documento `docs/57` §8-§9; ramo `arena/aaa98843-football-deep-analyzer`, commit `f8a29eb` (catena `a6e829e` → `f8a29eb`), PR #91 estesa verso `main` (merge = utente, regola D).** **«Scontro tattico»:** il radar stampava `50 (n.d.)` dove il dato mancava — **80 celle** (su 66 schede) con un numero inventato e la barra al 50%, es. Feyenoord–AZ con pressing **e** profondità assenti in entrambe le colonne → ora `n.d.` senza barra né numero (`norm_*` → `None`); piè di card «100 = migliore in lega su quella metrica» **falso** (le ancore sono fisse: attacco 0,5×→0 e 1,5×→100, difesa invertita, PPDA 8→100 e 20→0, profondità 2→0 e 10→100, palle inattive 10%→0 e 60%→100) → riscritto + **un ⓘ per riga** con ancora, verso e unità (compreso «palle inattive % = dipendenza, non qualità»); banner fisso «Confronto limitato a xG e profondità» **anche dove mancava la profondità** (145 delle 162 schede col banner mancavano di tutto il blocco Understat) → nota costruita dai valori presenti («manca PPDA, PPDA concesso, passaggi profondi e passaggi profondi subiti per entrambe le squadre», 145 schede, o «per una delle due», 17); intervalli col trattino ASCII → **en dash**, con l'invariante `RANGE_ASCII` in [27] (0 in tutto il sito): le **375** occorrenze vere erano in `#lettura` («xG 0,75-0,94») e **1** in `info.html` («0,19-0,20», mentre `accuracy.html` scriveva già «0,19–0,20»), mentre la misura «101 in `#scontro`, 90 in `#scomposizione`» scritta in §6 **non si riproduce** ed è stata corretta nel documento. **«Fatti rilevanti»:** i fatti FotMob sono una **fotografia scattata alla raccolta** e invecchiano — **79 fatti su 176 verificabili non tornavano** coi nostri risultati (Atalanta «4 gol nelle ultime 5» contro 3 reali; «Athletic Club imbattuta da 5» con una sconfitta dentro) e la famiglia «forma» pesava **181 delle 272 voci pubblicate (67%)** → non si pubblica più da FotMob: al suo posto il **ricalcolo** dalle nostre gare di campionato (`form_facts`, finestra 5, minimo 3 gare), con **due gruppi dichiarati** in card (`id="fatti-dati"`: «dai nostri risultati · campionato, ricalcolati a ogni build»; `id="fatti-fotmob"`: «fotografia al momento della raccolta»); il record «maggior numero di porte inviolate (N)» si pubblica **solo se N regge al ricalcolo** (numero nostro **e** massimo di lega — 11 su 11 verificate, 0 rifiutate); `stato.html` aggiornato (etichetta «Curiosità» → «Fatti rilevanti», contatori nuovi: **188** voci di famiglia ricalcolate da noi, **0** record rifiutati). **Effetto sulle pagine (66 schede pre-partita):** voci **272 → 326** (258 nostre · 68 FotMob), 59 schede con entrambi i gruppi e 7 col solo gruppo nostro (senza il ricalcolo sarebbero rimaste senza card); peso della card 4,0% del visibile, mediana visibile della scheda **21.084 → 21.680** caratteri. **Verificatori nuovi:** **[42]** rifà le voci «nostre» dai Parquet e ricalcola i record (258 + 68 voci, 535 controlli) e rifiuta la famiglia «forma» nel gruppo FotMob; **[22b]** ricalcola le 5 barre del radar (66 schede). **Extra fuori dalle due coppie:** il test `test_transfer_window_stesso_movimento_con_ora_locale` era dipendente dall'ora di esecuzione (falliva dopo le 22 UTC, `06/10/2026` contro `05/10/2026`): ora l'ora del campione è fissa a metà mattina. **Gate (rifatti dopo l'ultima modifica al sorgente):** `pytest` **534 passed**, `ruff` pulito, `fda build` **441/2.364/7.496**, `verify_site` **0 problemi · 164.729 controlli** ([22b] 66 radar, [40] 441, [41] 66, **[42] 258+68 voci**), `parita_schede` senza differenze (66 schede, 24 id, min 19.697 · mediana 21.680), `resa_375` **26.424 misure · 0 problemi**, `prematch_sections` «Scontro tattico» 9,2% · «Fatti rilevanti» 4,0%. **Nessuna richiesta alle fonti esterne in questa sessione** (nessun `collect`, nessuna sonda, nessun daily manuale); nessun file di dati toccato; anteprima del sito sulla porta 3000.
 
 **Prossimo passo:** restano da revisionare le altre sezioni della scheda con lo stesso metodo — **Come arrivano**, **I giocatori che decidono**, **Panchina e posta in gioco**, **Mercato: arrivi e partenze**, **Vita del club**, **Previsione del modello ensemble**, **Precedenti**, **Verifica approfondita** — più i punti aperti di `docs/57` §7 (tre tilt non cablati, valore titolari assente su 42/66, ridondanza duello chiave/radar). Il merge della PR #91 resta dell'utente.
+
+## 2026-10-09 — PR #97 fusa: «Le due squadre» in produzione
+
+Merge eseguito dall'agente su ordine esplicito dell'utente («fai merge»), 21:00:40Z, commit
+`3cef641` (13 file, +1.853/−70). In produzione: finestra alla vigilia su 750 riquadri, infermeria
+che torna con le righe stampate, ruolo sempre dichiarato, **pressing in tutte e 7 le leghe**
+(caselle piene 604 → 760 su 892), invariante **[44]**. Deroga registrata in `docs/13` §9.23.
+Coda e prompt per la sessione nuova: `docs/65_handoff_e_coda_fonti_2026-10-09.md`.
 
 ## 2026-10-09 — Pressing su tutte e 7 le leghe (PR #97)
 

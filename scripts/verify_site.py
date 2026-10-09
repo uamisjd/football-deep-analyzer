@@ -706,6 +706,67 @@ def _pos_pct(v: float, lo_q: float, hi_q: float) -> float:
     return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
 
 
+def elo_reference_at_dates(history: Any, fixtures: Any, cutoffs: Any,
+                           min_teams: int = 10) -> tuple[dict, dict]:
+    """Oracolo [44]: solo risultati già passati, senza usare i lettori Elo del sito.
+
+    Un flusso cronologico di risultati alimenta penaltyblog; a ogni data richiesta si
+    fotografa lo stato **prima** di applicare i risultati di quell'istante. Non usa la
+    serie «prima della gara successiva» né la sua ricerca binaria, così una regressione
+    temporale in ``team_elo`` non può autocertificarsi (docs/68).
+    """
+    import math
+
+    import pandas as pd
+    import penaltyblog as pb
+
+    from fda.models.predict import EloModel
+    from fda.teams import canonical
+
+    required = {"home", "away", "date", "home_goals", "away_goals"}
+    if history.empty or not required <= set(history.columns):
+        return {}, {}
+    hist = history.assign(date=pd.to_datetime(history.date, utc=True, errors="coerce"))
+    hist = hist.dropna(subset=sorted(required)).copy()
+    hist["home"], hist["away"] = hist.home.map(canonical), hist.away.map(canonical)
+    # I vecchi CSV danno solo il giorno: il risultato non è noto durante quel giorno.
+    hist["available_at"] = hist.date.where(
+        hist.date != hist.date.dt.normalize(),
+        hist.date + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1))
+    games = list(hist.sort_values("available_at", kind="stable").itertuples(index=False))
+    first = {}
+    for game in games:
+        for name in (game.home, game.away):
+            first[name] = min(first.get(name, game.date), game.date)
+    cohorts = {lg: {canonical(t) for t in [*g.home_name, *g.away_name] if pd.notna(t)}
+               for lg, g in fixtures.groupby("league_id")}
+    elo = pb.ratings.Elo(k=EloModel.k,
+                         home_field_advantage=EloModel.home_field_advantage)
+    cursor = 0
+    ratings_at, leagues_at = {}, {}
+    for cut in sorted(set(pd.to_datetime(cutoffs, utc=True).dropna())):
+        while cursor < len(games) and games[cursor].available_at < cut:
+            game = games[cursor]
+            result = 0 if game.home_goals > game.away_goals else (
+                1 if game.home_goals == game.away_goals else 2)
+            elo.update_ratings(game.home, game.away, result)
+            cursor += 1
+        # Copia, non riferimento al dizionario mutabile della libreria; prima del debutto
+        # non si inventa un rating. Al debutto esatto vale il prior della libreria (1500).
+        ratings = {t: float(elo.get_team_rating(t)) for t, start in first.items() if start <= cut}
+        ratings_at[cut] = ratings
+        for lg, names in cohorts.items():
+            population = {t: ratings[t] for t in names if t in ratings}
+            if len(population) < min_teams:
+                continue
+            values = list(population.values())
+            avg = math.fsum(values) / len(values)
+            sd = math.sqrt(math.fsum((v - avg) ** 2 for v in values) / len(values))
+            ranks = {t: 1 + sum(v > value for v in values) for t, value in population.items()}
+            leagues_at[(lg, cut)] = {"avg": avg, "sd": sd, "ranks": ranks, "ratings": population}
+    return ratings_at, leagues_at
+
+
 def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
     """[44] card «Le due squadre»: presente su **ogni** scheda e con i numeri ricalcolati.
 
@@ -734,13 +795,19 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
       «impatto» stampata sotto (`docs/64` §8: prima sommava le stime mentre le righe
       mostravano il grezzo, e non tornava in 101 pannelli su 118), e ogni riga dichiara il
       ruolo (o «ruolo n.d.»);
+    * **forza nella forma** — nomi, risultati, sede e ordine delle gare dal calendario;
+      ranghi ed Elo storici da un oracolo cronologico indipendente da ``team_elo`` e
+      ``league_elo``; media, riferimento e giudizio senza chiamare ``form_strength``;
     * **testi** — nessuna attribuzione a Transfermarkt (il valore è della distinta FotMob) e
       nessuna stringa fantasma nel piè di card.
     """
+    import math
+
     import pandas as pd
 
     from fda.site.analysis import MatchAnalysis
     from fda.store import Store
+    from fda.teams import canonical
 
     fails: list[str] = []
     checks = 0
@@ -759,6 +826,13 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
                        _d=pd.to_datetime(us["date"], utc=True, errors="coerce"))
     fin_cal = fx[fx.status == "finished"].copy()
     fin_cal["_ko"] = pd.to_datetime(fin_cal.utc_kickoff, utc=True, errors="coerce")
+    # Date delle schede e delle gare della forma: l'oracolo scorre lo storico una volta
+    # sola, senza i metodi del generatore che sta verificando.
+    page_ids = {int(pg.stem) for pg in pages if pg.stem.isdigit()}
+    cutoffs = pd.concat([fin_cal["_ko"], pd.to_datetime(
+        fx.loc[fx.match_id.isin(page_ids), "utc_kickoff"], utc=True, errors="coerce")])
+    elo_at, leagues_at = elo_reference_at_dates(st.read("history"), fx, cutoffs,
+                                               min_teams=ma.ELO_MIN_TEAMS)
     mi_fin = st.read("match_info")
     con_xg = set()
     if not mi_fin.empty and {"home_xg", "away_xg"} <= set(mi_fin.columns):
@@ -792,6 +866,102 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
 
     def num(x: str) -> float:
         return float(x.replace(",", "."))
+
+    def forza_forma(sec: str, tid: int, lg, ko, pagina: str) -> None:
+        """Calendario + oracolo Elo indipendente: il codice del sito può essere guasto."""
+        nonlocal checks
+        label = f"{pagina} squadra {tid}"
+        games = fin_cal[(fin_cal._ko < ko)
+                        & ((fin_cal.home_id == tid) | (fin_cal.away_id == tid))
+                        ].sort_values("_ko").tail(5)
+        rows = []
+        for game in games.itertuples(index=False):
+            home = game.home_id == tid
+            gf, ga = ((game.home_goals, game.away_goals) if home
+                      else (game.away_goals, game.home_goals))
+            rows.append({"opponent": game.away_name if home else game.home_name,
+                         "home": home, "gf": int(gf), "ga": int(ga),
+                         "res": "V" if gf > ga else "N" if gf == ga else "P",
+                         "date": pd.to_datetime(game.utc_kickoff, utc=True)})
+        ref = leagues_at.get((lg, ko))
+        ratings, ranks, listing, dots = [], [], [], []
+        for row in rows:
+            name = canonical(row["opponent"])
+            elo = elo_at.get(row["date"], {}).get(name)
+            ratings.append(elo)
+            past = leagues_at.get((lg, row["date"]))
+            rank = past["ranks"].get(name) if past else None
+            venue = "in casa" if row["home"] else "in trasferta"
+            item = f"{row['gf']}-{row['ga']} {venue} con {row['opponent']}"
+            if elo is not None and rank is not None:
+                ranks.append((round(elo), rank))
+                item += f" ({rank}ª) ⓘ"
+            listing.append(item)
+            title = (f"{venue} contro {row['opponent']}: "
+                     f"{row['gf']}-{row['ga']} (gol fatti-subiti)")
+            dots.append((row["res"], title, row["res"]))
+        forms = re.findall(rf'<p class="form-recent" data-team-id="{tid}"[^>]*>(.*?)</p>',
+                           sec, re.DOTALL)
+        checks += 1
+        if len(forms) != bool(rows):
+            fails.append(f"{label}: strisce della forma {len(forms)}, attese {int(bool(rows))}")
+        form = forms[0] if forms else ""
+        printed = re.findall(
+            r'<span class="form-opp-rank" title="[^"]*?: ([\d.]+)\.[^"]*">'
+            r'\((\d+)ª\) ⓘ</span>', form)
+        actual = [(int(value.replace(".", "")), int(rank)) for value, rank in printed]
+        checks += 1
+        if actual != ranks:
+            fails.append(f"{label}: ranghi/Elo degli avversari della forma non alla vigilia "
+                         f"({actual} ≠ {ranks})")
+        # Non basta che i numeri tornino: devono essere accanto all'avversario giusto.
+        listed = re.search(r'<span class="small mut">(.*)</span>\s*$', form, re.DOTALL)
+        text = Text()
+        text.feed(listed.group(1) if listed else "")
+        actual_list = " ".join("".join(text.parts).split())
+        checks += 2
+        if actual_list != " ".join(", ".join(listing).split()):
+            fails.append(f"{label}: elenco della forma diverso dal calendario "
+                         "(avversari, punteggi, sede o ordine)")
+        printed_dots = re.findall(r'<span class="form-dot ([VNP])" title="([^"]*)">'
+                                 r'([VNP])</span>', form)
+        if [(res, html_unescape(title), value) for res, title, value in printed_dots] != dots:
+            fails.append(f"{label}: pallini/tooltip della forma diversi dal calendario")
+        summary = re.findall(
+            rf'<p class="form-strength mut small" data-team-id="{tid}"[^>]*>(.*?)</p>',
+            sec, re.DOTALL)
+        expected = bool(rows and ref and all(value is not None for value in ratings))
+        checks += 1
+        if len(summary) != int(expected):
+            fails.append(f"{label}: righe «Avversari affrontati» {len(summary)}, "
+                         f"attese {int(expected)}")
+        if not expected or len(summary) != 1:
+            return
+        printed_avg = re.search(r"Avversari affrontati: forza media <b>([\d.]+)</b> "
+                                r"contro ([\d.]+) del campionato", summary[0])
+        checks += 1
+        if not printed_avg:
+            fails.append(f"{label}: forza media degli avversari senza i due numeri")
+            return
+        avg = sum(ratings) / len(ratings)
+        population = list(ref["ratings"].values())
+        league_avg = sum(population) / len(population)
+        sd = math.sqrt(sum((v - league_avg) ** 2 for v in population) / len(population))
+        se = sd / math.sqrt(len(rows))
+        diff = avg - league_avg
+        verdict = ("più duro della media" if diff > se else "più morbido della media"
+                   if diff < -se else "in linea col campionato")
+        for text, value, name in zip(printed_avg.groups(), (avg, league_avg),
+                                    ("forza media avversari", "media Elo di lega"), strict=True):
+            checks += 1
+            if abs(int(text.replace(".", "")) - value) > 0.501:
+                fails.append(f"{label}: {name} {text} ≠ {value:.2f}")
+        checks += 2
+        if f'<span class="form-strength-label">{verdict}</span>' not in summary[0]:
+            fails.append(f"{label}: giudizio della forma diverso da «{verdict}»")
+        threshold = re.search(r"circa ±(\d+) punt[oi] Elo", html_unescape(summary[0]))
+        if not threshold or abs(int(threshold.group(1)) - se) > 0.501:
+            fails.append(f"{label}: soglia della forma diversa dall'errore standard")
 
     n_pagine = n_pannelli = n_rif = 0
     for pg in pages:
@@ -955,6 +1125,8 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
             etichetta = atteso_pr.get("label")
             if etichetta and f"<b>{etichetta}</b>" not in sec:
                 fails.append(f"{pg.name}: etichetta di pressing «{etichetta}» assente")
+        for tid in (int(riga.home_id), int(riga.away_id)):
+            forza_forma(sec, tid, riga.league_id, ko, pg.name)
         checks += 1
         if re.search(r"coppe incluse", sec):
             fails.append(f"{pg.name}: il riposo dice ancora «coppe incluse» senza il nome")
