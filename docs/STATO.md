@@ -1,3 +1,27 @@
+## 2026-10-10 — Revisione indipendente della PR #98 (`arena/eb94e8df`)
+
+**Verificato offline:** Elo confrontato con **246 fit su prefissi realmente troncati**,
+305 date, **8.191 confronti · 0 differenze**; tutti i **796 riepiloghi** ricontati dal calendario;
+RPS/Brier indipendenti su 1.071 gare confermano docs/67. **Conteggi chiariti:** con la data
+italiana fissata al 9/10 tornano 446 schede / 760 righe / 2.478 ranghi, ma **169 giudizi**,
+non 182. Al 10/10: 464 / 796 / 2.648 / 173. History e fixtures sono gli stessi byte dello
+snapshot precedente: corretta in docs/66 l'attribuzione generica ai «dati più recenti».
+
+**Corrette tre lacune dei controlli, dimostrate prima del codice:** [44] accettava un nome
+avversario alterato (0 → 1 problema sul caso reale) e poteva condividere una regressione
+all'Elo odierno con il generatore (0 → 9); ora usa un oracolo temporale indipendente e
+ricontrolla lista, punteggi, sede e pallini dal calendario. Il benchmark accettava una lega
+vuota/spazi: ora la rifiuta. **Nessuna modifica a generatori, template, modelli o Parquet**;
+JSON del benchmark prima/dopo identico. Dettagli:
+[`docs/68`](68_revisione_forma_mercato_2026-10-10.md).
+
+**In corso:** suite completa e gate sulla build esistente; **16 test tematici verdi**, Ruff
+pulito. **Prossimo passo:** chiudere i check della stessa PR #98; merge solo dell'utente.
+Nessuna richiesta sportiva, nessuna nuova calibrazione. Il 182 resta non riprodotto, non
+nascosto nel cambio di data; i 169/173 sono verificati con il calcolo indipendente.
+
+---
+
 ## 2026-10-09 — Sessione `arena/eb94e8df`: recupero e forma degli avversari
 
 **Fatto:** `f5dbdf3` non conservato nel clone nuovo. Recuperato `8f454cb` dal ramo remoto,

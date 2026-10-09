@@ -43,7 +43,9 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/66_la_forma_dice_contro_chi_2026-10-09.md`](docs/66_la_forma_dice_contro_chi_2026-10-09.md) — Elo storico degli avversari nella forma, rango alla vigilia e giudizio solo oltre l'errore standard; gate [44] esteso.
 - [`docs/67_modello_contro_mercato_offline_2026-10-09.md`](docs/67_modello_contro_mercato_offline_2026-10-09.md) — confronto RPS/Brier senza rete, quote già nello storico; 1.071 gare NED1/POR1, copertura e limiti dichiarati.
 
-> L'**indice completo** dei 77 file `.md` di `docs/` (68 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
+- [`docs/68_revisione_forma_mercato_2026-10-10.md`](docs/68_revisione_forma_mercato_2026-10-10.md) — revisione indipendente della PR #98: numeri confermati, conteggi a data fissata e tre lacune dei controlli corrette.
+
+> L'**indice completo** dei 78 file `.md` di `docs/` (69 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 

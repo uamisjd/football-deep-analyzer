@@ -192,3 +192,33 @@ def test_misura_usa_i_nomi_canonici_per_agganciare():
         "PSCH": [2.0], "PSCD": [3.4], "PSCA": [3.8], "FTHG": [1], "FTAG": [1],
     })
     assert bq.misura(bt, od, draws=200)["n_agganciate"] == 1
+
+
+@pytest.mark.parametrize("league_key", [None, "", " \t "])
+def test_benchmark_rifiuta_lega_mancante_anche_se_vuota(league_key):
+    """Chiave obbligatoria: anche due stringhe vuote coincidono nel join, ma non sono una lega."""
+    bq = _module()
+    bt, history = _sample()
+    bt.loc[0, "league_key"] = history.loc[0, "league_key"] = league_key
+    with pytest.raises(ValueError, match="Chiavi di gara assenti"):
+        bq.misura(bt, bq.quote_da_history(history))
+
+
+def test_benchmark_cli_mensile_resta_separata_da_offline(tmp_path, monkeypatch, capsys):
+    """Il workflow mensile non passa implicitamente alle sole due leghe del Parquet locale."""
+    bq = _module()
+    bt, history = _sample()
+    bt.to_parquet(tmp_path / "backtest.parquet", index=False)
+    # Nessun history.parquet: la modalità mensile usa il suo downloader (qui un fake senza rete).
+    calls = []
+    def monthly():
+        calls.append(True)
+        return bq.quote_da_history(history)
+    monkeypatch.setattr(bq, "scarica", monthly)
+    output = tmp_path / "benchmark.json"
+    bq.main(["--data", str(tmp_path), "--json", str(output)])
+    result = json.loads(output.read_text())
+    assert calls == [True] and result["n_valutate"] == 2
+    assert result["fonte_quote"] == "Pinnacle di chiusura: CSV PSCH/PSCD/PSCA"
+    assert set(result["input_sha256"]) == {"backtest.parquet"}
+    assert "brier_mercato" in capsys.readouterr().out

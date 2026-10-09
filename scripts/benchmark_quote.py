@@ -121,7 +121,9 @@ def misura(bt: pd.DataFrame, od: pd.DataFrame, draws: int = 4000, seed: int = 11
         frame["date"] = pd.to_datetime(frame["date"], utc=True, errors="coerce").dt.normalize()
         frame[home] = frame[home].fillna("").map(canonical)
         frame[away] = frame[away].fillna("").map(canonical)
-        if frame[[lg, "date"]].isna().any().any() or frame[[home, away]].eq("").any().any():
+        if (frame[[lg, "date"]].isna().any().any()
+                or frame[lg].astype("string").str.strip().eq("").any()
+                or frame[[home, away]].eq("").any().any()):
             raise ValueError("Chiavi di gara assenti: lega, data e squadre sono obbligatorie")
     keys = ["league_key", "date", "home", "away"]
     m = bt.merge(od, left_on=keys, right_on=["lg", "date", "HomeTeam", "AwayTeam"],

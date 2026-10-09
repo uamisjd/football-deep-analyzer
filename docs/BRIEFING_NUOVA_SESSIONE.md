@@ -9,6 +9,14 @@
 
 ## Handoff operativo corrente — 2026-10-09 (il più recente: leggere questo per primo)
 
+- **Revisione del 10/10, stessa PR #98:**
+  [docs/68](68_revisione_forma_mercato_2026-10-10.md). Numeri confermati con 246 fit Elo su
+  prefissi temporali, **8.191 confronti / 796 riepiloghi senza differenze** e RPS/Brier
+  indipendenti. Rafforzata [44] contro errori condivisi col generatore e nomi avversari
+  alterati; benchmark con chiavi di lega vuote rifiutate. I contatori a finestra 9/10
+  sono 760 righe / 2.478 ranghi / **169** giudizi: i 182 dell'handoff non si riproducono;
+  history e fixtures identici allo snapshot precedente. Nessuna modifica a dati o modelli.
+
 - **Aggiornamento successivo, sessione `arena/eb94e8df`:** B ricostruita perché `f5dbdf3`
   non è nel clone; recuperato e pushato il documento di merge #97 (`8f454cb` → `fd5520d`).
   [**docs/66**](66_la_forma_dice_contro_chi_2026-10-09.md): Elo storico nella forma, ranghi
@@ -162,7 +170,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (77 file `.md` + `_audit_modelli.json` al 9/10/2026: **68** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
+| **`docs/` — indice completo** (78 file `.md` + `_audit_modelli.json` al 10/10/2026: **69** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |
@@ -238,6 +246,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/65_handoff_e_coda_fonti_2026-10-09.md` | Handoff dopo #97 e coda B–F: fonti, misure del modello, revisioni delle schede. |
 | `docs/66_la_forma_dice_contro_chi_2026-10-09.md` | Voce B: Elo alla vigilia nella forma, ranghi, giudizio oltre l'errore standard, [44] estesa, recupero della sessione e gate. |
 | `docs/67_modello_contro_mercato_offline_2026-10-09.md` | Voce D: benchmark RPS/Brier offline su history/backtest, copertura 2/7 leghe dichiarata, IC appaiati, limiti di provenienza/calibrazione e test senza rete. |
+| `docs/68_revisione_forma_mercato_2026-10-10.md` | Revisione di B/D: ricalcolo indipendente, conteggi a data fissata, [44] disaccoppiata dal generatore, nomi avversari e chiavi del benchmark protetti. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |

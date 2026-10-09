@@ -102,12 +102,18 @@ Conteggio dell'HTML generato:
 | **Totale** | **464** | **796** | **2.648** | **173** |
 
 I valori **760 / 2.478 / 182** consegnati come attesi **non sono quelli di questa build**.
-La ricostruzione termina dopo le 22 UTC del 9/10 (già 10/10 per il sito, che usa l'ora
-italiana): cambia la finestra delle schede pre-partita, **89 invece di 71**; il checkout ha
-anche dati più recenti (`5b1119b`, daily delle 22:11). Il numero di giudizi resta una misura,
-non un obiettivo a cui adattare la soglia: **173** sono quelli ottenuti e ricalcolati da [44]
-con le letture temporali e la formula dichiarate al §3. Non si attribuisce l'intero scarto
-al cambio di finestra senza il vecchio commit, che non è disponibile.
+La revisione successiva ([docs/68](68_revisione_forma_mercato_2026-10-10.md) §2) ha isolato
+l'effetto dell'orologio: data italiana fissata al **9/10 → 446 schede, 760 righe, 2.478 ranghi,
+169 giudizi**; al **10/10 → 464, 796, 2.648, 173**. `history` e `fixtures` sono identici byte
+per byte allo snapshot precedente: i dati del daily più recente **non spiegano** lo scarto
+della forma (questa nota corregge la prima spiegazione, troppo generica).
+
+Il **182** dell'handoff non si riproduce neppure sulla finestra del 9/10. Il codice e la
+specifica sono stati confrontati con fit Elo su prefissi temporali indipendenti: **0 differenze
+su 8.191 confronti e su tutti i 796 riepiloghi**. Non si cambia la soglia per inseguire il
+contatore; senza il commit perso non si attribuisce lo scarto a una sua riga di codice.
+La [44] è stata inoltre rafforzata per non condividere i lettori Elo del generatore e per
+verificare anche i nomi degli avversari realmente stampati (docs/68 §3).
 
 Nessun dato Parquet modificato, nessuna richiesta sportiva. Il lavoro è stato salvato e
 pushato anche durante i gate (`4a8d073`), senza lasciare un altro commit solo nel workspace.
