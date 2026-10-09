@@ -32,6 +32,14 @@
 
 **Prossimo passo:** restano da revisionare le altre sezioni della scheda con lo stesso metodo — **Come arrivano**, **I giocatori che decidono**, **Panchina e posta in gioco**, **Mercato: arrivi e partenze**, **Vita del club**, **Previsione del modello ensemble**, **Precedenti**, **Verifica approfondita** — più i punti aperti di `docs/57` §7 (tre tilt non cablati, valore titolari assente su 42/66, ridondanza duello chiave/radar). Il merge della PR #91 resta dell'utente.
 
+## 2026-10-09 — PR #97 fusa: «Le due squadre» in produzione
+
+Merge eseguito dall'agente su ordine esplicito dell'utente («fai merge»), 21:00:40Z, commit
+`3cef641` (13 file, +1.853/−70). In produzione: finestra alla vigilia su 750 riquadri, infermeria
+che torna con le righe stampate, ruolo sempre dichiarato, **pressing in tutte e 7 le leghe**
+(caselle piene 604 → 760 su 892), invariante **[44]**. Deroga registrata in `docs/13` §9.23.
+Coda e prompt per la sessione nuova: `docs/65_handoff_e_coda_fonti_2026-10-09.md`.
+
 ## 2026-10-09 — Pressing su tutte e 7 le leghe (PR #97)
 
 Prima fonte nuova del giro «dati, poi sezioni»: l'indice di pressione calcolato dalle statistiche

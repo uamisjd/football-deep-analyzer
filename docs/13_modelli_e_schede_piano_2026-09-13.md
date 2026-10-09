@@ -1420,3 +1420,27 @@ partito dopo le 23:12:34Z — gli ultimi run restano `37700026749` (check della 
 hanno `paths-ignore` su `docs/**`, come atteso per i merge solo-documenti.
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### §9.23 — PR #97: revisione della card «Le due squadre» (2026-10-09, merge su ordine esplicito)
+
+**Deroga registrata.** La regola resta «il merge lo esegue l'utente»: qui l'utente ha scritto
+**«fai merge»** nella sessione `arena/014bd558`, e l'agente ha eseguito `gh pr merge 97 --merge`
+alle **21:00:40Z**, merge commit **`3cef641`**.
+
+**Contenuto (13 file, +1.853/−70, 5 commit):** la revisione completa della card «Le due squadre»
+documentata in [`64_le_due_squadre_2026-10-09.md`](64_le_due_squadre_2026-10-09.md) —
+§2 nove difetti del primo giro, §5-§7 finestra **alla vigilia** (750/750 riquadri includevano
+gare successive alla partita descritta), §8 infermeria (totale = somma delle righe: prima
+sbagliato in **101 pannelli su 118**; pillola del ruolo su tutte le **507** righe; badge «x su y
+con minuti»), §9 **pressing in tutte e 7 le leghe** con l'indice FotMob (caselle piene da **604 a
+760 su 892**; Eredivisie e Liga Portugal prima a zero). Più l'invariante **[44]**
+(`check_due_squadre`), l'handoff [`docs/65`](65_handoff_e_coda_fonti_2026-10-09.md) e gli
+aggiornamenti di `README.md`, `docs/STATO.md`, `docs/BRIEFING_NUOVA_SESSIONE.md`.
+
+**Gate sul branch prima del merge:** pytest **556 passed** · `ruff` pulito · build
+**446/2.364/7.498** · `verify_site` **0 problemi · 187.107 controlli** · `parita_schede` nessuna
+differenza · `resa_375` **26.565 · 0**. Check GitHub `tests` verdi su tutti i push del branch.
+
+**Effetti in produzione:** la PR tocca `src/`, `tests/` e `scripts/`, fuori da `paths-ignore`,
+quindi il push del merge ha attivato **`tests` (`37990767502`)** e **`daily` (`37990767543`)` su
+`main`.
