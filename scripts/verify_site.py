@@ -734,13 +734,18 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
       «impatto» stampata sotto (`docs/64` §8: prima sommava le stime mentre le righe
       mostravano il grezzo, e non tornava in 101 pannelli su 118), e ogni riga dichiara il
       ruolo (o «ruolo n.d.»);
+    * **forza nella forma** — ranghi ed Elo di ogni avversario alla vigilia della sua gara;
+      media, riferimento di lega e giudizio ricalcolati senza chiamare ``form_strength``;
     * **testi** — nessuna attribuzione a Transfermarkt (il valore è della distinta FotMob) e
       nessuna stringa fantasma nel piè di card.
     """
+    import math
+
     import pandas as pd
 
     from fda.site.analysis import MatchAnalysis
     from fda.store import Store
+    from fda.teams import canonical
 
     fails: list[str] = []
     checks = 0
@@ -792,6 +797,67 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
 
     def num(x: str) -> float:
         return float(x.replace(",", "."))
+
+    def forza_forma(sec: str, tid: int, ko, pagina: str) -> None:
+        """La formula si rifà qui: un errore in form_strength non deve autocertificarsi."""
+        nonlocal checks
+        label = f"{pagina} squadra {tid}"
+        rows = ma.form(tid, ko)
+        lg = ma._team_league_id(tid)
+        ref = ma.league_elo(lg, ko)
+        ratings, ranks = [], []
+        for row in rows:
+            elo = ma.team_elo(row["opponent"], row["date"])
+            ratings.append(elo)
+            past = ma.league_elo(lg, row["date"])
+            rank = past["ranks"].get(canonical(row["opponent"])) if past else None
+            if elo is not None and rank is not None:
+                ranks.append((round(elo), rank))
+        form = re.search(rf'<p class="form-recent" data-team-id="{tid}"[^>]*>(.*?)</p>',
+                         sec, re.DOTALL)
+        printed = re.findall(
+            r'<span class="form-opp-rank" title="[^"]*?: ([\d.]+)\.[^"]*">'
+            r'\((\d+)ª\) ⓘ</span>', form.group(1) if form else "")
+        actual = [(int(value.replace(".", "")), int(rank)) for value, rank in printed]
+        checks += 1
+        if actual != ranks:
+            fails.append(f"{label}: ranghi/Elo degli avversari della forma non alla vigilia "
+                         f"({actual} ≠ {ranks})")
+        summary = re.findall(
+            rf'<p class="form-strength mut small" data-team-id="{tid}"[^>]*>(.*?)</p>',
+            sec, re.DOTALL)
+        expected = bool(rows and ref and all(value is not None for value in ratings))
+        checks += 1
+        if len(summary) != int(expected):
+            fails.append(f"{label}: righe «Avversari affrontati» {len(summary)}, "
+                         f"attese {int(expected)}")
+        if not expected or len(summary) != 1:
+            return
+        printed_avg = re.search(r"Avversari affrontati: forza media <b>([\d.]+)</b> "
+                                r"contro ([\d.]+) del campionato", summary[0])
+        checks += 1
+        if not printed_avg:
+            fails.append(f"{label}: forza media degli avversari senza i due numeri")
+            return
+        avg = sum(ratings) / len(ratings)
+        population = list(ref["ratings"].values())
+        league_avg = sum(population) / len(population)
+        sd = math.sqrt(sum((v - league_avg) ** 2 for v in population) / len(population))
+        se = sd / math.sqrt(len(rows))
+        diff = avg - league_avg
+        verdict = ("più duro della media" if diff > se else "più morbido della media"
+                   if diff < -se else "in linea col campionato")
+        for text, value, name in zip(printed_avg.groups(), (avg, league_avg),
+                                    ("forza media avversari", "media Elo di lega"), strict=True):
+            checks += 1
+            if abs(int(text.replace(".", "")) - value) > 0.501:
+                fails.append(f"{label}: {name} {text} ≠ {value:.2f}")
+        checks += 2
+        if f'<span class="form-strength-label">{verdict}</span>' not in summary[0]:
+            fails.append(f"{label}: giudizio della forma diverso da «{verdict}»")
+        threshold = re.search(r"circa ±(\d+) punt[oi] Elo", html_unescape(summary[0]))
+        if not threshold or abs(int(threshold.group(1)) - se) > 0.501:
+            fails.append(f"{label}: soglia della forma diversa dall'errore standard")
 
     n_pagine = n_pannelli = n_rif = 0
     for pg in pages:
@@ -955,6 +1021,8 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
             etichetta = atteso_pr.get("label")
             if etichetta and f"<b>{etichetta}</b>" not in sec:
                 fails.append(f"{pg.name}: etichetta di pressing «{etichetta}» assente")
+        for tid in (int(riga.home_id), int(riga.away_id)):
+            forza_forma(sec, tid, ko, pg.name)
         checks += 1
         if re.search(r"coppe incluse", sec):
             fails.append(f"{pg.name}: il riposo dice ancora «coppe incluse» senza il nome")

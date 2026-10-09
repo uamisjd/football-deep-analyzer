@@ -682,6 +682,97 @@ def test_season_pressing_etichetta_solo_oltre_il_rumore(tmp_path, monkeypatch):
     assert ma.PRESS_MIN_GAMES == 3
 
 
+def test_elo_series_letta_alla_vigilia(tmp_path):
+    """Niente futuro né ritardo di una gara: il punto è il rating PRIMA della successiva."""
+    from fda.models.predict import EloModel
+    from fda.teams import canonical
+
+    st = Store(tmp_path / "processed")
+    dates = pd.to_datetime(["2026-08-01 18:00", "2026-08-08 18:00", "2026-08-15 00:00"],
+                           utc=True)
+    history = pd.DataFrame([
+        {"date": d, "home": name, "away": "Napoli", "home_goals": hg, "away_goals": ag}
+        for d, name, hg, ag in zip(dates, ["Inter", "Internazionale", "Inter"],
+                                   [2, 0, 4], [0, 3, 0], strict=True)])
+    st.write("history", history.iloc[::-1])  # il file non è in ordine cronologico
+    ma = MatchAnalysis(st)
+    canonical_history = history.assign(home=history.home.map(canonical))
+    after_first = EloModel().fit(canonical_history.head(1)).ratings["Inter"]
+    after_second = EloModel().fit(canonical_history.head(2)).ratings["Inter"]
+    final = EloModel().fit(canonical_history).ratings["Inter"]
+
+    assert ma.team_elo("Inter", dates[0] - pd.Timedelta(seconds=1)) is None
+    assert ma.team_elo("Inter", dates[0]) == 1500  # la gara corrente non è ancora entrata
+    assert ma.team_elo("Inter", dates[0] + pd.Timedelta(seconds=1)) == pytest.approx(after_first)
+    assert ma.team_elo("Internazionale", dates[1]) == pytest.approx(after_first)
+    assert ma.team_elo("Inter", dates[1] + pd.Timedelta(days=1)) == pytest.approx(after_second)
+    # Lo storico solo-data non deve far conoscere il risultato già al mattino della gara.
+    assert ma.team_elo("Inter", dates[2] + pd.Timedelta(hours=18)) == pytest.approx(after_second)
+    assert ma.team_elo("Inter", dates[2] + pd.Timedelta(days=1)) == pytest.approx(final)
+    assert ma.team_elo("Sconosciuta", KICK) is None
+    assert set(ma._elo_series()) == {"Inter", "Napoli"}
+    assert sum(len(points[0]) for points in ma._elo_series().values()) == 2 * len(history) + 2
+    assert ma._elo_series() is ma._elo_series()  # una passata, non un fit per richiesta
+    # Alterare il risultato futuro non deve alterare nessuna lettura precedente.
+    history.loc[2, ["home_goals", "away_goals"]] = [0, 8]
+    st.write("history", history)
+    other = MatchAnalysis(st)
+    assert other.team_elo("Inter", dates[1]) == pytest.approx(after_first)
+    assert other.team_elo("Inter", dates[2]) == pytest.approx(after_second)
+    assert other.team_elo("Inter", KICK) != pytest.approx(final)
+    assert MatchAnalysis(Store(tmp_path / "vuoto")).team_elo("Inter", KICK) is None
+
+
+def test_form_strength_giudizio_solo_oltre_errore_standard(tmp_path, monkeypatch):
+    """Riferimento di ≥10 squadre, soglia stretta sd/√n, Elo di ogni avversario alla sua data."""
+    st = _store(tmp_path)
+    extra = [{"match_id": 200 + i, "league_id": 55, "home_id": 30 + 2*i,
+              "away_id": 31 + 2*i, "home_name": f"Pari {2*i}", "away_name": f"Pari {2*i+1}",
+              "utc_kickoff": KICK, "status": "scheduled"} for i in range(4)]
+    st.upsert("fixtures", extra)
+    ma = MatchAnalysis(st)
+    values = {"Alpha": 1490.0, "Beta": 1510.0,
+              **{f"Pari {i}": 1400.0 if i % 2 else 1600.0 for i in range(8)}}
+    monkeypatch.setattr(ma, "team_elo", lambda name, before: values.get(name))
+    ref = ma.league_elo(55, KICK)
+    assert ma.ELO_MIN_TEAMS == 10 and ref["n"] == 10
+    assert ref["avg"] == pytest.approx(1500)
+    assert ref["sd"] == pytest.approx(np.std(list(values.values())))
+    assert ref["ranks"]["Beta"] == 5 and ref["ranks"]["Alpha"] == 6
+    assert ref["ranks"]["Pari 0"] == ref["ranks"]["Pari 2"] == 1
+    assert ma.league_elo(999, KICK) is None
+    # Sotto la soglia niente riferimento, non un campionato inventato con due squadre.
+    short = MatchAnalysis(st)
+    short.fixtures = _fixtures()
+    monkeypatch.setattr(short, "team_elo", lambda name, before: values.get(name))
+    assert short.league_elo(55, KICK) is None
+
+    calls = []
+    rating = [1510.0]
+    def past_elo(name, before):
+        calls.append((name, before))
+        return rating[0]
+    monkeypatch.setattr(ma, "team_elo", past_elo)
+    monkeypatch.setattr(ma, "league_elo", lambda lg, before:
+                        {"avg": 1500.0, "sd": 20.0, "ranks": {"Alpha": 6, "Beta": 5}})
+    strength = ma.form_strength(10, KICK)
+    assert strength["n"] == 4 and strength["avg"] == 1510.0
+    assert strength["league_avg"] == 1500.0 and strength["diff"] == 10.0
+    assert strength["se"] == 10.0 and strength["label"] is None  # uguaglianza, non oltre
+    assert calls == [(r["opponent"], r["date"]) for r in ma.form(10, KICK)]
+    assert all(r["opp_elo"] == 1510 and r["opp_rank"] == 5 for r in strength["form"])
+    for elo, label in ((1510.01, "più duro della media"), (1489.99, "più morbido della media"),
+                       (1490, None), (1500, None)):
+        rating[0] = elo
+        assert ma.form_strength(10, KICK)["label"] == label
+    assert ma.form_strength(10, KICK, n=1)["se"] == 20  # gare effettive, non sempre cinque
+    assert ma.form_strength(999, KICK)["avg"] is None
+    assert ma.form_strength(10, KICK, n=0)["form"] == []
+    rating[0] = None
+    missing = ma.form_strength(10, KICK)
+    assert len(missing["form"]) == 4 and missing["avg"] is None
+
+
 def test_referee_profile_against_league_average(tmp_path):
     """Arbitro a confronto con la media delle designazioni della stessa lega."""
     ma = MatchAnalysis(_store(tmp_path))

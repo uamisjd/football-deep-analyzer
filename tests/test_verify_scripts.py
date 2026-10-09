@@ -468,6 +468,18 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
         for tid, pas in ((passata["home_id"], 300.0), (passata["away_id"], 240.0))
         for k, v in (("own_half_passes", pas), ("matchstats.headers.tackles", 40.0),
                      ("interceptions", 10.0), ("fouls", 10.0))])
+    # docs/66: una vera popolazione di lega (≥10 squadre) e uno storico sintetico.
+    # Senza questi dati la riga della forza non uscirebbe e la manomissione sarebbe vacua.
+    st.upsert("fixtures", [dict(_fixture_lontana(5910000 + i, 15, f"Prova {2*i}",
+                                               f"Prova {2*i+1}", now),
+                               home_id=990000 + 2*i, away_id=990001 + 2*i) for i in range(4)])
+    from fda.teams import canonical
+    fx = st.read("fixtures")
+    names = sorted({canonical(t) for t in [*fx.home_name, *fx.away_name]})
+    st.upsert("history", [{"league_key": "ITA1", "season": "2026/2027",
+                           "date": now - timedelta(days=90 - i), "home": name,
+                           "away": names[(i + 1) % len(names)], "home_goals": i % 4,
+                           "away_goals": 1} for i, name in enumerate(names)])
     out = tmp_path / "site"
     SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
     st.close()
@@ -530,6 +542,24 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
                rotta(originale.replace(f'">{press.group(1)}</span>', '">9,99</span>', 1)))
     assert any("indici di pressione stampati" in f for f in
                rotta(originale.replace("Passaggi che l'avversario", "Qualcos'altro", 1)))
+
+    # 10ter) forza degli avversari: media, riferimento, giudizio, rango e assenza della riga.
+    assert 'Avversari affrontati: forza media <b>' in originale
+    assert 'class="form-opp-rank"' in originale
+    altered = re.sub(r'(Avversari affrontati: forza media <b>)[\d.]+',
+                     r'\g<1>9.999', originale, count=1)
+    assert any("forza media avversari 9.999" in f for f in rotta(altered))
+    altered = re.sub(r'(</b> contro )[\d.]+( del campionato)',
+                     r'\g<1>9.999\g<2>', originale, count=1)
+    assert any("media Elo di lega 9.999" in f for f in rotta(altered))
+    altered = re.sub(r'(<span class="form-strength-label">)[^<]+',
+                     r'\g<1>giudizio inventato', originale, count=1)
+    assert any("giudizio della forma" in f for f in rotta(altered))
+    altered = re.sub(r'(class="form-opp-rank" title="[^"]*">)\(\d+ª\)',
+                     r'\g<1>(99ª)', originale, count=1)
+    assert any("ranghi/Elo degli avversari" in f for f in rotta(altered))
+    assert any("righe «Avversari affrontati»" in f for f in
+               rotta(originale.replace('class="form-strength mut small"', 'class="rimossa"', 1)))
 
     # 10) infermeria: il totale non è la somma della colonna «impatto» (docs/64 §8)
     pillola = ('<span class="mut small" style="display:inline-block;padding:1px 6px;'
