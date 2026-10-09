@@ -98,16 +98,32 @@ Il caso `outcome` intero nullable mancante era già scartato correttamente: veri
 **Impatto sui dati reali del benchmark: nullo**, dimostrato confrontando il JSON prima/dopo:
 identico, compresi valori, IC, copertura, esclusioni e SHA-256 dei due input.
 
-## 4. Gate della revisione
+## 4. Gate della revisione — esiti finali
 
-- Test tematici: **16 passed**; Ruff pulito.
-- **In corso:** suite completa finale e `verify_site`, `resa_375`, `parita_schede` sulla build
-  corrente da 464 schede. I generatori, i template, i modelli e i Parquet **non cambiano** in
-  questa revisione: non si rigenera inutilmente tutto il sito per cambiare un verificatore.
-- I numeri RPS/Brier restano quelli di docs/67; nessuna nuova stima o calibrazione.
+| Verifica | Esito osservato |
+|---|---|
+| Test tematici dei due verificatori | **16 passed** |
+| Suite completa | **568 passed** (117,41 s; +6 casi rispetto alla prima consegna) |
+| `ruff check .` | pulito |
+| `verify_site` | **202.969 controlli · 0 problemi** (prima 200.185) |
+| `resa_375` | **27.255 misure · 0 problemi** |
+| `parita_schede` | **89 schede**, 24 id, 14 voci d'indice; nessuna differenza |
+| CI del codice rivisto `4d2d5e9` | **verde**, run `38003264484` (PR) e `38003261585` (push) |
+| `git diff --check` | pulito |
+
+Gate eseguiti sulla build da **464 schede / 2.364 fixture / 7.510 giocatori** già generata
+nel turno precedente. Non è stata rilanciata la build: nella revisione **nessun file di
+`src/`, nessun modello, template o Parquet è cambiato**. I test di regressione costruiscono
+invece nuove schede sintetiche per provare gli errori del generatore e la reazione del gate.
+Non si spaccia il controllo della build esistente per una nuova generazione.
+
+I numeri RPS/Brier restano quelli di docs/67; JSON del benchmark prima/dopo identico.
+Nessuna raccolta, nuova stima, calibrazione o promozione del modello. I controlli degli ultimi
+commit documentali sono consultabili nella [PR #98](https://github.com/uamisjd/football-deep-analyzer/pull/98).
 
 ## Prossimo passo
 
-Registrare gli esiti finali, aggiornare la stessa **PR #98** e controllare la CI dell'ultimo
-commit. **Merge esclusivamente dell'utente.** Il benchmark live mensile non è stato eseguito:
-percorso verificato offline con fake, non dichiarato verificato contro la rete.
+**PR #98 aggiornata e completa; merge esclusivamente dell'utente**, dopo i check dell'ultimo
+commit. Il benchmark live mensile non è stato eseguito: percorso verificato offline con fake,
+non dichiarato verificato contro la rete. I 182 giudizi dell'handoff restano non riprodotti;
+il risultato indipendentemente verificato è quello del §2.

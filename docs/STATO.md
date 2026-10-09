@@ -15,10 +15,14 @@ vuota/spazi: ora la rifiuta. **Nessuna modifica a generatori, template, modelli 
 JSON del benchmark prima/dopo identico. Dettagli:
 [`docs/68`](68_revisione_forma_mercato_2026-10-10.md).
 
-**In corso:** suite completa e gate sulla build esistente; **16 test tematici verdi**, Ruff
-pulito. **Prossimo passo:** chiudere i check della stessa PR #98; merge solo dell'utente.
-Nessuna richiesta sportiva, nessuna nuova calibrazione. Il 182 resta non riprodotto, non
-nascosto nel cambio di data; i 169/173 sono verificati con il calcolo indipendente.
+**Gate finali della revisione:** **568 test** (117,41 s), Ruff pulito; `verify_site`
+**202.969 · 0 problemi**; resa_375 **27.255 · 0**; parità **89 schede · pulita**. CI del codice
+**4d2d5e9** verde (run `38003264484` / `38003261585`). Gate sul sito già generato, non una nuova
+build: nessun file di `src/` è cambiato. Il benchmark prima/dopo è identico, inclusi gli IC.
+
+**Prossimo passo:** PR #98 aggiornata; verificare i check dell'ultimo commit e lasciare il
+**merge all'utente**. Nessuna richiesta sportiva o nuova calibrazione. Il 182 resta non
+riprodotto, non nascosto nel cambio di data; i 169/173 sono verificati dal calcolo indipendente.
 
 ---
 

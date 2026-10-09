@@ -109,12 +109,17 @@ backtest.parquet  db61245728b8eca44e1a09e5baf0aa20249b9df3a47e9760104a08d59a2d07
 history.parquet   b2afb6e4624ce26ee6536a03846ed16301316437fe12ad976b26a80ebfa6b19c
 ```
 
-**Gate finali:** suite completa **562 passed** (106,85 s), Ruff pulito; gli **otto test del
+**Gate della prima consegna:** suite completa **562 passed** (106,85 s), Ruff pulito; gli **otto test del
 benchmark** comprendono i quattro nuovi e tutte e quattro le regressioni preesistenti.
 CI del codice finale **d180d09** verde (run `38000587938`, 1m23s); i check aggiornati dei
 commit documentali sono visibili nella [PR #98](https://github.com/uamisjd/football-deep-analyzer/pull/98).
 I gate del sito di [docs/66 §5](66_la_forma_dice_contro_chi_2026-10-09.md#5-verifica-finale--osservata-offline-non-gli-attesi-dellhandoff)
 restano applicabili: D non modifica il codice o i template del sito.
+
+**Revisione del 10/10:** [docs/68](68_revisione_forma_mercato_2026-10-10.md). Le quattro
+metriche confermate da un calcolo separato; chiavi di lega vuote/spazi ora rifiutate; percorso
+mensile verificato con fake senza usare il Parquet locale. **JSON prima/dopo identico**,
+compresi IC, copertura e hash. Suite del lotto rivisto **568 passed**, Ruff e CI verdi.
 
 ## Prossimo passo
 

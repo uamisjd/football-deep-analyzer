@@ -15,7 +15,9 @@
   indipendenti. Rafforzata [44] contro errori condivisi col generatore e nomi avversari
   alterati; benchmark con chiavi di lega vuote rifiutate. I contatori a finestra 9/10
   sono 760 righe / 2.478 ranghi / **169** giudizi: i 182 dell'handoff non si riproducono;
-  history e fixtures identici allo snapshot precedente. Nessuna modifica a dati o modelli.
+  history e fixtures identici allo snapshot precedente. **568 test, Ruff e CI del codice
+  rivisto verdi; verify_site 202.969 · 0; resa_375 27.255 · 0; parità pulita.** Nessuna
+  modifica ai generatori, ai dati o ai modelli; gate sulla build esistente, non nuova build.
 
 - **Aggiornamento successivo, sessione `arena/eb94e8df`:** B ricostruita perché `f5dbdf3`
   non è nel clone; recuperato e pushato il documento di merge #97 (`8f454cb` → `fd5520d`).
