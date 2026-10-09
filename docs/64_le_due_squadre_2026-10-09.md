@@ -308,3 +308,68 @@ grezzo: col codice vecchio fallisce, controprova eseguita).
 pytest **554 passed** · ruff pulito · build 446/2.364/7.498 · `verify_site` **0 problemi ·
 184.381 controlli** (`[44] 446 pagine · 762 riquadri · 498 riferimenti`) · `parita_schede` nessuna
 differenza · `resa_375` 26.565 · 0.
+
+## §9 — Pressing su tutte e 7 le leghe (2026-10-09, quarto giro)
+
+### Il buco
+
+La casella «Pressing · riposo» pubblicava il **PPDA di Understat**, che copre 5 leghe su 7:
+**288 caselle su 892 (il 32%)** dicevano «n.d.», e sono tutte e sole quelle di **Eredivisie e
+Liga Portugal**. Due campionati su sette restavano senza alcun numero di pressing: la disparità
+più grossa rimasta nella card.
+
+### La misura (prima del codice)
+
+FotMob salva per **ogni** gara di tutte le leghe i passaggi giocati nella propria metà campo,
+i contrasti, gli intercetti e i falli: **750 gare-squadra su 750**. Da qui l'indice
+
+> **passaggi che l'avversario gioca nella sua metà campo ÷ azioni difensive della squadra**
+
+cioè l'idea del PPDA con una fonte che copre tutto. Misure sul corpus del 2026-10-09:
+
+| | valore |
+|---|---|
+| per gara-squadra | media **5,52**, sd **1,99** (p5 2,70 · p95 9,02) |
+| per squadra (rapporto di somme) | media **5,36**, sd 0,98 |
+| medie di lega | ENG1 5,12 · ESP1 5,15 · FRA1 5,70 · GER1 5,10 · ITA1 5,70 · NED1 5,14 · POR1 5,30 |
+| errore standard del rapporto | ±0,21 a 3 gare · ±0,17 a 5 · ±0,14 a 7 |
+| **validazione** contro il PPDA Understat (96 squadre) | Pearson **0,58**, Spearman **0,63**; per lega da +0,31 (GER1) a +0,82 (ENG1, ITA1); stessa fascia su 3 nel 56% dei casi, **fasce opposte solo 6 su 96** |
+
+Il valore di stagione è un **rapporto di somme** (totale passaggi ÷ totale azioni), non la media
+dei rapporti di gara: una partita con poche azioni difensive non pesa come una intera — lo stesso
+difetto che il registro segnalava per il PPDA di stagione.
+
+### Le scelte
+
+1. **Non si chiama PPDA**: correla ma non coincide (le scale non sono confrontabili). In card è
+   «*n,nn* pass. concessi / azione dif.», col ⓘ che definisce la metrica e la fonte.
+2. **Il PPDA di Understat non si perde**: resta nel ⓘ della stessa casella dove la lega è
+   coperta (**508 caselle**) e resta riga di confronto in «Scontro tattico».
+3. **Etichetta solo oltre il rumore**: «pressa alto» / «lascia giocare» appaiono solo se lo
+   scarto dalla media di lega supera l'errore standard del campione (**151 etichette**,
+   distribuite su tutte le leghe: ENG1 22 · ESP1 34 · FRA1 11 · GER1 11 · ITA1 26 · NED1 32 ·
+   POR1 15). Sotto le 3 gare niente rapporto, come per gli xG.
+4. **Ripiego dichiarato**: dove FotMob non ha quelle gare in archivio ma Understat sì (inizio
+   stagione), la casella pubblica il PPDA con l'etichetta «PPDA (Understat)» invece di «n.d.» —
+   caso trovato dal gate stesso sulla scheda `5868012`.
+
+### Il risultato
+
+| | prima | dopo |
+|---|---|---|
+| caselle con un numero di pressing | 604/892 (5 leghe) | **760/892 (tutte e 7)** |
+| copertura per lega | 80-89% · **NED1 0% · POR1 0%** | 80-88% in **tutte** (il resto è la prima giornata) |
+
+### Invariante estesa
+
+**[44]** ricalcola l'indice dai Parquet per entrambe le squadre di ogni scheda, controlla che il
+numero di caselle piene coincida con quelle calcolabili, che il rapporto e l'etichetta stampati
+siano quelli attesi e che il PPDA Understat resti leggibile dove la lega è coperta. Test nuovi:
+`test_season_pressing_su_tutte_le_leghe`,
+`test_season_pressing_etichetta_solo_oltre_il_rumore`, più il caso 10bis di
+`test_verify_site_due_squadre_su_ogni_scheda` (indice manomesso e casella svuotata).
+
+### Stato
+
+pytest **556 passed** · ruff pulito · build 446/2.364/7.498 · `verify_site` **0 problemi ·
+187.107 controlli** · `parita_schede` nessuna differenza · `resa_375` 26.565 · 0.

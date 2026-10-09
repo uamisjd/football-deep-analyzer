@@ -2328,8 +2328,13 @@ def test_card_due_squadre_riferimento_di_lega_e_verdetto(tmp_path):
     assert "±2,5 punti su 5 gare" in sec                        # 1,13×√5 = 2,53 punti
     assert "sopra gli attesi, oltre il rumore" in sec           # scarto +3,0 > 2,5
     assert "in linea (scarto entro ±" in sec                    # l'altra squadra resta dentro
-    # pressing: l'aggettivo è attaccato alla parola «pressing», non al numero
-    assert "pressing alto · lega 13,3" in sec
+    # pressing: in evidenza c'è l'indice FotMob (7 leghe su 7, docs/64 §9) e il PPDA di
+    # Understat resta leggibile nel ⓘ della stessa casella, con la media di lega
+    # qui le statistiche gara FotMob non ci sono: la casella ripiega sul PPDA di Understat
+    # invece di stampare «n.d.» e buttare via un dato raccolto, e lo dichiara (docs/64 §9)
+    assert "PPDA (Understat)" in sec
+    assert "media del campionato 13,3" in sec
+    assert "pressing alto" not in sec        # l'aggettivo del vecchio PPDA non c'è più
     # riposo: «coppe incluse» non butta più via il nome della coppa
     assert "coppe incluse" not in sec
     # attribuzione del valore dei titolari e piè di card senza stringhe fantasma
@@ -2449,7 +2454,9 @@ def test_rapporto_di_lega_solo_con_campione_che_lo_regge(tmp_path):
     sec = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
     sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
     assert "campione troppo corto per il confronto con la lega" in sec
-    assert "campione corto per l'etichetta" in sec
+    # stessa regola per il pressing: senza gare che reggano il confronto niente rapporto e
+    # niente etichetta, ma il numero e il PPDA nel ⓘ restano (docs/64 §9)
+    assert "pressa alto" not in sec and "lascia giocare" not in sec
     assert "pressing basso" not in sec
     st.close()
 

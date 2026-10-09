@@ -457,6 +457,17 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
          "xga": 0.8 if t == 0 else 1.4, "xpts": 2.2 if t == 0 else 1.2,
          "pts": 3 if t == 0 else 1, "ppda": 8.0 if t == 0 else 14.0}
         for t in range(11) for i in range(4)])
+    # una gara precedente fra le stesse due squadre, con le statistiche FotMob da cui esce
+    # l'indice di pressione (docs/64 §9): senza, la casella userebbe il ripiego Understat e
+    # il controllo dell'indice non verificherebbe nulla
+    passata = dict(_fixture_lontana(5900009, 3, "Inter", "Napoli", now - timedelta(days=7)),
+                   status="finished", home_goals=1, away_goals=1)
+    st.upsert("fixtures", [passata])
+    st.upsert("team_stats", [
+        {"match_id": 5900009, "team_id": tid, "period": "All", "key": k, "value": v, "text": ""}
+        for tid, pas in ((passata["home_id"], 300.0), (passata["away_id"], 240.0))
+        for k, v in (("own_half_passes", pas), ("matchstats.headers.tackles", 40.0),
+                     ("interceptions", 10.0), ("fouls", 10.0))])
     out = tmp_path / "site"
     SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
     st.close()
@@ -511,6 +522,14 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
     assert any("coppe incluse" in f
                for f in rotta(originale.replace("Che cosa c'è in questa card:",
                                                 "coppe incluse · Che cosa c'è in questa card:")))
+
+    # 10bis) indice di pressione: numero manomesso e casella svuotata (docs/64 §9)
+    press = re.search(r"Passaggi che l'avversario[^\"]*\">([\d,]+)</span>", originale)
+    assert press, "la gara sintetica deve pubblicare l'indice di pressione"
+    assert any("indice di pressione 9,99" in f for f in
+               rotta(originale.replace(f'">{press.group(1)}</span>', '">9,99</span>', 1)))
+    assert any("indici di pressione stampati" in f for f in
+               rotta(originale.replace("Passaggi che l'avversario", "Qualcos'altro", 1)))
 
     # 10) infermeria: il totale non è la somma della colonna «impatto» (docs/64 §8)
     pillola = ('<span class="mut small" style="display:inline-block;padding:1px 6px;'

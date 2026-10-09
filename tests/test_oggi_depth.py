@@ -606,6 +606,82 @@ def test_absences_weight_total_is_the_sum_of_the_published_rows(tmp_path, monkey
     assert ab["con_dati"] == len(righe) == 1 and ab["n"] == 2
 
 
+def test_season_pressing_su_tutte_le_leghe(tmp_path):
+    """Indice di pressione FotMob: rapporto di somme, finestra alla vigilia, etichetta misurata.
+
+    Nasce per la parità fra le 7 leghe (`docs/64` §9): la casella pubblicava il PPDA di
+    Understat, che copre 5 leghe su 7, e 288 riquadri su 892 — tutti di Eredivisie e Liga
+    Portugal — dicevano «n.d.». L'indice si calcola dalle statistiche gara di FotMob, presenti
+    in tutte le leghe: passaggi che l'avversario gioca nella **sua** metà campo per ogni
+    contrasto, intercetto o fallo della squadra.
+    """
+    st = _store(tmp_path)
+    righe = []
+    #  gara 1: 300 passaggi concessi, 60 azioni → 5,0   |  gara 3: 200 su 20 → 10,0
+    #  rapporto di somme = 500/80 = 6,25, mentre la media dei rapporti sarebbe 7,5
+    for mid, (passes_10, az_10, passes_20, az_20) in {
+            1: (240.0, 60.0, 300.0, 50.0), 3: (150.0, 20.0, 200.0, 40.0),
+            4: (100.0, 25.0, 100.0, 25.0)}.items():
+        for tid, (pas, az) in ((10, (passes_10, az_10)), (20, (passes_20, az_20))):
+            righe += [{"match_id": mid, "team_id": tid, "period": "All",
+                       "key": "own_half_passes", "value": pas, "text": ""},
+                      {"match_id": mid, "team_id": tid, "period": "All",
+                       "key": "matchstats.headers.tackles", "value": az, "text": ""},
+                      {"match_id": mid, "team_id": tid, "period": "All",
+                       "key": "interceptions", "value": 0.0, "text": ""},
+                      {"match_id": mid, "team_id": tid, "period": "All",
+                       "key": "fouls", "value": 0.0, "text": ""}]
+    st.write("team_stats", pd.concat([st.read("team_stats"), pd.DataFrame(righe)]))
+    ma = MatchAnalysis(st)
+
+    pr = ma.season_pressing(10)
+    # i passaggi sono quelli dell'**avversario**: 300 + 200 + 100 = 600 su 60+20+25 = 105
+    assert pr["games"] == 3 and pr["value"] == pytest.approx(600 / 105)
+    assert pr["value"] != pytest.approx((300 / 60 + 200 / 20 + 100 / 25) / 3)  # non la media
+
+    # finestra: alla vigilia della gara 3 contano solo le gare precedenti (`docs/64` §7)
+    prima = ma.season_pressing(10, pd.Timestamp("2026-09-05 18:00", tz="UTC"))
+    assert prima["games"] == 1 and prima["value"] == pytest.approx(300 / 60)
+
+    # senza gare precedenti non si inventa nulla
+    assert ma.season_pressing(10, pd.Timestamp("2026-08-01", tz="UTC")) is None
+    assert ma.season_pressing(999, None) is None
+
+
+def test_season_pressing_etichetta_solo_oltre_il_rumore(tmp_path, monkeypatch):
+    """L'etichetta esce solo se lo scarto dalla media di lega supera l'errore standard.
+
+    sd 1,99 per gara-squadra su media 5,36 (misura del 2026-10-09 su 750 gare-squadra): dopo
+    3 gare l'errore standard del rapporto vale ±0,21, dopo 7 ±0,14. Con soglie più strette la
+    card stamperebbe «pressa alto» su differenze che il campione non distingue dal caso.
+    """
+    st = _store(tmp_path)
+    # Alpha concede 400 passaggi in 100 azioni (4,00), Beta 800 in 100 (8,00): media di lega
+    # 1200/200 = 6,00, quindi rapporti 0,67 e 1,33, entrambi oltre il ±0,21 di tre gare.
+    righe = []
+    for mid in (1, 3, 4):
+        for tid, pas in ((10, 800 / 3), (20, 400 / 3)):   # passaggi giocati nella propria metà
+            righe += [{"match_id": mid, "team_id": tid, "period": "All",
+                       "key": "own_half_passes", "value": pas, "text": ""},
+                      {"match_id": mid, "team_id": tid, "period": "All",
+                       "key": "matchstats.headers.tackles", "value": 100 / 3, "text": ""}]
+    st.write("team_stats", pd.concat([st.read("team_stats"), pd.DataFrame(righe)]))
+    monkeypatch.setattr(MatchAnalysis, "LEAGUE_REF_MIN_ROWS", 4)
+    ma = MatchAnalysis(st)
+
+    alpha, beta = ma.season_pressing(10), ma.season_pressing(20)
+    assert alpha["value"] == pytest.approx(4.0) and beta["value"] == pytest.approx(8.0)
+    assert alpha["league_value"] == pytest.approx(6.0) and alpha["league_n"] == 6
+    assert alpha["se"] == pytest.approx(1.99 / 3**0.5 / 5.36)
+    assert alpha["label"] == "pressa alto"        # 0,67× la media: aggredisce
+    assert beta["label"] == "lascia giocare"      # 1,33×: concede il possesso basso
+
+    # due gare sole: niente rapporto e niente etichetta, il campione non li regge
+    corto = ma.season_pressing(10, pd.Timestamp("2026-09-06 18:00", tz="UTC"))
+    assert corto["games"] == 2 and "ratio" not in corto and "label" not in corto
+    assert ma.PRESS_MIN_GAMES == 3
+
+
 def test_referee_profile_against_league_average(tmp_path):
     """Arbitro a confronto con la media delle designazioni della stessa lega."""
     ma = MatchAnalysis(_store(tmp_path))

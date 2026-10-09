@@ -722,6 +722,11 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
       media della **stessa fonte**, e c'è ovunque la fonte lo permetta (parità fra le 7 leghe);
     * **verdetto xPTS** — coincide con ``MatchAnalysis.xpts_reading`` (banda di rumore
       misurata), e nessuna pagina riporta le vecchie soglie fisse;
+    * **pressing** — l'indice di pressione FotMob è ricalcolato dai Parquet per entrambe le
+      squadre e c'è in **tutte e 7 le leghe** (`docs/64` §9: prima la casella pubblicava il
+      PPDA di Understat e 288 riquadri su 892, tutti di Eredivisie e Liga Portugal, dicevano
+      «n.d.»), col rapporto di lega, l'etichetta solo oltre l'errore standard e il PPDA
+      Understat conservato nel ⓘ dove la lega è coperta;
     * **finestra** — i numeri si fermano **alla vigilia** della partita descritta: il campione
       stampato coincide con le gare giocate *prima* del calcio d'inizio, ricontate dal
       calendario e da Understat **senza passare da ``season_xg``** (`docs/64` §7);
@@ -781,7 +786,9 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
         r"xPTS vs punti reali</div>\s*<div[^>]*>([\d,]+) <span[^>]*>vs</span> (\d+) "
         r'<span class="mut" title="[^"]*">\(([+-]?[\d,]+)\)</span>')
     verdetto_re = re.compile(r"(\d+) gar[ae] · <span title=\"[^\"]*\">(.*?)</span></div>")
-    ppda_re = re.compile(r"PPDA <span title=\"[^\"]*\">([\d,]+)</span>")
+    # [44]/docs/64 §9: il numero in evidenza della casella «Pressing · riposo» è l'indice di
+    # pressione FotMob (7 leghe su 7), col suo rapporto di lega sulla riga sotto.
+    press_re = re.compile(r"<span title=\"Passaggi che l'avversario[^\"]*\">([\d,]+)</span>")
 
     def num(x: str) -> float:
         return float(x.replace(",", "."))
@@ -816,7 +823,6 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
         xgas = xga_re.findall(sec)
         xpts = xpts_re.findall(sec)
         verdetti = verdetto_re.findall(sec)
-        ppdas = ppda_re.findall(sec)
         ko = pd.to_datetime(riga.utc_kickoff, utc=True)
         attesi = []
         for tid, tname in ((int(riga.home_id), str(riga.home_name)),
@@ -910,11 +916,45 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if atteso_testo not in html_unescape(testo):
                     fails.append(f"{pg.name}: verdetto xPTS «{testo[:30]}» invece di "
                                  f"«{atteso_testo}»")
+            # il PPDA di Understat non è più il numero in evidenza (copre 5 leghe su 7): dove
+            # esiste deve comunque restare leggibile nel ⓘ del pressing, accanto all'indice
             atteso_ppda = atteso.get("ppda")
             checks += 1
-            if (atteso_ppda is not None and not pd.isna(atteso_ppda)
-                    and (k >= len(ppdas) or abs(num(ppdas[k]) - float(atteso_ppda)) > 0.051)):
-                fails.append(f"{pg.name}: PPDA stampato ≠ {float(atteso_ppda):.1f}")
+            if atteso_ppda is not None and not pd.isna(atteso_ppda):
+                val = f"{float(atteso_ppda):.1f}".replace(".", ",")
+                # o nel ⓘ accanto all'indice FotMob, o — dove l'indice non è calcolabile —
+                # come numero in evidenza della casella, col suo «PPDA (Understat)»
+                atteso_txt = f"PPDA Understat sullo stesso periodo: {val}"
+                ripiego = f">{val}</span> <span class=\"mut small\""
+                testo_sec = html_unescape(sec)
+                if atteso_txt not in testo_sec and (
+                        ripiego not in sec or "PPDA (Understat)" not in sec):
+                    fails.append(f"{pg.name}: il ⓘ del pressing non riporta il PPDA Understat "
+                                 f"{float(atteso_ppda):.1f}")
+        # [44]/docs/64 §9 — indice di pressione: ricalcolato dai Parquet per **entrambe** le
+        # squadre di ogni scheda, in tutte e 7 le leghe (è la casella che prima mancava del
+        # tutto a Eredivisie e Liga Portugal).
+        press_stampati = press_re.findall(sec)
+        press_attesi = [ma.season_pressing(int(riga.home_id), ko),
+                        ma.season_pressing(int(riga.away_id), ko)]
+        press_vivi = [p for p in press_attesi if p]
+        checks += 1
+        if len(press_stampati) != len(press_vivi):
+            fails.append(f"{pg.name}: indici di pressione stampati {len(press_stampati)}, "
+                         f"ricalcolati {len(press_vivi)}")
+        for stampato, atteso_pr in zip(press_stampati, press_vivi, strict=False):
+            checks += 2
+            if abs(num(stampato) - float(atteso_pr["value"])) > 0.011:
+                fails.append(f"{pg.name}: indice di pressione {stampato} ≠ "
+                             f"{atteso_pr['value']:.2f}")
+            rapporto = atteso_pr.get("ratio")
+            atteso_rap = f"{rapporto:.2f}".replace(".", ",") if rapporto else None
+            if atteso_rap and f"{atteso_rap}× la media del campionato" not in sec:
+                fails.append(f"{pg.name}: rapporto di pressione {atteso_rap}× assente")
+            checks += 1
+            etichetta = atteso_pr.get("label")
+            if etichetta and f"<b>{etichetta}</b>" not in sec:
+                fails.append(f"{pg.name}: etichetta di pressing «{etichetta}» assente")
         checks += 1
         if re.search(r"coppe incluse", sec):
             fails.append(f"{pg.name}: il riposo dice ancora «coppe incluse» senza il nome")

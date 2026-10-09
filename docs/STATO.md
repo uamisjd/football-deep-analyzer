@@ -32,6 +32,16 @@
 
 **Prossimo passo:** restano da revisionare le altre sezioni della scheda con lo stesso metodo — **Come arrivano**, **I giocatori che decidono**, **Panchina e posta in gioco**, **Mercato: arrivi e partenze**, **Vita del club**, **Previsione del modello ensemble**, **Precedenti**, **Verifica approfondita** — più i punti aperti di `docs/57` §7 (tre tilt non cablati, valore titolari assente su 42/66, ridondanza duello chiave/radar). Il merge della PR #91 resta dell'utente.
 
+## 2026-10-09 — Pressing su tutte e 7 le leghe (PR #97)
+
+Prima fonte nuova del giro «dati, poi sezioni»: l'indice di pressione calcolato dalle statistiche
+gara FotMob (passaggi concessi nella metà campo avversaria per azione difensiva) sostituisce il
+PPDA di Understat come numero in evidenza della casella «Pressing · riposo». **288 caselle su 892
+dicevano «n.d.»** (tutta l'Eredivisie e tutta la Liga Portugal): ora le caselle piene sono
+**760/892 con la stessa copertura in tutte e 7 le leghe**. Il PPDA resta nel ⓘ dove c'è, le
+etichette escono solo oltre l'errore standard (151), e [44] ricalcola tutto dai Parquet.
+Validazione e soglie in `docs/64_le_due_squadre_2026-10-09.md` §9.
+
 ## 2026-10-09 — «Le due squadre», terzo giro: l'infermeria (PR #97)
 
 Revisione della card sulla scheda PSV–Heerenveen (`5781762`). Forma, xG, xPTS, pressing e riposo

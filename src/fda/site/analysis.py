@@ -3810,6 +3810,103 @@ class MatchAnalysis:
             out["split_played"] = int(n)
         return out
 
+    #: Chiavi FotMob dell'indice di pressione: passaggi dell'avversario nella **sua** metà
+    #: campo (la zona che si va ad aggredire) e azioni difensive della squadra.
+    PRESS_PASSES_KEY: ClassVar[str] = "own_half_passes"
+    PRESS_ACTION_KEYS: ClassVar[tuple[str, ...]] = (
+        "matchstats.headers.tackles", "interceptions", "fouls")
+    PRESS_GAME_SD: ClassVar[float] = 1.99     # sd per gara-squadra (750 gare, misura 2026-10-09)
+    PRESS_GAME_MEAN: ClassVar[float] = 5.36   # media per squadra nella stessa misura
+    PRESS_MIN_GAMES: ClassVar[int] = 3        # come XG_RATIO_MIN_GAMES: sotto, nessun rapporto
+
+    def _press_rows(self) -> pd.DataFrame:
+        """Passaggi concessi e azioni difensive per gara-squadra, da ``team_stats`` (FotMob).
+
+        Una riga per squadra e partita: ``passes`` sono i passaggi che **l'avversario** ha
+        giocato nella propria metà campo e ``actions`` i contrasti, gli intercetti e i falli
+        della squadra. Il rapporto fra i due è la stessa idea del PPDA, con una fonte che
+        copre tutte e 7 le leghe (Understat ne copre 5: Eredivisie e Liga Portugal restavano
+        senza alcun numero di pressing, 288 caselle su 892 — `docs/64` §9).
+        """
+        cached = getattr(self, "_press_cache", None)
+        if cached is not None:
+            return cached
+        empty = pd.DataFrame(columns=["match_id", "team_id", "passes", "actions"])
+        if self.team_stats.empty:
+            self._press_cache = empty
+            return empty
+        ts = self.team_stats[self.team_stats.period == "All"]
+        keys = (self.PRESS_PASSES_KEY, *self.PRESS_ACTION_KEYS)
+        ts = ts[ts.key.isin(keys)]
+        if ts.empty:
+            self._press_cache = empty
+            return empty
+        piv = ts.pivot_table(index=["match_id", "team_id"], columns="key", values="value",
+                             aggfunc="first").reset_index()
+        if self.PRESS_PASSES_KEY not in piv.columns:
+            self._press_cache = empty
+            return empty
+        have = [k for k in self.PRESS_ACTION_KEYS if k in piv.columns]
+        piv["actions"] = piv[have].sum(axis=1) if have else np.nan
+        # i passaggi concessi sono quelli dell'**altra** squadra nella stessa partita
+        opp = piv[["match_id", "team_id", self.PRESS_PASSES_KEY]].rename(
+            columns={"team_id": "_opp", self.PRESS_PASSES_KEY: "passes"})
+        rows = piv[["match_id", "team_id", "actions"]].merge(opp, on="match_id")
+        rows = rows[rows.team_id != rows._opp]
+        rows = rows.dropna(subset=["passes", "actions"])
+        rows = rows[rows.actions > 0][["match_id", "team_id", "passes", "actions"]]
+        self._press_cache = rows
+        return rows
+
+    def _press_window(self, before: Any = None) -> pd.DataFrame:
+        """Righe di pressione delle sole gare **finite prima** di ``before`` (`docs/64` §7)."""
+        rows = self._press_rows()
+        cut = self._as_utc(before)
+        if rows.empty or cut is None:
+            return rows
+        return rows[rows.match_id.astype(int).map(self._match_kickoffs()) < cut]
+
+    def season_pressing(self, team_id: int, before: Any = None) -> dict[str, Any] | None:
+        """Indice di pressione di stagione: passaggi concessi per azione difensiva.
+
+        Più è **basso**, più la squadra aggredisce alta la costruzione avversaria. Il valore
+        di stagione è un **rapporto di somme** (totale passaggi / totale azioni), non la media
+        dei rapporti di gara: una partita con poche azioni difensive non pesa come una intera.
+
+        Esce col rapporto sulla media della propria lega — calcolata sulla stessa finestra —
+        e con un'etichetta solo quando lo scarto dal pari supera l'errore standard del
+        campione (sd 1,99 per gara su media 5,36: dopo 5 gare vale ±0,17, dopo 7 ±0,14).
+        Misurato il 2026-10-09: 39 squadre su 132 superano la soglia, da 2 a 8 per lega.
+        """
+        rows = self._press_window(before)
+        if rows.empty:
+            return None
+        mine = rows[rows.team_id == team_id]
+        n = int(mine.match_id.nunique())
+        if not n:
+            return None
+        value = float(mine.passes.sum() / mine.actions.sum())
+        out: dict[str, Any] = {"value": value, "games": n}
+        league_id = self._team_league_id(team_id)
+        if league_id is not None and not self.fixtures.empty:
+            mids = set(self.fixtures.loc[self.fixtures.league_id == league_id,
+                                         "match_id"].astype(int))
+            lg = rows[rows.match_id.astype(int).isin(mids)]
+            if len(lg) >= self.LEAGUE_REF_MIN_ROWS:
+                ref = float(lg.passes.sum() / lg.actions.sum())
+                out["league_value"] = ref
+                out["league_n"] = len(lg)
+                if ref and n >= self.PRESS_MIN_GAMES:
+                    ratio = value / ref
+                    se = self.PRESS_GAME_SD / math.sqrt(n) / self.PRESS_GAME_MEAN
+                    out["ratio"] = ratio
+                    out["se"] = se
+                    if ratio < 1 - se:
+                        out["label"] = "pressa alto"
+                    elif ratio > 1 + se:
+                        out["label"] = "lascia giocare"
+        return out
+
     def standing(self, team_name: str) -> dict[str, Any] | None:
         """Classifica: prima FotMob (fonte primaria), poi ESPN come riserva."""
         canon = canonical(team_name)
@@ -5556,6 +5653,11 @@ class MatchAnalysis:
             # gare successive a quella che racconta.
             "home_xg": self.season_xg(f["home_name"], home_id, kickoff),
             "away_xg": self.season_xg(f["away_name"], away_id, kickoff),
+            # docs/64 §9: indice di pressione da FotMob, l'unica fonte che copre tutte e 7 le
+            # leghe (il PPDA di Understat ne copre 5: 288 caselle su 892 restavano senza
+            # alcun numero di pressing, tutte di Eredivisie e Liga Portugal).
+            "home_press": self.season_pressing(home_id, kickoff),
+            "away_press": self.season_pressing(away_id, kickoff),
             "home_standing": self.standing(f["home_name"]), "away_standing": self.standing(f["away_name"]),
             "season_compare": self.season_compare(self.standing(f["home_name"]), self.standing(f["away_name"])),
             "home_unavailable": self.unavailable(match_id, home_id), "away_unavailable": self.unavailable(match_id, away_id),
