@@ -1420,3 +1420,28 @@ partito dopo le 23:12:34Z — gli ultimi run restano `37700026749` (check della 
 hanno `paths-ignore` su `docs/**`, come atteso per i merge solo-documenti.
 
 Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
+
+### 9.23 Merge PR #96 — revisione affidabilità del daily, solo documenti (2026-10-09, deroga esplicita)
+
+**Ordine dell'utente:** messaggio della sessione `arena/9b461802` (09/10/2026, ~17:24 UTC):
+*«Please merge the pull request.»* Verifiche pre-merge eseguite con comando, tutte superate:
+check `test` `pass` (run `37965168597`, pull_request, 2m18s), PR `MERGEABLE · CLEAN`,
+`git status --porcelain` vuoto, `git log --oneline origin/main..HEAD` = **solo il commit**
+`61dcf65` (4 file: `docs/63…`, `docs/STATO.md`, `docs/BRIEFING_NUOVA_SESSIONE.md`,
+`README.md` — tutti `.md`, tutti coperti da `paths-ignore`). Eseguito
+`gh pr merge 96 --merge`. GitHub conferma: `state=MERGED`, `merged_at=2026-10-09T17:25:24Z`,
+merge commit **`6ff743f54cfc427e84126101600b5e276c329b95`**.
+
+**Contenuto (solo documenti, 4 file, +228/−4):** `docs/63` (revisione affidabilità del daily:
+26/43 run rossi in 30 giorni classificati per step e causa radice — 24×verify_site «1 assenti»
++ Sportmediaset 404 corretti il 10-07, 1×parita «Precedenti» corretto in PR #95, 1×pip
+transitorio; prove che la pipeline si aggiorna da sola; nessuna modifica di codice, B.10),
+`docs/STATO.md` (checkpoint), `docs/BRIEFING_NUOVA_SESSIONE.md` (indice completato 57–62),
+`README.md` (voci mancanti 57/61/62/63).
+
+**Effetti in produzione: nessun run attivato.** Verificato dopo il merge: gli ultimi run
+restano `37965168597` (check della PR #96, `pass`) e `37961077793` (`daily` schedulato 16:42,
+`success`, dati in `4a79e2c`) — come atteso per un merge solo-documenti
+(`paths-ignore: docs/**`, `*.md`).
+
+Resta valida la regola generale: senza una richiesta esplicita, il merge non va eseguito.
