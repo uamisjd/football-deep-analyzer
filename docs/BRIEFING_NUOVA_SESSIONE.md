@@ -2,10 +2,35 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-07 (notte fonda — **PR #91 fusa su ordine esplicito dell'utente**, le due coppie della revisione delle schede sono in produzione) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha deciso in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
+> **Ultimo aggiornamento:** 2026-10-09 (vedi l'handoff qui sotto; prima del 9/10 l'ultimo era il 7/10) (notte fonda — **PR #91 fusa su ordine esplicito dell'utente**, le due coppie della revisione delle schede sono in produzione) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha deciso in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
 ---
+
+## Handoff operativo corrente — 2026-10-09 (il più recente: leggere questo per primo)
+
+- **Lotto chiuso:** revisione della card **«Le due squadre»** nelle schede partita, in quattro
+  passaggi, con la **PR #97**. Documento unico: [`docs/64`](64_le_due_squadre_2026-10-09.md)
+  (§2 primo giro · §5-§7 finestra alla vigilia · §8 infermeria · §9 pressing su 7 leghe).
+- **Risultati misurati:** 750/750 riquadri non includono più gare successive alla partita
+  descritta; il totale dell'infermeria è la somma delle righe stampate (prima sbagliato in
+  **101 pannelli su 118**); nessuna riga di infermeria senza ruolo (prima **197 su 507**); le
+  caselle con un numero di pressing passano da **604 a 760 su 892**, con Eredivisie e Liga
+  Portugal che prima erano a **zero**.
+- **Invariante nuova [44]** (`check_due_squadre` in `scripts/verify_site.py`): ricalcola dai
+  Parquet struttura, fonte, xG, xPTS, rapporti di lega, finestra, indice di pressione e somme
+  dell'infermeria su **tutte** le schede.
+- **Gate alla chiusura:** pytest **556 passed** · ruff pulito · build **446/2.364/7.498** ·
+  `verify_site` **0 problemi · 187.107 controlli** · `parita_schede` nessuna differenza ·
+  `resa_375` **26.565 · 0**.
+- **Coda operativa e prompt per la sessione nuova:**
+  [`docs/65`](65_handoff_e_coda_fonti_2026-10-09.md) — B: la forza dell'avversario nella forma
+  con l'**Elo che già abbiamo** (`predictions.parquet`, 133 squadre); C: Clubelo come controllo
+  indipendente (fonte configurata e **mai usata**); D: quote di chiusura solo come **metro** del
+  modello (`footballdata`, codici presenti per tutte e 7 le leghe); E: tre ritocchi a costo zero
+  dentro la card; F: sezioni ancora da revisionare.
+- **Nessuna raccolta live** è stata eseguita in questo giro: tutte le misure vengono dai Parquet
+  in `data/processed`.
 
 ## Handoff operativo corrente — 2026-10-07 (leggere prima delle note storiche)
 
