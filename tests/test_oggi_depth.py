@@ -574,7 +574,36 @@ def test_absences_weight(tmp_path):
     assert ab["contrib_lost_p90"] == 0.45 / 1.5                # 0,45 xG+xA su 135' → 0,30/90
     assert ab["starters_out"] == 1
     assert ab["players"][1]["name"] == "Esordiente A" and ab["players"][1]["minutes"] is None
+    assert ab["con_dati"] == 1                                 # l'esordiente non ha minuti
     assert ma.absences_weight(100, 20) is None                 # nessuna assenza → nessuna card
+
+
+def test_absences_weight_total_is_the_sum_of_the_published_rows(tmp_path, monkeypatch):
+    """Il totale dell'infermeria è la somma esatta della colonna «impatto» (docs/64 §8).
+
+    Prima il totale sommava la **stima** stabilizzata anche per chi ha più di 90′ in stagione,
+    mentre la riga pubblica il **grezzo**: sulla build del 2026-10-09 il badge non tornava con
+    la colonna sotto in 101 pannelli su 118 (86%), con scarti fino a 0,67 xG+xA. Qui la stima
+    è forzata lontana dal grezzo: se il totale tornasse a sommare le stime, il test fallirebbe.
+    """
+    from fda.site import analysis as an
+
+    ma = MatchAnalysis(_store(tmp_path))
+
+    class _Pool:
+        def per90(self, contrib, minutes):          # stima volutamente diversa dal grezzo
+            return 9.0
+
+        def note(self, _n):
+            return "gruppo di prova"
+
+    monkeypatch.setattr(an.MatchAnalysis, "_contrib_pool", lambda self, pid, tid: (_Pool(), 7))
+    ab = ma.absences_weight(100, 10)
+    righe = [p["contrib_p90"] for p in ab["players"] if p["contrib_p90"] is not None]
+    assert righe == [0.45 / 1.5]                               # 135′ → si pubblica il grezzo
+    # somma delle cifre **come la tabella le stampa** (convenzione `displayed_sum`, docs/22)
+    assert ab["contrib_lost_p90"] == pytest.approx(sum(round(r, 2) for r in righe))
+    assert ab["con_dati"] == len(righe) == 1 and ab["n"] == 2
 
 
 def test_referee_profile_against_league_average(tmp_path):
@@ -887,7 +916,13 @@ def test_peso_infermeria_con_stima_stabilizzata(tmp_path):
     # Ala A (135′, 0,30/90 grezzo): il campione è pubblicabile, resta il grezzo
     ala = next(p for p in ab["players"] if p["name"] == "Ala A")
     assert ala["pubblicabile"] is True and ala["contrib_p90"] == pytest.approx(0.3)
-    assert ab["contrib_lost_p90"] == pytest.approx(riga["contrib_est"] + ala["contrib_est"])
+    # il totale somma ciò che le righe pubblicano — la stima per l'esordiente, il grezzo per
+    # Ala A — con le cifre arrotondate come in tabella (docs/64 §8): prima sommava la stima
+    # anche dove la riga stampava il grezzo e il badge non tornava con la colonna sotto
+    assert ab["contrib_lost_p90"] == pytest.approx(
+        round(riga["contrib_p90"], 2) + round(ala["contrib_p90"], 2))
+    assert ala["contrib_est"] != pytest.approx(ala["contrib_p90"])   # stima ≠ grezzo: il caso che rompeva
+    assert ab["con_dati"] == 2
 
 
 # --- P2.4: le tre frasi-macchina di narrative() riscritte in italiano (docs/19 §2.8) ---

@@ -725,6 +725,10 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
     * **finestra** — i numeri si fermano **alla vigilia** della partita descritta: il campione
       stampato coincide con le gare giocate *prima* del calcio d'inizio, ricontate dal
       calendario e da Understat **senza passare da ``season_xg``** (`docs/64` §7);
+    * **infermeria** — il totale «xG+xA a partita in meno» è la **somma esatta** della colonna
+      «impatto» stampata sotto (`docs/64` §8: prima sommava le stime mentre le righe
+      mostravano il grezzo, e non tornava in 101 pannelli su 118), e ogni riga dichiara il
+      ruolo (o «ruolo n.d.»);
     * **testi** — nessuna attribuzione a Transfermarkt (il valore è della distinta FotMob) e
       nessuna stringa fantasma nel piè di card.
     """
@@ -914,6 +918,23 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
         checks += 1
         if re.search(r"coppe incluse", sec):
             fails.append(f"{pg.name}: il riposo dice ancora «coppe incluse» senza il nome")
+        # infermeria: il totale è la somma esatta della colonna, e ogni riga ha il ruolo
+        for blocco in sec.split('<p id="infermeria-')[1:]:
+            tabella = blocco.split("</table>", 1)[0]
+            tot = re.search(r"· ([\d,]+) xG\+xA a partita in meno", blocco)
+            voci = [num(v) for v in re.findall(
+                r'<b style="color:var\(--accent\)">(?:◇ )?([\d,]+)</b>', tabella)]
+            if tot:
+                checks += 1
+                if abs(sum(voci) - num(tot.group(1))) > 0.011:
+                    fails.append(f"{pg.name}: infermeria, totale {tot.group(1)} ≠ somma della "
+                                 f"colonna {sum(voci):.2f}")
+            nomi = re.findall(r"<td><b>[^<]+</b>(.*?)</td>", tabella)
+            checks += 1
+            senza = [n for n in nomi if "border-radius:999px" not in n]
+            if senza:
+                fails.append(f"{pg.name}: infermeria, {len(senza)} righe senza la pillola "
+                             "del ruolo (neanche «ruolo n.d.»)")
     print(f"[44] schede con «Le due squadre» verificate: {n_pagine} pagine, "
           f"{n_pannelli} riquadri di squadra, {n_rif} riferimenti di lega")
     return fails, checks

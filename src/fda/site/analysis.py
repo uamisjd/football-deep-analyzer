@@ -42,7 +42,7 @@ from .advanced import (
     wp_path,
     xg_race,
 )
-from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
+from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_triple
 from .rates import (
     MIN_DEN_FOR_RATE,
     Pool,
@@ -4439,6 +4439,10 @@ class MatchAnalysis:
         La rata pubblicata è **stabilizzata** (docs/19 §1.10): con il valore grezzo un assente
         con un minuto giocato pubblicava «15,30 xG+xA a partita», e quel numero entrava nella
         somma dell'infermeria. Sotto i 90′ si pubblica solo la stima, dichiarata come tale.
+
+        `contrib_lost_p90` è la somma **dei valori pubblicati riga per riga** e `con_dati` dice
+        su quanti assenti è calcolata: gli altri non hanno ancora minuti in stagione e nella
+        colonna escono «n.d.», quindi non possono entrare nel totale (`docs/64` §8).
         """
         unav = self.unavailable(match_id, team_id)
         if not unav:
@@ -4459,7 +4463,7 @@ class MatchAnalysis:
         lu = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
                          & (self.lineup.role == "unavailable") & self.lineup.player_id.notna()]
         by_name = {str(r.player_name): int(r.player_id) for r in lu.itertuples(index=False)}
-        players, starters_out, contrib_lost = [], 0, 0.0
+        players, starters_out, contrib_lost, con_dati = [], 0, 0.0, 0
         for u in unav:
             pid = by_name.get(str(u["name"]))
             s = stats.get(pid, {}) if pid is not None else {}
@@ -4474,18 +4478,31 @@ class MatchAnalysis:
                 pubblicabile = True
             is_starter = bool(per_player and mins >= 0.5 * per_player)
             starters_out += int(is_starter)
-            contrib_lost += stima if stima is not None else (grezzo or 0.0)
+            # Il totale è la somma **dei numeri che la card pubblica**, non di una grandezza
+            # diversa (`docs/64` §8): prima sommava la stima stabilizzata anche dove la riga
+            # mostrava il grezzo, e il totale non tornava con la colonna sotto in **101
+            # pannelli su 118 (86%)**, con scarti fino a 0,67 xG+xA (1,34 pubblicato contro
+            # 2,01 delle righe). Regola del progetto: una somma stampata dev'essere la somma
+            # delle cifre stampate (docs/22, invariante [31]).
+            pubblicato = grezzo if pubblicabile else stima
+            # `displayed`: si sommano le cifre **arrotondate come la tabella le stampa**,
+            # la stessa convenzione di `displayed_sum` (docs/22, misura del 2026-09-16),
+            # altrimenti con cinque righe l'arrotondamento accumulato riapre lo scarto.
+            contrib_lost += displayed(pubblicato, 2) if pubblicato is not None else 0.0
+            con_dati += int(pubblicato is not None)
             players.append({**u, "minutes": int(mins) or None, "games": None,
                             "goals": int(s.get("goals", 0.0)), "assists": int(s.get("assists", 0.0)),
-                            "contrib_p90": grezzo if pubblicabile else stima,
+                            "contrib_p90": pubblicato,
                             "contrib_raw": grezzo, "contrib_est": stima,
                             "pubblicabile": pubblicabile,
                             "est_note": gruppi[0].note(gruppi[1]) if gruppi else None,
                             "starter": is_starter})
         players.sort(key=lambda p: (-(p["contrib_p90"] or 0.0), -(p["minutes"] or 0)))
         return {"players": players, "n": len(players), "starters_out": starters_out,
-                # somma delle stime stabilizzate: dichiarata come stima nel template
-                "contrib_lost_p90": contrib_lost or None, "has_stats": bool(stats)}
+                # somma esatta della colonna «impatto» pubblicata in tabella, e quanti degli
+                # assenti ci entrano davvero (gli altri non hanno minuti in stagione)
+                "contrib_lost_p90": contrib_lost or None, "con_dati": con_dati,
+                "has_stats": bool(stats)}
 
     def referee_profile(self, match_id: int) -> dict[str, Any] | None:
         """Profilo dell'arbitro con il confronto sulla media del campionato.

@@ -512,6 +512,28 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
                for f in rotta(originale.replace("Che cosa c'è in questa card:",
                                                 "coppe incluse · Che cosa c'è in questa card:")))
 
+    # 10) infermeria: il totale non è la somma della colonna «impatto» (docs/64 §8)
+    pillola = ('<span class="mut small" style="display:inline-block;padding:1px 6px;'
+               'background:var(--surface2);border:1px solid var(--line);border-radius:999px;'
+               'font-size:10px">attaccante</span>')
+    riga = ('<tr><td><b>Tizio {n}</b>' + pillola + '</td><td class="mut small">infortunio</td>'
+            '<td class="r small">200′ · 1+1 · <b style="color:var(--accent)">{v}</b>/90</td></tr>')
+    def infermeria(totale: str, righe: str) -> str:
+        blocco = (f'<p id="infermeria-home"><b>Indisponibili (2)</b> <span class="mut small">'
+                  f'· {totale} xG+xA a partita in meno</span></p>'
+                  f'<div class="tablewrap"><table>{righe}</table></div>')
+        return originale.replace("Che cosa c'è in questa card:",
+                                 blocco + "Che cosa c'è in questa card:")
+
+    due = riga.format(n=1, v="0,60") + riga.format(n=2, v="0,40")
+    assert rotta(infermeria("1,00", due)) == []                # somma giusta: nessun allarme
+    fails = rotta(infermeria("0,80", due))
+    assert any("totale 0,80 ≠ somma della colonna 1.00" in f for f in fails)
+
+    # 11) una riga senza la pillola del ruolo (nemmeno «ruolo n.d.»): la cella resta muta
+    muta = due.replace(pillola, "", 1)
+    assert any("senza la pillola del ruolo" in f for f in rotta(infermeria("1,00", muta)))
+
     assert rotta(originale) == []
 
 

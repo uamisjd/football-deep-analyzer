@@ -247,3 +247,64 @@ dichiarazione per le squadre senza gare precedenti e il rispetto della soglia de
 Test nuovi: `test_numeri_di_stagione_fermi_alla_vigilia`,
 `test_rapporto_di_lega_solo_con_campione_che_lo_regge`,
 `test_card_due_squadre_senza_gare_precedenti_resta_completa`.
+
+## §8 — Terzo giro: la card letta sulla scheda PSV–Heerenveen (2026-10-09)
+
+Punto di partenza: lo screenshot della card del **PSV** nella scheda di oggi
+(`site/partite/5781762.html`, PSV–Heerenveen, NED1, 9/10 18:00 UTC). Rilettura sezione per
+sezione, con ricalcolo indipendente dai Parquet.
+
+### Quello che la card diceva giusto (verificato, nessuna modifica)
+
+| Sezione | Controllo fatto | Esito |
+|---|---|---|
+| Forma | `V V V V P` contro i risultati nei Parquet (Twente 3-2 PSV = sconfitta), ordine vecchia→recente, glifi ▲/—/▼ e colori distinti in `site.css` 274-288 | corretta |
+| xG creati / concessi | 2,80 (1,61× su NED1 1,740) e 1,31 (0,75×) su 7 gare, campione fermo alla vigilia | corretti |
+| xPTS | 14,8 contro 16 punti ricontati a mano (1+3+3+3+3+3+0), banda ±3,0 su 7 gare → «in linea» | corretto |
+| Pressing | «n.d.»: l'Eredivisie non è coperta da Understat, l'unica fonte PPDA | corretto |
+| Riposo | ultima gara 20/09 (tutte le 18 squadre NED1 a 7 gare), prossima oggi → **19 giorni**; la Champions del 10/09 è precedente e `_rest_source()` include davvero `cup_fixtures` | corretto |
+| Titolari fuori | «2 titolari abituali fuori» = i due «· titolare» in tabella | coerente |
+
+### Difetto A — il totale dell'infermeria non era la somma delle righe
+
+Il badge pubblicava `contrib_lost_p90`, che sommava la **stima stabilizzata**, mentre ogni riga
+pubblica il **grezzo** quando il campione supera i 90′ (`contrib_p90 = grezzo if pubblicabile
+else stima`). PSV: badge «◎ 1,92» contro 0,91+0,46+0,35+0,13+0,12 = **1,98**.
+
+Misura sulla build precedente: **101 pannelli su 118 (86%)** con totale ≠ somma della colonna,
+scarto mediano **0,040**, massimo **0,670** (mid 5881179, tid 8406: 1,34 contro 2,01 — il 33% in
+meno). Viola la regola [31]/docs/22: *una somma stampata è la somma delle cifre stampate*.
+
+Correzione in `analysis.py::absences_weight`: il totale somma **i valori pubblicati riga per
+riga**, arrotondati come la tabella li stampa (`displayed(·, 2)`, la stessa convenzione di
+`displayed_sum`) — senza l'arrotondamento per riga un pannello su 141 restava fuori di 0,02 per
+accumulo. Dopo la ricostruzione: **141 pannelli, 0 scostamenti**; PSV «1,97», somma della
+colonna 1,97.
+
+### Difetto B — chi non ha numeri spariva dalla lettura del badge
+
+«Indisponibili (9) · 1,92» non diceva che **4 dei 9** non hanno minuti in stagione e quindi non
+entrano nel totale (**202 assenti senza dati su 87 pannelli**). Ora `absences_weight` restituisce
+anche `con_dati` e il badge scrive «**(5 su 9 con minuti)**» quando i due numeri divergono
+(**83 badge**), col ⓘ che spiega la composizione del totale.
+
+### Difetto C — 197 righe su 507 (39%) senza ruolo e senza spiegazione
+
+La cella del nome restava muta quando la fonte non dà il ruolo (Schouten e Nagalo nella card
+PSV). Ora la pillola c'è sempre: «**ruolo n.d.**» con il ⓘ «il giocatore non è ancora comparso in
+una distinta di questa stagione, l'unica fonte di ruolo che raccogliamo». Nessuna riga resta muta
+(507 su 507 con pillola).
+
+### Invariante estesa
+
+**[44]** controlla ora anche l'infermeria dentro «Le due squadre», su ogni scheda: il totale deve
+coincidere con la somma della colonna «impatto» (tolleranza 0,011) e ogni riga deve avere la
+pillola del ruolo. Test: i casi 10 e 11 di `test_verify_site_due_squadre_su_ogni_scheda` e
+`test_absences_weight_total_is_the_sum_of_the_published_rows` (con la stima forzata lontana dal
+grezzo: col codice vecchio fallisce, controprova eseguita).
+
+### Stato dopo il terzo giro
+
+pytest **554 passed** · ruff pulito · build 446/2.364/7.498 · `verify_site` **0 problemi ·
+184.381 controlli** (`[44] 446 pagine · 762 riquadri · 498 riferimenti`) · `parita_schede` nessuna
+differenza · `resa_375` 26.565 · 0.
