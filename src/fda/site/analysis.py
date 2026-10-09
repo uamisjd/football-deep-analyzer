@@ -1087,13 +1087,17 @@ def fattori_soglie_testo() -> str:
     può raccontare soglie diverse da quelle che accendono le righe — lo stesso errore che aveva
     prodotto la card meteo (`docs/55` §4.3, `docs/57` §1-2).
     """
-    return (f"valore dei titolari ≥{_f(MatchAnalysis.FACTOR_MARKET_RATIO, 2).rstrip('0').rstrip(',')}×"
-            f" (o ≤{_f(1 / MatchAnalysis.FACTOR_MARKET_RATIO, 2)}×), "
-            f"indisponibili ≥{MatchAnalysis.FACTOR_ABSENCE_MIN} assenti o 1 titolare abituale o "
-            f"{_f(MatchAnalysis.FACTOR_ABSENCE_LOST).rstrip('0').rstrip(',')} xG+xA/90 persi, "
-            f"riposo ≤{MatchAnalysis.FACTOR_REST_SHORT} giorni, pressing (PPDA) ≤"
-            f"{_f(MatchAnalysis.FACTOR_PRESS_RATIO, 2)}× (o ≥"
-            f"{_f(1 / MatchAnalysis.FACTOR_PRESS_RATIO, 2)}×)")
+    m = MatchAnalysis
+    return (f"valore dei titolari ≥{_f(m.FACTOR_MARKET_RATIO, 2).rstrip('0').rstrip(',')}×"
+            f" (o ≤{_f(1 / m.FACTOR_MARKET_RATIO, 2)}×), "
+            f"indisponibili ≥{m.FACTOR_ABSENCE_MIN} assenti o 1 titolare abituale o "
+            f"{_f(m.FACTOR_ABSENCE_LOST).rstrip('0').rstrip(',')} xG+xA/90 persi, "
+            f"riposo ≤{m.FACTOR_REST_SHORT} giorni, pressing (PPDA) ≤"
+            f"{_f(m.FACTOR_PRESS_RATIO, 2)}× (o ≥{_f(1 / m.FACTOR_PRESS_RATIO, 2)}×), "
+            f"rendimento per sede ≥{_f(m.FACTOR_VENUE_DELTA)} pt/gara su ≥{m.FACTOR_VENUE_MIN} gare "
+            f"per sede, disciplina Δ ≥{_f(m.FACTOR_CARDS_DELTA, 1)} gialli/gara su "
+            f"≥{m.FACTOR_CARDS_MIN} gare o arbitro oltre ±{m.FACTOR_REF_DEV * 100:.0f}% dalla media "
+            f"di lega su ≥{m.FACTOR_REF_MIN} gare")
 
 
 class MatchAnalysis:
@@ -1122,7 +1126,11 @@ class MatchAnalysis:
         self.cup_fixtures = store.read("cup_fixtures")
         self.news_df = store.read("news")
         self.transfers = store.read("transfers")
+        # specchio dei risultati (3 stagioni, 7 leghe): serve allo split di sede della card
+        # «Fattori» (`venue_form`), che sulla sola stagione in corso avrebbe 2-3 gare per sede
+        self.history = store.read("history")
         self._pools_cache: dict[tuple[int | None, int | None], dict[str, Pool]] | None = None
+        self._hist_venue_df: pd.DataFrame | None = None
 
     # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
     def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -1913,6 +1921,122 @@ class MatchAnalysis:
                                     f"{self.MOOD_CONGEST_DAYS} giorni"})
         return out
 
+    # ---- tre misure per la card «Fattori» (docs/58 §3-§4): sede, cartellini, arbitro ----------
+
+    def _hist_venue(self) -> pd.DataFrame:
+        """Lo specchio dei risultati preparato per lo split di sede (una volta sola).
+
+        ``history.parquet`` nomina le squadre come il mirror dei risultati, non come FotMob: i
+        nomi passano da :func:`canonical`, la stessa normalizzazione usata dai modelli, così
+        «Nottm Forest» del calendario e «Nott'm Forest» dello specchio sono la stessa squadra.
+        Senza quel passaggio lo split di sede copriva 31 gare su 67 invece di 48.
+        """
+        if self._hist_venue_df is not None:
+            return self._hist_venue_df
+        h = self.history
+        if h.empty or not {"home", "away", "date", "home_goals", "away_goals"} <= set(h.columns):
+            self._hist_venue_df = pd.DataFrame()
+            return self._hist_venue_df
+        # ``league_key`` serve al riferimento di lega della riga di sede (docs/59): senza, il PPG
+        # della squadra è un numero assoluto che il lettore non sa collocare.
+        has_lg = "league_key" in h.columns
+        d = h[["home", "away", "date", "home_goals", "away_goals"]
+              + (["league_key"] if has_lg else [])].copy()
+        d["date"] = pd.to_datetime(d["date"], utc=True)
+        d["hc"] = d["home"].map(canonical)
+        d["ac"] = d["away"].map(canonical)
+        pari = d.home_goals == d.away_goals
+        d["ph"] = np.where(d.home_goals > d.away_goals, 3, np.where(pari, 1, 0))
+        d["pa"] = np.where(d.away_goals > d.home_goals, 3, np.where(pari, 1, 0))
+        keep = ["date", "hc", "ac", "ph", "pa"] + (["league_key"] if has_lg else [])
+        self._hist_venue_df = d[keep].dropna(subset=["date"])
+        return self._hist_venue_df
+
+    def venue_form(self, team_name: str, kickoff: datetime) -> dict[str, Any] | None:
+        """Punti/gara **in casa** e **in trasferta** nei ``FACTOR_VENUE_WINDOW`` giorni precedenti.
+
+        Ritorna ``{"casa": (pt/gara, n_gare), "trasferta": (pt/gara, n_gare)}`` per le sedi con
+        almeno una gara nella finestra; ``None`` se la squadra non compare. La finestra finisce
+        al calcio d'inizio, quindi nessuna gara futura entra nel numero.
+
+        Perché lo specchio e non la stagione in corso: a ottobre ogni squadra ha 2-3 gare
+        casalinghe giocate, e un PPG su due gare è rumore (3,00 per chi ha vinto l'unica). Su
+        365 giorni le gare per sede sono ~19, e il confronto «come rende in casa» contro «come
+        rende in trasferta l'avversaria» diventa leggibile (misura in `docs/58` §3).
+        """
+        hv = self._hist_venue()
+        if hv.empty:
+            return None
+        nm = canonical(team_name)
+        fine = pd.Timestamp(kickoff)
+        if fine.tzinfo is None:
+            fine = fine.tz_localize("UTC")
+        w = hv[(hv.date >= fine - pd.Timedelta(days=self.FACTOR_VENUE_WINDOW)) & (hv.date < fine)]
+        if w.empty:
+            return None
+        c, t = w[w.hc == nm], w[w.ac == nm]
+        out: dict[str, Any] = {}
+        if len(c):
+            out["casa"] = (float(c.ph.mean()), len(c))
+        if len(t):
+            out["trasferta"] = (float(t.pa.mean()), len(t))
+        # Riferimento di lega (docs/59): il PPG per sede **della stessa lega** nella finestra, così
+        # il numero della squadra si legge contro la sua base — 1,22 in casa è sotto la media se la
+        # lega sta a 1,55. Senza, la cella dà un valore assoluto che il lettore non sa collocare.
+        if "league_key" in w.columns:
+            lg = set(c.league_key.dropna()) | set(t.league_key.dropna())
+            lw = w[w.league_key.isin(lg)] if lg else w.iloc[:0]
+            if len(lw):
+                out["lega_casa"] = (float(lw.ph.mean()), len(lw))
+                out["lega_trasferta"] = (float(lw.pa.mean()), len(lw))
+        return out or None
+
+    def cards_season(self, team_id: int, kickoff: datetime) -> dict[str, Any] | None:
+        """Gialli e falli per gara della squadra nelle gare finite della stagione prima del fischio.
+
+        Fonte ``team_stats`` (statistiche gara di FotMob), solo le gare ``finished`` con calcio
+        d'inizio precedente: lo stesso vincolo anti-futuro di :meth:`venue_form`.
+        """
+        if self.team_stats.empty or self.info.empty:
+            return None
+        ko = pd.Timestamp(kickoff)
+        if ko.tzinfo is None:
+            ko = ko.tz_localize("UTC")
+        fin = self.info[(self.info.status == "finished")
+                        & (pd.to_datetime(self.info.utc_kickoff, utc=True) < ko)]
+        if fin.empty:
+            return None
+        ids = set(fin.match_id.astype(int))
+        ts = self.team_stats[(self.team_stats.team_id == team_id)
+                             & (self.team_stats.period == "All")
+                             & (self.team_stats.match_id.isin(ids))
+                             & (self.team_stats.key.isin(["yellow_cards", "fouls"]))]
+        if ts.empty:
+            return None
+        val = ts.assign(v=pd.to_numeric(ts.value, errors="coerce")).dropna(subset=["v"])
+        if val.empty:
+            return None
+        n = int(val.match_id.nunique())
+        return {"gialli": float(val.loc[val.key == "yellow_cards", "v"].sum()) / max(n, 1),
+                "falli": float(val.loc[val.key == "fouls", "v"].sum()) / max(n, 1),
+                "n": n}
+
+    def referee_edge(self, match_id: int) -> dict[str, Any] | None:
+        """Profilo arbitrale con lo scarto dalla media di lega delle designazioni in archivio.
+
+        La media di carriera pubblicata dalla fonte **non** è la previsione dei cartellini di
+        questa gara (sulle 333 gare in archivio la media dichiarata è 4,12 e quella reale 3,49:
+        campionati e stagioni diversi), ma ordina gli arbitri fra loro — ed è quello che la
+        card usa, confrontandola con la media delle designazioni della stessa lega.
+        """
+        prof = self.referee_profile(match_id)
+        if not prof:
+            return None
+        y, ly = _val(prof, "yellows"), _val(prof, "league_yellows")
+        if not y or not ly or float(ly) <= 0:
+            return None
+        return {**prof, "dev": float(y) / float(ly) - 1.0}
+
     # ---- fattori che spostano la partita (audit 2026-09-20: valore quantitativo pre-partita) ----
 
     def fattori_chiave(self, match_id: int, home_id: int, home_name: str, away_id: int, away_name: str,
@@ -1943,6 +2067,28 @@ class MatchAnalysis:
         Ogni riga ha ora: etichetta, i valori delle **due** squadre, un delta nella sua unità,
         l'impatto in parole e ``help`` (criterio e interpretazione, nel ⓘ). Le soglie stanno
         nelle costanti ``FACTOR_*``, così il testo della card non può raccontarne altre.
+
+        Secondo giro di revisione il 2026-10-08 (`docs/58`), con le misure di
+        ``scripts/audit_fattori.py`` sugli archivi già raccolti:
+
+        * due fattori nuovi, entrambi misurati prima di entrare: **Rendimento per sede** (punti
+          per gara in casa della casa contro quelli in trasferta dell'ospite, 365 giorni:
+          68,2% di vittorie casalinghe con ≥1 punto di differenza, 10,6% nell'altro verso, su
+          6.307 gare) e **Disciplina e arbitro** (gialli/gara delle due squadre più lo scarto
+          dell'arbitro dalla media di lega: 3,80 gialli/gara degli arbitri sopra la mediana
+          dichiarata contro 3,19, su 333 gare);
+        * tre candidati **misurati e non pubblicati**, perché la misura non li sostiene: distanza
+          della trasferta (punti dell'ospite 1,03-1,38 senza andamento, 375 gare), età media dei
+          titolari (correlazione 0,017 con i punti della casa) e turnover per impegno ravvicinato
+          (16 sole gare con un impegno entro 3 giorni, e più forti, quindi illeggibili);
+        * il **numero di gare** entra nelle celle dei fattori di stagione (PPDA, sede, cartellini):
+          a ottobre le medie sono su 5-7 gare e senza il campione il numero sembra più solido di
+          quello che è;
+        * le soglie dei fattori nuovi sono **misurate**, non scelte a occhio: 0,50 pt/gara di
+          differenza di sede separa due schede su tre, 0,8 gialli/gara e ±10% sull'arbitro
+          tengono la riga rara (13 schede su 67 con l'arbitro fuori media);
+        * l'ordine delle righe è ``FACTOR_PRIORITY`` (fisso e dichiarato in pagina) invece di un
+          peso ad hoc che faceva cambiare posizione allo stesso fattore da una scheda all'altra.
         """
         rows: list[dict[str, Any]] = []
         # fattori calcolabili ma sotto soglia: si nominano (con il valore e la soglia) invece
@@ -1962,20 +2108,35 @@ class MatchAnalysis:
         except Exception:
             cf = None
         if cf:
+            def _cella_contesto(ppg: float, played: int, rank: int, gd3: int) -> str:
+                # punti/gara (la classifica normalizzata) con le gare giocate, posizione, e la
+                # differenza reti delle ultime 3: prima la cella diceva «6 pt · 1,20/gara · GD3 −4»,
+                # con i punti totali che da soli fuorviano e «GD3» che è gergo (docs/59).
+                parti = [f"{_f(ppg)} pt/gara ({it_plural(played, 'gara')})"]
+                if rank:
+                    parti.append(f"{rank}ª")
+                parti.append(f"reti ult. 3 {_sgn(gd3, 0)}")
+                return " · ".join(parti)
+            ind = cf["indice"]
+            if abs(ind) < self.FACTOR_CONTEXT_PARITY:
+                impatto = f"contesto sostanzialmente pari (indice {_sgn(ind)})"
+            else:
+                impatto = (f"contesto a favore di {home_name if ind > 0 else away_name} "
+                           f"(indice {_sgn(ind)})")
             _riga("📊", "Forma e classifica (contesto)",
-                  f"{cf['home_points']} pt · {_f(cf['home_ppg'])}/gara · "
-                  f"GD3 {_sgn(cf['home_gd3'], 0)}",
-                  f"{cf['away_points']} pt · {_f(cf['away_ppg'])}/gara · "
-                  f"GD3 {_sgn(cf['away_gd3'], 0)}",
-                  f"PPG {_sgn(cf['ppg_diff'])} · GD3 {_sgn(cf['gd_diff'], 0)} · "
-                  f"pos {_sgn(cf['pos_diff'], 0)}",
-                  f"indice {_sgn(cf['indice'])} — contesto, non pronostico", "neutral", 0.5,
-                  "Contesto di classifica e forma recente, non un secondo pronostico: indice "
-                  f"con pesi dichiarati a mano ({cf['pesi']}), zero = squadre pari su quei tre "
-                  "numeri. Δ in punti per gara (PPG), differenza reti delle ultime 3 gare (GD3) e "
-                  "posizione in classifica, sempre dal punto di vista della squadra di casa. Sul "
-                  "backtest fuori campione (5.164 gare) questo indice da solo azzecca il favorito "
-                  "nel 49,3% dei casi, il modello pubblicato nel 52,1% (scripts/audit_epv.py).")
+                  _cella_contesto(cf["home_ppg"], cf["home_played"], cf["home_rank"], cf["home_gd3"]),
+                  _cella_contesto(cf["away_ppg"], cf["away_played"], cf["away_rank"], cf["away_gd3"]),
+                  f"PPG {_sgn(cf['ppg_diff'])}",
+                  impatto, "neutral", 0.5,
+                  "Contesto di classifica e forma recente, non un pronostico. Per squadra: punti "
+                  "per gara (la classifica normalizzata per gare giocate; fra parentesi le gare), "
+                  "posizione in classifica e differenza reti delle ultime 3 gare («reti ult. 3»). "
+                  "Il Delta è lo scarto di punti per gara, sempre dal punto di vista della casa. "
+                  "L'indice (da −1 a +1, 0 = pari) combina i tre numeri con pesi dichiarati a mano "
+                  f"({cf['pesi']}); sotto ±{_f(self.FACTOR_CONTEXT_PARITY)} il contesto è "
+                  "sostanzialmente pari e la riga non dichiara una direzione. È un contesto debole: "
+                  "sul backtest fuori campione (5.164 gare) azzecca il favorito nel 49,3% dei casi "
+                  "contro il 52,1% del modello pubblicato (scripts/audit_epv.py).")
 
         # 1. Valore di mercato dei titolari
         try:
@@ -1996,8 +2157,13 @@ class MatchAnalysis:
                       f"Valore di mercato dei titolari (FotMob): {home_name} {self.fee_it(home_val)} "
                       f"contro {away_name} {self.fee_it(away_val)} — rapporto {_f(ratio, 2)}×. "
                       f"Soglia {_f(self.FACTOR_MARKET_RATIO, 2)}× (o 1/{_f(self.FACTOR_MARKET_RATIO, 2)}×). "
-                      "Il valore dei titolari è un prior misurato su un'altra competizione "
-                      "(world-cup-predictor: Brier 0,612 → 0,591) e non cambia la previsione salvata.")
+                      "Misurato sulle 363 gare in archivio con i valori di entrambe le formazioni: "
+                      "con un rapporto ≥1,5× la squadra più ricca fa 1,87 punti a gara e vince il "
+                      "54% delle volte, sotto la soglia 1,43 punti e il 38%, e il rapporto cresce "
+                      "in modo monotono (36,6% di vittorie fra 1,5× e 2×, 75,3% oltre 5×). È un "
+                      "prior verificato anche fuori dal nostro archivio (world-cup-predictor: "
+                      "Brier 0,612 → 0,591) e non cambia la previsione salvata "
+                      "(scripts/audit_fattori.py).")
             else:
                 sotto.append(f"valore dei titolari {_f(ratio, 2)}× (soglia "
                              f"{_f(self.FACTOR_MARKET_RATIO, 2).rstrip('0').rstrip(',')}×)")
@@ -2100,8 +2266,13 @@ class MatchAnalysis:
                   tone, 2.0 if min(x for x in (rh, ra) if x is not None) <= 2 else 1.5,
                   "Riposo dall'ultima gara (campionato e coppe): sotto i 5 giorni il rischio di "
                   "infortunio muscolare sale (RR 1,32, studio UEFA) e la creazione cala. Soglia "
-                  "≤4 giorni. Una sosta lunga uguale per le due squadre non è un fattore: i giorni "
-                  "di entrambe sono nella card «Le due squadre».")
+                  "≤4 giorni. Sull'esito la misura non dà un segnale coerente: su 7.243 gare di 3 "
+                  "stagioni la squadra di casa vince il 42,5% con ≥4 giorni di riposo in meno "
+                  "(44,8% atteso dalle quote), il 41,6% con 2-3 giorni in più (34,7% atteso) e il "
+                  "42,4% con ≥4 giorni in più (46,5% atteso) — segni contraddittori fra i gruppi, "
+                  "quindi la riga sta sul rischio infortuni e sulla rotazione, non sul pronostico "
+                  "(scripts/audit_fattori.py). Una sosta lunga uguale per le due squadre non è un "
+                  "fattore: i giorni di entrambe sono nella card «Le due squadre».")
         else:
             rtxt = (" e ".join(it_plural(x, "giorno") for x in (rh, ra)) if rh is not None and ra is not None
                     else "non calcolabile")
@@ -2116,15 +2287,26 @@ class MatchAnalysis:
             if hs.get("ppda") and aws.get("ppda"):
                 ratio = float(hs["ppda"]) / float(aws["ppda"])
                 if ratio <= self.FACTOR_PRESS_RATIO or ratio >= 1 / self.FACTOR_PRESS_RATIO:
+                    # il numero di gare entra in cella: il PPDA è una media di inizio stagione e
+                    # su 4 gare si muove molto (docs/58 §2 — prima la cella diceva solo «21,3»)
                     _riga("🔥", "Pressing (PPDA)",
-                          f"{_f(hs['ppda'], 1)}", f"{_f(aws['ppda'], 1)}", f"{_f(ratio, 2)}×",
+                          f"{_f(hs['ppda'], 1)} ({it_plural(hs.get('played') or 0, 'gara')})",
+                          f"{_f(aws['ppda'], 1)} ({it_plural(aws.get('played') or 0, 'gara')})",
+                          f"{_f(ratio, 2)}×",
                           f"{home_name if ratio < 1 else away_name} pressa di più", "neutral", 1.2,
                           f"PPDA (passaggi concessi per azione difensiva): più basso = pressing più "
-                          f"alto. Valori di stagione di entrambe le squadre: "
-                          f"{home_name} {_f(hs['ppda'], 1)} contro {away_name} {_f(aws['ppda'], 1)}. "
-                          f"Soglia: rapporto ≤{_f(self.FACTOR_PRESS_RATIO, 2)}× (o ≥"
-                          f"{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×). Chi pressa crea più xG ma rischia "
-                          "il contropiede.")
+                          f"alto. Valori di stagione di entrambe le squadre (Understat, con il "
+                          f"numero di gare in cella): {home_name} {_f(hs['ppda'], 1)} contro "
+                          f"{away_name} {_f(aws['ppda'], 1)}. Soglia: rapporto "
+                          f"≤{_f(self.FACTOR_PRESS_RATIO, 2)}× (o ≥"
+                          f"{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×). Misurato sulle 162 gare in "
+                          "archivio con PPDA per entrambe, divise per chi pressa: quando la casa "
+                          f"pressa molto più dell'ospite (≤{_f(self.FACTOR_PRESS_RATIO, 2)}×, 40 "
+                          "gare) la gara produce 3,43 xG e la casa fa 1,70 punti; quando è l'ospite "
+                          f"a pressare molto (≥{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×, 28 gare) gli "
+                          "xG sono 3,03 e la casa 1,07; con pressing simile (36 gare) 3,10 xG. Chi "
+                          "pressa di più crea più xG ma rischia il contropiede "
+                          "(scripts/audit_fattori.py).")
                 else:
                     # calcolabile ma vicino alla pari: si dice **anche questo**, altrimenti il
                     # fattore sparisce dalla scheda senza che il lettore possa distinguere
@@ -2137,7 +2319,118 @@ class MatchAnalysis:
         except Exception:
             sotto.append("pressing non calcolabile")
 
-        # 5. Il modello **non** è una riga della tabella: non si confronta casa/ospite. È la
+        # 5. Rendimento per sede — nuovo (docs/58 §3): come rende la squadra di casa **in casa**
+        #    contro come rende l'ospite **in trasferta**. Non è pubblicato in nessun'altra card
+        #    («Le due squadre» e «Confronto di stagione» danno i totali, non lo split per sede).
+        vf: dict[str, dict[str, Any] | None] = {}
+        for side, nm in (("home", home_name), ("away", away_name)):
+            try:
+                vf[side] = self.venue_form(nm, kickoff)
+            except Exception:
+                vf[side] = None
+        ph = (vf["home"] or {}).get("casa")
+        pa = (vf["away"] or {}).get("trasferta")
+        # riferimento di lega (docs/59): la base casa/trasferta della stessa lega nella finestra,
+        # presa dal lato che ce l'ha (per una gara di campionato è la stessa lega da entrambe).
+        vh, va = vf["home"] or {}, vf["away"] or {}
+        lc = vh.get("lega_casa") or va.get("lega_casa")
+        lt = vh.get("lega_trasferta") or va.get("lega_trasferta")
+        if ph and pa and ph[1] >= self.FACTOR_VENUE_MIN and pa[1] >= self.FACTOR_VENUE_MIN:
+            diff = ph[0] - pa[0]
+            if abs(diff) >= self.FACTOR_VENUE_DELTA:
+                casa_meglio = diff > 0
+                ch = f"{_f(ph[0])} pt/gara in casa ({it_plural(ph[1], 'gara')}"
+                ch += f" · lega {_f(lc[0])}" if lc else ""
+                ca = f"{_f(pa[0])} pt/gara in trasferta ({it_plural(pa[1], 'gara')}"
+                ca += f" · lega {_f(lt[0])}" if lt else ""
+                _riga("🏟", "Rendimento per sede", ch + ")", ca + ")",
+                      f"{_sgn(diff)} pt/gara",
+                      f"squilibrio di sede a favore di {home_name if casa_meglio else away_name}",
+                      "good" if casa_meglio else "bad", 1.0,
+                      f"Punti per gara negli ultimi {self.FACTOR_VENUE_WINDOW} giorni di "
+                      f"campionato, per sede: {home_name} in casa contro {away_name} in trasferta, "
+                      f"con il numero di gare in cella (minimo {self.FACTOR_VENUE_MIN} per sede, "
+                      f"sotto non si pubblica). «lega» è la media per sede della stessa lega nella "
+                      f"finestra: il valore della squadra va letto contro quella base"
+                      + (f" ({_f(lc[0])} in casa, {_f(lt[0])} in trasferta)" if lc and lt else "")
+                      + f". Soglia: differenza ≥{_f(self.FACTOR_VENUE_DELTA)} "
+                      "pt/gara. Misurato su 6.307 gare di 3 stagioni: con ≥1 punto di differenza a "
+                      "favore della casa le sue vittorie sono il 68,2%, con ≥1 punto a favore "
+                      "dell'ospite scendono al 10,6% — le quote dicono quasi lo stesso (70,4% e "
+                      "12,0% di probabilità implicita normalizzata per l'overround), quindi è "
+                      "contesto, non un vantaggio informativo (scripts/audit_fattori.py).")
+            else:
+                sotto.append(f"rendimento per sede {_sgn(diff)} pt/gara (soglia "
+                             f"≥{_f(self.FACTOR_VENUE_DELTA)})")
+        else:
+            sotto.append(f"rendimento per sede non calcolabile (meno di {self.FACTOR_VENUE_MIN} "
+                         "gare per sede nella finestra)")
+
+        # 6. Disciplina e arbitro — nuovo (docs/58 §4): i cartellini che le due squadre prendono
+        #    e quanto è severo chi arbitra, contro la media delle designazioni della stessa lega.
+        cs: dict[str, dict[str, Any] | None] = {}
+        for side, tid in (("home", home_id), ("away", away_id)):
+            try:
+                cs[side] = self.cards_season(tid, kickoff)
+            except Exception:
+                cs[side] = None
+        try:
+            ref = self.referee_edge(match_id)
+        except Exception:
+            ref = None
+        ref_ok = bool(ref and int(_val(ref, "matches") or 0) >= self.FACTOR_REF_MIN
+                      and abs(float(ref["dev"])) >= self.FACTOR_REF_DEV)
+        ch, ca = cs["home"], cs["away"]
+        if ch and ca and ch["n"] >= self.FACTOR_CARDS_MIN and ca["n"] >= self.FACTOR_CARDS_MIN:
+            diff = ch["gialli"] - ca["gialli"]
+            squadre_ok = abs(diff) >= self.FACTOR_CARDS_DELTA
+        else:
+            diff, squadre_ok = None, False
+        if squadre_ok or ref_ok:
+            if diff is None:
+                cella_h = cella_a = "n.d."
+                delta_txt = "—"
+            else:
+                cella_h = (f"{_f(ch['gialli'], 1)} gialli · {_f(ch['falli'], 1)} falli "
+                           f"({it_plural(ch['n'], 'gara')})")
+                cella_a = (f"{_f(ca['gialli'], 1)} gialli · {_f(ca['falli'], 1)} falli "
+                           f"({it_plural(ca['n'], 'gara')})")
+                delta_txt = f"{_sgn(diff, 1)} gialli/gara"
+            if ref_ok:
+                verso = "più severo" if ref["dev"] > 0 else "più permissivo"
+                impatto = (f"arbitro {verso} della media di lega "
+                           f"({_sgn(ref['dev'] * 100, 0)}%)")
+                if diff is not None and abs(diff) >= self.FACTOR_CARDS_DELTA:
+                    impatto += f" · più esposta {home_name if diff > 0 else away_name}"
+            elif diff is not None:
+                impatto = f"più esposta {home_name if diff > 0 else away_name}"
+            else:
+                impatto = "confronto fra le due squadre non calcolabile"
+            _riga("🟨", "Disciplina e arbitro", cella_h, cella_a, delta_txt, impatto, "neutral", 0.9,
+                  f"Gialli e falli per gara delle due squadre nelle gare finite della stagione "
+                  f"(minimo {self.FACTOR_CARDS_MIN} gare) e scarto dell'arbitro dalla media delle "
+                  f"designazioni della stessa lega (minimo {self.FACTOR_REF_MIN} gare in carriera). "
+                  f"Soglie: differenza fra le squadre ≥{_f(self.FACTOR_CARDS_DELTA, 1)} gialli/gara "
+                  f"oppure arbitro oltre ±{self.FACTOR_REF_DEV * 100:.0f}% dalla media di lega. "
+                  "Misurato sulle 333 gare in archivio con l'arbitro: gli arbitri sopra la mediana "
+                  "dichiarata dànno 3,80 gialli a gara contro 3,19 degli altri (correlazione 0,24 "
+                  "fra media di carriera e gialli della gara). Sui rigori la media di carriera non "
+                  "predice niente (0,27 contro 0,22 per gara, correlazione 0,05): per questo la "
+                  "riga parla di cartellini e non di rigori (scripts/audit_fattori.py).")
+        else:
+            if diff is not None:
+                sotto.append(f"disciplina {_sgn(diff, 1)} gialli/gara (soglia "
+                             f"{_f(self.FACTOR_CARDS_DELTA, 1)})")
+            else:
+                sotto.append(f"disciplina non calcolabile (meno di {self.FACTOR_CARDS_MIN} gare "
+                             "a squadra)")
+            if ref:
+                sotto.append(f"arbitro {_sgn(ref['dev'] * 100, 0)}% sulla media di lega (soglia "
+                             f"±{self.FACTOR_REF_DEV * 100:.0f}%)")
+            else:
+                sotto.append("arbitro senza media pubblicata dalla fonte")
+
+        # 7. Il modello **non** è una riga della tabella: non si confronta casa/ospite. È la
         #    nota in fondo alla card (M1 di docs/55: RPS misurato, ξ detto in parole).
         modello: dict[str, Any] | None = None
         try:
@@ -2172,8 +2465,11 @@ class MatchAnalysis:
 
         if not rows and not modello and not sotto:
             return None
-        order_tone = {"bad": 0, "good": 1, "neutral": 2}
-        rows.sort(key=lambda r: (-r["weight"], order_tone.get(r["tone"], 9), r["label"]))
+        # Ordine fisso e dichiarato (``FACTOR_PRIORITY``), non un peso ad hoc: due schede con gli
+        # stessi fattori hanno le righe nello stesso ordine e l'ordine si può scrivere in pagina.
+        # Prima era ``-weight`` con pesi eterogenei (il rapporto di mercato saliva a 10,1 e
+        # scavalcava tutto), quindi lo stesso fattore cambiava posizione da una scheda all'altra.
+        rows.sort(key=lambda r: (self.FACTOR_PRIORITY.get(r["label"], 99), r["label"]))
         # le soglie in una frase sola, dalla stessa fonte delle righe: il template la stampa
         # così com'è, e non può raccontare numeri diversi da quelli che accendono le righe.
         # La funzione è a livello di modulo perché è anche l'oggetto dell'invariante [41].
@@ -2195,6 +2491,34 @@ class MatchAnalysis:
     FACTOR_REST_SHORT: ClassVar[int] = 4          # riposo corto: ≤4 giorni (studio UEFA, RR 1,32)
     FACTOR_PRESS_RATIO: ClassVar[float] = 0.75    # pressing: rapporto PPDA ≤0,75× (o ≥1,33×)
     FACTOR_HEAVY_LOST: ClassVar[float] = 0.2      # sotto questa differenza gli indisponibili «pesano uguale»
+    # Aggiunti il 2026-10-08 (`docs/58`): due fattori nuovi, entrambi con la soglia misurata
+    # sull'archivio (script `scripts/audit_fattori.py`, riepilogo in `docs/58` §3-§4) invece che
+    # scelta a occhio. I tre candidati bocciati dalla stessa misura (distanza della trasferta,
+    # età media dei titolari, turnover per impegno ravvicinato) non hanno costanti: non entrano.
+    FACTOR_VENUE_WINDOW: ClassVar[int] = 365      # finestra dello split di sede (giorni)
+    FACTOR_VENUE_MIN: ClassVar[int] = 5           # gare minime per sede, sotto è rumore
+    FACTOR_VENUE_DELTA: ClassVar[float] = 0.5     # differenza di pt/gara per pubblicare la riga
+    FACTOR_CARDS_MIN: ClassVar[int] = 5           # gare minime per squadra sui cartellini
+    FACTOR_CARDS_DELTA: ClassVar[float] = 0.8     # differenza di gialli/gara fra le due squadre
+    FACTOR_REF_MIN: ClassVar[int] = 20            # gare in carriera dell'arbitro (fonte FotMob)
+    FACTOR_REF_DEV: ClassVar[float] = 0.10        # scarto dalla media di lega delle designazioni
+    #: Fascia «sostanzialmente pari» dell'indice di contesto (docs/59): sotto questa soglia la
+    #: riga non dichiara una direzione. È debole per costruzione — sul backtest fuori campione
+    #: azzecca il favorito nel 49,3% dei casi (`scripts/audit_epv.py`) — quindi una direzione si
+    #: dichiara solo oltre il rumore. Misurata sulle 66 schede: 11 «pari», 55 con una direzione.
+    FACTOR_CONTEXT_PARITY: ClassVar[float] = 0.15
+    #: Ordine fisso delle righe, dichiarato in pagina: prima ciò che toglie produzione misurabile,
+    #: poi i fattori con effetto misurato sull'archivio (dal più forte), per ultimo il contesto.
+    #: Le misure che hanno fissato l'ordine sono in `docs/58` §6 (script `audit_fattori.py`).
+    FACTOR_PRIORITY: ClassVar[dict[str, int]] = {
+        "Indisponibili": 0,
+        "Valore di mercato titolari": 1,
+        "Rendimento per sede": 2,
+        "Pressing (PPDA)": 3,
+        "Riposo corto": 4,
+        "Disciplina e arbitro": 5,
+        "Forma e classifica (contesto)": 6,
+    }
 
     NEWS_WINDOW_DAYS: ClassVar[int] = 7          # finestra vera: una settimana
     NEWS_OLD_HORIZON_DAYS: ClassVar[int] = 45    # quanto indietro si contano i «troppo vecchi»
@@ -3653,11 +3977,24 @@ class MatchAnalysis:
         away_rows = [r for r in rows if not r["home"]]
         trend = None
         trend_recent = trend_before = None
-        if len(rows) >= 6:                 # ultime 3 contro le precedenti: solo se ci sono 6 gare
-            trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / (len(xg) - 3)
+        trend_xga = trend_xga_recent = trend_xga_before = None
+        trend_n_before = 0
+        # La direzione del gioco recente è la sintesi unica di questa card (P1.2: i numeri di
+        # stagione e gli xPTS stanno altrove). Prima servivano 6 gare e la tendenza restava fuori
+        # da 38 schede su 66; con 5 (ultime 3 contro le 2 precedenti) la hanno 57 schede, e il
+        # campione è dichiarato in pagina. Si legge su **entrambi** i lati — quanto crea e quanto
+        # concede — perché una squadra può arrivare in crisi solo in difesa (docs/59).
+        if len(rows) >= 5:
+            nb = len(xg) - 3
+            trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / nb
+            trend_xga_recent, trend_xga_before = sum(xga[-3:]) / 3, sum(xga[:-3]) / nb
+            trend_n_before = nb
             if trend_before > 0:
-                delta = trend_recent - trend_before
-                trend = "in crescita" if delta > 0.15 else "in calo" if delta < -0.15 else "stabile"
+                d = trend_recent - trend_before
+                trend = "in crescita" if d > 0.15 else "in calo" if d < -0.15 else "stabile"
+            if trend_xga_before > 0:
+                d = trend_xga_recent - trend_xga_before
+                trend_xga = "in crescita" if d > 0.15 else "in calo" if d < -0.15 else "stabile"
         # sparkline xG + strength avversario (P1 audit)
         spark_xg = [round(float(r["xg"]),2) for r in rows]
         spark_xga = [round(float(r["xga"]),2) for r in rows]
@@ -3681,6 +4018,8 @@ class MatchAnalysis:
                 "home_pm": sum(r["xg"] for r in home_rows) / len(home_rows) if home_rows else None,
                 "away_pm": sum(r["xg"] for r in away_rows) / len(away_rows) if away_rows else None,
                 "trend": trend, "trend_recent": trend_recent, "trend_before": trend_before,
+                "trend_xga": trend_xga, "trend_xga_recent": trend_xga_recent,
+                "trend_xga_before": trend_xga_before, "trend_n_before": trend_n_before,
                 "trend_threshold": 0.15,
                 "spark_xg": spark_xg, "spark_xga": spark_xga}
 
@@ -4618,6 +4957,7 @@ class MatchAnalysis:
                 "home_points": int(h_st.get("points", 0)), "away_points": int(a_st.get("points", 0)),
                 "point_diff": int(point_diff), "ppg_diff": round(ppg_diff, 2),
                 "home_ppg": round(h_ppg, 2), "away_ppg": round(a_ppg, 2),
+                "home_played": int(h_st.get("played", 0)), "away_played": int(a_st.get("played", 0)),
                 "pos_diff": int(pos_diff), "home_rank": int(h_st.get("rank", 0)),
                 "away_rank": int(a_st.get("rank", 0)),
                 "home_gd3": int(h_gd3), "away_gd3": int(a_gd3), "gd_diff": int(gd_diff),

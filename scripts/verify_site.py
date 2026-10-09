@@ -2960,9 +2960,16 @@ def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
 FACTOR_KEYWORDS = (("valore dei titolari", "Valore di mercato titolari"),
                    ("indisponibili", "Indisponibili"),
                    ("riposo", "Riposo corto"),
-                   ("pressing", "Pressing (PPDA)"))
+                   ("pressing", "Pressing (PPDA)"),
+                   # aggiunti il 2026-10-08 (docs/58 §3-§4): i due fattori misurati prima di entrare
+                   ("rendimento per sede", "Rendimento per sede"),
+                   ("disciplina", "Disciplina e arbitro"))
 FACTOR_ROWS_AMMESSE = ("Valore di mercato titolari", "Indisponibili", "Riposo corto",
-                       "Pressing (PPDA)", "Forma e classifica (contesto)")
+                       "Pressing (PPDA)", "Rendimento per sede", "Disciplina e arbitro",
+                       "Forma e classifica (contesto)")
+#: fattori che sono medie di stagione: la cella deve dire su quante gare (o «n.d.»), altrimenti un
+#: numero su 4 partite sembra solido quanto uno su 30 (docs/58 §2)
+FACTOR_ROWS_CAMPIONE = ("Pressing (PPDA)", "Rendimento per sede", "Disciplina e arbitro")
 
 
 def _valori_di_soglia(testo: str) -> set[float]:
@@ -2972,7 +2979,9 @@ def _valori_di_soglia(testo: str) -> set[float]:
     dato misurato come «pressing 1,04×» non è una soglia e non deve entrare nell'insieme.
     """
     return {float(m.replace(",", "."))
-            for m in re.findall(r"(\d+(?:,\d+)?)\s*(?:×|assenti|giorni|titolare|xG)", testo)}
+            for m in re.findall(r"(\d+(?:,\d+)?)\s*"
+                                r"(?:×|assenti|giorni|gare|titolare|xG|pt/gara|gialli/gara|%)",
+                                testo)}
 
 
 def _soglie_citate(testo: str) -> set[float]:
@@ -3026,6 +3035,13 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
                              f"({etichetta[:40]})")
             if 'class="help"' not in r:
                 fails.append(f"{pg.name}: riga «{nome or etichetta[:30]}» senza ⓘ del criterio")
+            # le medie di stagione devono dichiarare il campione nelle **celle** (non nel ⓘ, che
+            # parla sempre di «gara»): senza, un PPDA su 4 gare sembra solido come uno su 30
+            if nome in FACTOR_ROWS_CAMPIONE:
+                celle_txt = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(c)) for c in celle[:2])
+                checks += 1
+                if not re.search(r"\d+ gare?\)?|n\.d\.", celle_txt):
+                    fails.append(f"{pg.name}: riga «{nome}» senza il numero di gare nelle celle")
         checks += 1
         # niente markdown in pagina: la card scrive il criterio in un attributo `title`, che non
         # interpreta `**grassetto**` — usciva «**non** un secondo pronostico» in 66 schede su 66
@@ -3239,9 +3255,12 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
         r'<td class="r small">(\d+)-(\d+)</td>\s*'
         r'<td class="r small">([\d,]+)</td>\s*'
         r'<td class="r small">([\d,]+)</td>')
+    # docs/59: la tendenza ora copre creato **e** concesso, da 5 gare, con il campione in pagina
     trend_re = re.compile(
-        r"Direzione degli <b>xG creati</b>: <b>([^<]+)</b> — ([\d,]+) a gara nelle ultime 3 "
-        r"contro ([\d,]+) nelle precedenti \(soglia ±([\d,]+) xG\)")
+        r"Gioco recente — xG <b>creati ([^<]+)</b> \(([\d,]+) → ([\d,]+) a gara, "
+        r"ultime 3 contro le (\d+) precedenti\)"
+        r"(?:, xG <b>concessi ([^<]+)</b> \(([\d,]+) → ([\d,]+)\))?"
+        r"; soglia ±([\d,]+) xG\.")
     voti_re = re.compile(r"Per media voto di stagione</b>: (.*?)</p>", re.DOTALL)
     n_arr, n_righe, n_voti, n_voci = 0, 0, 0, 0
 
@@ -3331,22 +3350,33 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                 # tendenza rifatta dai valori pieni del ricalcolo: le medie in pagina sono
                 # arrotondate una sola volta, rifarle dai mostrati accumulerebbe errori (3 casi
                 # oltre 0,005 il 2026-10-07); il verdetto riusa la soglia stampata in pagina
-                if len(mostrate) == 6:
+                if len(mostrate) >= 5:
                     m = trend_re.search(col)
                     checks += 1
                     if not m:
-                        fails.append(f"{pg.name}: {tnome}: 6 righe senza frase di tendenza")
+                        fails.append(f"{pg.name}: {tnome}: {len(mostrate)} righe senza frase di tendenza")
                     else:
                         checks += 1
                         xv = [riga["xg"] for riga in atteso["rows"]]
-                        rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / 3
-                        soglia = num(m.group(4))
+                        xav = [riga["xga"] for riga in atteso["rows"]]
+                        nb = len(xv) - 3
+                        rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / nb
+                        soglia = num(m.group(8))
                         want = ("in crescita" if rec - prima > soglia
                                 else ("in calo" if rec - prima < -soglia else "stabile"))
-                        if (m.group(1) != want or atteso["trend"] != want
-                                or abs(num(m.group(2)) - round(rec, 2)) > 0.005
-                                or abs(num(m.group(3)) - round(prima, 2)) > 0.005
-                                or abs(soglia - 0.15) > 1e-9):
+                        ok = (m.group(1) == want and atteso["trend"] == want
+                              and int(m.group(4)) == nb
+                              and abs(num(m.group(2)) - round(prima, 2)) <= 0.005
+                              and abs(num(m.group(3)) - round(rec, 2)) <= 0.005
+                              and abs(soglia - 0.15) <= 1e-9)
+                        if m.group(5):                    # lato concesso, se la pagina lo stampa
+                            arec, aprima = sum(xav[-3:]) / 3, sum(xav[:-3]) / nb
+                            want_a = ("in crescita" if arec - aprima > soglia
+                                      else ("in calo" if arec - aprima < -soglia else "stabile"))
+                            ok = ok and (m.group(5) == want_a
+                                         and abs(num(m.group(6)) - round(aprima, 2)) <= 0.005
+                                         and abs(num(m.group(7)) - round(arec, 2)) <= 0.005)
+                        if not ok:
                             fails.append(f"{pg.name}: {tnome}: tendenza non ricalcolabile "
                                          f"({m.group(1)} {m.group(2)}/{m.group(3)})")
         # ---- [43b] I giocatori che decidono ----
@@ -3463,7 +3493,12 @@ def main() -> int:
         fails += assets
         checks += asset_checks
 
-    by_kind: Counter[str] = Counter(f.split(": ", 1)[1].split(" ")[0] for f in fails)
+    # riepilogo per tipo: il prefisso è ciò che segue «<pagina>: ». Un messaggio senza «: »
+    # (ne è arrivato uno il 2026-10-08) faceva cadere il gate **dopo** i controlli, nascondendo
+    # i problemi invece di stamparli: la chiave di ripiego sono le prime parole del messaggio.
+    by_kind: Counter[str] = Counter(
+        f.split(": ", 1)[1].split(" ")[0] if ": " in f else " ".join(f.split(" ")[:3])
+        for f in fails)
     print()
     if fails:
         print(f"PROBLEMI ({len(fails)}): {dict(by_kind)}")

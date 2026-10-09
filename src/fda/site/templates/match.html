@@ -54,7 +54,7 @@
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}<a href="#notizie">Vita del club</a>{% endif %}
   {% if c.status != 'finished' and c.insights %}<a href="#fatti">Fatti rilevanti</a>{% endif %}
   {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}<a href="#arbitro-meteo">Arbitro e meteo</a>{% endif %}
-  {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}<a href="#precedenti">Precedenti</a>{% endif %}
+  <a href="#precedenti">Precedenti</a>
   {% if c.key_stats %}<a href="#statistiche">Statistiche</a>{% endif %}
   {% if c.status == 'finished' and c.timeline %}<a href="#cronaca">Cronaca essenziale</a>{% endif %}
   {% if p %}<a href="#previsione">Previsione</a>{% endif %}
@@ -86,8 +86,11 @@
       scheda usciva al 0% per un numero letto male —, la riga del modello metteva RPS e ξ nelle
       colonne delle due squadre e il testo citava soglie diverse da quelle del codice. Il criterio
       di ogni riga sta nel ⓘ (stesso pattern di «Scontro tattico»), l'interpretazione sta una volta
-      sola qui invece di ripetersi in una lista sotto la tabella. -#}
-  <p class="small mut">Quattro fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe sono in ordine di impatto stimato, non sono un secondo pronostico e non cambiano la previsione salvata (Dixon-Coles + Elo): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno in «Le due squadre», in un posto solo.</p>
+      sola qui invece di ripetersi in una lista sotto la tabella.
+      `docs/58` (2026-10-08) aggiunge due fattori misurati (rendimento per sede, disciplina e
+      arbitro), il numero di gare nelle celle dei fattori di stagione e l'ordine fisso delle righe. -#}
+  <p class="small mut">Sei fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe hanno un ordine fisso e dichiarato: prima ciò che toglie produzione misurabile, poi i fattori con effetto misurato sul nostro archivio, per ultimo il contesto. Dove il fattore è una media di stagione la cella dice su quante gare è calcolata; per il rendimento per sede dà anche la media della stessa lega («lega»), così il numero si legge contro la sua base e non da solo.</p>
+  <p class="small mut" style="margin:6px 0 0">Non sono un secondo pronostico e non cambiano la previsione salvata (Dixon-Coles + Elo): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno in «Le due squadre», in un posto solo. Distanza della trasferta, età dei titolari e turnover per impegno ravvicinato sono stati misurati e <b>non</b> pubblicati, perché la misura non li sostiene: i punti dell'ospite non cambiano con i chilometri, la correlazione fra età e punti è 0,02, e le gare con un impegno entro 3 giorni sono 16 — poche e sbilanciate verso le squadre più forti.</p>
   <div class="tablewrap"><table>
     <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto <span class="help" title="Verde: il fattore giova alla squadra di casa; rosso: giova alla trasferta. Nessun colore = vantaggio non misurabile o non attribuibile a un lato, non «nessun fattore».">ⓘ</span></th></tr>
     {% for f in c.fattori_chiave.rows %}<tr>
@@ -200,10 +203,10 @@
       {#- P1.2: qui c'era la riga di sintesi (xG/xGA a partita e punti contro xPTS): gli stessi
           numeri stanno nella card della squadra e in «Scontro tattico». Resta la serie gara per
           gara con la tendenza, che è l'unica cosa che questa card può dire bene. -#}
-      {% if a.trend %}<p class="small mut">Direzione degli <b>xG creati</b>: <b>{{ a.trend }}</b> — {{ a.trend_recent|dec }} a gara nelle ultime 3 contro {{ a.trend_before|dec }} nelle precedenti (soglia ±{{ a.trend_threshold|dec }} xG). Valuta il gioco recente, non i punti: le medie di stagione sono nella card della squadra.</p>{% endif %}
+      {% if a.trend %}<p class="small mut">Gioco recente — xG <b>creati {{ a.trend }}</b> ({{ a.trend_before|dec }} → {{ a.trend_recent|dec }} a gara, ultime 3 contro le {{ a.trend_n_before }} precedenti){% if a.trend_xga %}, xG <b>concessi {{ a.trend_xga }}</b> ({{ a.trend_xga_before|dec }} → {{ a.trend_xga_recent|dec }}){% endif %}; soglia ±{{ a.trend_threshold|dec }} xG. Valuta il gioco, non i punti: le medie di stagione sono nella card della squadra.</p>{% endif %}
       {#- il PPDA non si ripete qui: sta nella card della squadra e in «Scontro tattico» (P1.2);
           se non ci sono né lo split casa/trasferta né altro, il riquadro non lascia un <p> vuoto -#}
-      {% if a.home_pm is not none or a.away_pm is not none %}<p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% endif %}</p>{% endif %}
+      {% if a.home_pm is not none or a.away_pm is not none %}<p class="small mut">{% if a.home_pm is not none %}xG in casa {{ a.home_pm|dec }}{% if side == 'home' %} <b>(questa gara)</b>{% endif %}{% endif %}{% if a.home_pm is not none and a.away_pm is not none %} · {% endif %}{% if a.away_pm is not none %}xG in trasferta {{ a.away_pm|dec }}{% if side == 'away' %} <b>(questa gara)</b>{% endif %}{% endif %}</p>{% endif %}
       <p class="small mut">Fonte: {{ a.source }}. Con poche giornate giocate i valori per gara oscillano molto.</p>
       {% else %}<p class="mut small">Nessuna gara precedente con xG disponibile per questa squadra.</p>{% endif %}
     </div>
@@ -215,12 +218,12 @@
 {% if c.status != 'finished' and (c.home_key_deep or c.away_key_deep or c.home_key_players or c.away_key_players) %}
 <div class="card" id="giocatori">
   <h2>I giocatori che decidono</h2>
-  <p class="small mut">In alto il contributo offensivo di stagione: (xG + xA) per 90 minuti, sommati dalle statistiche partita di FotMob (disponibili in tutte e 7 le leghe). Sotto, la classifica per media voto di stagione. In classifica entrano solo i giocatori con almeno il 40% dei minuti del più impiegato della propria squadra (soglia indicata in ogni colonna): con pochi minuti il valore per 90 è rumore.</p>
+  <p class="small mut">In alto il contributo offensivo di stagione: (xG + xA) per 90 minuti, sommati dalle statistiche partita di FotMob (disponibili in tutte e 7 le leghe). Sotto, la classifica per media voto di stagione. In entrambe le classifiche entrano solo i giocatori con almeno il 40% dei minuti del più impiegato della propria squadra (soglia indicata in ogni colonna): con pochi minuti il valore per 90 è rumore.</p>
   {#- P2.1 (`docs/28` §3): la spiegazione della stima stabilizzata si dà **una volta sola**, qui al
       primo punto d'uso; nel resto della pagina resta il marcatore ◎ col suo tooltip (media dei
       pari, peso k, numerosità del caso specifico). Prima la stessa frase compariva in ogni tabella
       e in ogni card squadra: 4 volte per scheda (`docs/28` §3 P2.1). -#}
-  <p class="small mut">Due marcatori in questa sezione. ◎ è la <b>stima stabilizzata</b> della rata per 90: sotto i 270′ di campione, al posto del valore grezzo (che a quel punto è rumore) si pubblica una stima che tira verso la <b>media dei pari</b> per lega e ruolo, con un peso misurato dai dati del run e non una costante; il tooltip di ogni valore dichiara media, peso k e numerosità del caso. ◇ significa che sotto i 90′ la rata grezza non si pubblica e si pubblica la stima.</p>
+  <p class="small mut">Due marcatori in questa sezione. ◎ è la <b>stima stabilizzata</b> della rata per 90: sotto i 270′ di campione la rata grezza è rumorosa, quindi le viene affiancata la stima — che tira verso la <b>media dei pari</b> per lega e ruolo, con un peso misurato dai dati del run e non una costante; il tooltip di ogni valore dichiara media, peso k e numerosità del caso. ◇ significa che sotto i 90′ la rata grezza non si pubblica: esce solo la stima.</p>
   <div class="grid">
   {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
     {% set kp = c[side ~ '_key_deep'] %}{% set rated = c[side ~ '_key_players'] %}
@@ -458,9 +461,11 @@
     </table></div>
   </div>
   {% endif %}
-  {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}
+  {% set incontri = (c.h2h[0] or 0) + (c.h2h[1] or 0) + (c.h2h[2] or 0) %}
+  {% set ha_precedenti = incontri > 0 or c.h2h_list or c.h2h_pattern %}
   <div class="card" id="precedenti">
     <h2>Precedenti</h2>
+    {% if ha_precedenti %}
     {% if c.h2h_pattern or c.h2h[0] is not none %}
     <div class="tablewrap"><table>
       {% if c.h2h[0] is not none and not c.h2h_pattern %}<tr><th scope="row">Bilancio</th><td>{{ c.h2h[0]|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ c.h2h[1]|it_plural('pareggio') }} · {{ c.h2h[2]|it_plural('vittoria','vittorie') }} {{ c.away_name }}</td></tr>{% endif %}
@@ -472,8 +477,10 @@
     {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">{% if c.h2h_stats.n == 1 %}Nel precedente mostrato:{% else %}Nei {{ c.h2h_stats.n }} precedenti mostrati:{% endif %} <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}% dei casi{% if c.h2h_stats.over25 is defined %} · Over 2,5 nel {{ (c.h2h_stats.over25*100)|round|int }}%{% endif %}.</p>{% endif %}
     {% if c.h2h_trend_note %}<p class="small" style="margin-top:6px;color:var(--amber)">⚠ {{ c.h2h_trend_note }}</p>{% endif %}
     {% endif %}
+    {% else %}
+    <p class="small mut">Nessun precedente in archivio per questa sfida: tra {{ c.home_name }} e {{ c.away_name }} non risultano confronti diretti nelle stagioni coperte dai dati. Quando uno storico esiste, questa sezione raccoglie il bilancio vittorie-pareggi-sconfitte, i gol a gara, la frequenza di «entrambe a segno» e di Over 2,5, e l'elenco degli ultimi confronti con data, competizione ed esito.</p>
+    {% endif %}
   </div>
-  {% endif %}
 {% if p %}
 <div class="grid detail-card" id="previsione">
   <div class="card">

@@ -444,6 +444,36 @@ def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
         assert a["trend_threshold"] == 0.15
 
 
+def test_arrival_trend_da_cinque_gare_su_entrambi_i_lati():
+    """docs/59: la tendenza scatta da 5 gare (ultime 3 contro le 2 precedenti) e copre sia gli xG
+    creati sia i concessi — prima servivano 6 gare (fuori da 38 schede su 66) e leggeva solo il
+    lato offensivo, quindi una squadra in crisi solo in difesa non aveva alcuna sintesi."""
+    import tempfile
+    from pathlib import Path
+    with tempfile.TemporaryDirectory() as td:
+        ma = MatchAnalysis(_store(Path(td)))
+        dates = ["2026-08-01", "2026-08-08", "2026-08-15", "2026-08-22", "2026-08-29"]
+        xgs = [2.4, 2.4, 0.8, 0.8, 0.8]        # creati: in calo
+        xgas = [0.5, 0.5, 2.0, 2.0, 2.0]       # concessi: in crescita
+        ma.fixtures = pd.DataFrame([
+            {"match_id": 900 + i, "league_id": 55, "season": "2026", "utc_kickoff": d,
+             "home_id": 10, "home_name": "Alpha", "away_id": 20 + i, "away_name": f"Avv{i}",
+             "home_goals": 1, "away_goals": 0, "status": "finished", "source": "t", "round": i}
+            for i, d in enumerate(dates)])
+        ma.us_team = pd.DataFrame([
+            {"team_name": "Alpha", "date": d, "is_home": True, "xg": x, "xga": xa,
+             "goals": 1, "goals_against": 0, "ppda": 10.0, "xpts": 2.0, "pts": 3}
+            for d, x, xa in zip(dates, xgs, xgas)])
+        a = ma.arrival_trend("Alpha", 10, n=5)
+        assert a["played"] == 5
+        assert a["trend"] == "in calo"                       # creati: 2,40 → 0,80
+        assert a["trend_n_before"] == 2                       # ultime 3 contro le 2 precedenti
+        assert a["trend_before"] == pytest.approx(2.4) and a["trend_recent"] == pytest.approx(0.8)
+        assert a["trend_xga"] == "in crescita"               # concessi: 0,50 → 2,00
+        assert a["trend_xga_before"] == pytest.approx(0.5)
+        assert a["trend_xga_recent"] == pytest.approx(2.0)
+
+
 def test_arrival_trend_falls_back_to_fotmob(tmp_path):
     """Senza Understat il trend usa gli xG FotMob delle gare finite e gli xPTS di Poisson."""
     ma = MatchAnalysis(_store(tmp_path, with_understat=False))
