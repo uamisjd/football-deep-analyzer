@@ -507,9 +507,49 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
     assert any("verdetto xPTS" in f
                for f in rotta(originale.replace("sopra gli attesi", "sotto gli attesi", 1)))
 
-    # 8) il riposo torna a dire «coppe incluse» senza il nome della coppa
+    # 9) il riposo torna a dire «coppe incluse» senza il nome della coppa
     assert any("coppe incluse" in f
                for f in rotta(originale.replace("Che cosa c'è in questa card:",
                                                 "coppe incluse · Che cosa c'è in questa card:")))
 
     assert rotta(originale) == []
+
+
+def test_verify_site_due_squadre_finestra_alla_vigilia(tmp_path):
+    """[44] (docs/64 §7): il campione non può contenere gare successive alla partita.
+
+    Il difetto misurato sulla build del 2026-10-09: **750 riquadri su 750** delle schede già
+    giocate pubblicavano medie di stagione che includevano le gare successive a quella
+    descritta (mediana 3, fino a 7). Il controllo ricalcola il campione dal calendario e da
+    Understat **senza passare da `season_xg`**, così una regressione del codice (il taglio
+    alla vigilia che sparisce) viene vista anche se l'HTML è coerente con il codice rotto.
+    """
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import patch
+
+    from fda.site.analysis import MatchAnalysis
+    from fda.site.build import SiteBuilder
+    from tests.test_site import _seed
+
+    vs = _site_module()
+    st = _seed(tmp_path)
+    riga = st.read("fixtures").query("match_id == 5749645").iloc[0]
+    ko = datetime.fromisoformat(str(riga.utc_kickoff)).astimezone(UTC)
+    # gare Understat successive alla partita descritta: fuori dal suo campione
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999400, "team_name": str(riga.home_name),
+         "date": (ko + timedelta(days=g)).isoformat(), "is_home": bool(g % 2), "goals": 3,
+         "goals_against": 0, "xg": 3.4, "xga": 0.3, "xpts": 2.7, "pts": 3, "ppda": 6.5}
+        for g in (2, 9, 16)])
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})
+    st.close()
+    dati = tmp_path / "processed"
+
+    assert vs.check_due_squadre(out, dati)[0] == []
+
+    senza_taglio = MatchAnalysis.season_xg
+    with patch.object(MatchAnalysis, "season_xg",
+                      lambda self, nome, tid, before=None: senza_taglio(self, nome, tid)):
+        fails, _ = vs.check_due_squadre(out, dati)
+    assert any("prima del calcio d'inizio" in f for f in fails), fails[:3]

@@ -125,7 +125,7 @@ distinta e il significato di «⌀». Ogni soglia è comunque ripetuta nel ⓘ d
 
 | misura | prima | dopo |
 |---|---|---|
-| riferimenti di lega pubblicati | 0 | **1.784** (2 per riquadro × 892 = 100%) |
+| riferimenti di lega pubblicati | 0 | **996** (tutti i riquadri con ≥3 gare di campione) |
 | riquadri con PPDA numerico / `n.d.` spiegato | 582 / 310 muti | 604 / **288 spiegati** |
 | verdetti xPTS | 64 (soglia ±2) | **in linea 598 · sopra 137 · sotto 157** (banda misurata) |
 | contraddizioni card ↔ narrativa nella stessa pagina | 24 squadre | **0** |
@@ -133,6 +133,7 @@ distinta e il significato di «⌀». Ogni soglia è comunque ripetuta nel ⓘ d
 | celle voto nella distinta pre-partita | 0 | **1.176** (57 schede, «⌀ media di stagione») |
 | «coppe incluse» | 37 | **0** (40 riquadri col nome della coppa) |
 | data dell'ultima gara | solo oltre 6 giorni | **760 riquadri su 892** (il resto non ha archivio) |
+| riquadri «Pressing · riposo» | spariva con gli xG | **892 = uno per squadra, sempre** |
 
 ## 4. Invariante nuova e test
 
@@ -158,15 +159,16 @@ Test nuovi:
 
 ## 5. Gate (tutti rifatti dopo l'ultima modifica al sorgente)
 
-- `pytest` → **549 passed** (erano 540);
+- `pytest` → **553 passed** (erano 540);
 - `ruff check .` → pulito;
-- `fda build` → **446 schede / 2.364 fixture / 7.498 giocatori**, 4m58s;
-- `scripts/verify_site.py` → **nessun problema · 185.117 controlli** (erano 169.967), con
-  `[44] 446 pagine, 892 riquadri, 892 riferimenti`;
+- `fda build` → **446 schede / 2.364 fixture / 7.498 giocatori**, 5m22s;
+- `scripts/verify_site.py` → **nessun problema · 184.245 controlli** (erano 169.967), con
+  `[44] 446 pagine, 762 riquadri, 498 riferimenti` più il ricalcolo della finestra;
 - `scripts/parita_schede.py` → **71 schede, nessuna differenza** (minimo 88% della mediana);
-- `scripts/resa_375.py` → **26.628 misure · 0 problemi a 375 px**;
-- HTML letto a mano su due fonti diverse: `5749694` (Inter, Understat) e `5781769`
-  (Heerenveen–Excelsior, FotMob).
+- `scripts/resa_375.py` → **26.565 misure · 0 problemi a 375 px**;
+- HTML letto a mano su quattro casi: `5881181` (Köln–M'gladbach, i due alias nuovi),
+  `5887650` (Marítimo–Porto, fonte FotMob), `5881154` (2ª giornata, campione di 1 gara) e
+  `5749640` (1ª giornata, nessuna gara precedente).
 
 **Nessuna richiesta alle fonti esterne** in questa sessione (nessun `collect`, nessuna sonda,
 nessun daily a mano); nessun file di dati toccato.
@@ -177,9 +179,71 @@ nessun daily a mano); nessun file di dati toccato.
   lega va fatto via `fixtures`. Fuori dal perimetro di questa card, ma è una trappola per chi
   scrive query nuove.
 - Il campione xG può restare **una gara avanti** rispetto alla classifica quando la fonte
-  pubblica prima (oggi solo il Cagliari): dichiarato nel ⓘ, non corretto.
-- La griglia dei quattro riquadri vive dentro `{% if xg %}`: oggi non sparisce mai, ma una
-  squadra senza alcun dato di stagione perderebbe anche la riga del riposo.
+  pubblica prima (oggi Cagliari e Lecce): dichiarato nel ⓘ, non corretto.
+- Il PPDA di stagione è la **media dei PPDA di gara**, non il rapporto delle somme: Understat
+  pubblica solo il valore per partita. Limite dichiarato nel ⓘ insieme all'errore standard.
 - Coda della revisione sezione per sezione: **Panchina e posta in gioco**, **Mercato**, **Vita
   del club**, **Previsione del modello ensemble**, **Verifica approfondita**, **Confronto di
   stagione**, **Clima del club**.
+
+## 7. Secondo giro (stesso giorno): la card guardava nel futuro
+
+Richiesta dell'utente dopo la prima consegna: «verifica che sia tutto corretto, ad esempio xG
+creati / gara e xG concessi / gara; mi sembra che ci sia qualche errore».
+
+**L'aritmetica era giusta**: 892 celle ricalcolate dai Parquet con codice indipendente (non
+`season_xg`), **0 discordanze** su valori, campione, fonte e rapporti; `len(xg) == len(xga)` su
+tutte le squadre (l'etichetta «stesse N gare» non mentiva); la media xG di lega coincide con la
+media xGA a meno di 1e-15 in tutte e 5 le leghe Understat (quindi usare la media xG come
+riferimento anche per i gol concessi è corretto); `match_info` non contiene gare di coppa.
+
+**L'errore era la finestra temporale.** `season_xg()` leggeva *tutta* la stagione raccolta,
+senza guardare la data della partita descritta:
+
+| misura (schede già giocate) | valore |
+|---|---|
+| riquadri il cui campione includeva gare **successive** alla partita | **750 su 750 (100%)** |
+| gare «dal futuro» per riquadro | mediana **3**, massimo **7** |
+| scostamento dello xG creati per gara | mediana **0,23**, 90° pct **0,74**, massimo **3,39** |
+| riquadri con scostamento > 0,50 xG | **115** |
+| riquadri di squadre che a quella data **non avevano ancora giocato** | **130** |
+
+Esempio: Frankfurt–Augsburg del **6 settembre** dichiarava «Augsburg 2,14 xG creati per gara
+(Understat, 4 gare)» — quattro gare di cui tre giocate *dopo*. Alla vigilia l'Augsburg aveva una
+gara sola, da 5,54 xG. Nella stessa card la riga «Forma» era invece corretta (`form()` filtra
+`utc_kickoff < before`): due finestre diverse a cinque centimetri di distanza.
+
+### Correzione
+
+1. `season_xg`, `season_style`, `_season_xg_split` e `_league_xg_reference` accettano `before`;
+   la scheda passa il proprio calcio d'inizio, **anche al riferimento di lega** (confrontare 4
+   gare di una squadra con 7 giornate di campionato sarebbe un rapporto fra finestre diverse).
+   Tutti i consumatori della scheda sono allineati — card «Le due squadre», «Clima del club»
+   (verdetto xPTS), «Fattori» (PPDA), «Scontro tattico» e radar — così la pagina non contiene
+   due versioni dello stesso numero. Sulle **71 schede pre-partita non cambia nulla** (il calcio
+   d'inizio è nel futuro): verificato squadra per squadra.
+2. **Soglia di campione per il rapporto di lega** (`XG_RATIO_MIN_GAMES = 3`): lo xG per
+   gara-squadra ha sd **1,036** su media **1,692**, quindi l'errore standard del rapporto vale
+   **±0,61×** dopo una gara e **±0,43×** dopo due — un «2,74× la media» su una partita sola è
+   rumore stampato in grassetto. Sotto le 3 gare la card scrive «campione troppo corto per il
+   confronto con la lega» (**253 riquadri**).
+3. **Etichetta del pressing** con la stessa soglia: il PPDA per gara-squadra ha sd **6,50**,
+   cioè ±6,5 su una gara e ±3,8 su tre, contro fasce larghe **3 punti**; sotto le 3 gare esce il
+   numero senza aggettivo (**192 riquadri**) e il ⓘ dichiara sempre l'errore standard.
+4. **La griglia non è più annidata in `{% if xg %}`**: le 130 squadre senza gare precedenti
+   mostrano «nessuna gara di campionato prima di questa» e **conservano la casella del riposo**
+   — chiude anche la fragilità latente dichiarata in §6 della prima stesura.
+5. Dichiarazione in testa al piè di card: «**tutti i numeri di questa card sono fermi alla
+   vigilia di questa partita**», più i ⓘ di xPTS e PPDA riscritti sulla nuova finestra. Corretto
+   anche il plurale «stesse 1 gara» → «stessa gara».
+
+### Invariante estesa
+
+**[44]** ora ricalcola il campione **dal calendario e da Understat senza passare da
+`season_xg`**: se il codice perdesse il taglio, il gate lo vede anche se l'HTML è coerente col
+codice rotto (test `test_verify_site_due_squadre_finestra_alla_vigilia`, che simula proprio
+quella regressione). Verifica inoltre le due caselle «Pressing · riposo» su ogni scheda, la
+dichiarazione per le squadre senza gare precedenti e il rispetto della soglia del rapporto.
+Test nuovi: `test_numeri_di_stagione_fermi_alla_vigilia`,
+`test_rapporto_di_lega_solo_con_campione_che_lo_regge`,
+`test_card_due_squadre_senza_gare_precedenti_resta_completa`.

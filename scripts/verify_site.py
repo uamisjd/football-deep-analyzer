@@ -722,6 +722,9 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
       media della **stessa fonte**, e c'è ovunque la fonte lo permetta (parità fra le 7 leghe);
     * **verdetto xPTS** — coincide con ``MatchAnalysis.xpts_reading`` (banda di rumore
       misurata), e nessuna pagina riporta le vecchie soglie fisse;
+    * **finestra** — i numeri si fermano **alla vigilia** della partita descritta: il campione
+      stampato coincide con le gare giocate *prima* del calcio d'inizio, ricontate dal
+      calendario e da Understat **senza passare da ``season_xg``** (`docs/64` §7);
     * **testi** — nessuna attribuzione a Transfermarkt (il valore è della distinta FotMob) e
       nessuna stringa fantasma nel piè di card.
     """
@@ -739,14 +742,36 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
         return fails, checks
     ma = MatchAnalysis(st)
     by_id = fx.drop_duplicates("match_id").set_index("match_id")
+    # conteggio indipendente del campione: gare di campionato giocate prima del calcio d'inizio
+    us = st.read("understat_team_matches")
+    if not us.empty:
+        from fda.teams import canonical as _canon
+        us = us.assign(_c=us.team_name.map(_canon),
+                       _d=pd.to_datetime(us["date"], utc=True, errors="coerce"))
+    fin_cal = fx[fx.status == "finished"].copy()
+    fin_cal["_ko"] = pd.to_datetime(fin_cal.utc_kickoff, utc=True, errors="coerce")
+    mi_fin = st.read("match_info")
+    con_xg = set()
+    if not mi_fin.empty and {"home_xg", "away_xg"} <= set(mi_fin.columns):
+        con_xg = set(mi_fin.dropna(subset=["home_xg", "away_xg"]).match_id.astype(int))
+
+    def gare_prima(tid: int, tname: str, ko) -> tuple[int, int]:
+        """(gare Understat, gare di calendario con xG) giocate **prima** di ``ko``."""
+        n_us = 0
+        if not us.empty:
+            from fda.teams import canonical as _canon
+            g = us[(us._c == _canon(str(tname))) & (us._d < ko)]
+            n_us = len(g)
+        g2 = fin_cal[((fin_cal.home_id == tid) | (fin_cal.away_id == tid)) & (fin_cal._ko < ko)]
+        return n_us, int(g2.match_id.astype(int).isin(con_xg).sum())
 
     box_re = re.compile(
         r"xG creati / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>\((Understat|FotMob), "
         r"(\d+) gar[ae]\)</span></div>\s*"
         r'(?:<div class="mut small"[^>]*title="[^"]*">([\d,]+)× la media del campionato)?')
     xga_re = re.compile(
-        r"xG concessi / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>\(stesse (\d+) gar[ae]\)"
-        r"</span></div>\s*"
+        r"xG concessi / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>"
+        r"\(stess[ae](?: (\d+))? gar[ae]\)</span></div>\s*"
         r'(?:<div class="mut small"[^>]*title="[^"]*">([\d,]+)× la media del campionato)?')
     xpts_re = re.compile(
         r"xPTS vs punti reali</div>\s*<div[^>]*>([\d,]+) <span[^>]*>vs</span> (\d+) "
@@ -788,16 +813,36 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
         xpts = xpts_re.findall(sec)
         verdetti = verdetto_re.findall(sec)
         ppdas = ppda_re.findall(sec)
+        ko = pd.to_datetime(riga.utc_kickoff, utc=True)
         attesi = []
         for tid, tname in ((int(riga.home_id), str(riga.home_name)),
                            (int(riga.away_id), str(riga.away_name))):
-            attesi.append(ma.season_xg(tname, tid))
+            a = ma.season_xg(tname, tid, ko)
+            if a:
+                a = dict(a, _prima=gare_prima(tid, tname, ko))
+            attesi.append(a)
         presenti = [a for a in attesi if a]
-        checks += 1
+        # il campione dichiarato non può contenere gare giocate dopo questa partita
+        for a in presenti:
+            checks += 1
+            atteso_n = a["_prima"][0] if a["source"] == "Understat" else a["_prima"][1]
+            if int(a["played"]) != int(atteso_n):
+                fails.append(f"{pg.name}: campione {a['source']} {a['played']} gare, ma prima "
+                             f"del calcio d'inizio ne risultano {atteso_n}")
+        checks += 2
         if len(boxes) != len(presenti):
             fails.append(f"{pg.name}: riquadri «xG creati» {len(boxes)} per {len(presenti)} "
                          "squadre con dati")
             continue
+        # il riposo non dipende dagli xG: due caselle «Pressing · riposo» sempre, anche quando
+        # una squadra non ha gare precedenti (docs/64 §7)
+        if sec.count("Pressing · riposo") != 2:
+            fails.append(f"{pg.name}: caselle «Pressing · riposo» {sec.count('Pressing · riposo')}, "
+                         "attese 2 (una per squadra, anche senza numeri di stagione)")
+        mancanti = sum(1 for a in attesi if not a)
+        if mancanti and sec.count("nessuna gara di campionato prima di questa") != mancanti:
+            fails.append(f"{pg.name}: {mancanti} squadre senza gare precedenti, "
+                         "ma la card non lo dichiara")
         checks += 1
         if len({b[1] for b in boxes}) > 1:
             fails.append(f"{pg.name}: le due squadre mescolano fonti xG diverse "
@@ -815,7 +860,13 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: campione xG {gare} ≠ {atteso['played']}")
             atteso_rapporto = atteso.get("xg_ratio")
             checks += 1
-            if atteso_rapporto and not rapporto:
+            if atteso.get("ratio_short"):
+                if rapporto:
+                    fails.append(f"{pg.name}: rapporto di lega pubblicato su {atteso['played']} "
+                                 f"gare (minimo {ma.XG_RATIO_MIN_GAMES})")
+                if "campione troppo corto per il confronto con la lega" not in sec:
+                    fails.append(f"{pg.name}: campione corto senza la nota che lo dichiara")
+            elif atteso_rapporto and not rapporto:
                 fails.append(f"{pg.name}: riferimento di lega assente con media disponibile")
             elif rapporto:
                 n_rif += 1
@@ -827,7 +878,7 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
                 checks += 2
                 if abs(num(v_ga) - float(atteso["xga_pm"])) > 0.051:
                     fails.append(f"{pg.name}: xG concessi {v_ga} ≠ {atteso['xga_pm']:.2f}")
-                if int(gare_ga) != int(atteso["played"]):
+                if int(gare_ga or 1) != int(atteso["played"]):
                     fails.append(f"{pg.name}: campione xG concessi {gare_ga} ≠ {atteso['played']}")
                 if rap_ga and atteso.get("xga_ratio"):
                     checks += 1

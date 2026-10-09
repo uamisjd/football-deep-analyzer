@@ -2370,3 +2370,106 @@ def test_titolari_media_voto_dalla_nostra_base(tmp_path):
     assert [t["rating_avg"] for t in titolari] == [6.8] * len(titolari)
     assert all(t["rating_games"] == 1 for t in titolari)
     st.close()
+
+
+def test_numeri_di_stagione_fermi_alla_vigilia(tmp_path):
+    """`docs/64` §7: una scheda non si riscrive con le partite giocate dopo.
+
+    Difetto misurato sulla build del 2026-10-09: **750 riquadri su 750** delle schede già
+    giocate pubblicavano medie di stagione che includevano gare successive a quella
+    descritta (mediana 3 gare dal futuro, fino a 7; scostamento fino a 3,39 xG per gara),
+    mentre la riga «Forma» della stessa card si fermava correttamente alla vigilia. Il
+    campione ora si taglia al calcio d'inizio, e con esso il riferimento di lega.
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    finita = fx[fx.match_id == 5749645].iloc[0]          # gara di ieri nel seed
+    tid, nome = int(finita.home_id), str(finita.home_name)
+    # due gare Understat dopo quella descritta: non devono entrare nella sua scheda
+    now = datetime.now(UTC)
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999300, "team_name": nome,
+         "date": (now + timedelta(days=g)).isoformat(), "is_home": bool(g % 2), "goals": 3,
+         "goals_against": 0, "xg": 3.5, "xga": 0.4, "xpts": 2.6, "pts": 3, "ppda": 7.0}
+        for g in (1, 8)])
+    ma = MatchAnalysis(st)
+
+    oggi = ma.season_xg(nome, tid)
+    vigilia = ma.season_xg(nome, tid, finita.utc_kickoff)
+    assert oggi and vigilia
+    assert vigilia["played"] == oggi["played"] - 2, "le due gare successive sono fuori"
+    assert vigilia["xg_pm"] != oggi["xg_pm"]
+
+    # il campione coincide con le gare di campionato giocate prima del calcio d'inizio
+    ko = pd.Timestamp(finita.utc_kickoff, tz="UTC") if pd.Timestamp(finita.utc_kickoff).tzinfo is None \
+        else pd.Timestamp(finita.utc_kickoff).tz_convert("UTC")
+    us = st.read("understat_team_matches")
+    from fda.teams import canonical
+    attese = us[(us.team_name.map(canonical) == canonical(nome))
+                & (pd.to_datetime(us["date"], utc=True) < ko)]
+    assert vigilia["played"] == len(attese)
+
+    # una scheda pre-partita non cambia: il calcio d'inizio è nel futuro
+    futura = fx[fx.match_id == 5749669].iloc[0]
+    for t, n in ((int(futura.home_id), str(futura.home_name)),
+                 (int(futura.away_id), str(futura.away_name))):
+        assert ma.season_xg(n, t) == ma.season_xg(n, t, futura.utc_kickoff)
+    st.close()
+
+
+def test_rapporto_di_lega_solo_con_campione_che_lo_regge(tmp_path):
+    """`docs/64` §7: niente «2,74× la media del campionato» dopo una partita sola.
+
+    Lo xG per gara-squadra ha sd 1,04 su media 1,69 (502 gare-squadra): l'errore standard
+    del rapporto vale ±0,61× dopo una gara e ±0,43× dopo due, più del segnale. Da 3 gare in
+    su (±0,35×) il rapporto si pubblica; sotto, la card lo dichiara invece di stamparlo. La
+    stessa soglia vale per l'etichetta del pressing, che ha fasce larghe 3 punti contro un
+    errore standard di ±6,5 su una gara.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    righe = [{"league_slug": "Serie_A", "season": 2026, "team_id": 999200 + t,
+              "team_name": ["Inter", *[f"Prova {i}" for i in range(10)]][t],
+              "date": (now - timedelta(days=30 - i)).isoformat(), "is_home": bool(i % 2),
+              "goals": 2, "goals_against": 1, "xg": 4.0 if t == 0 else 1.2, "xga": 0.5,
+              "xpts": 2.0, "pts": 3, "ppda": 18.5 if t == 0 else 12.0}
+             for t in range(11) for i in range(1 if t == 0 else 4)]
+    st.upsert("understat_team_matches", righe)
+    ma = MatchAnalysis(st)
+    corto = ma.season_xg("Inter", 8636, now)
+    assert corto["played"] < MatchAnalysis.XG_RATIO_MIN_GAMES
+    assert corto.get("ratio_short") is True
+    assert "xg_ratio" not in corto and "xga_ratio" not in corto
+    assert corto["league_xg_pm"], "la media di lega esiste comunque, è il rapporto a non uscire"
+    assert corto["ppda_label_ok"] is False
+    assert corto["ppda_se"] == pytest.approx(6.5 / corto["played"] ** 0.5, abs=0.01)
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})   # scheda dell'Inter
+    sec = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert "campione troppo corto per il confronto con la lega" in sec
+    assert "campione corto per l'etichetta" in sec
+    assert "pressing basso" not in sec
+    st.close()
+
+
+def test_card_due_squadre_senza_gare_precedenti_resta_completa(tmp_path):
+    """`docs/64` §7: alla prima giornata la card dichiara il vuoto e non perde il riposo.
+
+    Con il taglio alla vigilia, 130 riquadri su 892 descrivono squadre che a quella data non
+    avevano ancora giocato. Prima la griglia era annidata in `{% if xg %}`: senza numeri di
+    stagione spariva anche la casella «Pressing · riposo» (fragilità dichiarata in §6).
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    # il seed ha una sola giornata: la gara "di ieri" è la prima di entrambe le squadre
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})
+    sec = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert sec.count("Pressing · riposo") == 2, "il riposo non dipende dagli xG di stagione"
+    assert sec.count("nessuna gara di campionato prima di questa") >= 1
+    assert "Che cosa c'è in questa card:" in sec
+    assert int(fx[fx.match_id == 5749645].iloc[0].home_id) > 0
+    st.close()
