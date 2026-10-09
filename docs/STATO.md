@@ -1,3 +1,38 @@
+## 2026-10-10 — Coda verificata e handoff post-merge (`arena/eb94e8df`)
+
+L'utente ha chiesto se resta altro in sospeso, se le voci sono quelle giuste e se farle ora o
+dopo il merge. **Decisioni registrate: merge della PR #98 dell'utente; nella sessione nuova prima
+la decisione sui tre tilt, poi «forza avv.» storica.** Questo turno non ha toccato il codice di
+produzione: solo verifiche e documenti ([`docs/69`](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md)).
+
+**Verificato nel codice, non solo nei documenti.** `absences_tilt`, `rest_tilt` e
+`market_value_tilt` esistono in `models/predict.py` e li chiama **solo** `scripts/audit_modelli.py`:
+`predict_matches()` no, quindi la card dice ancora il vero. Clubelo è configurato in tutte e 7 le
+leghe e **nessuna riga di codice lo usa**; `api.clubelo.com` non è raggiungibile da questo sandbox
+(come footballdata per il benchmark live e la sonda sul valore dei titolari): le tre voci sono
+bloccate qui, non rimandate per scelta. `docs/58` esiste **due volte** (collisione confermata).
+
+**Misure nuove di oggi.** (1) Rimedio per l'anacronismo di `docs/60` §5: su **4.992** righe della
+tabella «Come arrivano», **4.979 (99,7%)** hanno già rango ed Elo storici alla vigilia con la serie
+di B — zero fonti nuove, una build + gate. (2) Audit dei modelli **rigenerato offline** sui dati
+correnti: il riposo **peggiora ancora** (ΔRPS +0,0000787, IC95 [+0,0000154; +0,000141], 1.591 λ
+modificate su 5.895); il valore dei titolari ha **341** gare e solo k=0,03 distinguibile da zero
+(il k=0,12 in produzione no); le assenze hanno **98** gare con miglioramento monotono in k, senza
+ottimo interno → campione troppo piccolo per promuovere. Il campione delle assenze era 137 nello
+snapshot del 2026-09-20: **causa non isolata, da verificare**. (3) I due ΔRPS «modello contro
+mercato» del repo sono riconciliati: +0,008807 (grezzo, `docs/67`) contro +0,008527 (calibrato,
+audit); ricontando oggi con la calibrazione esce **+0,008530**, il mercato è identico nelle tre
+misure (0,178533802717564) e gli SHA-256 degli input coincidono con `docs/67` — il benchmark
+rieseguito riproduce ogni valore **bit per bit**. (4) Il commento `predict.py:41` («k calibrato su
+5.7k gare») è **ancora falso**: il dato esiste per 341 gare. (5) Il clone è **shallow (1 taglio)**:
+`git log --diff-filter=A` attribuisce ogni file al commit base, non leggere lì la provenienza.
+
+**Prossimo passo:** merge della PR #98 (dell'utente); poi voce **G** (tilt: commento falso,
+campione assenze, protocollo preregistrato) e **B2** («forza avv.» storica). Nessuna raccolta
+sportiva, nessuna modifica di ricetta, nessuna calibrazione nuova in questo turno.
+
+---
+
 ## 2026-10-10 — Revisione indipendente della PR #98 (`arena/eb94e8df`)
 
 **Verificato offline:** Elo confrontato con **246 fit su prefissi realmente troncati**,

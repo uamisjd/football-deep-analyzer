@@ -9,6 +9,14 @@
 
 ## Handoff operativo corrente — 2026-10-09 (il più recente: leggere questo per primo)
 
+- **Coda del 10/10, dopo la PR #98:**
+  [docs/69](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md). Decisioni dell'utente:
+  merge della PR #98, poi **prima i tre tilt** (voce G: riposo misurato peggiorativo anche oggi,
+  valore 341 gare, assenze 98, commento falso in `predict.py:41`) e **poi «forza avv.» storica**
+  (voce B2: 4.979 righe su 4.992 già coperte dall'Elo storico, zero fonti nuove). Clubelo,
+  benchmark live e valore dei titolari sono **bloccati in questo sandbox**: host esterni non
+  raggiungibili. I due ΔRPS col mercato sono riconciliati (grezzo contro calibrato).
+
 - **Revisione del 10/10, stessa PR #98:**
   [docs/68](68_revisione_forma_mercato_2026-10-10.md). Numeri confermati con 246 fit Elo su
   prefissi temporali, **8.191 confronti / 796 riepiloghi senza differenze** e RPS/Brier
@@ -172,7 +180,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (78 file `.md` + `_audit_modelli.json` al 10/10/2026: **69** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
+| **`docs/` — indice completo** (79 file `.md` + `_audit_modelli.json` al 10/10/2026: **70** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |
@@ -248,6 +256,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/65_handoff_e_coda_fonti_2026-10-09.md` | Handoff dopo #97 e coda B–F: fonti, misure del modello, revisioni delle schede. |
 | `docs/66_la_forma_dice_contro_chi_2026-10-09.md` | Voce B: Elo alla vigilia nella forma, ranghi, giudizio oltre l'errore standard, [44] estesa, recupero della sessione e gate. |
 | `docs/67_modello_contro_mercato_offline_2026-10-09.md` | Voce D: benchmark RPS/Brier offline su history/backtest, copertura 2/7 leghe dichiarata, IC appaiati, limiti di provenienza/calibrazione e test senza rete. |
+| `docs/69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md` | Handoff post-PR #98: decisione sui tre tilt con misure rigenerate oggi, rimedio misurato per «forza avv.» storica, voci bloccate in sandbox, riconciliazione dei due ΔRPS col mercato. |
 | `docs/68_revisione_forma_mercato_2026-10-10.md` | Revisione di B/D: ricalcolo indipendente, conteggi a data fissata, [44] disaccoppiata dal generatore, nomi avversari e chiavi del benchmark protetti. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |

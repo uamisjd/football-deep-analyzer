@@ -121,6 +121,24 @@ metriche confermate da un calcolo separato; chiavi di lega vuote/spazi ora rifiu
 mensile verificato con fake senza usare il Parquet locale. **JSON prima/dopo identico**,
 compresi IC, copertura e hash. Suite del lotto rivisto **568 passed**, Ruff e CI verdi.
 
+## 5. Riconciliazione con `docs/_audit_modelli.json` (verifica del 2026-10-10)
+
+Nel repo esistono **due** ΔRPS «modello contro mercato» sullo stesso campione di 1.071 gare:
+**+0,008807** qui e **+0,008527** nello snapshot dell'audit del 2026-09-20. Non si contraddicono:
+questo documento misura le probabilità **grezze** fuori campione, l'audit quelle **calibrate**
+della ricetta di produzione. Ricontato oggi con lo stesso join e la calibrazione applicata si
+ottiene **+0,008530** (RPS modello 0,18706361313745334), cioè il valore dell'audit a meno di
+3,3e−06 — scarto dovuto alla calibrazione **ristimata dal daily** il 2026-10-09 22:03
+(λ×1,039385, `n_fit` 4.770) contro λ×1,040063 (2026-09-13, `n_fit` 4.760) dello snapshot.
+L'RPS del **mercato** è identico nelle tre misure: 0,178533802717564.
+
+Quindi la calibrazione spiega 2,767e−04 dello scarto 2,800e−04 fra i due documenti, e la
+conclusione non cambia — anzi si rafforza: **anche con la calibrazione di produzione il modello
+resta dietro il mercato** (Δ +0,00853, IC95 [+0,00510; +0,01188]). Gli SHA-256 dei due input
+coincidono con quelli registrati al §4 e il benchmark offline rieseguito oggi riproduce ogni
+valore pubblicato **bit per bit**. Dettaglio in [`docs/68`](68_revisione_forma_mercato_2026-10-10.md)
+e [`docs/69`](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md) §4.
+
 ## Prossimo passo
 
 **PR #98 completa: merge dell'utente**, dopo i check dell'ultimo commit. Nessuna raccolta richiesta
