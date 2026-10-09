@@ -114,5 +114,7 @@ pushato anche durante i gate (`4a8d073`), senza lasciare un altro commit solo ne
 
 ## Prossimo passo
 
-Voce **D** usando soltanto i Parquet locali, senza richieste alle fonti. PR dal ramo della
-sessione, in bozza finché il lotto non è completo; **merge dell'utente**.
+Anche **D è completata**, solo sui Parquet locali:
+[docs/67](67_modello_contro_mercato_offline_2026-10-09.md). Il lotto della **PR #98** conta ora
+**562 test verdi**, Ruff pulito e CI del codice finale verde; i gate del sito qui sopra
+restano quelli del codice definitivo (D non tocca il sito). **Merge dell'utente**.

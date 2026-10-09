@@ -18,7 +18,8 @@
   nella stessa **PR #98**: [docs/67](67_modello_contro_mercato_offline_2026-10-09.md),
   **1.071 gare NED1/POR1**, ΔRPS **+0,008807**, ΔBrier **+0,019602** (grezzo − mercato).
   Le altre cinque leghe non hanno quote locali complete: nessun confronto inventato,
-  nessuna nuova raccolta, nessun cambio di ricetta. Merge dell'utente.
+  nessuna nuova raccolta, nessun cambio di ricetta. **Suite finale 562, Ruff e CI del codice
+  finale verdi**; PR completa, merge dell'utente.
 
 - **Lotto chiuso:** revisione della card **«Le due squadre»** nelle schede partita, in quattro
   passaggi, con la **PR #97**. Documento unico: [`docs/64`](64_le_due_squadre_2026-10-09.md)
@@ -161,7 +162,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (74 file `.md` + `_audit_modelli.json` al 9/10/2026: **65** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
+| **`docs/` — indice completo** (77 file `.md` + `_audit_modelli.json` al 9/10/2026: **68** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |

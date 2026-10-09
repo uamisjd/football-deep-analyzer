@@ -109,13 +109,16 @@ backtest.parquet  db61245728b8eca44e1a09e5baf0aa20249b9df3a47e9760104a08d59a2d07
 history.parquet   b2afb6e4624ce26ee6536a03846ed16301316437fe12ad976b26a80ebfa6b19c
 ```
 
-I quattro test tematici sono verdi; Ruff pulito. **Suite completa finale in corso**.
+**Gate finali:** suite completa **562 passed** (106,85 s), Ruff pulito; gli **otto test del
+benchmark** comprendono i quattro nuovi e tutte e quattro le regressioni preesistenti.
+CI del codice finale **d180d09** verde (run `38000587938`, 1m23s); i check aggiornati dei
+commit documentali sono visibili nella [PR #98](https://github.com/uamisjd/football-deep-analyzer/pull/98).
 I gate del sito di [docs/66 §5](66_la_forma_dice_contro_chi_2026-10-09.md#5-verifica-finale--osservata-offline-non-gli-attesi-dellhandoff)
 restano applicabili: D non modifica il codice o i template del sito.
 
 ## Prossimo passo
 
-Chiudere i check della **PR #98** e lasciarne il merge all'utente. Nessuna raccolta richiesta
+**PR #98 completa: merge dell'utente**, dopo i check dell'ultimo commit. Nessuna raccolta richiesta
 per questa voce D e nessuna nuova calibrazione/promozione. Per estendere la misura a sette
 leghe, usare in un giro distinto il benchmark mensile già previsto, senza presentare come
 localmente verificati dati oggi assenti; la provenienza esatta delle quote e la valutazione

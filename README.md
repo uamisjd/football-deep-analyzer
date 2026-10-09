@@ -40,7 +40,10 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/64_le_due_squadre_2026-10-09.md`](docs/64_le_due_squadre_2026-10-09.md) — **revisione della card «Le due squadre»**: verdetto xPTS sulla banda di rumore misurata (1σ = 1,13×√gare) al posto del ±2 fisso, riferimento di lega su ogni xG (1.784 rapporti, parità sulle 7 leghe), 4 alias Understat che eliminavano le fonti miste, media voto nella distinta pre-partita (1.176 celle dove c'era il vuoto), piè di card riscritto; poi finestra **alla vigilia** su 750 riquadri, infermeria che torna con le righe stampate (101 pannelli su 118 non tornavano) e **pressing in tutte e 7 le leghe** (caselle piene da 604 a 760 su 892); invariante **[44]**.
 - [`docs/65_handoff_e_coda_fonti_2026-10-09.md`](docs/65_handoff_e_coda_fonti_2026-10-09.md) — handoff 2026-10-09: stato, coda operativa e prompt per la sessione nuova.
 
-> L'**indice completo** dei 74 file `.md` di `docs/` (65 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
+- [`docs/66_la_forma_dice_contro_chi_2026-10-09.md`](docs/66_la_forma_dice_contro_chi_2026-10-09.md) — Elo storico degli avversari nella forma, rango alla vigilia e giudizio solo oltre l'errore standard; gate [44] esteso.
+- [`docs/67_modello_contro_mercato_offline_2026-10-09.md`](docs/67_modello_contro_mercato_offline_2026-10-09.md) — confronto RPS/Brier senza rete, quote già nello storico; 1.071 gare NED1/POR1, copertura e limiti dichiarati.
+
+> L'**indice completo** dei 77 file `.md` di `docs/` (68 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 

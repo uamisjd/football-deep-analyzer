@@ -22,9 +22,13 @@ modello contro **0,178534** mercato, Δ **+0,008807**; Brier **0,563247** contro
 campione, non sul calibrato odierno; provenienza/ripiego delle quote non tracciati per riga.
 Quattro test tematici verdi, Ruff pulito. Nessuna nuova raccolta, nessun dato o modello modificato.
 
-**In corso / prossimo passo:** suite completa finale e check della **PR #98**, ancora in bozza.
-Gate del sito già verdi sul codice definitivo (D non tocca il sito). Rendere la PR pronta quando
-anche gli ultimi check sono verdi; **il merge lo fa l'utente**.
+**Chiusura del lotto:** suite completa finale **562 passed** (106,85 s), Ruff pulito;
+**otto test del benchmark**, compresi i quattro preesistenti. CI del codice finale **d180d09**
+verde (run `38000587938`, 1m23s). Gate del sito sopra già verdi sul codice definitivo:
+D non modifica il sito. **PR #98 completa**, dal ramo `arena/eb94e8df-football-deep-analyzer`;
+verificare sempre i check dell'ultimo commit nella PR prima del merge. Anteprima locale: porta 3000.
+**Prossimo passo / decisioni:** **merge esclusivamente dell'utente**. Nessuna richiesta sportiva
+aggiuntiva necessaria; non promuovere modelli sulla base di questa misura a due leghe.
 
 ---
 
