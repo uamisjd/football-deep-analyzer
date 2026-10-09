@@ -218,12 +218,12 @@
 {% if c.status != 'finished' and (c.home_key_deep or c.away_key_deep or c.home_key_players or c.away_key_players) %}
 <div class="card" id="giocatori">
   <h2>I giocatori che decidono</h2>
-  <p class="small mut">In alto il contributo offensivo di stagione: (xG + xA) per 90 minuti, sommati dalle statistiche partita di FotMob (disponibili in tutte e 7 le leghe). Sotto, la classifica per media voto di stagione. In classifica entrano solo i giocatori con almeno il 40% dei minuti del più impiegato della propria squadra (soglia indicata in ogni colonna): con pochi minuti il valore per 90 è rumore.</p>
+  <p class="small mut">In alto il contributo offensivo di stagione: (xG + xA) per 90 minuti, sommati dalle statistiche partita di FotMob (disponibili in tutte e 7 le leghe). Sotto, la classifica per media voto di stagione. In entrambe le classifiche entrano solo i giocatori con almeno il 40% dei minuti del più impiegato della propria squadra (soglia indicata in ogni colonna): con pochi minuti il valore per 90 è rumore.</p>
   {#- P2.1 (`docs/28` §3): la spiegazione della stima stabilizzata si dà **una volta sola**, qui al
       primo punto d'uso; nel resto della pagina resta il marcatore ◎ col suo tooltip (media dei
       pari, peso k, numerosità del caso specifico). Prima la stessa frase compariva in ogni tabella
       e in ogni card squadra: 4 volte per scheda (`docs/28` §3 P2.1). -#}
-  <p class="small mut">Due marcatori in questa sezione. ◎ è la <b>stima stabilizzata</b> della rata per 90: sotto i 270′ di campione, al posto del valore grezzo (che a quel punto è rumore) si pubblica una stima che tira verso la <b>media dei pari</b> per lega e ruolo, con un peso misurato dai dati del run e non una costante; il tooltip di ogni valore dichiara media, peso k e numerosità del caso. ◇ significa che sotto i 90′ la rata grezza non si pubblica e si pubblica la stima.</p>
+  <p class="small mut">Due marcatori in questa sezione. ◎ è la <b>stima stabilizzata</b> della rata per 90: sotto i 270′ di campione la rata grezza è rumorosa, quindi le viene affiancata la stima — che tira verso la <b>media dei pari</b> per lega e ruolo, con un peso misurato dai dati del run e non una costante; il tooltip di ogni valore dichiara media, peso k e numerosità del caso. ◇ significa che sotto i 90′ la rata grezza non si pubblica: esce solo la stima.</p>
   <div class="grid">
   {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
     {% set kp = c[side ~ '_key_deep'] %}{% set rated = c[side ~ '_key_players'] %}
