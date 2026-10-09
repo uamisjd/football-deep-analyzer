@@ -2131,6 +2131,13 @@ def test_previsione_pubblicata_anche_senza_precedenti(tmp_path):
     Su ogni partita senza scontri diretti in archivio (prima volta che si incontrano, o
     dettagli non ancora raccolti) spariva il cuore della scheda e l'indice restava con
     un'ancora ``#previsione`` puntata sul vuoto. Introdotto da ``64998455`` (20/09).
+
+    Aggiornamento ``docs/62``: la card «Precedenti» ora rende **sempre** — senza dati in
+    archivio mostra la riga di fallback «Nessun precedente in archivio» — così struttura e
+    indice restano identici in tutte le schede pre-partita (gate ``parita_schede``). La
+    garanzia centrale di questo test non cambia: il cuore della scheda (Previsione e le altre
+    sezioni) resta pubblicato anche senza precedenti, e l'``{% endif %}`` della card
+    Precedenti resta al suo posto (subito dopo il fallback, prima di ``#previsione``).
     """
     st = _seed(tmp_path)
     st.write("h2h", st.read("h2h").iloc[0:0])          # nessun precedente per nessuna gara
@@ -2143,7 +2150,9 @@ def test_previsione_pubblicata_anche_senza_precedenti(tmp_path):
     SiteBuilder(store=st, out_dir=out).build()
 
     pre = (out / "partite/5749669.html").read_text(encoding="utf-8")
-    assert 'id="precedenti"' not in pre                # la card resta condizionata ai dati
+    # la card Precedenti rende sempre: senza dati mostra il fallback (docs/62), non sparisce
+    assert 'id="precedenti"' in pre
+    assert "Nessun precedente in archivio" in pre
     for sezione in ('id="previsione"', "Previsione del modello", "Risultati esatti più probabili"):
         assert sezione in pre, f"sezione persa senza precedenti: {sezione}"
 

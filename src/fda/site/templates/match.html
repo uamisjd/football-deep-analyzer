@@ -54,7 +54,7 @@
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}<a href="#notizie">Vita del club</a>{% endif %}
   {% if c.status != 'finished' and c.insights %}<a href="#fatti">Fatti rilevanti</a>{% endif %}
   {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}<a href="#arbitro-meteo">Arbitro e meteo</a>{% endif %}
-  {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}<a href="#precedenti">Precedenti</a>{% endif %}
+  <a href="#precedenti">Precedenti</a>
   {% if c.key_stats %}<a href="#statistiche">Statistiche</a>{% endif %}
   {% if c.status == 'finished' and c.timeline %}<a href="#cronaca">Cronaca essenziale</a>{% endif %}
   {% if p %}<a href="#previsione">Previsione</a>{% endif %}
@@ -461,9 +461,11 @@
     </table></div>
   </div>
   {% endif %}
-  {% if c.h2h_pattern or c.h2h[0] is not none or c.h2h_list %}
+  {% set incontri = (c.h2h[0] or 0) + (c.h2h[1] or 0) + (c.h2h[2] or 0) %}
+  {% set ha_precedenti = incontri > 0 or c.h2h_list or c.h2h_pattern %}
   <div class="card" id="precedenti">
     <h2>Precedenti</h2>
+    {% if ha_precedenti %}
     {% if c.h2h_pattern or c.h2h[0] is not none %}
     <div class="tablewrap"><table>
       {% if c.h2h[0] is not none and not c.h2h_pattern %}<tr><th scope="row">Bilancio</th><td>{{ c.h2h[0]|it_plural('vittoria','vittorie') }} {{ c.home_name }} · {{ c.h2h[1]|it_plural('pareggio') }} · {{ c.h2h[2]|it_plural('vittoria','vittorie') }} {{ c.away_name }}</td></tr>{% endif %}
@@ -475,8 +477,10 @@
     {% if c.h2h_stats %}<p class="small mut" style="margin-top:6px">{% if c.h2h_stats.n == 1 %}Nel precedente mostrato:{% else %}Nei {{ c.h2h_stats.n }} precedenti mostrati:{% endif %} <b>{{ c.h2h_stats.gpg|dec }} gol/gara</b> · entrambe a segno nel {{ (c.h2h_stats.btts * 100)|round|int }}% dei casi{% if c.h2h_stats.over25 is defined %} · Over 2,5 nel {{ (c.h2h_stats.over25*100)|round|int }}%{% endif %}.</p>{% endif %}
     {% if c.h2h_trend_note %}<p class="small" style="margin-top:6px;color:var(--amber)">⚠ {{ c.h2h_trend_note }}</p>{% endif %}
     {% endif %}
+    {% else %}
+    <p class="small mut">Nessun precedente in archivio per questa sfida: tra {{ c.home_name }} e {{ c.away_name }} non risultano confronti diretti nelle stagioni coperte dai dati. Quando uno storico esiste, questa sezione raccoglie il bilancio vittorie-pareggi-sconfitte, i gol a gara, la frequenza di «entrambe a segno» e di Over 2,5, e l'elenco degli ultimi confronti con data, competizione ed esito.</p>
+    {% endif %}
   </div>
-  {% endif %}
 {% if p %}
 <div class="grid detail-card" id="previsione">
   <div class="card">
