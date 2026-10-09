@@ -2,10 +2,35 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-07 (notte fonda — **PR #91 fusa su ordine esplicito dell'utente**, le due coppie della revisione delle schede sono in produzione) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha deciso in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
+> **Ultimo aggiornamento:** 2026-10-09 (vedi l'handoff qui sotto; prima del 9/10 l'ultimo era il 7/10) (notte fonda — **PR #91 fusa su ordine esplicito dell'utente**, le due coppie della revisione delle schede sono in produzione) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha deciso in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
 ---
+
+## Handoff operativo corrente — 2026-10-09 (il più recente: leggere questo per primo)
+
+- **Lotto chiuso:** revisione della card **«Le due squadre»** nelle schede partita, in quattro
+  passaggi, con la **PR #97**. Documento unico: [`docs/64`](64_le_due_squadre_2026-10-09.md)
+  (§2 primo giro · §5-§7 finestra alla vigilia · §8 infermeria · §9 pressing su 7 leghe).
+- **Risultati misurati:** 750/750 riquadri non includono più gare successive alla partita
+  descritta; il totale dell'infermeria è la somma delle righe stampate (prima sbagliato in
+  **101 pannelli su 118**); nessuna riga di infermeria senza ruolo (prima **197 su 507**); le
+  caselle con un numero di pressing passano da **604 a 760 su 892**, con Eredivisie e Liga
+  Portugal che prima erano a **zero**.
+- **Invariante nuova [44]** (`check_due_squadre` in `scripts/verify_site.py`): ricalcola dai
+  Parquet struttura, fonte, xG, xPTS, rapporti di lega, finestra, indice di pressione e somme
+  dell'infermeria su **tutte** le schede.
+- **Gate alla chiusura:** pytest **556 passed** · ruff pulito · build **446/2.364/7.498** ·
+  `verify_site` **0 problemi · 187.107 controlli** · `parita_schede` nessuna differenza ·
+  `resa_375` **26.565 · 0**.
+- **Coda operativa e prompt per la sessione nuova:**
+  [`docs/65`](65_handoff_e_coda_fonti_2026-10-09.md) — B: la forza dell'avversario nella forma
+  con l'**Elo che già abbiamo** (`predictions.parquet`, 133 squadre); C: Clubelo come controllo
+  indipendente (fonte configurata e **mai usata**); D: quote di chiusura solo come **metro** del
+  modello (`footballdata`, codici presenti per tutte e 7 le leghe); E: tre ritocchi a costo zero
+  dentro la card; F: sezioni ancora da revisionare.
+- **Nessuna raccolta live** è stata eseguita in questo giro: tutte le misure vengono dai Parquet
+  in `data/processed`.
 
 ## Handoff operativo corrente — 2026-10-07 (leggere prima delle note storiche)
 
@@ -125,7 +150,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (73 file `.md` + `_audit_modelli.json` al 9/10/2026: **64** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
+| **`docs/` — indice completo** (74 file `.md` + `_audit_modelli.json` al 9/10/2026: **65** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |
@@ -197,12 +222,13 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `docs/61_giocatori_che_decidono_2026-10-09.md` | **Card «I giocatori che decidono»**: intro resa coerente col rendering (◎ grezzo + stima entrambi pubblicati), chiusura della terza coppia. |
 | `docs/62_precedenti_fallback_2026-10-09.md` | **Card «Precedenti» sempre presente**: la card e l'ancora sparivano sulle gare senza h2h (1.924 delle 1.989 fixture pre-match) e fermavano `parita_schede` (run 230, 10-08); ora fallback dichiarato. In produzione con la PR #95. |
 | `docs/63_revisione_affidabilita_daily_2026-10-09.md` | **Revisione affidabilità del daily** (richiesta utente 10-09): 26/43 run rossi in 30 giorni classificati per step e causa radice (24×verify_site «1 assenti» + Sportmediaset 404 → `docs/51`; 1×parita → `docs/62`; 1×pip transitorio); riverifiche strutturali con misure; «si aggiorna da solo: sì» con le prove; nessuna modifica di codice (B.10). |
+| `docs/64_le_due_squadre_2026-10-09.md` | **Card «Le due squadre»** (richiesta utente 10-09, tutte le 446 schede): banda di rumore misurata per il verdetto xPTS (1σ = 1,13×√gare su 502 gare-squadra; 19 verdetti di rumore in meno, 24 contraddizioni card↔narrativa azzerate), rapporto «× la media del campionato» su ogni xG con la **stessa fonte** (1.784, anche NED1/POR1), 4 alias Understat (0 schede con fonti miste), ⌀ media voto nella distinta pre-partita (0 → 1.176 celle), PPDA e riposo spiegati, piè di card riscritto; invariante **[44] `check_due_squadre`**. |
 | **Codice e strumenti** | |
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |
 | `src/fda/models/` | `predict.py` (Dixon-Coles + Elo, ensemble `tilt`), `calibration.py`, `dc_grid.py`, `backtest.py`, `lab.py` (walk-forward), `season_sim.py` (Monte Carlo stagione). |
 | `src/fda/site/` | `build.py`, `analysis.py` (frasi in italiano), `advanced.py`, `players.py`, `rates.py` (stime stabilizzate), `audit.py`, `fmt.py`, `templates/` (**12**), `assets/site.css` (esterno con cache-busting). |
-| `scripts/` | **`audit_mercato.py`** e **`audit_epv.py`** (misure rieseguibili offline sui Parquet: duplicati/date del mercato; EPV e indice di contesto contro il modello), **`verify_site.py`** (gate in CI, invarianti `[0]`-`[40]`: 41 controlli numerati; `[39]` card mercato senza righe ripetute e `[40]` soglie del meteo, aggiunte il 7/10/2026), **`prematch_sections.py`** (censimento della scheda pre-partita: sezioni, peso visibile/tendina, ridondanze), `audit_match_sections.py`, `benchmark_quote.py`, `probe_fonti.py` (sonda settimanale), `diagnose_model.py`, `verdetto_lab.py`, `corpus_da_h2h.py`, `anteprima_scheda.py`, `render_preview.py`, `verify_ned_por.py`, `verify_standings.py`, **`font_locali.py`** (scarica i font e li rende locali, `--check` offline). |
+| `scripts/` | **`audit_mercato.py`** e **`audit_epv.py`** (misure rieseguibili offline sui Parquet: duplicati/date del mercato; EPV e indice di contesto contro il modello), **`verify_site.py`** (gate in CI, invarianti `[0]`-`[44]`; `[41]`-`[43]` dalla revisione delle schede e **`[44]` card «Le due squadre» ricalcolata dai Parquet su tutte le pagine**, aggiunta il 9/10/2026), **`prematch_sections.py`** (censimento della scheda pre-partita: sezioni, peso visibile/tendina, ridondanze), `audit_match_sections.py`, `benchmark_quote.py`, `probe_fonti.py` (sonda settimanale), `diagnose_model.py`, `verdetto_lab.py`, `corpus_da_h2h.py`, `anteprima_scheda.py`, `render_preview.py`, `verify_ned_por.py`, `verify_standings.py`, **`font_locali.py`** (scarica i font e li rende locali, `--check` offline). |
 | `config/leagues.yaml` | Le 7 leghe + coppe; aggiungere una lega = aggiungere una voce qui (`datahub_base` per i mirror). |
 | `config/sources.yaml` | Budget di richieste per fonte. |
 | `.github/workflows/` | `daily.yml` (cron 5x/giorno: collect → calibrate → predict → backtest → simulate → build → gate → commit dati → Pages), `tests.yml` (Ruff + pytest su push/PR; Ruff aggiunto in questa sessione), `lab.yml` (lunedì 05:30 IT + sonda dei fallback), `benchmark.yml` (mensile: modello vs chiusura), `diag-fetch-log.yml` (log dei run → branch **`diag-logs`**). |

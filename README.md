@@ -37,8 +37,10 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/61_giocatori_che_decidono_2026-10-09.md`](docs/61_giocatori_che_decidono_2026-10-09.md) — revisione di «I giocatori che decidono»: intro coerente col rendering, chiusura della terza coppia.
 - [`docs/62_precedenti_fallback_2026-10-09.md`](docs/62_precedenti_fallback_2026-10-09.md) — **fix del fallimento del 10-08**: la card «Precedenti» era assente sulle gare senza h2h e fermava il gate `parita_schede`; ora è sempre presente con fallback dichiarato (PR #95).
 - [`docs/63_revisione_affidabilita_daily_2026-10-09.md`](docs/63_revisione_affidabilita_daily_2026-10-09.md) — **revisione affidabilità del daily**: 26/43 run rossi in 30 giorni classificati per step e causa radice, riverifiche strutturali con misure, prove che la pipeline si aggiorna da sola; nessuna modifica di codice (regola B.10).
+- [`docs/64_le_due_squadre_2026-10-09.md`](docs/64_le_due_squadre_2026-10-09.md) — **revisione della card «Le due squadre»**: verdetto xPTS sulla banda di rumore misurata (1σ = 1,13×√gare) al posto del ±2 fisso, riferimento di lega su ogni xG (1.784 rapporti, parità sulle 7 leghe), 4 alias Understat che eliminavano le fonti miste, media voto nella distinta pre-partita (1.176 celle dove c'era il vuoto), piè di card riscritto; poi finestra **alla vigilia** su 750 riquadri, infermeria che torna con le righe stampate (101 pannelli su 118 non tornavano) e **pressing in tutte e 7 le leghe** (caselle piene da 604 a 760 su 892); invariante **[44]**.
+- [`docs/65_handoff_e_coda_fonti_2026-10-09.md`](docs/65_handoff_e_coda_fonti_2026-10-09.md) — handoff 2026-10-09: stato, coda operativa e prompt per la sessione nuova.
 
-> L'**indice completo** dei 73 file `.md` di `docs/` (64 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
+> L'**indice completo** dei 74 file `.md` di `docs/` (65 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 

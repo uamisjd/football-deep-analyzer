@@ -1,4 +1,5 @@
 import importlib.util
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -426,3 +427,170 @@ def test_anche_l_eccezione_ha_un_tetto(tmp_path):
                                             encoding="utf-8")
     fails, _ = vsite.check_page_weight(tmp_path)
     assert len(fails) == 1 and "prossime.html" in fails[0]
+
+
+def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
+    """[44] (docs/64): la card «Le due squadre» esiste ovunque e i suoi numeri si ricalcolano.
+
+    I difetti che l'invariante blocca sono quelli misurati sulla build del 2026-10-09: tre
+    schede in cui le due squadre confrontavano fonti xG diverse (Understat da una parte,
+    FotMob dall'altra) senza dirlo, il valore dei titolari attribuito a Transfermarkt invece
+    che alla distinta FotMob, un piè di card che spiegava la stringa «Ruolo n.d.» (mai
+    stampata) e un verdetto sullo scarto punti−xPTS con una soglia fissa a ±2 punti, sotto
+    il rumore della misura. Il controllo gira su **tutte** le pagine di `site/partite`, così
+    nessuna partita resta fuori dalla revisione.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from fda.site.build import SiteBuilder
+    from tests.test_site import _fixture_lontana, _seed
+
+    vs = _site_module()
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900010, 3, "Inter", "Napoli", now)])
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999100 + t,
+         "team_name": ["Inter", "Napoli", *[f"Prova {i}" for i in range(9)]][t],
+         "date": (now - timedelta(days=7 * (4 - i))).isoformat(), "is_home": bool(i % 2),
+         "goals": 2, "goals_against": 1, "xg": 2.4 if t == 0 else 1.2,
+         "xga": 0.8 if t == 0 else 1.4, "xpts": 2.2 if t == 0 else 1.2,
+         "pts": 3 if t == 0 else 1, "ppda": 8.0 if t == 0 else 14.0}
+        for t in range(11) for i in range(4)])
+    # una gara precedente fra le stesse due squadre, con le statistiche FotMob da cui esce
+    # l'indice di pressione (docs/64 §9): senza, la casella userebbe il ripiego Understat e
+    # il controllo dell'indice non verificherebbe nulla
+    passata = dict(_fixture_lontana(5900009, 3, "Inter", "Napoli", now - timedelta(days=7)),
+                   status="finished", home_goals=1, away_goals=1)
+    st.upsert("fixtures", [passata])
+    st.upsert("team_stats", [
+        {"match_id": 5900009, "team_id": tid, "period": "All", "key": k, "value": v, "text": ""}
+        for tid, pas in ((passata["home_id"], 300.0), (passata["away_id"], 240.0))
+        for k, v in (("own_half_passes", pas), ("matchstats.headers.tackles", 40.0),
+                     ("interceptions", 10.0), ("fouls", 10.0))])
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
+    st.close()
+    dati = tmp_path / "processed"
+
+    fails, checks = vs.check_due_squadre(out, dati)
+    assert fails == [] and checks > 20
+
+    pagina = out / "partite" / "5900010.html"
+    originale = pagina.read_text(encoding="utf-8")
+
+    def rotta(html: str) -> list[str]:
+        pagina.write_text(html, encoding="utf-8")
+        return vs.check_due_squadre(out, dati)[0]
+
+    # 1) card assente → la scheda non è «senza dati», è rotta
+    assert "non c'è" in rotta(originale.replace('id="squadre"', 'id="altro"'))[0]
+
+    # 2) attribuzione sbagliata del valore dei titolari e piè di card con stringhe fantasma
+    fails = rotta(originale.replace("Che cosa c'è in questa card:",
+                                    "Transfermarkt · Ruolo n.d. · Che cosa c'è in questa card:"))
+    assert any("Transfermarkt" in f for f in fails)
+    assert any("Ruolo n.d." in f for f in fails)
+
+    # 3) piè di card rimosso
+    assert any("Che cosa c'è" in f
+               for f in rotta(originale.replace("Che cosa c'è in questa card:", "Note:")))
+
+    # 4) numero di stagione manomesso: xG creati e campione non tornano più dai Parquet
+    guasto = re.sub(
+        r"(xG creati / gara</div>\s*<div[^>]*>)[\d,]+ (<span[^>]*>\()(Understat|FotMob), \d+",
+        r"\g<1>9,99 \g<2>\g<3>, 99", originale, count=1)
+    fails = rotta(guasto)
+    assert any("xG creati 9,99" in f for f in fails)
+    assert any("campione xG 99" in f for f in fails)
+
+    # 5) rapporto di lega sparito o sbagliato (la parità fra le 7 leghe passa di qui)
+    senza_rif = originale.replace("× la media del campionato", "× qualcosa", 1)
+    assert any("riferimento di lega assente" in f for f in rotta(senza_rif))
+    sballato = re.sub(r"[\d,]+(× la media del campionato)", r"9,99\1", originale, count=1)
+    assert any("rapporto xG 9,99×" in f for f in rotta(sballato))
+
+    # 6) fonti miste nella stessa scheda (il difetto degli alias Understat non agganciati)
+    assert any("mescolano fonti xG diverse" in f or "fonte xG stampata" in f
+               for f in rotta(originale.replace("(Understat, ", "(FotMob, ", 1)))
+
+    # 7) verdetto xPTS incoerente con la banda di rumore misurata
+    assert any("verdetto xPTS" in f
+               for f in rotta(originale.replace("sopra gli attesi", "sotto gli attesi", 1)))
+
+    # 9) il riposo torna a dire «coppe incluse» senza il nome della coppa
+    assert any("coppe incluse" in f
+               for f in rotta(originale.replace("Che cosa c'è in questa card:",
+                                                "coppe incluse · Che cosa c'è in questa card:")))
+
+    # 10bis) indice di pressione: numero manomesso e casella svuotata (docs/64 §9)
+    press = re.search(r"Passaggi che l'avversario[^\"]*\">([\d,]+)</span>", originale)
+    assert press, "la gara sintetica deve pubblicare l'indice di pressione"
+    assert any("indice di pressione 9,99" in f for f in
+               rotta(originale.replace(f'">{press.group(1)}</span>', '">9,99</span>', 1)))
+    assert any("indici di pressione stampati" in f for f in
+               rotta(originale.replace("Passaggi che l'avversario", "Qualcos'altro", 1)))
+
+    # 10) infermeria: il totale non è la somma della colonna «impatto» (docs/64 §8)
+    pillola = ('<span class="mut small" style="display:inline-block;padding:1px 6px;'
+               'background:var(--surface2);border:1px solid var(--line);border-radius:999px;'
+               'font-size:10px">attaccante</span>')
+    riga = ('<tr><td><b>Tizio {n}</b>' + pillola + '</td><td class="mut small">infortunio</td>'
+            '<td class="r small">200′ · 1+1 · <b style="color:var(--accent)">{v}</b>/90</td></tr>')
+    def infermeria(totale: str, righe: str) -> str:
+        blocco = (f'<p id="infermeria-home"><b>Indisponibili (2)</b> <span class="mut small">'
+                  f'· {totale} xG+xA a partita in meno</span></p>'
+                  f'<div class="tablewrap"><table>{righe}</table></div>')
+        return originale.replace("Che cosa c'è in questa card:",
+                                 blocco + "Che cosa c'è in questa card:")
+
+    due = riga.format(n=1, v="0,60") + riga.format(n=2, v="0,40")
+    assert rotta(infermeria("1,00", due)) == []                # somma giusta: nessun allarme
+    fails = rotta(infermeria("0,80", due))
+    assert any("totale 0,80 ≠ somma della colonna 1.00" in f for f in fails)
+
+    # 11) una riga senza la pillola del ruolo (nemmeno «ruolo n.d.»): la cella resta muta
+    muta = due.replace(pillola, "", 1)
+    assert any("senza la pillola del ruolo" in f for f in rotta(infermeria("1,00", muta)))
+
+    assert rotta(originale) == []
+
+
+def test_verify_site_due_squadre_finestra_alla_vigilia(tmp_path):
+    """[44] (docs/64 §7): il campione non può contenere gare successive alla partita.
+
+    Il difetto misurato sulla build del 2026-10-09: **750 riquadri su 750** delle schede già
+    giocate pubblicavano medie di stagione che includevano le gare successive a quella
+    descritta (mediana 3, fino a 7). Il controllo ricalcola il campione dal calendario e da
+    Understat **senza passare da `season_xg`**, così una regressione del codice (il taglio
+    alla vigilia che sparisce) viene vista anche se l'HTML è coerente con il codice rotto.
+    """
+    from datetime import UTC, datetime, timedelta
+    from unittest.mock import patch
+
+    from fda.site.analysis import MatchAnalysis
+    from fda.site.build import SiteBuilder
+    from tests.test_site import _seed
+
+    vs = _site_module()
+    st = _seed(tmp_path)
+    riga = st.read("fixtures").query("match_id == 5749645").iloc[0]
+    ko = datetime.fromisoformat(str(riga.utc_kickoff)).astimezone(UTC)
+    # gare Understat successive alla partita descritta: fuori dal suo campione
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999400, "team_name": str(riga.home_name),
+         "date": (ko + timedelta(days=g)).isoformat(), "is_home": bool(g % 2), "goals": 3,
+         "goals_against": 0, "xg": 3.4, "xga": 0.3, "xpts": 2.7, "pts": 3, "ppda": 6.5}
+        for g in (2, 9, 16)])
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})
+    st.close()
+    dati = tmp_path / "processed"
+
+    assert vs.check_due_squadre(out, dati)[0] == []
+
+    senza_taglio = MatchAnalysis.season_xg
+    with patch.object(MatchAnalysis, "season_xg",
+                      lambda self, nome, tid, before=None: senza_taglio(self, nome, tid)):
+        fails, _ = vs.check_due_squadre(out, dati)
+    assert any("prima del calcio d'inizio" in f for f in fails), fails[:3]

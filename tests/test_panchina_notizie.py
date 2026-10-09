@@ -1087,9 +1087,11 @@ def test_fattori_ordine_fisso_e_campione_dichiarato(mood_analysis, monkeypatch):
     monkeypatch.setattr(MatchAnalysis, "absences_weight",
                         lambda self, mid, tid: {"n": 2, "starters_out": 0, "contrib_lost_p90": 0.5})
     monkeypatch.setattr(MatchAnalysis, "rest_days", lambda self, tid, ko: 3)
+    # `before` = calcio d'inizio della scheda (docs/64 §7): i numeri di stagione si fermano
+    # alla vigilia, quindi il doppio di prova accetta il parametro.
     monkeypatch.setattr(MatchAnalysis, "season_xg",
-                        lambda self, nome, tid: {"source": "Understat", "played": 6,
-                                                 "xg_pm": 1.4, "xga_pm": 1.1, "ppda": 9.0}
+                        lambda self, nome, tid, before=None: {"source": "Understat", "played": 6,
+                                                              "xg_pm": 1.4, "xga_pm": 1.1, "ppda": 9.0}
                         if tid == 4 else {"source": "Understat", "played": 5,
                                           "xg_pm": 1.2, "xga_pm": 1.3, "ppda": 15.0})
     res = mood_analysis.fattori_chiave(8, 4, "Lazio", 3, "Milan", KO("2026-09-16 18:00"), None)

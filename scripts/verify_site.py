@@ -706,6 +706,280 @@ def _pos_pct(v: float, lo_q: float, hi_q: float) -> float:
     return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
 
 
+def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[44] card «Le due squadre»: presente su **ogni** scheda e con i numeri ricalcolati.
+
+    Nasce con la revisione del 2026-10-09 (`docs/64`). Controlla, per tutte le pagine di
+    ``site/partite`` e per entrambe le squadre di ognuna:
+
+    * **struttura** — il titolo del gruppo, due riquadri di squadra, i quattro riquadri di
+      stagione (xG creati, xG concessi, xPTS, pressing/riposo) e il piè di card nuovo;
+    * **fonte** — quella stampata è quella che ``season_xg`` userebbe davvero, e le due
+      squadre della stessa scheda non mescolano Understat e FotMob senza dirlo;
+    * **numeri** — xG creati/concessi per gara, campione, xPTS, punti e scarto sono quelli
+      ricalcolati dai Parquet;
+    * **riferimento di lega** — il rapporto «× la media del campionato» è ricalcolato con la
+      media della **stessa fonte**, e c'è ovunque la fonte lo permetta (parità fra le 7 leghe);
+    * **verdetto xPTS** — coincide con ``MatchAnalysis.xpts_reading`` (banda di rumore
+      misurata), e nessuna pagina riporta le vecchie soglie fisse;
+    * **pressing** — l'indice di pressione FotMob è ricalcolato dai Parquet per entrambe le
+      squadre e c'è in **tutte e 7 le leghe** (`docs/64` §9: prima la casella pubblicava il
+      PPDA di Understat e 288 riquadri su 892, tutti di Eredivisie e Liga Portugal, dicevano
+      «n.d.»), col rapporto di lega, l'etichetta solo oltre l'errore standard e il PPDA
+      Understat conservato nel ⓘ dove la lega è coperta;
+    * **finestra** — i numeri si fermano **alla vigilia** della partita descritta: il campione
+      stampato coincide con le gare giocate *prima* del calcio d'inizio, ricontate dal
+      calendario e da Understat **senza passare da ``season_xg``** (`docs/64` §7);
+    * **infermeria** — il totale «xG+xA a partita in meno» è la **somma esatta** della colonna
+      «impatto» stampata sotto (`docs/64` §8: prima sommava le stime mentre le righe
+      mostravano il grezzo, e non tornava in 101 pannelli su 118), e ogni riga dichiara il
+      ruolo (o «ruolo n.d.»);
+    * **testi** — nessuna attribuzione a Transfermarkt (il valore è della distinta FotMob) e
+      nessuna stringa fantasma nel piè di card.
+    """
+    import pandas as pd
+
+    from fda.site.analysis import MatchAnalysis
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    fx = st.read("fixtures")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if fx.empty or not pages:
+        return fails, checks
+    ma = MatchAnalysis(st)
+    by_id = fx.drop_duplicates("match_id").set_index("match_id")
+    # conteggio indipendente del campione: gare di campionato giocate prima del calcio d'inizio
+    us = st.read("understat_team_matches")
+    if not us.empty:
+        from fda.teams import canonical as _canon
+        us = us.assign(_c=us.team_name.map(_canon),
+                       _d=pd.to_datetime(us["date"], utc=True, errors="coerce"))
+    fin_cal = fx[fx.status == "finished"].copy()
+    fin_cal["_ko"] = pd.to_datetime(fin_cal.utc_kickoff, utc=True, errors="coerce")
+    mi_fin = st.read("match_info")
+    con_xg = set()
+    if not mi_fin.empty and {"home_xg", "away_xg"} <= set(mi_fin.columns):
+        con_xg = set(mi_fin.dropna(subset=["home_xg", "away_xg"]).match_id.astype(int))
+
+    def gare_prima(tid: int, tname: str, ko) -> tuple[int, int]:
+        """(gare Understat, gare di calendario con xG) giocate **prima** di ``ko``."""
+        n_us = 0
+        if not us.empty:
+            from fda.teams import canonical as _canon
+            g = us[(us._c == _canon(str(tname))) & (us._d < ko)]
+            n_us = len(g)
+        g2 = fin_cal[((fin_cal.home_id == tid) | (fin_cal.away_id == tid)) & (fin_cal._ko < ko)]
+        return n_us, int(g2.match_id.astype(int).isin(con_xg).sum())
+
+    box_re = re.compile(
+        r"xG creati / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>\((Understat|FotMob), "
+        r"(\d+) gar[ae]\)</span></div>\s*"
+        r'(?:<div class="mut small"[^>]*title="[^"]*">([\d,]+)× la media del campionato)?')
+    xga_re = re.compile(
+        r"xG concessi / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>"
+        r"\(stess[ae](?: (\d+))? gar[ae]\)</span></div>\s*"
+        r'(?:<div class="mut small"[^>]*title="[^"]*">([\d,]+)× la media del campionato)?')
+    xpts_re = re.compile(
+        r"xPTS vs punti reali</div>\s*<div[^>]*>([\d,]+) <span[^>]*>vs</span> (\d+) "
+        r'<span class="mut" title="[^"]*">\(([+-]?[\d,]+)\)</span>')
+    verdetto_re = re.compile(r"(\d+) gar[ae] · <span title=\"[^\"]*\">(.*?)</span></div>")
+    # [44]/docs/64 §9: il numero in evidenza della casella «Pressing · riposo» è l'indice di
+    # pressione FotMob (7 leghe su 7), col suo rapporto di lega sulla riga sotto.
+    press_re = re.compile(r"<span title=\"Passaggi che l'avversario[^\"]*\">([\d,]+)</span>")
+
+    def num(x: str) -> float:
+        return float(x.replace(",", "."))
+
+    n_pagine = n_pannelli = n_rif = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        i = html.find('id="squadre"')
+        checks += 1
+        if i < 0:
+            fails.append(f"{pg.name}: la card «Le due squadre» non c'è")
+            continue
+        sec = html[i:html.find('id="club"', i) if html.find('id="club"', i) > 0 else len(html)]
+        n_pagine += 1
+        try:
+            mid = int(pg.stem)
+            riga = by_id.loc[mid]
+        except (KeyError, ValueError):
+            continue
+        for k in ('<h2 class="as-h2" style="grid-column:1/-1">Le due squadre</h2>',
+                  "Che cosa c'è in questa card:"):
+            checks += 1
+            if k not in sec:
+                fails.append(f"{pg.name}: «Le due squadre» senza «{k[:34]}…»")
+        checks += 2
+        if "Transfermarkt" in sec:
+            fails.append(f"{pg.name}: «Le due squadre» attribuisce il valore a Transfermarkt")
+        if "Ruolo n.d." in sec:
+            fails.append(f"{pg.name}: il piè di card spiega «Ruolo n.d.», stringa che non esiste")
+        # ogni riquadro di stagione va letto accanto al suo gemello: le due squadre, in ordine
+        boxes = box_re.findall(sec)
+        xgas = xga_re.findall(sec)
+        xpts = xpts_re.findall(sec)
+        verdetti = verdetto_re.findall(sec)
+        ko = pd.to_datetime(riga.utc_kickoff, utc=True)
+        attesi = []
+        for tid, tname in ((int(riga.home_id), str(riga.home_name)),
+                           (int(riga.away_id), str(riga.away_name))):
+            a = ma.season_xg(tname, tid, ko)
+            if a:
+                a = dict(a, _prima=gare_prima(tid, tname, ko))
+            attesi.append(a)
+        presenti = [a for a in attesi if a]
+        # il campione dichiarato non può contenere gare giocate dopo questa partita
+        for a in presenti:
+            checks += 1
+            atteso_n = a["_prima"][0] if a["source"] == "Understat" else a["_prima"][1]
+            if int(a["played"]) != int(atteso_n):
+                fails.append(f"{pg.name}: campione {a['source']} {a['played']} gare, ma prima "
+                             f"del calcio d'inizio ne risultano {atteso_n}")
+        checks += 2
+        if len(boxes) != len(presenti):
+            fails.append(f"{pg.name}: riquadri «xG creati» {len(boxes)} per {len(presenti)} "
+                         "squadre con dati")
+            continue
+        # il riposo non dipende dagli xG: due caselle «Pressing · riposo» sempre, anche quando
+        # una squadra non ha gare precedenti (docs/64 §7)
+        if sec.count("Pressing · riposo") != 2:
+            fails.append(f"{pg.name}: caselle «Pressing · riposo» {sec.count('Pressing · riposo')}, "
+                         "attese 2 (una per squadra, anche senza numeri di stagione)")
+        mancanti = sum(1 for a in attesi if not a)
+        if mancanti and sec.count("nessuna gara di campionato prima di questa") != mancanti:
+            fails.append(f"{pg.name}: {mancanti} squadre senza gare precedenti, "
+                         "ma la card non lo dichiara")
+        checks += 1
+        if len({b[1] for b in boxes}) > 1:
+            fails.append(f"{pg.name}: le due squadre mescolano fonti xG diverse "
+                         f"({sorted({b[1] for b in boxes})}): i due numeri non sono "
+                         "confrontabili, serve un alias in fda/teams.py")
+        for k, atteso in enumerate(presenti):
+            n_pannelli += 1
+            valore, fonte, gare, rapporto = boxes[k]
+            checks += 3
+            if fonte != atteso["source"]:
+                fails.append(f"{pg.name}: fonte xG stampata {fonte}, calcolata {atteso['source']}")
+            if abs(num(valore) - float(atteso["xg_pm"])) > 0.051:
+                fails.append(f"{pg.name}: xG creati {valore} ≠ {atteso['xg_pm']:.2f}")
+            if int(gare) != int(atteso["played"]):
+                fails.append(f"{pg.name}: campione xG {gare} ≠ {atteso['played']}")
+            atteso_rapporto = atteso.get("xg_ratio")
+            checks += 1
+            if atteso.get("ratio_short"):
+                if rapporto:
+                    fails.append(f"{pg.name}: rapporto di lega pubblicato su {atteso['played']} "
+                                 f"gare (minimo {ma.XG_RATIO_MIN_GAMES})")
+                if "campione troppo corto per il confronto con la lega" not in sec:
+                    fails.append(f"{pg.name}: campione corto senza la nota che lo dichiara")
+            elif atteso_rapporto and not rapporto:
+                fails.append(f"{pg.name}: riferimento di lega assente con media disponibile")
+            elif rapporto:
+                n_rif += 1
+                if abs(num(rapporto) - float(atteso_rapporto or 0)) > 0.011:
+                    fails.append(f"{pg.name}: rapporto xG {rapporto}× ≠ "
+                                 f"{float(atteso_rapporto or 0):.2f}×")
+            if k < len(xgas):
+                v_ga, gare_ga, rap_ga = xgas[k]
+                checks += 2
+                if abs(num(v_ga) - float(atteso["xga_pm"])) > 0.051:
+                    fails.append(f"{pg.name}: xG concessi {v_ga} ≠ {atteso['xga_pm']:.2f}")
+                if int(gare_ga or 1) != int(atteso["played"]):
+                    fails.append(f"{pg.name}: campione xG concessi {gare_ga} ≠ {atteso['played']}")
+                if rap_ga and atteso.get("xga_ratio"):
+                    checks += 1
+                    if abs(num(rap_ga) - float(atteso["xga_ratio"])) > 0.011:
+                        fails.append(f"{pg.name}: rapporto xGA {rap_ga}× ≠ "
+                                     f"{float(atteso['xga_ratio']):.2f}×")
+            lettura = atteso.get("xpts_read")
+            if lettura and atteso.get("xpts") is not None and k < len(xpts):
+                v_x, v_p, v_d = xpts[k]
+                checks += 3
+                if abs(num(v_x) - float(atteso["xpts"])) > 0.051:
+                    fails.append(f"{pg.name}: xPTS {v_x} ≠ {float(atteso['xpts']):.1f}")
+                if int(v_p) != int(atteso["pts"]):
+                    fails.append(f"{pg.name}: punti {v_p} ≠ {atteso['pts']}")
+                if abs(num(v_d) - float(lettura["diff"])) > 0.051:
+                    fails.append(f"{pg.name}: scarto {v_d} ≠ {lettura['diff']:.1f}")
+            if lettura and k < len(verdetti):
+                gare_v, testo = verdetti[k]
+                atteso_testo = ("sopra gli attesi" if lettura["verdict"] == "sopra"
+                                else "sotto gli attesi" if lettura["verdict"] == "sotto"
+                                else "in linea" if lettura["band"] else "campione troppo corto")
+                checks += 2
+                if int(gare_v) != int(atteso["played"]):
+                    fails.append(f"{pg.name}: gare del verdetto xPTS {gare_v} ≠ {atteso['played']}")
+                if atteso_testo not in html_unescape(testo):
+                    fails.append(f"{pg.name}: verdetto xPTS «{testo[:30]}» invece di "
+                                 f"«{atteso_testo}»")
+            # il PPDA di Understat non è più il numero in evidenza (copre 5 leghe su 7): dove
+            # esiste deve comunque restare leggibile nel ⓘ del pressing, accanto all'indice
+            atteso_ppda = atteso.get("ppda")
+            checks += 1
+            if atteso_ppda is not None and not pd.isna(atteso_ppda):
+                val = f"{float(atteso_ppda):.1f}".replace(".", ",")
+                # o nel ⓘ accanto all'indice FotMob, o — dove l'indice non è calcolabile —
+                # come numero in evidenza della casella, col suo «PPDA (Understat)»
+                atteso_txt = f"PPDA Understat sullo stesso periodo: {val}"
+                ripiego = f">{val}</span> <span class=\"mut small\""
+                testo_sec = html_unescape(sec)
+                if atteso_txt not in testo_sec and (
+                        ripiego not in sec or "PPDA (Understat)" not in sec):
+                    fails.append(f"{pg.name}: il ⓘ del pressing non riporta il PPDA Understat "
+                                 f"{float(atteso_ppda):.1f}")
+        # [44]/docs/64 §9 — indice di pressione: ricalcolato dai Parquet per **entrambe** le
+        # squadre di ogni scheda, in tutte e 7 le leghe (è la casella che prima mancava del
+        # tutto a Eredivisie e Liga Portugal).
+        press_stampati = press_re.findall(sec)
+        press_attesi = [ma.season_pressing(int(riga.home_id), ko),
+                        ma.season_pressing(int(riga.away_id), ko)]
+        press_vivi = [p for p in press_attesi if p]
+        checks += 1
+        if len(press_stampati) != len(press_vivi):
+            fails.append(f"{pg.name}: indici di pressione stampati {len(press_stampati)}, "
+                         f"ricalcolati {len(press_vivi)}")
+        for stampato, atteso_pr in zip(press_stampati, press_vivi, strict=False):
+            checks += 2
+            if abs(num(stampato) - float(atteso_pr["value"])) > 0.011:
+                fails.append(f"{pg.name}: indice di pressione {stampato} ≠ "
+                             f"{atteso_pr['value']:.2f}")
+            rapporto = atteso_pr.get("ratio")
+            atteso_rap = f"{rapporto:.2f}".replace(".", ",") if rapporto else None
+            if atteso_rap and f"{atteso_rap}× la media del campionato" not in sec:
+                fails.append(f"{pg.name}: rapporto di pressione {atteso_rap}× assente")
+            checks += 1
+            etichetta = atteso_pr.get("label")
+            if etichetta and f"<b>{etichetta}</b>" not in sec:
+                fails.append(f"{pg.name}: etichetta di pressing «{etichetta}» assente")
+        checks += 1
+        if re.search(r"coppe incluse", sec):
+            fails.append(f"{pg.name}: il riposo dice ancora «coppe incluse» senza il nome")
+        # infermeria: il totale è la somma esatta della colonna, e ogni riga ha il ruolo
+        for blocco in sec.split('<p id="infermeria-')[1:]:
+            tabella = blocco.split("</table>", 1)[0]
+            tot = re.search(r"· ([\d,]+) xG\+xA a partita in meno", blocco)
+            voci = [num(v) for v in re.findall(
+                r'<b style="color:var\(--accent\)">(?:◇ )?([\d,]+)</b>', tabella)]
+            if tot:
+                checks += 1
+                if abs(sum(voci) - num(tot.group(1))) > 0.011:
+                    fails.append(f"{pg.name}: infermeria, totale {tot.group(1)} ≠ somma della "
+                                 f"colonna {sum(voci):.2f}")
+            nomi = re.findall(r"<td><b>[^<]+</b>(.*?)</td>", tabella)
+            checks += 1
+            senza = [n for n in nomi if "border-radius:999px" not in n]
+            if senza:
+                fails.append(f"{pg.name}: infermeria, {len(senza)} righe senza la pillola "
+                             "del ruolo (neanche «ruolo n.d.»)")
+    print(f"[44] schede con «Le due squadre» verificate: {n_pagine} pagine, "
+          f"{n_pannelli} riquadri di squadra, {n_rif} riferimenti di lega")
+    return fails, checks
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -3486,6 +3760,9 @@ def main() -> int:
         coppia, coppia_checks = check_terza_coppia(site, Path(args.data) if args.data else None)
         fails += coppia
         checks += coppia_checks
+        squadre, squadre_checks = check_due_squadre(site, Path(args.data) if args.data else None)
+        fails += squadre
+        checks += squadre_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks

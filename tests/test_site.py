@@ -6,6 +6,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from fda.collect import collect_league
 from fda.config import league
@@ -1041,7 +1042,10 @@ def test_p25_badge_della_forma_in_testa_alla_scheda(tmp_path):
     assert not re.search(r"punti? nelle ultime \d+ \([VNP]+\)", pre), "serie ripetuta nella narrativa"
     # la card della squadra resta la sede del dettaglio (pallini con avversario e risultato):
     # il badge non la sostituisce, aggiunge la lettura a colpo d'occhio in cima alla pagina
-    assert 'Forma: <span class="form-dots">' in pre
+    # (`docs/64` §2.7: l'etichetta dichiara finestra e verso del punteggio — «Forma
+    # (campionato, gol fatti-subiti)» — perché «2-0 @ Parma» si poteva leggere al contrario)
+    assert '(campionato, gol fatti-subiti)</span>: <span class="form-dots">' in pre
+    assert 'title="in trasferta contro ' in pre or 'title="in casa contro ' in pre
     st.close()
 
 
@@ -2230,4 +2234,249 @@ def test_salto_al_mese_presente_quando_il_mese_e_nel_calendario(tmp_path):
     vs = _verify_site()
     fails, _ = vs.check_pages(out)
     assert [f for f in fails if "ancora interna mancante" in f] == []
+    st.close()
+
+
+# --------------------------------------------------------------------------------------------
+# docs/64 — revisione della card «Le due squadre» (2026-10-09)
+# --------------------------------------------------------------------------------------------
+
+def test_xpts_banda_di_rumore_misurata():
+    """`docs/64` §2.2: il verdetto sullo scarto punti−xPTS nasce da una banda misurata.
+
+    1σ dello scarto su una gara è 1,13 punti (502 gare-squadra Understat, 2026-10-09): la
+    banda di stagione è 1,13×√gare. Sotto le 3 gare non si pubblica alcun verdetto, e la
+    vecchia soglia fissa a ±2 punti — che etichettava 19 squadre su 64 con scarti *dentro*
+    il rumore — non esiste più.
+    """
+    assert MatchAnalysis.xpts_band(2) is None                     # campione troppo corto
+    assert MatchAnalysis.xpts_band(5) == pytest.approx(2.533, abs=0.002)
+    assert MatchAnalysis.xpts_band(7) == pytest.approx(2.998, abs=0.002)
+    assert MatchAnalysis.xpts_band(10) == pytest.approx(3.583, abs=0.002)
+
+    # scarto di +2,2 su 7 gare: la vecchia soglia diceva «sopra atteso», la banda dice «in linea»
+    assert MatchAnalysis.xpts_reading(10, 7.8, 7)["verdict"] == "linea"
+    assert MatchAnalysis.xpts_reading(16, 9.8, 7)["verdict"] == "sopra"
+    assert MatchAnalysis.xpts_reading(5, 13.8, 7)["verdict"] == "sotto"
+    assert MatchAnalysis.xpts_reading(5, 2.0, 2)["verdict"] is None
+    assert MatchAnalysis.xpts_reading(None, 2.0, 7) is None
+
+
+def test_nomi_understat_agganciati(tmp_path):
+    """`docs/64` §2.1: le quattro grafie Understat che non convergevano.
+
+    Senza questi alias Parma, RB Leipzig, Köln e M'gladbach perdevano xG, xPTS e PPDA di
+    Understat e la card confrontava due fonti diverse nella stessa scheda (3 schede
+    pre-partita su 71 il 2026-10-09).
+    """
+    from fda.teams import canonical
+    assert canonical("Parma Calcio 1913") == canonical("Parma") == "Parma"
+    assert canonical("RasenBallsport Leipzig") == canonical("RB Leipzig") == "RB Leipzig"
+    assert canonical("FC Cologne") == canonical("Köln") == "1. FC Köln"
+    assert canonical("Borussia M.Gladbach") == canonical("M'gladbach") == "Borussia Mönchengladbach"
+
+
+def test_card_due_squadre_riferimento_di_lega_e_verdetto(tmp_path):
+    """`docs/64` §2.3/§2.2/§2.4/§2.6: ogni numero di stagione esce col suo riferimento.
+
+    La card pubblicava «xG creati 1,42» senza dire se fosse tanto o poco, un «PPDA 8,5 alto»
+    in cui l'aggettivo sembrava riferito al numero, un verdetto xPTS con la soglia fissa
+    scritta nel template e, prima della gara, una colonna voto sempre vuota. La gara
+    sintetica porta abbastanza righe Understat da far esistere la media di lega (soglia
+    dichiarata: 20 gare-squadra) e i voti gara da cui si ricalcola la media di stagione.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900010, 3, "Inter", "Napoli", now)])
+    # 11 squadre × 4 gare = 44 gare-squadra di Serie A: sopra la soglia della media di lega
+    righe = []
+    for t in range(11):
+        nome = ["Inter", "Napoli", *[f"Prova {i}" for i in range(9)]][t]
+        for i in range(4):
+            righe.append({
+                "league_slug": "Serie_A", "season": 2026, "team_id": 999100 + t,
+                "team_name": nome, "date": (now - timedelta(days=7 * (4 - i))).isoformat(),
+                "is_home": bool(i % 2), "goals": 2, "goals_against": 1,
+                "xg": 2.4 if t == 0 else 1.2, "xga": 0.8 if t == 0 else 1.4,
+                "xpts": 2.2 if t == 0 else 1.2, "pts": 3 if t == 0 else 1,
+                "ppda": 8.0 if t == 0 else 14.0})
+    st.upsert("understat_team_matches", righe)
+    # voti gara dei titolari di casa: la media di stagione della distinta si ricalcola da qui
+    lu = st.read("lineup")
+    casa = lu[(lu.match_id == 5749669) & (lu.role == "starter")]
+    voti = [{"match_id": 5749669, "team_id": int(r.team_id), "player_id": int(r.player_id),
+             "player_name": r.player_name, "key": k, "value": v, "total": None}
+            for r in casa.itertuples(index=False)
+            for k, v in (("rating_title", 7.2), ("minutes_played", 90.0))]
+    st.upsert("player_stats", voti)
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900010, 5749669})
+    html = (out / "partite" / "5900010.html").read_text(encoding="utf-8")
+    sec = html.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+
+    assert sec.count("× la media del campionato") == 4          # xG creati e concessi × 2 squadre
+    assert "Media del campionato:" in sec                        # il ⓘ dichiara il valore e la fonte
+    assert re.search(r"xG concessi / gara</div>\s*<div[^>]*>[\d,]+ <span[^>]*>\(stesse \d+ gar", sec)
+    # media di lega ricalcolata dalle righe Understat del campione (1,32 xG a gara-squadra):
+    # l'Inter crea 2,12 → 1,61×, concede 0,89 → 0,67×
+    assert "Media del campionato: 1,32 xG per squadra a gara, su 47 gare-squadra" in sec
+    assert "1,61× la media del campionato (crea di più)" in sec
+    assert "0,67× la media del campionato (concede di meno)" in sec
+    # il verdetto xPTS cita sempre la banda, mai una soglia fissa
+    assert "banda di rumore" in sec and "sopra atteso" not in sec and "sotto atteso" not in sec
+    assert "±2,5 punti su 5 gare" in sec                        # 1,13×√5 = 2,53 punti
+    assert "sopra gli attesi, oltre il rumore" in sec           # scarto +3,0 > 2,5
+    assert "in linea (scarto entro ±" in sec                    # l'altra squadra resta dentro
+    # pressing: in evidenza c'è l'indice FotMob (7 leghe su 7, docs/64 §9) e il PPDA di
+    # Understat resta leggibile nel ⓘ della stessa casella, con la media di lega
+    # qui le statistiche gara FotMob non ci sono: la casella ripiega sul PPDA di Understat
+    # invece di stampare «n.d.» e buttare via un dato raccolto, e lo dichiara (docs/64 §9)
+    assert "PPDA (Understat)" in sec
+    assert "media del campionato 13,3" in sec
+    assert "pressing alto" not in sec        # l'aggettivo del vecchio PPDA non c'è più
+    # riposo: «coppe incluse» non butta più via il nome della coppa
+    assert "coppe incluse" not in sec
+    # attribuzione del valore dei titolari e piè di card senza stringhe fantasma
+    assert "Transfermarkt" not in sec and "Ruolo n.d." not in sec
+    assert "Che cosa c'è in questa card:" in sec
+
+    # la distinta dichiara **quale** voto sta mostrando: quello della partita (quando c'è) con
+    # la media di stagione nel ⓘ, oppure la media con il simbolo ⌀ davanti
+    pre = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    squadre = pre.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert ("Voto di questa partita (FotMob) · media di stagione 7,20 su 1 gara" in squadre
+            or "⌀ 7,20" in squadre)
+    st.close()
+
+
+def test_titolari_media_voto_dalla_nostra_base(tmp_path):
+    """`docs/64` §2.6: la media è la nostra (`rating_avg`), non la `seasonRating` della distinta.
+
+    Misura del 2026-10-09: 0 titolari su 1.210 avevano il voto di gara prima della partita,
+    mentre la media ricalcolata da noi c'era per 1.195 su 1.210 (97-100% su tutte e 7 le
+    leghe, contro il 38-100% del campo della distinta). È anche la stessa base della
+    classifica «Per media voto di stagione»: due numeri diversi per lo stesso giocatore
+    nella stessa pagina non devono esistere.
+    """
+    st = _seed(tmp_path)
+    lu = st.read("lineup")
+    casa = lu[(lu.match_id == 5749669) & (lu.role == "starter")]
+    st.upsert("player_stats", [
+        {"match_id": 5749669, "team_id": int(r.team_id), "player_id": int(r.player_id),
+         "player_name": r.player_name, "key": k, "value": v, "total": None}
+        for r in casa.itertuples(index=False)
+        for k, v in (("rating_title", 6.8), ("minutes_played", 90.0))])
+    ma = MatchAnalysis(st)
+    riga = st.read("fixtures").query("match_id == 5749669").iloc[0]
+    titolari = ma.starters(5749669, int(riga.home_id))
+    assert titolari, "la scheda di prova ha una formazione probabile"
+    assert all("rating_avg" in t for t in titolari)
+    assert [t["rating_avg"] for t in titolari] == [6.8] * len(titolari)
+    assert all(t["rating_games"] == 1 for t in titolari)
+    st.close()
+
+
+def test_numeri_di_stagione_fermi_alla_vigilia(tmp_path):
+    """`docs/64` §7: una scheda non si riscrive con le partite giocate dopo.
+
+    Difetto misurato sulla build del 2026-10-09: **750 riquadri su 750** delle schede già
+    giocate pubblicavano medie di stagione che includevano gare successive a quella
+    descritta (mediana 3 gare dal futuro, fino a 7; scostamento fino a 3,39 xG per gara),
+    mentre la riga «Forma» della stessa card si fermava correttamente alla vigilia. Il
+    campione ora si taglia al calcio d'inizio, e con esso il riferimento di lega.
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    finita = fx[fx.match_id == 5749645].iloc[0]          # gara di ieri nel seed
+    tid, nome = int(finita.home_id), str(finita.home_name)
+    # due gare Understat dopo quella descritta: non devono entrare nella sua scheda
+    now = datetime.now(UTC)
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999300, "team_name": nome,
+         "date": (now + timedelta(days=g)).isoformat(), "is_home": bool(g % 2), "goals": 3,
+         "goals_against": 0, "xg": 3.5, "xga": 0.4, "xpts": 2.6, "pts": 3, "ppda": 7.0}
+        for g in (1, 8)])
+    ma = MatchAnalysis(st)
+
+    oggi = ma.season_xg(nome, tid)
+    vigilia = ma.season_xg(nome, tid, finita.utc_kickoff)
+    assert oggi and vigilia
+    assert vigilia["played"] == oggi["played"] - 2, "le due gare successive sono fuori"
+    assert vigilia["xg_pm"] != oggi["xg_pm"]
+
+    # il campione coincide con le gare di campionato giocate prima del calcio d'inizio
+    ko = pd.Timestamp(finita.utc_kickoff, tz="UTC") if pd.Timestamp(finita.utc_kickoff).tzinfo is None \
+        else pd.Timestamp(finita.utc_kickoff).tz_convert("UTC")
+    us = st.read("understat_team_matches")
+    from fda.teams import canonical
+    attese = us[(us.team_name.map(canonical) == canonical(nome))
+                & (pd.to_datetime(us["date"], utc=True) < ko)]
+    assert vigilia["played"] == len(attese)
+
+    # una scheda pre-partita non cambia: il calcio d'inizio è nel futuro
+    futura = fx[fx.match_id == 5749669].iloc[0]
+    for t, n in ((int(futura.home_id), str(futura.home_name)),
+                 (int(futura.away_id), str(futura.away_name))):
+        assert ma.season_xg(n, t) == ma.season_xg(n, t, futura.utc_kickoff)
+    st.close()
+
+
+def test_rapporto_di_lega_solo_con_campione_che_lo_regge(tmp_path):
+    """`docs/64` §7: niente «2,74× la media del campionato» dopo una partita sola.
+
+    Lo xG per gara-squadra ha sd 1,04 su media 1,69 (502 gare-squadra): l'errore standard
+    del rapporto vale ±0,61× dopo una gara e ±0,43× dopo due, più del segnale. Da 3 gare in
+    su (±0,35×) il rapporto si pubblica; sotto, la card lo dichiara invece di stamparlo. La
+    stessa soglia vale per l'etichetta del pressing, che ha fasce larghe 3 punti contro un
+    errore standard di ±6,5 su una gara.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    righe = [{"league_slug": "Serie_A", "season": 2026, "team_id": 999200 + t,
+              "team_name": ["Inter", *[f"Prova {i}" for i in range(10)]][t],
+              "date": (now - timedelta(days=30 - i)).isoformat(), "is_home": bool(i % 2),
+              "goals": 2, "goals_against": 1, "xg": 4.0 if t == 0 else 1.2, "xga": 0.5,
+              "xpts": 2.0, "pts": 3, "ppda": 18.5 if t == 0 else 12.0}
+             for t in range(11) for i in range(1 if t == 0 else 4)]
+    st.upsert("understat_team_matches", righe)
+    ma = MatchAnalysis(st)
+    corto = ma.season_xg("Inter", 8636, now)
+    assert corto["played"] < MatchAnalysis.XG_RATIO_MIN_GAMES
+    assert corto.get("ratio_short") is True
+    assert "xg_ratio" not in corto and "xga_ratio" not in corto
+    assert corto["league_xg_pm"], "la media di lega esiste comunque, è il rapporto a non uscire"
+    assert corto["ppda_label_ok"] is False
+    assert corto["ppda_se"] == pytest.approx(6.5 / corto["played"] ** 0.5, abs=0.01)
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})   # scheda dell'Inter
+    sec = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert "campione troppo corto per il confronto con la lega" in sec
+    # stessa regola per il pressing: senza gare che reggano il confronto niente rapporto e
+    # niente etichetta, ma il numero e il PPDA nel ⓘ restano (docs/64 §9)
+    assert "pressa alto" not in sec and "lascia giocare" not in sec
+    assert "pressing basso" not in sec
+    st.close()
+
+
+def test_card_due_squadre_senza_gare_precedenti_resta_completa(tmp_path):
+    """`docs/64` §7: alla prima giornata la card dichiara il vuoto e non perde il riposo.
+
+    Con il taglio alla vigilia, 130 riquadri su 892 descrivono squadre che a quella data non
+    avevano ancora giocato. Prima la griglia era annidata in `{% if xg %}`: senza numeri di
+    stagione spariva anche la casella «Pressing · riposo» (fragilità dichiarata in §6).
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    # il seed ha una sola giornata: la gara "di ieri" è la prima di entrambe le squadre
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})
+    sec = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert sec.count("Pressing · riposo") == 2, "il riposo non dipende dagli xG di stagione"
+    assert sec.count("nessuna gara di campionato prima di questa") >= 1
+    assert "Che cosa c'è in questa card:" in sec
+    assert int(fx[fx.match_id == 5749645].iloc[0].home_id) > 0
     st.close()

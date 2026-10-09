@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import ast
 import itertools
+import math
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -41,7 +42,7 @@ from .advanced import (
     wp_path,
     xg_race,
 )
-from .fmt import dec, displayed_sum, it_day_time, it_plural, pct_triple
+from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_triple
 from .rates import (
     MIN_DEN_FOR_RATE,
     Pool,
@@ -1804,7 +1805,9 @@ class MatchAnalysis:
     MOOD_NOWIN = 4              # gare senza vittoria → «non vince da»
     MOOD_UNBEATEN = 5           # gare senza sconfitte → clima sereno
     MOOD_DRY = 3                # gare consecutive senza segnare
-    MOOD_XPTS_GAP = 2.0         # punti di scarto fra fatti e attesi (xPTS)
+    # lo scarto punti−xPTS non ha più una soglia propria: usa la banda di rumore misurata
+    # (`XPTS_NOISE_SD`, `xpts_reading`), la stessa della card «Le due squadre» e della
+    # narrativa pre-partita — docs/64 §2.2
     MOOD_ABSENT_N = 4           # assenti → infermeria pesante
     MOOD_ABSENT_STARTERS = 2    # titolari abituali fuori → infermeria pesante
     MOOD_ABSENT_CONTRIB = 0.5   # xG+xA/gara portati via dagli assenti
@@ -1857,16 +1860,17 @@ class MatchAnalysis:
                         "text": f"imbattuta da {unbeaten} gare: clima di fiducia"})
         if dry >= self.MOOD_DRY:
             out.append({"tone": "bad", "text": f"attacco a secco: {dry} gare senza segnare"})
-        xg = self.season_xg(team_name, team_id)
-        if xg and xg.get("xpts") is not None and xg.get("pts") is not None:
-            d = float(xg["pts"]) - float(xg["xpts"])
+        xg = self.season_xg(team_name, team_id, kickoff)
+        if xg and (lettura := xg.get("xpts_read")) and lettura.get("verdict") in ("sopra", "sotto"):
             # M2 (`docs/55` §6, regola di `docs/30`): il numero sta **solo** nella card della
-            # squadra («xPTS vs punti reali»); qui resta il segnale, col rimando
-            if d <= -self.MOOD_XPTS_GAP:
+            # squadra («xPTS vs punti reali»); qui resta il segnale, col rimando.
+            # docs/64 §2.2: la soglia è la banda di rumore misurata (1σ = 1,13×√gare), la
+            # stessa che usano la card e la narrativa — prima qui c'era un ±2 fisso.
+            if lettura["verdict"] == "sotto":
                 out.append({"tone": "warn",
                             "text": "raccoglie meno punti di quanto crea (xPTS): calo di "
                                     "concretezza o sfortuna — i numeri in «Le due squadre»"})
-            elif d >= self.MOOD_XPTS_GAP:
+            else:
                 out.append({"tone": "warn",
                             "text": "rende più di quanto crea (xPTS): rendimento sopra la "
                                     "qualità del gioco, regressione possibile — i numeri in "
@@ -2282,8 +2286,8 @@ class MatchAnalysis:
         #    scatta quanto quello opposto: la vecchia soglia scritta a mano nel testo diceva
         #    solo ≤0,75× e non copriva il caso, che è la maggioranza delle righe pubblicate).
         try:
-            hs = self.season_xg(home_name, home_id) or {}
-            aws = self.season_xg(away_name, away_id) or {}
+            hs = self.season_xg(home_name, home_id, kickoff) or {}
+            aws = self.season_xg(away_name, away_id, kickoff) or {}
             if hs.get("ppda") and aws.get("ppda"):
                 ratio = float(hs["ppda"]) / float(aws["ppda"])
                 if ratio <= self.FACTOR_PRESS_RATIO or ratio >= 1 / self.FACTOR_PRESS_RATIO:
@@ -3518,6 +3522,50 @@ class MatchAnalysis:
         }
 
     # ---- xG di stagione (Understat se c'è, altrimenti FotMob) ---------------------------------
+    #
+    # Scarto fra punti e xPTS: **banda di rumore misurata**, non una soglia a occhio.
+    # Deviazione standard di (punti − xPTS) su una singola gara-squadra, misurata il 2026-10-09
+    # sulle 502 gare-squadra di `understat_team_matches` della stagione in corso: **1,13 punti**
+    # (media −0,02: gli xPTS non sono distorti). Lo scarto di stagione è una somma di n gare
+    # indipendenti, quindi la banda cresce con √n: a 5 gare 1σ = 2,53 punti, a 7 gare 3,00.
+    # La vecchia soglia fissa a ±2 punti (scritta nel template) pubblicava un verdetto su
+    # 19 squadre su 64 il cui scarto era **sotto** il rumore, e contraddiceva la soglia ±3 della
+    # narrativa su 24 squadre su 132 (docs/64 §2.2).
+    XPTS_NOISE_SD: ClassVar[float] = 1.133     # σ di (punti − xPTS) su una gara-squadra
+    XPTS_MIN_PLAYED: ClassVar[int] = 3         # sotto le 3 gare nessun verdetto: solo i numeri
+
+    @classmethod
+    def xpts_band(cls, played: Any) -> float | None:
+        """Ampiezza della banda di rumore (1σ) dello scarto punti−xPTS dopo ``played`` gare."""
+        try:
+            n = int(played)
+        except (TypeError, ValueError):
+            return None
+        if n < cls.XPTS_MIN_PLAYED:
+            return None
+        return cls.XPTS_NOISE_SD * math.sqrt(n)
+
+    @classmethod
+    def xpts_reading(cls, pts: Any, xpts: Any, played: Any) -> dict[str, Any] | None:
+        """Lettura unica dello scarto punti−xPTS: usata da card, «Clima del club» e narrativa.
+
+        Restituisce ``{"diff", "band", "verdict", "played"}`` con ``verdict`` in
+        ``sopra`` / ``sotto`` / ``linea``. Una sola fonte per tutte le card della pagina:
+        prima la stessa squadra poteva essere «sopra atteso» nella card e muta nell'analisi
+        pre-partita, perché le due soglie (±2 e ±3) erano scritte in posti diversi.
+        """
+        if pts is None or xpts is None:
+            return None
+        try:
+            diff = float(pts) - float(xpts)
+        except (TypeError, ValueError):
+            return None
+        band = cls.xpts_band(played)
+        if band is None:
+            return {"diff": diff, "band": None, "verdict": None, "played": played}
+        verdict = "sopra" if diff >= band else "sotto" if diff <= -band else "linea"
+        return {"diff": diff, "band": band, "verdict": verdict, "played": played}
+
     @staticmethod
     def _poisson_xpts(lh: float, la: float) -> tuple[float, float]:
         """xPTS attesi di una partita dai soli xG (Poisson indipendente): (xPTS casa, trasferta).
@@ -3532,10 +3580,144 @@ class MatchAnalysis:
         p_away = float((poisson.cdf(g - 1, lh) * pa).sum()) # gol casa < k (cdf(-1) = 0)
         return 3 * p_home + p_draw, 3 * p_away + p_draw
 
-    def season_xg(self, team_name: str, team_id: int) -> dict[str, Any] | None:
+    def _match_kickoffs(self) -> pd.Series:
+        """``match_id`` → calcio d'inizio UTC, dal calendario (cache di istanza)."""
+        s = getattr(self, "_ko_cache", None)
+        if s is None:
+            if self.fixtures.empty or "utc_kickoff" not in self.fixtures.columns:
+                s = pd.Series(dtype="datetime64[ns, UTC]")
+            else:
+                fx = self.fixtures.drop_duplicates("match_id")
+                s = pd.Series(pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce").to_numpy(),
+                              index=fx.match_id.astype(int))
+            self._ko_cache = s
+        return s
+
+    def _us_dates(self) -> pd.Series:
+        """Date delle gare-squadra Understat come timestamp UTC (cache di istanza)."""
+        s = getattr(self, "_usdt_cache", None)
+        if s is None:
+            s = (pd.to_datetime(self.us_team["date"], utc=True, errors="coerce")
+                 if not self.us_team.empty and "date" in self.us_team.columns
+                 else pd.Series(dtype="datetime64[ns, UTC]"))
+            self._usdt_cache = s
+        return s
+
+    @staticmethod
+    def _as_utc(when: Any) -> pd.Timestamp | None:
+        """Normalizza un istante a UTC; ``None`` se non è una data utilizzabile."""
+        if when is None:
+            return None
+        ts = pd.Timestamp(when)
+        if pd.isna(ts):
+            return None
+        return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
+
+    def _league_xg_reference(self, source: str, key: Any,
+                             before: pd.Timestamp | None = None) -> dict[str, float] | None:
+        """Medie di lega per gara-squadra (xG e PPDA) **dalla stessa fonte** della squadra.
+
+        Senza un riferimento, «xG creati 1,42» non dice se è tanto o poco: la card lo
+        rapportava a nulla (docs/64 §2.3). Le due fonti non sono confrontabili fra loro —
+        misurato il 2026-10-09: in Bundesliga Understat dà 1,96 xG per gara-squadra e FotMob
+        1,79 — quindi il riferimento si calcola sempre con la fonte della squadra:
+
+        * ``Understat`` → media su tutte le gare-squadra del campionato nella stagione in corso;
+        * ``FotMob``    → media sulle gare finite con xG della lega (``match_info`` legato al
+          calendario: ``match_info.league_id`` **non** è affidabile — sulle 73 gare di
+          Eredivisie vale 937276, un id di fase, mai 57).
+
+        ``before`` taglia il riferimento alla stessa data del campione della squadra
+        (`docs/64` §7): confrontare 4 gare di una squadra con 7 giornate di campionato
+        sarebbe un rapporto fra due finestre diverse.
+        """
+        cache = getattr(self, "_lg_xg_cache", None)
+        if cache is None:
+            cache = self._lg_xg_cache = {}
+        ck = (source, key, before)
+        if ck in cache:
+            return cache[ck]
+        out: dict[str, float] | None = None
+        if source == "Understat" and not self.us_team.empty and key is not None:
+            rows = self.us_team[self.us_team.league_slug == key]
+            if before is not None:
+                rows = rows[self._us_dates().reindex(rows.index) < before]
+            if len(rows) >= self.LEAGUE_REF_MIN_ROWS:
+                out = {"xg_pm": float(rows.xg.mean()), "n": len(rows)}
+                ppda = pd.to_numeric(rows.get("ppda"), errors="coerce").dropna() \
+                    if "ppda" in rows.columns else pd.Series(dtype=float)
+                if len(ppda):
+                    out["ppda"] = float(ppda.mean())
+        elif source == "FotMob" and key is not None and not self.info.empty and not self.fixtures.empty:
+            mids = set(self.fixtures.loc[self.fixtures.league_id == key, "match_id"].astype(int))
+            fin = self.info[(self.info.status == "finished")
+                            & self.info.match_id.astype(int).isin(mids)]
+            if before is not None:
+                ko = fin.match_id.astype(int).map(self._match_kickoffs())
+                fin = fin[ko < before]
+            fin = fin.dropna(subset=["home_xg", "away_xg"])
+            if len(fin) * 2 >= self.LEAGUE_REF_MIN_ROWS:
+                out = {"xg_pm": float((fin.home_xg.sum() + fin.away_xg.sum()) / (2 * len(fin))),
+                       "n": int(len(fin) * 2)}
+        cache[ck] = out
+        return out
+
+    LEAGUE_REF_MIN_ROWS: ClassVar[int] = 20   # gare-squadra minime per pubblicare la media di lega
+    XG_RATIO_MIN_GAMES: ClassVar[int] = 3    # gare minime della squadra per pubblicare il rapporto
+    PPDA_SD: ClassVar[float] = 6.50          # sd del PPDA per gara-squadra (502 gare, 2026-10-09)
+
+    def _team_league_id(self, team_id: int) -> Any:
+        """``league_id`` della squadra dal calendario (unica fonte completa su tutte e 7 le leghe)."""
+        if self.fixtures.empty or "league_id" not in self.fixtures.columns:
+            return None
+        rows = self.fixtures[(self.fixtures.home_id == team_id) | (self.fixtures.away_id == team_id)]
+        if rows.empty:
+            return None
+        vals = rows.league_id.dropna()
+        return vals.iloc[0] if len(vals) else None
+
+    def _with_league_ref(self, out: dict[str, Any], source: str, key: Any,
+                         before: pd.Timestamp | None = None) -> dict[str, Any]:
+        """Aggiunge a ``out`` il rapporto con la media di lega e la lettura dello scarto xPTS."""
+        ref = self._league_xg_reference(source, key, before)
+        if ref and ref.get("xg_pm"):
+            out["league_xg_pm"] = ref["xg_pm"]
+            out["league_n"] = ref["n"]
+            # Il rapporto si pubblica solo con un campione che lo regga (`docs/64` §7): lo xG
+            # per gara-squadra ha sd 1,04 su media 1,69, quindi l'errore standard del rapporto
+            # vale ±0,61× dopo 1 gara e ±0,43× dopo 2 — un «2,74× la media» su una partita sola
+            # sarebbe rumore stampato in grassetto. Da 3 gare (±0,35×) in su, come per la banda
+            # dello scarto xPTS.
+            if (out.get("played") or 0) < self.XG_RATIO_MIN_GAMES:
+                out["ratio_short"] = True
+            else:
+                if out.get("xg_pm") is not None:
+                    out["xg_ratio"] = float(out["xg_pm"]) / ref["xg_pm"]
+                if out.get("xga_pm") is not None:
+                    out["xga_ratio"] = float(out["xga_pm"]) / ref["xg_pm"]
+            if ref.get("ppda") is not None:
+                out["league_ppda"] = ref["ppda"]
+        out["xpts_read"] = self.xpts_reading(out.get("pts"), out.get("xpts"), out.get("played"))
+        return out
+
+    def season_xg(self, team_name: str, team_id: int, before: Any = None) -> dict[str, Any] | None:
+        """Numeri di stagione di una squadra: xG creati/concessi, xPTS, punti, PPDA.
+
+        ``before`` è il calcio d'inizio della scheda che li pubblica: il campione si ferma
+        **alla vigilia di quella partita** (`docs/64` §7). Senza il taglio, una scheda del
+        30/08 mostrava medie che includevano le gare di settembre e ottobre — misurato il
+        2026-10-09: **750 riquadri su 750** delle schede già giocate contenevano gare
+        successive a quella descritta (mediana 3, fino a 7), con scostamenti fino a 3,39 xG
+        per gara, mentre la riga «Forma» della stessa card si fermava correttamente alla
+        vigilia. Sulle schede pre-partita il taglio non cambia nulla (il calcio d'inizio è nel
+        futuro): i numeri restano quelli di tutta la stagione giocata finora.
+        """
         canon = canonical(team_name)
+        cut = self._as_utc(before)
         if not self.us_team.empty:
             rows = self.us_team[self.us_team.team_name.map(canonical) == canon]
+            if cut is not None and not rows.empty:
+                rows = rows[self._us_dates().reindex(rows.index) < cut]
             if not rows.empty:
                 n = len(rows)
                 out = {"source": "Understat", "played": n, "xg": rows.xg.sum(), "xga": rows.xga.sum(),
@@ -3545,9 +3727,19 @@ class MatchAnalysis:
                                  ("deep_allowed", "deep_allowed")):
                     if col in rows.columns:
                         out[key] = float(rows[col].mean())
-                return out
+                # incertezza del PPDA medio: le fasce dichiarate sono larghe 3 punti, ma
+                # l'errore standard della media vale ±6,5 su una gara e ±3,8 su tre (sd 6,50
+                # misurata su 502 gare-squadra). Sotto le 3 gare l'aggettivo non si pubblica,
+                # sopra si pubblica dichiarando l'errore (`docs/64` §7).
+                if out["ppda"] is not None and not pd.isna(out["ppda"]):
+                    out["ppda_se"] = self.PPDA_SD / math.sqrt(n)
+                    out["ppda_label_ok"] = n >= self.XG_RATIO_MIN_GAMES
+                slug = rows.league_slug.iloc[0] if "league_slug" in rows.columns else None
+                return self._with_league_ref(out, "Understat", slug, cut)
         if not self.info.empty:
             fin = self.info[self.info.status == "finished"]
+            if cut is not None:
+                fin = fin[fin.match_id.astype(int).map(self._match_kickoffs()) < cut]
             h = fin[fin.home_id == team_id]
             a = fin[fin.away_id == team_id]
             xg = pd.concat([h.home_xg, a.away_xg]).dropna()
@@ -3569,24 +3761,34 @@ class MatchAnalysis:
                             signed = hg - ag if team_home else ag - hg
                             pts_total += 3 if signed > 0 else 1 if signed == 0 else 0
                         xpts, pts = round(xpts_total, 1), int(pts_total)
-                return {"source": "FotMob", "played": len(xg), "xg": xg.sum(),
-                        "xga": xga.sum(), "xg_pm": xg.mean(), "xga_pm": xga.mean(),
-                        "xpts": xpts, "pts": pts, "ppda": None}
+                out = {"source": "FotMob", "played": len(xg), "xg": xg.sum(),
+                       "xga": xga.sum(), "xg_pm": xg.mean(), "xga_pm": xga.mean(),
+                       "xpts": xpts, "pts": pts, "ppda": None}
+                return self._with_league_ref(out, "FotMob", self._team_league_id(team_id), cut)
         return None
 
-    def season_style(self, team_name: str, team_id: int) -> dict[str, Any] | None:
-        """Stile di stagione: xG/xGA, split azione/palle inattive (FotMob), PPDA/deep (Understat)."""
-        base = dict(self.season_xg(team_name, team_id) or {})
-        split = self._season_xg_split(team_id)
+    def season_style(self, team_name: str, team_id: int,
+                     before: Any = None) -> dict[str, Any] | None:
+        """Stile di stagione: xG/xGA, split azione/palle inattive (FotMob), PPDA/deep (Understat).
+
+        ``before``: stessa finestra di :meth:`season_xg` — i numeri di una scheda si fermano
+        alla vigilia della partita che descrivono (`docs/64` §7).
+        """
+        base = dict(self.season_xg(team_name, team_id, before) or {})
+        split = self._season_xg_split(team_id, before)
         if split:
             base.update(split)
         return base or None
 
-    def _season_xg_split(self, team_id: int) -> dict[str, Any]:
+    def _season_xg_split(self, team_id: int, before: Any = None) -> dict[str, Any]:
         """xG azione manovrata / palle inattive per gara, dalle partite finite FotMob."""
         if self.team_stats.empty or self.info.empty:
             return {}
-        fin = set(self.info.loc[self.info.status == "finished", "match_id"].astype(int))
+        finite = self.info[self.info.status == "finished"]
+        cut = self._as_utc(before)
+        if cut is not None:
+            finite = finite[finite.match_id.astype(int).map(self._match_kickoffs()) < cut]
+        fin = set(finite["match_id"].astype(int))
         ts = self.team_stats[(self.team_stats.team_id == team_id)
                              & (self.team_stats.period == "All")
                              & (self.team_stats.match_id.isin(fin))]
@@ -3606,6 +3808,103 @@ class MatchAnalysis:
         n = ts.loc[ts.key == "expected_goals", "match_id"].nunique()
         if n:
             out["split_played"] = int(n)
+        return out
+
+    #: Chiavi FotMob dell'indice di pressione: passaggi dell'avversario nella **sua** metà
+    #: campo (la zona che si va ad aggredire) e azioni difensive della squadra.
+    PRESS_PASSES_KEY: ClassVar[str] = "own_half_passes"
+    PRESS_ACTION_KEYS: ClassVar[tuple[str, ...]] = (
+        "matchstats.headers.tackles", "interceptions", "fouls")
+    PRESS_GAME_SD: ClassVar[float] = 1.99     # sd per gara-squadra (750 gare, misura 2026-10-09)
+    PRESS_GAME_MEAN: ClassVar[float] = 5.36   # media per squadra nella stessa misura
+    PRESS_MIN_GAMES: ClassVar[int] = 3        # come XG_RATIO_MIN_GAMES: sotto, nessun rapporto
+
+    def _press_rows(self) -> pd.DataFrame:
+        """Passaggi concessi e azioni difensive per gara-squadra, da ``team_stats`` (FotMob).
+
+        Una riga per squadra e partita: ``passes`` sono i passaggi che **l'avversario** ha
+        giocato nella propria metà campo e ``actions`` i contrasti, gli intercetti e i falli
+        della squadra. Il rapporto fra i due è la stessa idea del PPDA, con una fonte che
+        copre tutte e 7 le leghe (Understat ne copre 5: Eredivisie e Liga Portugal restavano
+        senza alcun numero di pressing, 288 caselle su 892 — `docs/64` §9).
+        """
+        cached = getattr(self, "_press_cache", None)
+        if cached is not None:
+            return cached
+        empty = pd.DataFrame(columns=["match_id", "team_id", "passes", "actions"])
+        if self.team_stats.empty:
+            self._press_cache = empty
+            return empty
+        ts = self.team_stats[self.team_stats.period == "All"]
+        keys = (self.PRESS_PASSES_KEY, *self.PRESS_ACTION_KEYS)
+        ts = ts[ts.key.isin(keys)]
+        if ts.empty:
+            self._press_cache = empty
+            return empty
+        piv = ts.pivot_table(index=["match_id", "team_id"], columns="key", values="value",
+                             aggfunc="first").reset_index()
+        if self.PRESS_PASSES_KEY not in piv.columns:
+            self._press_cache = empty
+            return empty
+        have = [k for k in self.PRESS_ACTION_KEYS if k in piv.columns]
+        piv["actions"] = piv[have].sum(axis=1) if have else np.nan
+        # i passaggi concessi sono quelli dell'**altra** squadra nella stessa partita
+        opp = piv[["match_id", "team_id", self.PRESS_PASSES_KEY]].rename(
+            columns={"team_id": "_opp", self.PRESS_PASSES_KEY: "passes"})
+        rows = piv[["match_id", "team_id", "actions"]].merge(opp, on="match_id")
+        rows = rows[rows.team_id != rows._opp]
+        rows = rows.dropna(subset=["passes", "actions"])
+        rows = rows[rows.actions > 0][["match_id", "team_id", "passes", "actions"]]
+        self._press_cache = rows
+        return rows
+
+    def _press_window(self, before: Any = None) -> pd.DataFrame:
+        """Righe di pressione delle sole gare **finite prima** di ``before`` (`docs/64` §7)."""
+        rows = self._press_rows()
+        cut = self._as_utc(before)
+        if rows.empty or cut is None:
+            return rows
+        return rows[rows.match_id.astype(int).map(self._match_kickoffs()) < cut]
+
+    def season_pressing(self, team_id: int, before: Any = None) -> dict[str, Any] | None:
+        """Indice di pressione di stagione: passaggi concessi per azione difensiva.
+
+        Più è **basso**, più la squadra aggredisce alta la costruzione avversaria. Il valore
+        di stagione è un **rapporto di somme** (totale passaggi / totale azioni), non la media
+        dei rapporti di gara: una partita con poche azioni difensive non pesa come una intera.
+
+        Esce col rapporto sulla media della propria lega — calcolata sulla stessa finestra —
+        e con un'etichetta solo quando lo scarto dal pari supera l'errore standard del
+        campione (sd 1,99 per gara su media 5,36: dopo 5 gare vale ±0,17, dopo 7 ±0,14).
+        Misurato il 2026-10-09: 39 squadre su 132 superano la soglia, da 2 a 8 per lega.
+        """
+        rows = self._press_window(before)
+        if rows.empty:
+            return None
+        mine = rows[rows.team_id == team_id]
+        n = int(mine.match_id.nunique())
+        if not n:
+            return None
+        value = float(mine.passes.sum() / mine.actions.sum())
+        out: dict[str, Any] = {"value": value, "games": n}
+        league_id = self._team_league_id(team_id)
+        if league_id is not None and not self.fixtures.empty:
+            mids = set(self.fixtures.loc[self.fixtures.league_id == league_id,
+                                         "match_id"].astype(int))
+            lg = rows[rows.match_id.astype(int).isin(mids)]
+            if len(lg) >= self.LEAGUE_REF_MIN_ROWS:
+                ref = float(lg.passes.sum() / lg.actions.sum())
+                out["league_value"] = ref
+                out["league_n"] = len(lg)
+                if ref and n >= self.PRESS_MIN_GAMES:
+                    ratio = value / ref
+                    se = self.PRESS_GAME_SD / math.sqrt(n) / self.PRESS_GAME_MEAN
+                    out["ratio"] = ratio
+                    out["se"] = se
+                    if ratio < 1 - se:
+                        out["label"] = "pressa alto"
+                    elif ratio > 1 + se:
+                        out["label"] = "lascia giocare"
         return out
 
     def standing(self, team_name: str) -> dict[str, Any] | None:
@@ -3777,6 +4076,20 @@ class MatchAnalysis:
             rated = rows[rows.rating.notna()]
             if len(rated) >= XI_SIZE:
                 rows = rated.head(XI_SIZE)
+        # Media voto di stagione **ricalcolata da noi** dalle statistiche gara, non la
+        # `seasonRating` della distinta: misurato il 2026-10-09 su 1.210 titolari pre-partita,
+        # la nostra copre 1.195 (99%, dal 97% al 100% su tutte e 7 le leghe) e quella di FotMob
+        # 827 (68%, con l'Italia al 38%). È la stessa base della classifica «Per media voto di
+        # stagione» in «I giocatori che decidono»: due numeri diversi per lo stesso giocatore
+        # nella stessa pagina non devono esistere (docs/64 §2.6).
+        agg = self._season_player_stats(team_id)
+        voti: dict[int, tuple[float, int]] = {}
+        if not agg.empty and "rating_avg" in agg.columns:
+            for r in agg.itertuples(index=False):
+                v = getattr(r, "rating_avg", None)
+                if v is not None and not pd.isna(v):
+                    g = getattr(r, "games", None)
+                    voti[int(r.player_id)] = (float(v), int(g) if g is not None and not pd.isna(g) else 0)
         out = []
         for r in rows.itertuples(index=False):
             rating = r.rating if not pd.isna(r.rating) else None
@@ -3791,10 +4104,15 @@ class MatchAnalysis:
                 usual = int(r.usual_position_id) if not pd.isna(r.usual_position_id) else None
             except Exception:
                 usual = None
-            out.append({"id": int(r.player_id) if not pd.isna(r.player_id) else None,
+            pid = int(r.player_id) if not pd.isna(r.player_id) else None
+            voto, gare = voti.get(pid, (None, None)) if pid is not None else (None, None)
+            out.append({"id": pid,
                         "name": r.player_name, "num": num, "rating": rating,
                         "season_rating": season_rating, "captain": bool(r.is_captain),
-                        "pos": pos_it, "usual": usual})
+                        "pos": pos_it, "usual": usual,
+                        # media voto di stagione nostra + campione su cui è calcolata
+                        "rating_avg": round(voto, 2) if voto is not None else None,
+                        "rating_games": gare})
         # ordina dal portiere: ruolo 0→3, poi numero maglia (1-99), poi nome
         # così la lista inizia sempre dal portiere come richiesto UX
         role_order = {0: 0, 1: 1, 2: 2, 3: 3}
@@ -3859,7 +4177,22 @@ class MatchAnalysis:
         i totali senza doppioni. Fonte FotMob, presente su tutte e 7 le leghe (Understat ne
         copre 5): è la base comune per le schede giocatori, quindi niente leghe di serie B.
         ``rating_avg`` è la media dei voti sulle partite in cui il voto c'è.
+
+        Il risultato è messo in cache per ``team_id``: la stessa squadra viene interrogata da
+        assenze, decisivi, classifica voti e distinta nella stessa scheda, e i Parquet non
+        cambiano durante un build.
         """
+        cache = getattr(self, "_sps_cache", None)
+        if cache is None:
+            cache = self._sps_cache = {}
+        hit = cache.get(int(team_id))
+        if hit is not None:
+            return hit
+        out = self._season_player_stats_uncached(int(team_id))
+        cache[int(team_id)] = out
+        return out
+
+    def _season_player_stats_uncached(self, team_id: int) -> pd.DataFrame:
         if self.player_stats.empty:
             return pd.DataFrame()
         if not self.fixtures.empty:
@@ -4203,6 +4536,10 @@ class MatchAnalysis:
         La rata pubblicata è **stabilizzata** (docs/19 §1.10): con il valore grezzo un assente
         con un minuto giocato pubblicava «15,30 xG+xA a partita», e quel numero entrava nella
         somma dell'infermeria. Sotto i 90′ si pubblica solo la stima, dichiarata come tale.
+
+        `contrib_lost_p90` è la somma **dei valori pubblicati riga per riga** e `con_dati` dice
+        su quanti assenti è calcolata: gli altri non hanno ancora minuti in stagione e nella
+        colonna escono «n.d.», quindi non possono entrare nel totale (`docs/64` §8).
         """
         unav = self.unavailable(match_id, team_id)
         if not unav:
@@ -4223,7 +4560,7 @@ class MatchAnalysis:
         lu = self.lineup[(self.lineup.match_id == match_id) & (self.lineup.team_id == team_id)
                          & (self.lineup.role == "unavailable") & self.lineup.player_id.notna()]
         by_name = {str(r.player_name): int(r.player_id) for r in lu.itertuples(index=False)}
-        players, starters_out, contrib_lost = [], 0, 0.0
+        players, starters_out, contrib_lost, con_dati = [], 0, 0.0, 0
         for u in unav:
             pid = by_name.get(str(u["name"]))
             s = stats.get(pid, {}) if pid is not None else {}
@@ -4238,18 +4575,31 @@ class MatchAnalysis:
                 pubblicabile = True
             is_starter = bool(per_player and mins >= 0.5 * per_player)
             starters_out += int(is_starter)
-            contrib_lost += stima if stima is not None else (grezzo or 0.0)
+            # Il totale è la somma **dei numeri che la card pubblica**, non di una grandezza
+            # diversa (`docs/64` §8): prima sommava la stima stabilizzata anche dove la riga
+            # mostrava il grezzo, e il totale non tornava con la colonna sotto in **101
+            # pannelli su 118 (86%)**, con scarti fino a 0,67 xG+xA (1,34 pubblicato contro
+            # 2,01 delle righe). Regola del progetto: una somma stampata dev'essere la somma
+            # delle cifre stampate (docs/22, invariante [31]).
+            pubblicato = grezzo if pubblicabile else stima
+            # `displayed`: si sommano le cifre **arrotondate come la tabella le stampa**,
+            # la stessa convenzione di `displayed_sum` (docs/22, misura del 2026-09-16),
+            # altrimenti con cinque righe l'arrotondamento accumulato riapre lo scarto.
+            contrib_lost += displayed(pubblicato, 2) if pubblicato is not None else 0.0
+            con_dati += int(pubblicato is not None)
             players.append({**u, "minutes": int(mins) or None, "games": None,
                             "goals": int(s.get("goals", 0.0)), "assists": int(s.get("assists", 0.0)),
-                            "contrib_p90": grezzo if pubblicabile else stima,
+                            "contrib_p90": pubblicato,
                             "contrib_raw": grezzo, "contrib_est": stima,
                             "pubblicabile": pubblicabile,
                             "est_note": gruppi[0].note(gruppi[1]) if gruppi else None,
                             "starter": is_starter})
         players.sort(key=lambda p: (-(p["contrib_p90"] or 0.0), -(p["minutes"] or 0)))
         return {"players": players, "n": len(players), "starters_out": starters_out,
-                # somma delle stime stabilizzate: dichiarata come stima nel template
-                "contrib_lost_p90": contrib_lost or None, "has_stats": bool(stats)}
+                # somma esatta della colonna «impatto» pubblicata in tabella, e quanti degli
+                # assenti ci entrano davvero (gli altri non hanno minuti in stagione)
+                "contrib_lost_p90": contrib_lost or None, "con_dati": con_dati,
+                "has_stats": bool(stats)}
 
     def referee_profile(self, match_id: int) -> dict[str, Any] | None:
         """Profilo dell'arbitro con il confronto sulla media del campionato.
@@ -4781,9 +5131,9 @@ class MatchAnalysis:
         return None if lam is None else goals_view(*lam)
 
     def clash(self, home_name: str, home_id: int, away_name: str, away_id: int,
-              pred: dict[str, Any] | None) -> dict[str, Any] | None:
-        return style_rows(self.season_style(home_name, home_id),
-                          self.season_style(away_name, away_id), pred)
+              pred: dict[str, Any] | None, before: Any = None) -> dict[str, Any] | None:
+        return style_rows(self.season_style(home_name, home_id, before),
+                          self.season_style(away_name, away_id, before), pred)
 
     def clash_ranks(self, home_name: str, away_name: str) -> dict[str, Any] | None:
         """Graduatorie attacco/difesa e «duello chiave» da UNA sola fonte: la classifica.
@@ -4840,7 +5190,8 @@ class MatchAnalysis:
             "h_att": h_att, "h_def": h_def, "a_att": a_att, "a_def": a_def,
         }
 
-    def clash_radar(self, home_name: str, home_id: int, away_name: str, away_id: int) -> dict[str, Any] | None:
+    def clash_radar(self, home_name: str, home_id: int, away_name: str, away_id: int,
+                    before: Any = None) -> dict[str, Any] | None:
         """Radar stile 5 metriche normalizzate 0–100 su **ancore fisse** (P1 audit).
 
         Le ancore sono scelte a mano e dichiarate riga per riga (``helps``): la classifica non
@@ -4850,8 +5201,8 @@ class MatchAnalysis:
         celle su 441 schede (Feyenoord–AZ: pressing e profondità n.d. in tutte e due le colonne).
         """
         try:
-            h_style = self.season_style(home_name, home_id) or {}
-            a_style = self.season_style(away_name, away_id) or {}
+            h_style = self.season_style(home_name, home_id, before) or {}
+            a_style = self.season_style(away_name, away_id, before) or {}
             h_st = self.standing(home_name); a_st = self.standing(away_name)
             if not h_st or not a_st:
                 return None
@@ -5100,18 +5451,25 @@ class MatchAnalysis:
                 s.append(f"{name}: {it_plural(pts, 'punto', 'punti')} nelle ultime "
                          f"{len(f)} — {giudizio}.")
             xg = ctx.get(f"{side}_xg")
-            if xg and xg.get("xpts") is not None and xg.get("pts") is not None and xg["played"] >= 4:
-                diff = xg["pts"] - xg["xpts"]
+            # la lettura si ricalcola qui se il contesto non la porta già (`season_xg` la
+            # mette in `xpts_read`): così la frase vale anche per i contesti costruiti a mano
+            lettura = ((xg or {}).get("xpts_read")
+                       or MatchAnalysis.xpts_reading((xg or {}).get("pts"), (xg or {}).get("xpts"),
+                                                     (xg or {}).get("played"))
+                       or {}) if xg else {}
+            if lettura.get("verdict") in ("sopra", "sotto"):
                 # P2.4 (docs/19 §2.8): `dec(diff, plus=True)` con valore negativo produceva
                 # «ha -3,0 punti rispetto agli xPTS» — in italiano si dice «ha 3,0 punti in
                 # meno». Il segno si porta nelle parole, non davanti al numero: il valore
                 # assoluto va in cifre e il verso nella frase.
-                if diff >= 3:
+                # docs/64 §2.2: la soglia non è più ±3 scritta qui, è la banda di rumore
+                # misurata di `xpts_reading` — la stessa della card e di «Clima del club».
+                if lettura["verdict"] == "sopra":
                     # M2: la frase dice il fatto senza ripetere il numero di stagione, che
                     # vive nella card della squadra (prima lo stesso dato stava in 4 riquadri)
                     s.append(f"{name} rende più di quanto crei: rendimento sopra la qualità del "
                              f"gioco prodotto, regressione possibile (punti contro xPTS in «Le due squadre»).")
-                elif diff <= -3:
+                else:
                     s.append(f"{name} rende meno di ciò che crea: segnale di sottovalutazione "
                              f"(punti contro xPTS in «Le due squadre»).")
             un = ctx.get(f"{side}_unavailable") or []
@@ -5290,7 +5648,16 @@ class MatchAnalysis:
             # post-partita: quando si rigioca (campionato + coppe) e con quanto riposo
             "home_next": self.next_commitment(home_id, kickoff) if status == "finished" else None,
             "away_next": self.next_commitment(away_id, kickoff) if status == "finished" else None,
-            "home_xg": self.season_xg(f["home_name"], home_id), "away_xg": self.season_xg(f["away_name"], away_id),
+            # docs/64 §7: i numeri di stagione della scheda si fermano alla vigilia di questa
+            # partita, come la riga «Forma» accanto — una scheda vecchia non si riscrive con le
+            # gare successive a quella che racconta.
+            "home_xg": self.season_xg(f["home_name"], home_id, kickoff),
+            "away_xg": self.season_xg(f["away_name"], away_id, kickoff),
+            # docs/64 §9: indice di pressione da FotMob, l'unica fonte che copre tutte e 7 le
+            # leghe (il PPDA di Understat ne copre 5: 288 caselle su 892 restavano senza
+            # alcun numero di pressing, tutte di Eredivisie e Liga Portugal).
+            "home_press": self.season_pressing(home_id, kickoff),
+            "away_press": self.season_pressing(away_id, kickoff),
             "home_standing": self.standing(f["home_name"]), "away_standing": self.standing(f["away_name"]),
             "season_compare": self.season_compare(self.standing(f["home_name"]), self.standing(f["away_name"])),
             "home_unavailable": self.unavailable(match_id, home_id), "away_unavailable": self.unavailable(match_id, away_id),
@@ -5394,7 +5761,7 @@ class MatchAnalysis:
             ctx["market_chip"] = None
         # radar stile
         try:
-            ctx["clash_radar"] = self.clash_radar(f["home_name"], home_id, f["away_name"], away_id) if status != "finished" else None
+            ctx["clash_radar"] = self.clash_radar(f["home_name"], home_id, f["away_name"], away_id, kickoff) if status != "finished" else None
         except Exception:
             ctx["clash_radar"] = None
         # contesto di classifica e forma (era «EPV pre-match», docs/56 §4)
@@ -5442,7 +5809,7 @@ class MatchAnalysis:
         ctx["league_pos"] = self.league_goals_percentile(ctx["prediction"])
         ctx["league_over"] = self.league_over_avg(ctx["prediction"])
         ctx["first_goal"] = self.first_goal_clock(ctx["prediction"])
-        ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"])
+        ctx["clash"] = self.clash(f["home_name"], home_id, f["away_name"], away_id, ctx["prediction"], kickoff)
         ctx["xg_race"] = self.match_xg_race(match_id, home_id, away_id) if status == "finished" else None
         ctx["home_shotq"] = self.match_shot_quality(match_id, home_id) if status == "finished" else None
         ctx["away_shotq"] = self.match_shot_quality(match_id, away_id) if status == "finished" else None
