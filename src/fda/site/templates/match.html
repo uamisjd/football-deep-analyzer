@@ -265,29 +265,53 @@
 {% for side, name in (('home', c.home_name), ('away', c.away_name)) %}
   <div class="card">
     <h2>{{ name }}</h2>
-    {% set f = c[side ~ '_form'] %}{% if f %}<p style="margin:0 0 10px">Forma: <span class="form-dots">{% for x in f %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span>
-      <span class="small mut">{% for x in f %}{{ x.gf }}-{{ x.ga }} {{ 'vs' if x.home else '@' }} {{ x.opponent }}{{ ', ' if not loop.last }}{% endfor %}</span></p>{% endif %}
+    {#- docs/64 §2.7: i punteggi sono sempre «gol fatti-gol subiti» dal punto di vista di questa
+        squadra, anche in trasferta (un 2-0 fuori casa è una vittoria per 2 a 0, non una
+        sconfitta): prima il verso non era dichiarato da nessuna parte e «2-0 @ Parma» si poteva
+        leggere al contrario. La finestra è il campionato: le coppe non entrano in questa serie
+        (ma entrano nel riposo, qui sotto). -#}
+    {% set f = c[side ~ '_form'] %}{% if f %}<p style="margin:0 0 10px"><span title="Ultime {{ f|length }} di campionato, dalla più vecchia alla più recente. V=vittoria, N=pareggio, P=sconfitta.">Forma</span> <span class="mut small">(campionato, gol fatti-subiti)</span>: <span class="form-dots">{% for x in f %}<span class="form-dot {{ x.res }}" title="{{ 'in casa' if x.home else 'in trasferta' }} contro {{ x.opponent }}: {{ x.gf }}-{{ x.ga }} (gol fatti-subiti)">{{ x.res }}</span>{% endfor %}</span>
+      <span class="small mut">{% for x in f %}{{ x.gf }}-{{ x.ga }} {{ 'in casa con' if x.home else 'in trasferta con' }} {{ x.opponent }}{{ ', ' if not loop.last }}{% endfor %}</span></p>{% endif %}
     {% set xg = c[side ~ '_xg'] %}{% if xg %}
     <div class="squadra-stats" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0 10px">
+      {#- docs/64 §2.3: ogni valore di stagione esce col suo riferimento di lega, calcolato
+          **sulla stessa fonte** (Understat e FotMob misurano xG diversi: in Bundesliga 1,96 e
+          1,79 xG per gara-squadra, misurati il 9/10). Prima la card pubblicava «1,42» senza
+          dire se fosse tanto o poco: il rapporto con la media del campionato è la stessa
+          convenzione già usata da «Confronto di stagione» per i gol. -#}
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG creati / gara</div>
         <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xg_pm|dec }} <span class="mut small" style="font:600 11px var(--font-body)">({{ xg.source }}, {{ xg.played|it_plural('gara') }})</span></div>
-
+        {% if xg.xg_ratio %}<div class="mut small" style="font-size:11px" title="Media del campionato: {{ xg.league_xg_pm|dec }} xG per squadra a gara, su {{ xg.league_n|it_num }} gare-squadra della stessa fonte ({{ xg.source }}). Understat e FotMob usano modelli xG diversi: il rapporto confronta sempre fonte con fonte.">{{ xg.xg_ratio|dec }}× la media del campionato{% if xg.xg_ratio >= 1 %} (crea di più){% else %} (crea di meno){% endif %}</div>{% endif %}
       </div>
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xG concessi / gara</div>
-        <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xga_pm|dec }}</div>
-
+        <div style="font:700 16px var(--font-head);font-variant-numeric:tabular-nums">{{ xg.xga_pm|dec }} <span class="mut small" style="font:600 11px var(--font-body)">(stesse {{ xg.played|it_plural('gara') }})</span></div>
+        {% if xg.xga_ratio %}<div class="mut small" style="font-size:11px" title="Stesso riferimento della casella accanto: {{ xg.league_xg_pm|dec }} xG per squadra a gara nel campionato ({{ xg.source }}). Qui sotto 1,00× è meglio: significa concedere meno della media.">{{ xg.xga_ratio|dec }}× la media del campionato{% if xg.xga_ratio <= 1 %} (concede di meno){% else %} (concede di più){% endif %}</div>{% endif %}
       </div>
+      {#- docs/64 §2.2: il verdetto sullo scarto punti−xPTS non ha più una soglia scritta qui.
+          Arriva da `xpts_reading` (banda di rumore 1σ = 1,13×√gare, misurata su 502
+          gare-squadra), la stessa funzione che decide la riga di «Clima del club» e la frase
+          dell'analisi pre-partita: una squadra non può più essere «sopra atteso» qui e muta
+          due card più in basso. -#}
+      {% set rd = xg.xpts_read %}
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">xPTS vs punti reali</div>
-        <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">{% if xg.xpts is not none and xg.pts is not none %}{{ xg.xpts|dec(1) }} <span class="mut">vs</span> {{ xg.pts }}{% set _d = xg.pts - xg.xpts %} <span class="{% if _d >= 2 %}good{% elif _d <= -2 %}warn{% else %}mut{% endif %}" title="{% if _d >= 2 %}Sopra atteso: possibile regressione{% elif _d <= -2 %}Sotto atteso: sottovalutata{% else %}In linea con la qualità del gioco{% endif %}">({{ _d|dec(1, true) }})</span>{% else %}—{% endif %}</div>
-        <div class="mut small" style="font-size:11px">{{ xg.played|it_plural('gara') }} · {% if xg.xpts is not none and xg.pts is not none %}{% set _d = xg.pts - xg.xpts %}{% if _d >= 2 %}sopra atteso{% elif _d <= -2 %}sotto atteso{% else %}in linea{% endif %}{% else %}n.d.{% endif %}</div>
+        <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">{% if rd %}{{ xg.xpts|dec(1) }} <span class="mut">vs</span> {{ xg.pts }} <span class="mut" title="Scarto fra i punti raccolti e quelli attesi dagli xG nelle stesse {{ xg.played|it_plural('gara') }}">({{ rd.diff|dec(1, true) }})</span>{% else %}—{% endif %}</div>
+        <div class="mut small" style="font-size:11px">{% if rd and rd.band %}{{ xg.played|it_plural('gara') }} · <span title="Lo scarto di {{ rd.diff|dec(1) }} punti si confronta con la banda di rumore di ±{{ rd.band|dec(1) }} punti su {{ xg.played|it_plural('gara') }}: 1σ = 1,13 × radice di {{ xg.played }}, dove 1,13 è la deviazione standard di (punti − xPTS) su una singola gara, misurata su 502 gare-squadra. Dentro la banda lo scarto è compatibile col caso e non si pubblica un verdetto. I punti sono quelli delle {{ xg.played|it_plural('gara') }} del campione xG: se la fonte è più avanti della classifica, possono differire dal totale della card «Confronto di stagione».">{% if rd.verdict == 'sopra' %}sopra gli attesi, oltre il rumore{% elif rd.verdict == 'sotto' %}sotto gli attesi, oltre il rumore{% else %}in linea (scarto entro ±{{ rd.band|dec(1) }}, la banda del caso){% endif %}</span>{% elif rd %}{{ xg.played|it_plural('gara') }} · <span title="Sotto le 3 gare lo scarto è dominato dal caso: si pubblicano i due numeri, non un verdetto.">campione troppo corto per un verdetto</span>{% else %}{{ xg.played|it_plural('gara') }} · n.d.{% endif %}</div>
       </div>
       <div style="background:var(--surface2);border:1px solid var(--line);border-radius:9px;padding:8px 10px">
         <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Pressing · riposo</div>
-        <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">PPDA {% if xg.ppda %}{{ xg.ppda|dec(1) }}{% else %}n.d.{% endif %} <span class="mut small" style="font:600 10px var(--font-body);text-transform:none;letter-spacing:0">{% if xg.ppda %}{% if xg.ppda < 10 %}alto{% elif xg.ppda < 13 %}medio-alto{% elif xg.ppda < 16 %}medio{% else %}basso{% endif %}{% endif %}</span></div>
-        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_on'] and c[side ~ '_rest'] >= 6 %} (ultima gara {{ c[side ~ '_rest_on'] }}){% endif %}{% if c[side ~ '_rest_cup'] %} · coppe incluse{% elif c[side ~ '_rest'] >= 6 %} · ampio{% elif c[side ~ '_rest'] <= 2 %} · corto{% endif %}{% else %}riposo n.d.{% endif %}</div>
+        {#- docs/64 §2.4: prima qui usciva «PPDA 8,5 alto», e l'aggettivo sembrava riferito al
+            numero (che è *basso*): ora dice «pressing alto». Le soglie e la media di lega
+            stanno nel ⓘ, non in un piè di card lontano dalla riga. -#}
+        <div style="font:700 14px var(--font-head);font-variant-numeric:tabular-nums">PPDA {% if xg.ppda %}<span title="PPDA = passaggi concessi all'avversario per ogni azione difensiva: più basso = pressing più alto. Soglie dichiarate: sotto 10 alto, sotto 13 medio-alto, sotto 16 medio, da 16 in su basso.{% if xg.league_ppda %} Media del campionato: {{ xg.league_ppda|dec(1) }}.{% endif %} Fonte Understat, media sulle {{ xg.played|it_plural('gara') }} di stagione.">{{ xg.ppda|dec(1) }}</span>{% else %}<span title="Il PPDA lo pubblica solo Understat, che copre 5 delle 7 leghe: per Eredivisie e Liga Portugal nessuna fonte gratuita lo fornisce. Nessuna stima al suo posto.">n.d.</span>{% endif %}{% if xg.ppda %} <span class="mut small" style="font:600 10px var(--font-body);text-transform:none;letter-spacing:0">pressing {% if xg.ppda < 10 %}alto{% elif xg.ppda < 13 %}medio-alto{% elif xg.ppda < 16 %}medio{% else %}basso{% endif %}{% if xg.league_ppda %} · lega {{ xg.league_ppda|dec(1) }}{% endif %}</span>{% endif %}</div>
+        {#- docs/64 §2.5: la data dell'ultima gara esce sempre (non solo oltre i 6 giorni) e la
+            coppa si chiama col suo nome — prima «coppe incluse» buttava via il dato raccolto.
+            Via anche gli aggettivi «ampio»/«corto»: erano una terza soglia (≤2 giorni) diversa
+            da quella di «Clima del club» (≤3) e da quella misurata dei «Fattori» (≤4, studio
+            UEFA). Qui restano i giorni; il verdetto sul riposo lo dà la card che l'ha misurato. -#}
+        <div class="mut small" style="font-size:11px">{% if c[side ~ '_rest'] is not none %}{{ c[side ~ '_rest']|it_plural('giorno') }} di riposo{% if c[side ~ '_rest_on'] %} <span title="Calendario di campionato più coppe europee: il riposo vero conta anche i turni infrasettimanali.">(ultima gara {{ c[side ~ '_rest_on'] }}{% if c[side ~ '_rest_cup'] %}, {{ c[side ~ '_rest_cup'] }}{% endif %})</span>{% endif %}{% else %}<span title="Nessuna gara ufficiale precedente in archivio per questa squadra (inizio di stagione o calendario non ancora raccolto).">riposo n.d.</span>{% endif %}</div>
       </div>
     </div>
     {% endif %}
@@ -312,13 +336,20 @@
     <p id="infermeria-{{ side }}" class="small mut">Nessun indisponibile segnalato nella distinta pubblicata dalla fonte ({{ 'formazione ufficiale' if c.lineup_type == 'official' or c.status == 'finished' else 'formazione probabile' }}).</p>
     {% endif %}
     {% if stt %}
-      <div class="formation-head" style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · <span class="mut small" title="Somma Transfermarkt titolari">{{ c[side ~ '_value']|fee_it }} titolari</span>{% endif %}</div>
+      {#- docs/64 §2.8: il ⓘ diceva «Somma Transfermarkt titolari», ma il dato è
+          `totalStarterMarketValue` della distinta FotMob — il progetto non interroga
+          Transfermarkt. Attribuzione corretta, stessa dicitura delle altre card. -#}
+      <div class="formation-head" style="margin-top:10px"><b>{{ 'Formazione' if c.lineup_type == 'official' or c.status == 'finished' else 'Formazione probabile' }}</b> {{ c[side ~ '_formation'] or '' }}{% if c[side ~ '_value'] %} · <span class="mut small" title="Somma dei valori di mercato degli undici titolari pubblicati nella distinta FotMob">{{ c[side ~ '_value']|fee_it }} di valore dei titolari</span>{% endif %}</div>
       <ol class="formation-list">
         {% for s in stt %}
         <li class="{% if s.pos == 'portiere' %}is-gk{% endif %}">
           <span class="num">{{ s.num if s.num is not none else '—' }}</span>
           {% if s.id %}<a href="{{ root }}giocatori/{{ s.id }}.html" style="flex:1">{{ s.name }}{% if s.captain %} (C){% endif %}</a>{% else %}<span style="flex:1">{{ s.name }}{% if s.captain %} (C){% endif %}</span>{% endif %}
-          <span class="role">{{ s.pos or '' }}</span>{% if s.rating %} <span class="mut small">{{ s.rating|dec(1) }}</span>{% endif %}
+          {#- docs/64 §2.6: a gara finita la colonna è il voto di quella partita; prima della
+              gara era **sempre vuota** (0 titolari su 1.210 avevano un voto di gara), mentre la
+              media di stagione ricalcolata da noi esisteva per 1.195 su 1.210. Ora la riga dice
+              anche quale dei due numeri sta mostrando. -#}
+          <span class="role">{{ s.pos or '' }}</span>{% if s.rating %} <span class="mut small" title="Voto di questa partita (FotMob){% if s.rating_avg %} · media di stagione {{ s.rating_avg|dec(2) }} su {{ s.rating_games|it_plural('gara') }}{% endif %}">{{ s.rating|dec(1) }}</span>{% elif s.rating_avg %} <span class="mut small" title="Media voto di stagione, ricalcolata dai voti gara di {{ s.rating_games|it_plural('gara') }} (la stessa base della classifica «Per media voto di stagione»). Non è il voto di questa partita, che non esiste ancora.">⌀ {{ s.rating_avg|dec(2) }}</span>{% endif %}
         </li>
         {% endfor %}
       </ol>
@@ -328,7 +359,11 @@
   </div>
 {% endfor %}
 </div>
-<p class="small mut" style="margin:4px 0 0">Minuti, gol e assist di stagione sommati dalle statistiche gara; xG+xA per 90 dove la fonte li pubblica. «Titolare» = almeno metà dei minuti medi per giocatore. “Ruolo n.d.” = non ancora visto in distinta.</p>
+{#- docs/64 §2.9: il piè di card spiegava «“Ruolo n.d.” = non ancora visto in distinta», una
+    stringa che la pagina non stampa mai (il ruolo ignoto resta vuoto), e non diceva nulla dei
+    quattro riquadri di stagione, che sono i numeri più pesanti della card. Ora descrive quello
+    che c'è davvero, nell'ordine in cui compare, e ogni soglia è ripetuta nel ⓘ della sua riga. -#}
+<p class="small mut" style="margin:4px 0 0">Che cosa c'è in questa card: <b>forma</b> = ultime gare di campionato (gol fatti-subiti dal punto di vista della squadra); <b>xG creati e concessi per gara</b> con il rapporto sulla media del campionato, calcolato sempre con la stessa fonte del valore (Understat dove copre la lega, altrimenti le statistiche gara di FotMob: i due modelli di xG non sono confrontabili fra loro); <b>xPTS contro punti reali</b> nelle stesse gare del campione xG, con verdetto solo quando lo scarto supera la banda di rumore misurata; <b>PPDA</b> (solo Understat, 5 leghe su 7) e <b>giorni di riposo</b> con l'ultima gara giocata, coppe europee comprese. Indisponibili e distinta: minuti, gol e assist di stagione sommati dalle statistiche gara, xG+xA per 90 dove la fonte li pubblica; «titolare» = almeno metà dei minuti medi per giocatore; «⌀» davanti a un voto indica la media di stagione, non il voto di questa partita.</p>
 
 {#- `docs/28` §2 P1.3: il gruppo si chiama per quello che è (le card del club) — prima l'id
     «contesto» stava sul gruppo, e il link «→ precedenti» atterrava in cima alle card del
@@ -377,7 +412,7 @@
       </div>
     {% endfor %}
     </div>
-    <p class="small mut">Segnali misurati, non aggettivi: crisi da 3 sconfitte consecutive, «non vince da» da 4 gare senza vittoria, clima sereno da 5 imbattute, attacco a secco da 3 gare senza gol, scarto punti‑xPTS da ±2, infermeria pesante da 4 assenti o 2 titolari abituali o 0,5 xG+xA/gara in meno, riposo corto ≤3 giorni, congestione da 3 gare in 10 giorni (coppe incluse). Nessun punteggio sintetico: ogni riga è un fatto col suo criterio; se nessuna soglia è superata, la squadra resta «clima normale».</p>
+    <p class="small mut">Segnali misurati, non aggettivi: crisi da 3 sconfitte consecutive, «non vince da» da 4 gare senza vittoria, clima sereno da 5 imbattute, attacco a secco da 3 gare senza gol, scarto punti‑xPTS oltre la banda di rumore misurata (1σ = 1,13 × radice delle gare: ±2,5 punti dopo 5 gare, ±3,0 dopo 7 — la stessa soglia della card «Le due squadre» e dell'analisi pre-partita), infermeria pesante da 4 assenti o 2 titolari abituali o 0,5 xG+xA/gara in meno, riposo corto ≤3 giorni, congestione da 3 gare in 10 giorni (coppe incluse). Nessun punteggio sintetico: ogni riga è un fatto col suo criterio; se nessuna soglia è superata, la squadra resta «clima normale».</p>
   </div>
   {% endif %}
   {% if (c.home_market or c.away_market) and c.status != 'finished' %}

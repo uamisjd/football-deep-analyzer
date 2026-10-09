@@ -66,6 +66,11 @@ ALIASES: dict[str, str] = {
     "dortmund": "Borussia Dortmund", "borussia dortmund": "Borussia Dortmund",
     "leverkusen": "Bayer Leverkusen", "bayer leverkusen": "Bayer Leverkusen", "bayer 04 leverkusen": "Bayer Leverkusen",
     "rb leipzig": "RB Leipzig", "leipzig": "RB Leipzig", "stuttgart": "VfB Stuttgart", "vfb stuttgart": "VfB Stuttgart",
+    # grafie **Understat** che non convergevano da sole (docs/64 §2.1): senza queste quattro
+    # righe Parma, RB Leipzig, Köln e M'gladbach perdevano xG, xPTS e PPDA di Understat e
+    # ripiegavano su FotMob, con la card «Le due squadre» che confrontava due fonti diverse.
+    "rasenballsport leipzig": "RB Leipzig", "fc cologne": "1. FC Köln",
+    "borussia m.gladbach": "Borussia Mönchengladbach", "parma calcio 1913": "Parma",
     "ein frankfurt": "Eintracht Frankfurt", "eintracht frankfurt": "Eintracht Frankfurt",
     "frankfurt": "Eintracht Frankfurt",   # FotMob 2026/27 la chiama solo "Frankfurt"
     "freiburg": "SC Freiburg", "sc freiburg": "SC Freiburg", "m'gladbach": "Borussia Mönchengladbach",

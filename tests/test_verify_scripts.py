@@ -1,4 +1,5 @@
 import importlib.util
+import re
 from pathlib import Path
 
 import pandas as pd
@@ -426,3 +427,89 @@ def test_anche_l_eccezione_ha_un_tetto(tmp_path):
                                             encoding="utf-8")
     fails, _ = vsite.check_page_weight(tmp_path)
     assert len(fails) == 1 and "prossime.html" in fails[0]
+
+
+def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
+    """[44] (docs/64): la card «Le due squadre» esiste ovunque e i suoi numeri si ricalcolano.
+
+    I difetti che l'invariante blocca sono quelli misurati sulla build del 2026-10-09: tre
+    schede in cui le due squadre confrontavano fonti xG diverse (Understat da una parte,
+    FotMob dall'altra) senza dirlo, il valore dei titolari attribuito a Transfermarkt invece
+    che alla distinta FotMob, un piè di card che spiegava la stringa «Ruolo n.d.» (mai
+    stampata) e un verdetto sullo scarto punti−xPTS con una soglia fissa a ±2 punti, sotto
+    il rumore della misura. Il controllo gira su **tutte** le pagine di `site/partite`, così
+    nessuna partita resta fuori dalla revisione.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from fda.site.build import SiteBuilder
+    from tests.test_site import _fixture_lontana, _seed
+
+    vs = _site_module()
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900010, 3, "Inter", "Napoli", now)])
+    st.upsert("understat_team_matches", [
+        {"league_slug": "Serie_A", "season": 2026, "team_id": 999100 + t,
+         "team_name": ["Inter", "Napoli", *[f"Prova {i}" for i in range(9)]][t],
+         "date": (now - timedelta(days=7 * (4 - i))).isoformat(), "is_home": bool(i % 2),
+         "goals": 2, "goals_against": 1, "xg": 2.4 if t == 0 else 1.2,
+         "xga": 0.8 if t == 0 else 1.4, "xpts": 2.2 if t == 0 else 1.2,
+         "pts": 3 if t == 0 else 1, "ppda": 8.0 if t == 0 else 14.0}
+        for t in range(11) for i in range(4)])
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
+    st.close()
+    dati = tmp_path / "processed"
+
+    fails, checks = vs.check_due_squadre(out, dati)
+    assert fails == [] and checks > 20
+
+    pagina = out / "partite" / "5900010.html"
+    originale = pagina.read_text(encoding="utf-8")
+
+    def rotta(html: str) -> list[str]:
+        pagina.write_text(html, encoding="utf-8")
+        return vs.check_due_squadre(out, dati)[0]
+
+    # 1) card assente → la scheda non è «senza dati», è rotta
+    assert "non c'è" in rotta(originale.replace('id="squadre"', 'id="altro"'))[0]
+
+    # 2) attribuzione sbagliata del valore dei titolari e piè di card con stringhe fantasma
+    fails = rotta(originale.replace("Che cosa c'è in questa card:",
+                                    "Transfermarkt · Ruolo n.d. · Che cosa c'è in questa card:"))
+    assert any("Transfermarkt" in f for f in fails)
+    assert any("Ruolo n.d." in f for f in fails)
+
+    # 3) piè di card rimosso
+    assert any("Che cosa c'è" in f
+               for f in rotta(originale.replace("Che cosa c'è in questa card:", "Note:")))
+
+    # 4) numero di stagione manomesso: xG creati e campione non tornano più dai Parquet
+    guasto = re.sub(
+        r"(xG creati / gara</div>\s*<div[^>]*>)[\d,]+ (<span[^>]*>\()(Understat|FotMob), \d+",
+        r"\g<1>9,99 \g<2>\g<3>, 99", originale, count=1)
+    fails = rotta(guasto)
+    assert any("xG creati 9,99" in f for f in fails)
+    assert any("campione xG 99" in f for f in fails)
+
+    # 5) rapporto di lega sparito o sbagliato (la parità fra le 7 leghe passa di qui)
+    senza_rif = originale.replace("× la media del campionato", "× qualcosa", 1)
+    assert any("riferimento di lega assente" in f for f in rotta(senza_rif))
+    sballato = re.sub(r"[\d,]+(× la media del campionato)", r"9,99\1", originale, count=1)
+    assert any("rapporto xG 9,99×" in f for f in rotta(sballato))
+
+    # 6) fonti miste nella stessa scheda (il difetto degli alias Understat non agganciati)
+    assert any("mescolano fonti xG diverse" in f or "fonte xG stampata" in f
+               for f in rotta(originale.replace("(Understat, ", "(FotMob, ", 1)))
+
+    # 7) verdetto xPTS incoerente con la banda di rumore misurata
+    assert any("verdetto xPTS" in f
+               for f in rotta(originale.replace("sopra gli attesi", "sotto gli attesi", 1)))
+
+    # 8) il riposo torna a dire «coppe incluse» senza il nome della coppa
+    assert any("coppe incluse" in f
+               for f in rotta(originale.replace("Che cosa c'è in questa card:",
+                                                "coppe incluse · Che cosa c'è in questa card:")))
+
+    assert rotta(originale) == []

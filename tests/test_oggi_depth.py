@@ -893,30 +893,48 @@ def test_peso_infermeria_con_stima_stabilizzata(tmp_path):
 # --- P2.4: le tre frasi-macchina di narrative() riscritte in italiano (docs/19 §2.8) ---
 
 
-@pytest.mark.parametrize("diff", [-3.0, -3.1, -5.4, -9.9])
+@pytest.mark.parametrize("diff", [-3.6, -4.0, -5.4, -9.9])
 def test_narrative_xpts_negativo_senza_numeri(diff):
     """M2 (`docs/55` §6): la frase dice il verso, non ripete il numero di stagione.
 
     Il numero dei punti contro gli xPTS sta **solo** nella card della squadra (regola di
     `docs/30` P1.2): prima lo stesso dato compariva in quattro riquadri della stessa scheda.
     Il verso, però, deve restare leggibile.
+
+    Gli scarti provati sono oltre la banda di rumore di 10 gare (1σ = 1,13×√10 = 3,58 punti,
+    `docs/64` §2.2): prima la soglia era un ±3 scritto a mano in questa funzione e diverso dal
+    ±2 della card.
     """
     ctx = {"home_name": "Inter", "away_name": "Milan",
            "home_xg": {"xpts": 40.0, "pts": 40.0 + diff, "played": 10}}
     frase = next(s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s)
     assert "rende meno di ciò che crea" in frase
     assert "Le due squadre" in frase                       # il rimando al posto canonico
-    assert "3,0" not in frase and "3,1" not in frase       # nessun numero ripetuto
+    assert "3,6" not in frase and "4,0" not in frase       # nessun numero ripetuto
     assert "−" not in frase and "-" not in frase
+
+
+@pytest.mark.parametrize(("diff", "played"), [(-3.0, 10), (2.4, 5), (-2.9, 7), (1.9, 3)])
+def test_narrative_xpts_dentro_la_banda_resta_muta(diff, played):
+    """`docs/64` §2.2: sotto la banda di rumore non si pubblica nessun verdetto.
+
+    1σ dello scarto punti−xPTS è 1,13×√gare (σ di una gara misurata su 502 gare-squadra):
+    3,58 punti a 10 gare, 2,53 a 5, 3,00 a 7, 1,96 a 3. Tutti i casi qui sono *dentro* la
+    banda e la narrativa deve tacere: con le vecchie soglie fisse (±2 nella card, ±3 qui)
+    tre di questi quattro casi producevano un verdetto su puro rumore.
+    """
+    ctx = {"home_name": "Inter", "away_name": "Milan",
+           "home_xg": {"xpts": 40.0, "pts": 40.0 + diff, "played": played}}
+    assert not [s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s]
 
 
 def test_narrative_xpts_positivo_resta_esplicito():
     """Il verso opposto deve restare distinguibile: «più di quanto crei», non solo un segno."""
     ctx = {"home_name": "Inter", "away_name": "Milan",
-           "home_xg": {"xpts": 40.0, "pts": 44.2, "played": 10}}
+           "home_xg": {"xpts": 40.0, "pts": 44.8, "played": 10}}
     frase = next(s for s in MatchAnalysis.narrative(ctx) if "xPTS" in s)
     assert "rende più di quanto crei" in frase
-    assert "4,2" not in frase and "Le due squadre" in frase
+    assert "4,8" not in frase and "Le due squadre" in frase
 
 
 @pytest.mark.parametrize(("n", "titolari"), [(1, 1), (1, 0), (2, 1), (3, 3), (5, 2)])

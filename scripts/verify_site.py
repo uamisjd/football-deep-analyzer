@@ -706,6 +706,168 @@ def _pos_pct(v: float, lo_q: float, hi_q: float) -> float:
     return round(min(100.0, max(0.0, 100.0 * (v - lo_q) / (hi_q - lo_q))), 2)
 
 
+def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[44] card «Le due squadre»: presente su **ogni** scheda e con i numeri ricalcolati.
+
+    Nasce con la revisione del 2026-10-09 (`docs/64`). Controlla, per tutte le pagine di
+    ``site/partite`` e per entrambe le squadre di ognuna:
+
+    * **struttura** — il titolo del gruppo, due riquadri di squadra, i quattro riquadri di
+      stagione (xG creati, xG concessi, xPTS, pressing/riposo) e il piè di card nuovo;
+    * **fonte** — quella stampata è quella che ``season_xg`` userebbe davvero, e le due
+      squadre della stessa scheda non mescolano Understat e FotMob senza dirlo;
+    * **numeri** — xG creati/concessi per gara, campione, xPTS, punti e scarto sono quelli
+      ricalcolati dai Parquet;
+    * **riferimento di lega** — il rapporto «× la media del campionato» è ricalcolato con la
+      media della **stessa fonte**, e c'è ovunque la fonte lo permetta (parità fra le 7 leghe);
+    * **verdetto xPTS** — coincide con ``MatchAnalysis.xpts_reading`` (banda di rumore
+      misurata), e nessuna pagina riporta le vecchie soglie fisse;
+    * **testi** — nessuna attribuzione a Transfermarkt (il valore è della distinta FotMob) e
+      nessuna stringa fantasma nel piè di card.
+    """
+    import pandas as pd
+
+    from fda.site.analysis import MatchAnalysis
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    fx = st.read("fixtures")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if fx.empty or not pages:
+        return fails, checks
+    ma = MatchAnalysis(st)
+    by_id = fx.drop_duplicates("match_id").set_index("match_id")
+
+    box_re = re.compile(
+        r"xG creati / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>\((Understat|FotMob), "
+        r"(\d+) gar[ae]\)</span></div>\s*"
+        r'(?:<div class="mut small"[^>]*title="[^"]*">([\d,]+)× la media del campionato)?')
+    xga_re = re.compile(
+        r"xG concessi / gara</div>\s*<div[^>]*>([\d,]+) <span[^>]*>\(stesse (\d+) gar[ae]\)"
+        r"</span></div>\s*"
+        r'(?:<div class="mut small"[^>]*title="[^"]*">([\d,]+)× la media del campionato)?')
+    xpts_re = re.compile(
+        r"xPTS vs punti reali</div>\s*<div[^>]*>([\d,]+) <span[^>]*>vs</span> (\d+) "
+        r'<span class="mut" title="[^"]*">\(([+-]?[\d,]+)\)</span>')
+    verdetto_re = re.compile(r"(\d+) gar[ae] · <span title=\"[^\"]*\">(.*?)</span></div>")
+    ppda_re = re.compile(r"PPDA <span title=\"[^\"]*\">([\d,]+)</span>")
+
+    def num(x: str) -> float:
+        return float(x.replace(",", "."))
+
+    n_pagine = n_pannelli = n_rif = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        i = html.find('id="squadre"')
+        checks += 1
+        if i < 0:
+            fails.append(f"{pg.name}: la card «Le due squadre» non c'è")
+            continue
+        sec = html[i:html.find('id="club"', i) if html.find('id="club"', i) > 0 else len(html)]
+        n_pagine += 1
+        try:
+            mid = int(pg.stem)
+            riga = by_id.loc[mid]
+        except (KeyError, ValueError):
+            continue
+        for k in ('<h2 class="as-h2" style="grid-column:1/-1">Le due squadre</h2>',
+                  "Che cosa c'è in questa card:"):
+            checks += 1
+            if k not in sec:
+                fails.append(f"{pg.name}: «Le due squadre» senza «{k[:34]}…»")
+        checks += 2
+        if "Transfermarkt" in sec:
+            fails.append(f"{pg.name}: «Le due squadre» attribuisce il valore a Transfermarkt")
+        if "Ruolo n.d." in sec:
+            fails.append(f"{pg.name}: il piè di card spiega «Ruolo n.d.», stringa che non esiste")
+        # ogni riquadro di stagione va letto accanto al suo gemello: le due squadre, in ordine
+        boxes = box_re.findall(sec)
+        xgas = xga_re.findall(sec)
+        xpts = xpts_re.findall(sec)
+        verdetti = verdetto_re.findall(sec)
+        ppdas = ppda_re.findall(sec)
+        attesi = []
+        for tid, tname in ((int(riga.home_id), str(riga.home_name)),
+                           (int(riga.away_id), str(riga.away_name))):
+            attesi.append(ma.season_xg(tname, tid))
+        presenti = [a for a in attesi if a]
+        checks += 1
+        if len(boxes) != len(presenti):
+            fails.append(f"{pg.name}: riquadri «xG creati» {len(boxes)} per {len(presenti)} "
+                         "squadre con dati")
+            continue
+        checks += 1
+        if len({b[1] for b in boxes}) > 1:
+            fails.append(f"{pg.name}: le due squadre mescolano fonti xG diverse "
+                         f"({sorted({b[1] for b in boxes})}): i due numeri non sono "
+                         "confrontabili, serve un alias in fda/teams.py")
+        for k, atteso in enumerate(presenti):
+            n_pannelli += 1
+            valore, fonte, gare, rapporto = boxes[k]
+            checks += 3
+            if fonte != atteso["source"]:
+                fails.append(f"{pg.name}: fonte xG stampata {fonte}, calcolata {atteso['source']}")
+            if abs(num(valore) - float(atteso["xg_pm"])) > 0.051:
+                fails.append(f"{pg.name}: xG creati {valore} ≠ {atteso['xg_pm']:.2f}")
+            if int(gare) != int(atteso["played"]):
+                fails.append(f"{pg.name}: campione xG {gare} ≠ {atteso['played']}")
+            atteso_rapporto = atteso.get("xg_ratio")
+            checks += 1
+            if atteso_rapporto and not rapporto:
+                fails.append(f"{pg.name}: riferimento di lega assente con media disponibile")
+            elif rapporto:
+                n_rif += 1
+                if abs(num(rapporto) - float(atteso_rapporto or 0)) > 0.011:
+                    fails.append(f"{pg.name}: rapporto xG {rapporto}× ≠ "
+                                 f"{float(atteso_rapporto or 0):.2f}×")
+            if k < len(xgas):
+                v_ga, gare_ga, rap_ga = xgas[k]
+                checks += 2
+                if abs(num(v_ga) - float(atteso["xga_pm"])) > 0.051:
+                    fails.append(f"{pg.name}: xG concessi {v_ga} ≠ {atteso['xga_pm']:.2f}")
+                if int(gare_ga) != int(atteso["played"]):
+                    fails.append(f"{pg.name}: campione xG concessi {gare_ga} ≠ {atteso['played']}")
+                if rap_ga and atteso.get("xga_ratio"):
+                    checks += 1
+                    if abs(num(rap_ga) - float(atteso["xga_ratio"])) > 0.011:
+                        fails.append(f"{pg.name}: rapporto xGA {rap_ga}× ≠ "
+                                     f"{float(atteso['xga_ratio']):.2f}×")
+            lettura = atteso.get("xpts_read")
+            if lettura and atteso.get("xpts") is not None and k < len(xpts):
+                v_x, v_p, v_d = xpts[k]
+                checks += 3
+                if abs(num(v_x) - float(atteso["xpts"])) > 0.051:
+                    fails.append(f"{pg.name}: xPTS {v_x} ≠ {float(atteso['xpts']):.1f}")
+                if int(v_p) != int(atteso["pts"]):
+                    fails.append(f"{pg.name}: punti {v_p} ≠ {atteso['pts']}")
+                if abs(num(v_d) - float(lettura["diff"])) > 0.051:
+                    fails.append(f"{pg.name}: scarto {v_d} ≠ {lettura['diff']:.1f}")
+            if lettura and k < len(verdetti):
+                gare_v, testo = verdetti[k]
+                atteso_testo = ("sopra gli attesi" if lettura["verdict"] == "sopra"
+                                else "sotto gli attesi" if lettura["verdict"] == "sotto"
+                                else "in linea" if lettura["band"] else "campione troppo corto")
+                checks += 2
+                if int(gare_v) != int(atteso["played"]):
+                    fails.append(f"{pg.name}: gare del verdetto xPTS {gare_v} ≠ {atteso['played']}")
+                if atteso_testo not in html_unescape(testo):
+                    fails.append(f"{pg.name}: verdetto xPTS «{testo[:30]}» invece di "
+                                 f"«{atteso_testo}»")
+            atteso_ppda = atteso.get("ppda")
+            checks += 1
+            if (atteso_ppda is not None and not pd.isna(atteso_ppda)
+                    and (k >= len(ppdas) or abs(num(ppdas[k]) - float(atteso_ppda)) > 0.051)):
+                fails.append(f"{pg.name}: PPDA stampato ≠ {float(atteso_ppda):.1f}")
+        checks += 1
+        if re.search(r"coppe incluse", sec):
+            fails.append(f"{pg.name}: il riposo dice ancora «coppe incluse» senza il nome")
+    print(f"[44] schede con «Le due squadre» verificate: {n_pagine} pagine, "
+          f"{n_pannelli} riquadri di squadra, {n_rif} riferimenti di lega")
+    return fails, checks
+
+
 def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     """Ricalcola i numeri pubblicati con le funzioni del progetto e li confronta."""
     import numpy as np
@@ -3486,6 +3648,9 @@ def main() -> int:
         coppia, coppia_checks = check_terza_coppia(site, Path(args.data) if args.data else None)
         fails += coppia
         checks += coppia_checks
+        squadre, squadre_checks = check_due_squadre(site, Path(args.data) if args.data else None)
+        fails += squadre
+        checks += squadre_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks
