@@ -1,20 +1,22 @@
-"""Benchmark modello vs quote di chiusura Pinnacle (7 leghe × 3 stagioni).
+"""Benchmark RPS/Brier del modello contro il mercato, sulle stesse gare.
 
-Scarica i CSV dal mirror già usato per NED1/POR1 e li confronta con le previsioni
-fuori campione salvate in ``data/processed/backtest.parquet``. Le quote NON entrano
-nel modello (decisione A, docs/19 §1.1): sono solo il riferimento esterno con cui
-misurare la distanza del progetto dal mercato — la base naive è un avversario debole,
-il mercato di chiusura è il metro più forte disponibile a costo zero.
+Modalità locale (docs/67): legge le quote già in history.parquet, nessuna rete né fit.
+Il backtest è l'ensemble GREZZO fuori campione; non si applica una calibrazione stimata
+sugli stessi esiti. Le quote si depurano del margine con la normalizzazione degli inversi.
 
 Uso:
-    python scripts/benchmark_quote.py                  # riepilogo a schermo
-    python scripts/benchmark_quote.py --json out.json  # salva anche il JSON (artifact CI)
-Esito atteso (misura 2026-09-14): n_valutate ≈ 4.372, delta ≈ +0,0096, IC95 interamente
-positivo (il modello perde col mercato in 7/7 leghe: è il riferimento da chiudere).
+    python scripts/benchmark_quote.py --offline
+    python scripts/benchmark_quote.py --offline --json data/cache/benchmark_history.json
+    python scripts/benchmark_quote.py --offline --data percorso/processed
+
+Senza --offline resta il benchmark mensile preesistente: scarica (o usa la cache dei)
+CSV Pinnacle di chiusura, 7 leghe × 3 stagioni. Non si riduce silenziosamente quel
+confronto alle sole leghe con quote locali. Le quote NON entrano nel modello o nel sito.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 
@@ -55,61 +57,157 @@ def scarica(http=None) -> pd.DataFrame:
     return pd.concat(out, ignore_index=True)
 
 
+def quote_da_history(history: pd.DataFrame) -> pd.DataFrame:
+    """Adattatore locale allo schema del benchmark, senza leggere o scaricare altro.
+
+    I nomi PSCH/PSCD/PSCA qui sono solo lo schema comune: lo storico può contenere
+    Pinnacle, medie o Bet365 e non conserva quale ripiego è stato usato (docs/67).
+    Colonne quote assenti equivalgono a quote mancanti, mai a probabilità inventate.
+    """
+    names = {"league_key": "lg", "home": "HomeTeam", "away": "AwayTeam",
+             "home_goals": "FTHG", "away_goals": "FTAG", "odds_home": "PSCH",
+             "odds_draw": "PSCD", "odds_away": "PSCA", "date": "date"}
+    return history.reindex(columns=list(names)).rename(columns=names)
+
+
 def devig(h, d, a) -> np.ndarray:
-    """Quote decimali → probabilità senza margine (normalizzazione semplice)."""
-    p = np.column_stack([1 / pd.to_numeric(h, errors="coerce"),
-                         1 / pd.to_numeric(d, errors="coerce"),
-                         1 / pd.to_numeric(a, errors="coerce")])
-    ok = np.isfinite(p).all(1) & (p > 0).all(1)
-    out = np.full_like(p, np.nan)
-    out[ok] = p[ok] / p[ok].sum(1, keepdims=True)
+    """Quote decimali valide (>1) → probabilità senza margine; altrimenti tutta la riga n.d."""
+    odds = np.column_stack([pd.to_numeric(x, errors="coerce") for x in (h, d, a)]).astype(float)
+    ok = np.isfinite(odds).all(1) & (odds > 1).all(1)
+    out = np.full_like(odds, np.nan)
+    inverses = 1 / odds[ok]
+    out[ok] = inverses / inverses.sum(1, keepdims=True)
     return out
 
 
 def rps(P: np.ndarray, o: np.ndarray) -> np.ndarray:
-    """RPS per riga (stessa definizione del progetto, vettorializzata per il benchmark)."""
+    """RPS per riga, ordine 1-X-2, diviso per 2 (stessa definizione del progetto)."""
     return ((np.cumsum(P, 1) - np.cumsum(o, 1)) ** 2).sum(1) / 2.0
 
 
-def misura(bt: pd.DataFrame, od: pd.DataFrame, draws: int = 4000, seed: int = 11) -> dict:
-    """Aggancia backtest e quote (nomi canonici + lega + data) e misura modello vs mercato."""
+def brier(P: np.ndarray, o: np.ndarray) -> np.ndarray:
+    """Brier multiclasse: somma dei tre errori quadratici, scala 0–2 (non media /3)."""
+    return ((P - o) ** 2).sum(1)
+
+
+def _summary(r_model, r_market, b_model, b_market, draws: int, seed: int) -> dict:
     from fda.models.lab import paired_bootstrap
 
-    bt = bt.copy()
-    btd = pd.to_datetime(bt["date"])
-    bt["date"] = (btd.dt.tz_localize(None) if getattr(btd.dt, "tz", None) else btd).dt.normalize()
-    od = od.copy()
-    od["HomeTeam"] = od["HomeTeam"].map(canonical).str.strip()
-    od["AwayTeam"] = od["AwayTeam"].map(canonical).str.strip()
-    m = bt.merge(od, left_on=["league_key", "date", "home", "away"],
-                 right_on=["lg", "date", "HomeTeam", "AwayTeam"], how="inner")
+    def mean(values):
+        return float(np.mean(values)) if len(values) else None
+
+    def interval(values):
+        lo, hi = paired_bootstrap(values, draws=draws, seed=seed)
+        # <20 gare: il laboratorio non stima un intervallo. JSON valido, niente NaN o zeri.
+        return [float(x) if np.isfinite(x) else None for x in (lo, hi)]
+
+    delta, delta_brier = r_model - r_market, b_model - b_market
+    return {"n": len(r_model), "rps_modello": mean(r_model), "rps_mercato": mean(r_market),
+            "delta": mean(delta), "ic95": interval(delta),
+            "brier_modello": mean(b_model), "brier_mercato": mean(b_market),
+            "delta_brier": mean(delta_brier), "ic95_brier": interval(delta_brier)}
+
+
+def misura(bt: pd.DataFrame, od: pd.DataFrame, draws: int = 4000, seed: int = 11) -> dict:
+    """Join uno-a-uno per lega, giorno UTC e nomi canonici SU ENTRAMBI i lati.
+
+    Metriche appaiate sugli stessi esiti: quote finite >1, vettori del modello validi,
+    risultati coincidenti fra backtest e fonte delle quote. Duplicati → errore, non gare
+    contate due volte. Copertura e scarti dichiarati anche per le leghe senza una misura.
+    """
+    bt, od = bt.copy(), od.copy()
+    for frame, lg, home, away in ((bt, "league_key", "home", "away"),
+                                  (od, "lg", "HomeTeam", "AwayTeam")):
+        frame["date"] = pd.to_datetime(frame["date"], utc=True, errors="coerce").dt.normalize()
+        frame[home] = frame[home].fillna("").map(canonical)
+        frame[away] = frame[away].fillna("").map(canonical)
+        if frame[[lg, "date"]].isna().any().any() or frame[[home, away]].eq("").any().any():
+            raise ValueError("Chiavi di gara assenti: lega, data e squadre sono obbligatorie")
+    keys = ["league_key", "date", "home", "away"]
+    m = bt.merge(od, left_on=keys, right_on=["lg", "date", "HomeTeam", "AwayTeam"],
+                 how="inner", validate="one_to_one").sort_values(keys, kind="stable")
     P = devig(m.PSCH, m.PSCD, m.PSCA)
-    M = np.column_stack([m.p_home, m.p_draw, m.p_away]).astype(float)
-    o = np.eye(3)[[outcome_index(int(h), int(a)) for h, a in zip(m.FTHG, m.FTAG)]]
-    ok = np.isfinite(P).all(1)
-    P, M, o, mm = P[ok], M[ok], o[ok], m[ok]
-    d = rps(M, o) - rps(P, o)
-    lo, hi = paired_bootstrap(np.asarray(d, float), draws=draws, seed=seed)
-    per_lega = (pd.DataFrame({"lg": mm["league_key"].values, "d": d, "m": rps(M, o), "p": rps(P, o)})
-                .groupby("lg").agg(n=("d", "size"), modello=("m", "mean"),
-                                   mercato=("p", "mean"), delta=("d", "mean")).round(5))
-    return {"n_agganciate": len(m), "n_valutate": int(np.count_nonzero(ok)),
-            "rps_modello": float(rps(M, o).mean()), "rps_mercato": float(rps(P, o).mean()),
-            "delta": float(d.mean()), "ic95": [float(lo), float(hi)],
-            "leghe_vinte": int((per_lega["delta"] < 0).sum()), "per_lega": per_lega.to_dict("index")}
+    M = m[["p_home", "p_draw", "p_away"]].apply(pd.to_numeric, errors="coerce").to_numpy(float)
+    goals = m[["home_goals", "away_goals", "FTHG", "FTAG"]].apply(
+        pd.to_numeric, errors="coerce").to_numpy(float)
+    quotes_ok = np.isfinite(P).all(1)
+    model_ok = (np.isfinite(M).all(1) & (M >= 0).all(1) & (M <= 1).all(1)
+                & np.isclose(M.sum(1), 1, rtol=0, atol=1e-7))
+    results_ok = (np.isfinite(goals).all(1) & (goals >= 0).all(1)
+                  & (goals == np.floor(goals)).all(1)
+                  & (goals[:, 0] == goals[:, 2]) & (goals[:, 1] == goals[:, 3]))
+    if "outcome" in m:
+        outcomes = np.where(goals[:, 0] > goals[:, 1], 0,
+                            np.where(goals[:, 0] == goals[:, 1], 1, 2))
+        results_ok &= pd.to_numeric(m.outcome, errors="coerce").to_numpy() == outcomes
+    ok = quotes_ok & model_ok & results_ok
+    mm = m.loc[ok]
+    outcomes = np.eye(3)[[outcome_index(int(h), int(a)) for h, a in goals[ok, :2]]]
+    rm, rp = rps(M[ok], outcomes), rps(P[ok], outcomes)
+    bm, bp = brier(M[ok], outcomes), brier(P[ok], outcomes)
+    result = _summary(rm, rp, bm, bp, draws, seed)
+    result.pop("n")
+    all_leagues = sorted(set(DIRS) | set(bt.league_key) | set(od.lg))
+    per_league = {}
+    for lg in all_leagues:
+        selected = mm.league_key.to_numpy() == lg
+        part = _summary(rm[selected], rp[selected], bm[selected], bp[selected], draws, seed)
+        # Mantiene i nomi storici delle colonne RPS, usati nel benchmark mensile.
+        part["modello"] = part.pop("rps_modello")
+        part["mercato"] = part.pop("rps_mercato")
+        part["n_backtest"] = int((bt.league_key == lg).sum())
+        part["n_agganciate"] = int((m.league_key == lg).sum())
+        per_league[lg] = part
+    result.update(
+        n_backtest=len(bt), n_agganciate=len(m), n_valutate=int(ok.sum()),
+        n_non_agganciate=len(bt) - len(m),
+        # Categorie disgiunte, in quest'ordine: somma scarti + valutate = agganciate.
+        esclusioni={"quote_assenti_o_invalide": int((~quotes_ok).sum()),
+                    "probabilita_modello_invalide": int((quotes_ok & ~model_ok).sum()),
+                    "risultati_assenti_o_discordi": int((quotes_ok & model_ok & ~results_ok).sum())},
+        leghe_valutate=sum(p["n"] > 0 for p in per_league.values()),
+        leghe_vinte=sum(p["delta"] is not None and p["delta"] < 0 for p in per_league.values()),
+        per_lega=per_league,
+        periodo=([mm.date.min().date().isoformat(), mm.date.max().date().isoformat()]
+                 if len(mm) else None),
+        versioni_modello=({str(k): int(v) for k, v in mm.model_version.value_counts().items()}
+                          if "model_version" in mm else {}),
+        bootstrap={"draws": draws, "seed": seed, "unita": "gara appaiata", "min_gare": 20},
+        modello="ensemble grezzo fuori campione; nessuna calibrazione a posteriori",
+        convenzioni="delta = modello − mercato; RPS /2, Brier somma delle tre classi (0–2)")
+    return result
 
 
-def main() -> None:
+def main(argv: list[str] | None = None) -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--json", default=None, help="scrive il risultato in questo file")
-    args = ap.parse_args()
-    bt = pd.read_parquet("data/processed/backtest.parquet")
-    od = scarica()
+    ap.add_argument("--offline", action="store_true",
+                    help="usa esclusivamente history.parquet, zero richieste di rete")
+    ap.add_argument("--data", type=Path, default=Path("data/processed"),
+                    help="cartella dei Parquet locali")
+    args = ap.parse_args(argv)
+    inputs = [args.data / "backtest.parquet"]
+    bt = pd.read_parquet(inputs[0])
+    if args.offline:
+        inputs.append(args.data / "history.parquet")
+        od = quote_da_history(pd.read_parquet(inputs[1]))
+    else:
+        od = scarica()
     res = misura(bt, od)
-    print(json.dumps({k: v for k, v in res.items() if k != "per_lega"}, indent=2))
-    print(pd.DataFrame(res["per_lega"]).T.to_string())
+    res["fonte_quote"] = ("history.parquet: priorità alla chiusura; fonte e ripiego non tracciati "
+                          "per riga, non tutte certificabili come Pinnacle di chiusura"
+                          if args.offline else "Pinnacle di chiusura: CSV PSCH/PSCD/PSCA")
+    res["input_sha256"] = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in inputs}
+    print(json.dumps({k: v for k, v in res.items() if k != "per_lega"}, indent=2,
+                     ensure_ascii=False, allow_nan=False))
+    table = pd.DataFrame(res["per_lega"]).T
+    print(table[["n_backtest", "n", "modello", "mercato", "delta", "brier_modello",
+                 "brier_mercato", "delta_brier"]].to_string())
     if args.json:
-        Path(args.json).write_text(json.dumps(res, indent=2), encoding="utf-8")
+        output = Path(args.json)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(json.dumps(res, indent=2, ensure_ascii=False, allow_nan=False) + "\n",
+                          encoding="utf-8")
 
 
 if __name__ == "__main__":

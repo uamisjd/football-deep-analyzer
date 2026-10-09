@@ -13,9 +13,18 @@ HTML: **796 righe, 2.648 ranghi, 173 giudizi**, tutte le sette leghe. Non sono i
 attesi dell'handoff: finestra italiana passata al 10/10 e dati aggiornati; scarto dichiarato
 in docs/66 §5, senza adattare la soglia al conteggio.
 
-**In corso / prossimo passo:** PR in bozza, poi voce D (RPS/Brier contro le quote già in
-history.parquet, offline). Nessuna raccolta sportiva e nessun dato modificato.
-**Decisioni:** nessun cambio di modello; **il merge lo fa l'utente**.
+**Voce D completata offline:**
+[`docs/67`](67_modello_contro_mercato_offline_2026-10-09.md). Modalità `--offline` nel benchmark
+esistente: RPS/Brier, IC appaiati, alias su entrambi i lati, join uno-a-uno, copertura e scarti.
+**1.071 gare NED1/POR1** (le altre cinque leghe non hanno quote complete): RPS **0,187340**
+modello contro **0,178534** mercato, Δ **+0,008807**; Brier **0,563247** contro **0,543645**,
+Δ **+0,019602**; IC95 positivi su entrambe le metriche e leghe. Confronto sul **grezzo** fuori
+campione, non sul calibrato odierno; provenienza/ripiego delle quote non tracciati per riga.
+Quattro test tematici verdi, Ruff pulito. Nessuna nuova raccolta, nessun dato o modello modificato.
+
+**In corso / prossimo passo:** suite completa finale e check della **PR #98**, ancora in bozza.
+Gate del sito già verdi sul codice definitivo (D non tocca il sito). Rendere la PR pronta quando
+anche gli ultimi check sono verdi; **il merge lo fa l'utente**.
 
 ---
 

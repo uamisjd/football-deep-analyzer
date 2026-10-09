@@ -25,6 +25,11 @@ copre struttura, fonti, numeri ricalcolati, finestra, pressing e infermeria su *
 
 ### B — forza dell'avversario nella forma (nessuna fonte nuova)
 
+**Completata sul branch della PR #98:** [docs/66](66_la_forma_dice_contro_chi_2026-10-09.md).
+L'Elo si ricostruisce da `history.parquet` **alla vigilia**, non da `predictions.parquet`
+(rating odierno). Le misure esplorative sono state consegnate dall'utente e non ripetute;
+serie, ranghi, media, soglia sd/√n e gate sono implementati. Le righe sotto sono il piano originario.
+
 La striscia «V V V V P» non dice **contro chi**: quattro vittorie con le ultime quattro non
 valgono quanto con le prime. **L'Elo esiste già**: `predictions.parquet` ha `elo_home`/`elo_away`
 per **133 squadre** (modello interno, usato dall'ensemble `dc_elo_tilt` in
@@ -44,6 +49,14 @@ leghe. Valore reale: confrontare il **nostro** Elo con uno esterno e dichiarare 
 interno è già informativo, C resta un controllo, non un contenuto.
 
 ### D — quote di chiusura per misurare il modello (fonte già configurata)
+
+**Misurata offline sul branch della PR #98:**
+[docs/67](67_modello_contro_mercato_offline_2026-10-09.md),
+`python scripts/benchmark_quote.py --offline`. Quote già in `history.parquet`, ma complete
+solo in NED1/POR1: **1.071 gare appaiate**, ΔRPS **+0,008807**, ΔBrier **+0,019602**
+(modello grezzo − mercato, entrambi a favore del mercato; IC in docs/67). Non «sette leghe
+verificate»; la fonte esatta e il ripiego delle quote non sono tracciati per riga.
+Zero richieste sportive, nessuna modifica al modello o al workflow mensile. Il piano originario segue.
 
 `footballdata` è in `config/sources.yaml` e ogni lega ha il suo `footballdata_code`
 (I1, E0, SP1, D1, F1, N1, P1: **tutte e 7**). Oggi il modello si valuta solo contro se stesso
