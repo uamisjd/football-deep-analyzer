@@ -515,6 +515,39 @@ def test_arrival_trend_fotmob_tiene_le_piu_recenti(tmp_path):
     st.close()
 
 
+def test_arrival_trend_forza_avversario_alla_vigilia(tmp_path, monkeypatch):
+    """docs/72: la colonna «forza avv.» è il rango alla vigilia (Elo), non la classifica di oggi.
+
+    Prima leggeva `standing` (posizione e punti attuali): una gara di agosto mostrava la
+    posizione di ottobre. Ora ogni riga porta il rango nella graduatoria Elo del campionato
+    alla data della gara e l'Elo storico nel tooltip (la macchina di docs/66); senza Elo
+    alla vigilia la cella resta vuota, non si ripiega sulla classifica di oggi.
+    """
+    st = _store(tmp_path, with_understat=False)
+    # classifica di oggi: Beta è primo — se la colonna leggesse quella, uscirebbe 1ª
+    st.write("fotmob_standings", pd.DataFrame([
+        {"league_code": "ITA1", "team_id": 20, "team_name": "Beta", "rank": 1,
+         "played": 4, "points": 12}]))
+    ma = MatchAnalysis(st)
+    # Elo alla vigilia: alla data delle gare di Beta il suo rango è 9 (oggi è 1)
+    monkeypatch.setattr(ma, "team_elo", lambda name, before: 1510.0)
+    monkeypatch.setattr(ma, "league_elo", lambda lg, before: {
+        "avg": 1500.0, "sd": 20.0, "n": 10,
+        "ranks": {"Beta": 9, "Alpha": 6, **{f"Altro {i}": i + 1 for i in range(8)}}})
+    a = ma.arrival_trend("Alpha", 10, n=6)
+    assert a["source"] == "FotMob" and a["played"] == 4
+    riga_beta = next(r for r in a["rows"] if r["opp"] == "Beta")
+    assert riga_beta["opp_rank"] == 9            # vigilia, non 1ª (classifica di oggi)
+    assert riga_beta["opp_elo"] == 1510.0
+    assert "opp_pts" not in riga_beta and "opp_pos" not in riga_beta
+    # senza graduatoria Elo alla vigilia la cella resta vuota (—): il template mostra
+    # il rango solo se c'è, e senza rango non stampa nulla (l'Elo da solo non basta)
+    monkeypatch.setattr(ma, "league_elo", lambda lg, before: None)
+    a2 = ma.arrival_trend("Alpha", 10, n=6)
+    assert all(r["opp_rank"] is None for r in a2["rows"])
+    st.close()
+
+
 def test_h2h_pattern_from_current_home_side(tmp_path):
     """Precedenti: esiti dal punto di vista della squadra di casa attuale, riga anomala esclusa."""
     ma = MatchAnalysis(_store(tmp_path))

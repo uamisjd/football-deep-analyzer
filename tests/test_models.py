@@ -8,18 +8,23 @@ from fda.config import league
 from fda.models.calibration import Calibration
 from fda.models.dc_grid import GRID_SIZE, tau_grid
 from fda.models.predict import (
+    ABSENCES_K,
     LAMBDA_MAX,
     LAMBDA_TOTAL_MAX_ABS,
     LAMBDA_TOTAL_MAX_REL,
+    MARKET_VALUE_K,
     DixonColesModel,
     EloModel,
     _assert_dc_coerente,
     _clamp_lambda,
+    absences_tilt,
     calibrated_prediction,
     ensemble,
     latest_per_match,
+    market_value_tilt,
     outcome_index,
     predict_matches,
+    rest_tilt,
     rps,
 )
 from fda.sources.history import HistoryClient, season_code
@@ -444,3 +449,49 @@ def test_latest_per_match_casi_degeneri():
         {"match_id": 1, "model": "dc", "made_at": pd.Timestamp("2026-09-13", tz="UTC")},
     ])
     assert len(latest_per_match(due)) == 2
+
+
+def test_tilt_commento_veritiero_e_lambda_immutati():
+    """Il commento di `market_value_tilt` disait il falso; le λ dei tilt non cambiano.
+
+    Il commento dichiarava «k calibrato su backtest: 0.12 massimizza log-loss fuori
+    campione su 5.7k gare con valori FotMob disponibili». Misura offline
+    (`scripts/audit_modelli.py`, docs/48 e docs/69 §1): i valori esistono per **341**
+    gare (5,8% del backtest), e su quel campione k=0,12 non è distinguibile da zero
+    (solo k=0,03 sì). La correzione è solo nel commento: questo test lo blocca —
+    1) le affermazioni false non tornano, 2) i valori delle costanti e l'uscita
+    numerica dei tre tilt restano **pinnati** (le λ non cambiano di una cifra).
+    """
+    import inspect
+
+    import fda.models.predict as predict_mod
+
+    src = inspect.getsource(predict_mod)
+    # 1) il falso non torna
+    assert "5.7k gare" not in src
+    assert "0.12 è il valore che massimizza" not in src
+    # e la verità è scritta
+    assert "341 gare" in src
+    assert "non è chiamata da predict_matches()" in src
+    # 2) le costanti di produzione restano quelle (λ invariate)
+    assert MARKET_VALUE_K == 0.12
+    assert ABSENCES_K == 0.30
+    # 3) l'uscita numerica dei tilt è pinnata (valori misurati col codice del 2026-10-10)
+    lh, la, ratio, adj = market_value_tilt(1.5, 1.0, 100.0, 50.0)
+    assert (lh, la, ratio, adj) == pytest.approx(
+        (1.59795781, 0.90204219, 2.0, 1.086734863), abs=1e-8)
+    lh, la, ratio, adj = market_value_tilt(1.5, 1.0, 50.0, 100.0)
+    assert (lh, la, ratio, adj) == pytest.approx(
+        (1.398735645, 1.101264355, 0.5, 0.920187651), abs=1e-8)
+    assert market_value_tilt(1.5, 1.0, None, 100.0) == (1.5, 1.0, None, None)
+    lh, la, ch, ca, dh, da = absences_tilt(1.5, 1.0, 1.1, None)
+    assert (lh, la, ch, ca, dh, da) == pytest.approx(
+        (1.390122087, 1.109877913, 1.1, None, -0.165, None), abs=1e-8)
+    lh, la, ch, ca, dh, da = absences_tilt(1.5, 1.0, 4.0, 0.5)
+    assert (lh, la, ch, ca, dh, da) == pytest.approx(
+        (1.329113924, 1.170886076, 4.0, 0.5, -0.3, -0.075), abs=1e-8)
+    lh, la, rh, ra, fh, fa = rest_tilt(1.5, 1.0, 2, 7)
+    assert (lh, la, rh, ra, fh, fa) == pytest.approx(
+        (1.457055215, 1.042944785, 2, 7, 0.95, 1.02), abs=1e-8)
+    assert rest_tilt(1.5, 1.0, 5, 5) == pytest.approx(
+        (1.5, 1.0, 5, 5, 1.0, 1.0), abs=1e-12)

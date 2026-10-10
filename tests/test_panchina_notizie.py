@@ -959,9 +959,10 @@ def _storia(righe):
                          for d, h, a, gh, ga in righe])
 
 
-def _store_fattori(tmp_path, storia=None, info=None, stats=None):
+def _store_fattori(tmp_path, storia=None, info=None, stats=None, fx_extra=None):
     st = Store(tmp_path / "fattori")
-    st.write("fixtures", FX)
+    st.write("fixtures", FX if fx_extra is None
+             else pd.concat([FX, _fixtures(fx_extra)], ignore_index=True))
     if storia is not None:
         st.write("history", storia)
     if info is not None:
@@ -1048,8 +1049,15 @@ def test_fattori_disciplina_e_arbitro_due_soglie(tmp_path):
                               "key": "fouls", "value": 10.0, "text": None})
         return pd.DataFrame(righe)
 
+    def _fx_stagione():
+        # le stesse 6 gare finite di `base_info` nel calendario: il campione dei cartellini
+        # è quello delle gare finite **nel calendario** (docs/64 §7, regola di `season_xg`)
+        return [(100 + d, 55, "2026", str(d), KO(f"2026-09-{d:02d} 18:00"), 1, "Roma", 2, "Inter",
+                 0, 0, "finished", "fotmob") for d in range(1, 7)]
+
     # arbitro nella media e squadre simili → fattore dichiarato fuori tabella, nessuna riga
-    ma = _store_fattori(tmp_path / "a", info=_info(3.06), stats=_stats(1, 1))
+    ma = _store_fattori(tmp_path / "a", info=_info(3.06), stats=_stats(1, 1),
+                        fx_extra=_fx_stagione())
     res = ma.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
     assert not any(r["label"] == "Disciplina e arbitro" for r in res["rows"])
     assert any(s.startswith("disciplina +0,0 gialli/gara (soglia 0,8)") for s in res["sotto_soglia"])
@@ -1058,21 +1066,23 @@ def test_fattori_disciplina_e_arbitro_due_soglie(tmp_path):
 
     # arbitro severo (+25% sulla media di lega) → riga, con le celle «n.d.» se i cartellini
     # di stagione delle due squadre non ci sono
-    ma2 = _store_fattori(tmp_path / "b", info=_info(3.75))
+    ma2 = _store_fattori(tmp_path / "b", info=_info(3.75), fx_extra=_fx_stagione())
     res2 = ma2.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
     r2 = next(r for r in res2["rows"] if r["label"] == "Disciplina e arbitro")
     assert r2["home"] == r2["away"] == "n.d." and r2["delta"] == "—"
     assert "più severo della media di lega (+21%)" in r2["impact"]
 
     # squadre con cartellini molto diversi → riga anche con l'arbitro nella media
-    ma3 = _store_fattori(tmp_path / "c", info=_info(3.06), stats=_stats(3, 1))
+    ma3 = _store_fattori(tmp_path / "c", info=_info(3.06), stats=_stats(3, 1),
+                         fx_extra=_fx_stagione())
     res3 = ma3.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
     r3 = next(r for r in res3["rows"] if r["label"] == "Disciplina e arbitro")
     assert r3["home"].startswith("3,0 gialli") and "(6 gare)" in r3["home"]
     assert r3["delta"] == "+2,0 gialli/gara" and "più esposta Roma" in r3["impact"]
 
     # meno di 20 gare in carriera: l'arbitro non è giudicabile, e si dice
-    ma4 = _store_fattori(tmp_path / "d", info=_info(3.75, gare_career=8), stats=_stats(1, 1))
+    ma4 = _store_fattori(tmp_path / "d", info=_info(3.75, gare_career=8), stats=_stats(1, 1),
+                         fx_extra=_fx_stagione())
     res4 = ma4.fattori_chiave(4, 1, "Roma", 2, "Inter", ko.to_pydatetime(), None)
     assert not any(r["label"] == "Disciplina e arbitro" for r in res4["rows"])
     assert any(s.startswith("arbitro +21% sulla media di lega (soglia ±10%)")

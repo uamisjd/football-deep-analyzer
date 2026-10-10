@@ -3655,9 +3655,9 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
       sopra la soglia di minutaggio (docs/58 D5: prima usciva su 4 schede su 66) e la soglia
       stampata è quella del codice;
     - **testi**: niente «la riga sopra» (riga rimossa), niente «sparkline» in pagina, la colonna
-      «forza avv.» dichiara la classifica attuale, nessun link «Infermeria» verso la card
-      «Indisponibili», niente «contributo offensivo atteso» per un valore di stagione e niente
-      «titolare probabile» a distinta ufficiale.
+      «forza avv.» dichiara il rango alla vigilia (graduatoria Elo, `docs/72`), nessun link
+      «Infermeria» verso la card «Indisponibili», niente «contributo offensivo atteso» per un
+      valore di stagione e niente «titolare probabile» a distinta ufficiale.
     """
     import datetime
     from zoneinfo import ZoneInfo
@@ -3739,8 +3739,10 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
             if re.search(r"sparkline", blocco, re.IGNORECASE):
                 fails.append(f"{pg.name}: «Come arrivano» con «sparkline» in pagina")
             checks += 1
-            if blocco.count("forza avv.</th>") != blocco.count("classifica attuale, non alla data"):
-                fails.append(f"{pg.name}: colonna «forza avv.» senza dichiarazione di classifica attuale")
+            if (blocco.count("forza avv.</th>")
+                    != blocco.count("graduatoria Elo del campionato alla data della gara")):
+                fails.append(f"{pg.name}: colonna «forza avv.» senza dichiarazione del rango "
+                             "alla vigilia")
             colonne = re.split(r"<h3[^>]*>", blocco)[1:3]
             for (tid, tnome), col in zip(squadre, colonne):
                 atteso = ma.arrival_trend(tnome, tid)
@@ -3769,6 +3771,17 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                             or abs(num(xg) - round(riga["xg"], 2)) > 0.005
                             or abs(num(xga) - round(riga["xga"], 2)) > 0.005):
                         fails.append(f"{pg.name}: {tnome}: riga {gg} diversa dal ricalcolo")
+                    # docs/72: la colonna «forza avv.» è il rango **alla vigilia** (graduatoria
+                    # Elo del campionato alla data della gara), non la classifica di oggi
+                    checks += 1
+                    m_rank = re.search(r">(\d+)ª", _rank)
+                    if riga.get("opp_rank") is None:
+                        if m_rank:
+                            fails.append(f"{pg.name}: {tnome}: riga {gg} pubblica un rango "
+                                         "senza Elo dell'avversario alla vigilia")
+                    elif not m_rank or int(m_rank.group(1)) != int(riga["opp_rank"]):
+                        fails.append(f"{pg.name}: {tnome}: riga {gg} rango in pagina ≠ "
+                                     f"ricalcolo alla vigilia ({riga['opp_rank']}ª)")
                 # freschezza indipendente dal codice: nessuna gara con xG più recente della finestra
                 # mostrata (le date in pagina sono giorno/mese: l'anno si inferisce dal calcio
                 # d'inizio, la stagione è a cavallo di due anni)
@@ -3870,6 +3883,122 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_forza_avversari_storica(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[45] «Come arrivano»: la colonna «forza avv.» è il rango **alla vigilia** (oracolo).
+
+    Chiude l'anacronismo dichiarato in `docs/60` §5 (la colonna mostrava la classifica a
+    punti di **oggi** su gare passate) con la correzione di `docs/72`: rango nella
+    graduatoria Elo del campionato alla data della gara ed Elo storico nel ⓘ. Il
+    ricalcolo usa l'oracolo cronologico di [44] (`elo_reference_at_dates`: stesso flusso
+    di risultati, fotografato prima di ogni istante) — **non** `team_elo`/`league_elo`/
+    `arrival_trend` del generatore, così una regressione temporale non si autocertifica.
+    """
+    import datetime
+    from zoneinfo import ZoneInfo
+
+    import pandas as pd
+
+    from fda.config import load_leagues_config
+    from fda.site.analysis import MatchAnalysis
+    from fda.store import Store
+    from fda.teams import canonical
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    fx = st.read("fixtures")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if fx.empty or not pages:
+        return fails, checks
+    fx = fx.copy()
+    fx["utc_kickoff"] = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+    fx_ids = set(fx.match_id.astype(int))
+    fuso = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
+    fin = fx[fx.status == "finished"]
+    riga_re = re.compile(
+        r'<td class="mut small">(\d{2}/\d{2})</td>\s*'
+        r'<td class="small">(?:vs|@) (.*?)</td>\s*'
+        r'<td class="small mut">(.*?)</td>\s*'
+        r'<td class="r"><span class="pill \w">\w</span></td>')
+    cella_re = re.compile(
+        r'<span class="form-opp-rank" title="[^"]*?: ([\d.]+)\.[^"]*">(\d+)ª ⓘ</span>')
+    # (pagina, squadra, data italiana, avversario canonico, nome, rango, Elo) delle righe
+    pubblicate: list[tuple] = []
+    for pg in pages:
+        try:
+            mid = int(pg.stem)
+        except ValueError:
+            continue
+        if mid not in fx_ids:
+            continue
+        r0 = fx[fx.match_id == mid].iloc[0]
+        if r0["status"] == "finished":
+            continue
+        html = pg.read_text(encoding="utf-8")
+        ia = html.find('id="arrivi"')
+        if ia < 0:
+            continue
+        ig = html.find('id="giocatori"', ia)
+        blocco = html[ia:ig if ig > 0 else len(html)]
+        kick = r0["utc_kickoff"]
+        colonne = re.split(r"<h3[^>]*>", blocco)[1:3]
+        squadre = [(int(r0["home_id"]), str(r0["home_name"])),
+                   (int(r0["away_id"]), str(r0["away_name"]))]
+        for (tid, tnome), col in zip(squadre, colonne):
+            for gg, opp, cella in riga_re.findall(col):
+                checks += 1
+                nome = html_unescape(opp).strip()
+                if not nome or nome == "—":
+                    continue    # riga senza avversario: nessuna «forza avv.» da verificare
+                mm, dd = int(gg.split("/")[1]), int(gg.split("/")[0])
+                anno = kick.year if mm <= kick.month else kick.year - 1
+                m = cella_re.search(cella)
+                pubblicate.append((pg.name, tid, tnome, datetime.date(anno, mm, dd),
+                                   canonical(nome), nome,
+                                   int(m.group(2)) if m else None,
+                                   int(m.group(1).replace(".", "")) if m else None))
+    # ---- ogni riga si appoggia a una gara finite del calendario (avversario + data)
+    gara_of: dict[tuple, tuple] = {}
+    for r in fin.itertuples(index=False):
+        ko = r.utc_kickoff
+        d_it = ko.tz_convert(fuso).date() if pd.notna(ko) else None
+        if d_it is None:
+            continue
+        for tid, opp in ((int(r.home_id), canonical(str(r.away_name))),
+                         (int(r.away_id), canonical(str(r.home_name)))):
+            gara_of.setdefault((tid, d_it, opp), (ko, r.league_id))
+    tagli = sorted({gara_of[(t, d, o)][0] for (_p, t, _n, d, o, *_r) in pubblicate
+                    if (t, d, o) in gara_of})
+    ratings_at, leagues_at = elo_reference_at_dates(
+        st.read("history"), fx, tagli, min_teams=MatchAnalysis.ELO_MIN_TEAMS)
+    n_righe = 0
+    for pagina, tid, tnome, data_it, opp_c, opp_raw, rango_pub, elo_pub in pubblicate:
+        n_righe += 1
+        checks += 1
+        if (tid, data_it, opp_c) not in gara_of:
+            fails.append(f"{pagina}: {tnome} {data_it:%d/%m} vs {opp_raw}: riga senza gara "
+                         "corrispondente nel calendario (avversario o data)")
+            continue
+        ko, lg = gara_of[(tid, data_it, opp_c)]
+        ref = leagues_at.get((lg, ko))
+        rango = ref["ranks"].get(opp_c) if ref else None
+        rating = ratings_at.get(ko, {}).get(opp_c)
+        if rango is None:
+            if rango_pub is not None:
+                fails.append(f"{pagina}: {tnome} {data_it:%d/%m} vs {opp_raw}: rango "
+                             f"{rango_pub}ª senza graduatoria Elo alla vigilia")
+        elif rango_pub != rango:
+            fails.append(f"{pagina}: {tnome} {data_it:%d/%m} vs {opp_raw}: rango {rango_pub}ª "
+                         f"≠ oracolo {rango}ª (vigilia)")
+        if rango_pub is not None:
+            checks += 1
+            if rating is None or elo_pub != round(rating):
+                fails.append(f"{pagina}: {tnome} {data_it:%d/%m} vs {opp_raw}: Elo {elo_pub} "
+                             f"≠ oracolo {None if rating is None else round(rating)}")
+    print(f"[45] forza avv. alla vigilia (oracolo): {n_righe} righe, {len(tagli)} istanti Elo")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -3932,6 +4061,10 @@ def main() -> int:
         coppia, coppia_checks = check_terza_coppia(site, Path(args.data) if args.data else None)
         fails += coppia
         checks += coppia_checks
+        vigilia, vigilia_checks = check_forza_avversari_storica(
+            site, Path(args.data) if args.data else None)
+        fails += vigilia
+        checks += vigilia_checks
         squadre, squadre_checks = check_due_squadre(site, Path(args.data) if args.data else None)
         fails += squadre
         checks += squadre_checks

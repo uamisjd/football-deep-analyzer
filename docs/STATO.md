@@ -1,3 +1,136 @@
+## 2026-10-10 — PR #100 fusa (agente, su ordine esplicito dell'utente — deroga) + handoff nuova sessione
+
+L'utente ha ordinato esplicitamente il merge («ok fai merge») — deroga una tantum alla
+policy «il merge lo faccio io». PR #100 fusa (merge commit, 2 genitori: `98e087b` su main e
+il capo del ramo), 6 commit: registrazione merge #98 + verifica post-merge; **hotfix P0**
+del daily rosso (`docs/70`); **voce G** tilt — commento falso corretto, misura 137→98,
+protocollo preregistrato (`docs/71`); **voce B2** «forza avv.» storica con [45] oracolo
+(`docs/72`); **revisione** card «laboratorio» (`docs/73`); questo handoff. Gate alla
+fusione: **571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**, parità
+**89 schede · pulita** (7 leghe), `resa_375` **27.255 · 0**, CI PR verde. Registrato in
+`docs/13` §9.25. **Produzione:** il daily su main era rosso dal merge #98 (sito fermo,
+issue #99) — l'hotfix lo rende verde **per costruzione**: da verificare all'entrata della
+nuova sessione (`gh run list --branch main --limit 3`; issue #99 si chiude da sola).
+**A/B/C risolta: C** (i tilt restano dichiarati in `predict.py`, non cablati; il merge vale
+la scelta). **Prossima voce:** il card «laboratorio» nell'area previsione della scheda
+(design e misure pronte in `docs/73`, 8 condizioni). Handoff completo in
+`docs/BRIEFING_NUOVA_SESSIONE.md` (nuova sezione in cima). Ricetta di produzione e
+calibrazione intatte (λ×1,039385); nessuna fonte nuova.
+
+---
+
+## 2026-10-10 — Revisione richiesta: card «laboratorio» nell'area previsione della scheda (docs/73)
+
+L'utente ha proposto una sezione «previsione» sulla scheda per ospitare in futuro i tre tilt
+e «le altre idee e calcoli», «fatta molto bene», chiedendo una revisione di fattibilità.
+Revisione in [docs/73](73_revisione_sezione_laboratorio_previsione_2026-10-10.md): la sezione
+«previsione» **esiste già** («Previsione del modello» + «Risultati esatti più probabili» +
+«Come nasce questa probabilità») — la proposta è un card «laboratorio» in quell'area, sotto
+la previsione salvata. Misurato: input per partita coperti (riposo 65/65 prossime,
+infermeria pesata 7/7 leghe, valore titolari pieno nelle 5 grandi leghe e scarso in
+NED1/POR1 → «dato non disponibile»); what-if sulle 65 prossime: mercato mediana Δλ 0,098
+(p90 0,24), assenze 0,054, riposo 0,000 (non sposta nulla questa settimana); le colonne tilt
+esistono nello schema di `predictions.parquet` ma sono **vuote** — il what-if si calcola al
+build; peso pagina ~135 KB contro tetto 900 KB. Effetti aggregati già registrati
+(docs/48/69/71): tutti «misurati, non promossi». **Verdetto: fattibile, consigliata con 8
+condizioni** (posizione sotto la previsione salvata, etichetta «idee misurate, non usate»,
+what-if + effetto misurato + verdetto per idea, invariante [46] con ricalcolo indipendente
+delle formule, previsione salvata byte-identica, parità 7 leghe, design generico per le
+prossime idee). Collegata alla decisione A/B/C: il card dà ai tilt una casa visibile (quindi
+C o B; A resta non sostenuta). Nota sandbox: `.venv` (escluso dalle snapshot) e i commit
+locali sono svaniti al cambio turno — venv ricreato e branch riallineato al remote (i 4
+commit erano già pushati). Nessuna modifica al codice in questa voce.
+
+---
+
+## 2026-10-10 — Voce B2: «forza avv.» storica nella tabella «Come arrivano» (anacronismo docs/60 §5 chiuso)
+
+La colonna «forza avv.» mostrava la classifica a punti di **oggi** su gare passate
+(`self.standing(opp)` in `arrival_trend`). Ora ogni riga porta il rango nella **graduatoria
+Elo del campionato alla data della gara** e l'Elo storico nel tooltip — la macchina della
+striscia «Forma» (docs/66); la dichiarazione (th + cella ⓘ) è aggiornata. Documentato in
+[docs/72](72_forza_avversario_storica_come_arrivano_2026-10-10.md). Controlli: [43] esteso
+(dichiarazione del rango alla vigilia + cella verificata) e **[45] nuovo, oracolo**
+(`check_forza_avversari_storica`: rango ed Elo ricalcolati con l'oracolo cronologico di
+[44], senza i lettori del generatore — 923 righe verificate, 226 istanti Elo). Test
+`test_arrival_trend_forza_avversario_alla_vigilia`. Build completa: 464/2.364/7.510;
+**571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**, parità **89 schede ·
+pulita** (7 leghe), `resa_375` **27.255 · 0**. Copertura: 923 celle con rango+Elo alla
+vigilia (99,7% delle righe, docs/69 §2), zero fonti nuove. Ricetta di produzione intatta.
+
+---
+
+## 2026-10-10 — Voce G: tilt dichiarati, commento falso corretto, campione assenze misurato, protocollo preregistrato
+
+Voce G della [coda](docs/69) §1, documentata in [docs/71](71_tilt_commento_falso_campione_assenze_e_protocollo_preregistrato_2026-10-10.md).
+**a)** Corretto il commento falso `predict.py:41` («k calibrato su 5.7k gare»: il dato esiste
+per **341** gare; k=0,12 non distinguibile da zero, solo k=0,03 sì) — nessuna λ cambia:
+`test_tilt_commento_veritiero_e_lambda_immutati` pinnna costanti e uscite numeriche dei tre
+tilt e blocca il ritorno del falso. **b)** Misurato (matrice 2×2 codice×dati, non
+ipotizzato) perché il campione assenze è sceso 137 → 98: −3 per il cambio di codice
+(docs/64 §8: totale = somma dei valori pubblicati), −37 per i dati — tra i run del 21–24
+settembre 110 partite sono state riscaricate e le tabelle per-partita
+(`replace_by="match_id"`) non portavano più la lista pre-partita degli indisponibili
+(`lineup` `unavailable` 612 → 214; agosto intatto, mai riscaricato dopo il 12/09) — +1 gara
+nuova nel backtest. Campione instabile per costruzione. **c)** Protocollo preregistrato:
+griglia dichiarata (k_mercato {0; 0,03; 0,06; 0,09}, k_assenze {0; 0,1; 0,2} senza
+preservazione, riposo escluso), copertura minima **≥300 gare e ≥5 leghe su 7** (sotto:
+«non testabile»), walk-forward fuori campione, nessuna calibrazione a posteriori, IC
+appaiato vs ricetta attuale e vs mercato; se un candidato entra: MODEL_VERSION nuova,
+calibrazione ristimata, backtest con il fattore, card con i passi veri. **d)** Decisione
+**A/B/C in attesa dell'utente** — le misure sostengono C o B, non A. Gate: **570 test**,
+Ruff pulito. Ricetta di produzione intatta.
+
+---
+
+## 2026-10-10 — Hotfix P0: daily rosso post-merge #98 (campione «Le due squadre» gonfiato da `match_info`)
+
+Il `daily` `38005701599` (push del merge) è fallito a `verify_site` con 2 problemi «campione»
+(`5781769`, `5781776`): il generatore contava il campione da `match_info` (stato + xG del
+solo squadra) mentre l'oracolo [44] `gare_prima` riconta dal **calendario** — il collect
+fresco aveva portato `match_info` avanti (gara finita con xG, calendario indietro per cache
+HTTP). Diagnosi e correzione in [docs/70](70_daily_rosso_campione_calendario_hotfix_2026-10-10.md):
+nuovo `_finite_nel_calendario()` applicato a `season_xg`, `_season_xg_split`, `cards_season`,
+`_with_league_ref`; in `season_xg` campione anche ristretto a xG completo di entrambe
+(«xG creati» e «xG concessi» sulla stessa serie). **No-op dimostrato**: build prima/dopo
+→ 4.250 file, contenuto identico (normalizzati i timestamp); gate **569 test**, Ruff
+pulito, `verify_site` **202.969 · 0**, parità **89 schede · pulita**, `resa_375`
+**27.255 · 0**. Nuovo test di regressione + un test esistente completato con il calendario
+nel fixture. Ricetta di produzione intatta. Prossimo `daily` verde per costruzione; issue
+#99 si chiude da sola. La verifica richiesta sul merge è in cima a `docs/13` §9.24.
+
+---
+
+## 2026-10-10 — PR #98 fusa dall'utente: forma con Elo storico e benchmark offline col mercato
+
+Merge eseguito dall'**utente** il 2026-10-09 23:42:02Z (merge commit `98e087b`, 2 genitori:
+`5b1119b` su `main` e `551feea` capo del ramo), 16 file, +1.598/−72, 9 commit. In `main`:
+**B** ([docs/66](66_la_forma_dice_contro_chi_2026-10-09.md): Elo storico alla vigilia nella
+forma, ranghi degli avversari, giudizio solo oltre sd/√n), **D**
+([docs/67](67_modello_contro_mercato_offline_2026-10-09.md): benchmark offline modello contro
+mercato, 1.071 gare NED1/POR1, ΔRPS +0,008807 grezzo), la **revisione indipendente**
+([docs/68](68_revisione_forma_mercato_2026-10-10.md): 246 fit Elo su prefissi troncati, 8.191
+confronti senza differenze, [44] con oracolo temporale) e la **coda**
+([docs/69](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md)). Gate dell'ultimo giro:
+**568 test**, Ruff pulito, `verify_site` **202.969 · 0 problemi**, `resa_375` **27.255 · 0**,
+parità **89 schede · pulita**. Registrazione in `docs/13` §9.24.
+
+**Verifica post-merge (2026-10-10, prima del turno di lavoro):** run su `main` — `tests`
+**success** (`38005701607`, push del merge, 2m26s; il check della PR `38005240962` era verde in
+2m14s), `daily` schedulato `37996976659` success; il `daily` attivato dal push del merge
+(`38005701599`) è **fallito allo step `verify_site`** con 2 problemi «campione» (pagine
+`5781769`, `5781776`): il campione della card «Le due squadre» contava una gara finita in
+`match_info` con xG ma non ancora finita nel calendario — disallineamento introdotto dal
+collect fresco, non un regressione del branch (il gate sul branch era verde). Issue di guasto
+**#99** aperta in automatico; nessun commit dati né deploy: il sito è fermo all'ultimo deploy
+funzionante. `docs/_audit_modelli.json` è **invariato** dal 2026-09-20 (`e79c377`): snapshot con
+calibrazione λ×1,040063 (fitted 2026-09-13, backtest 5.891 righe) — **non** uno snapshot del
+2026-10-09; la calibrazione λ×**1,039385** è quella di **produzione** (`calibration.parquet`,
+fitted 2026-10-09 22:03:50, n_fit 4.770, backtest 5.895 righe), verificata. Diagnosi e hotfix
+nel giro qui sotto.
+
+---
+
 ## 2026-10-10 — Coda verificata e handoff post-merge (`arena/eb94e8df`)
 
 L'utente ha chiesto se resta altro in sospeso, se le voci sono quelle giuste e se farle ora o

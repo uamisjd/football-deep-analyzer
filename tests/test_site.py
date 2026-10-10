@@ -451,6 +451,58 @@ def test_season_xg_fotmob_calcola_xpts(tmp_path):
     st2.close()
 
 
+def test_season_xg_campione_solo_gare_finite_nel_calendario(tmp_path):
+    """Il campione FotMob è quello del calendario, non di ``match_info`` (issue #99).
+
+    Caso reale del daily ``38005701599``: ``match_info`` disait «finished» con xG
+    completo mentre il calendario era ancora indietro (cache HTTP incoerente fra le
+    fasi del collect) e la card «Le due squadre» pubblicava un campione gonfiato di
+    una gara, fermando il gate [44] («campione FotMob 8 gare, ma prima del calcio
+    d'inizio ne risultano 7»). Il campione pubblicato dev'essere: gare finite **nel
+    calendario** prima della vigilia, con xG completo di entrambe le squadre (così
+    «xG creati» e «xG concessi» restano sulla stessa serie).
+    """
+    st = Store(tmp_path / "processed")
+    ko = pd.Timestamp("2026-10-16 18:00", tz="UTC")
+
+    def fx(mid, giorni, aid, aname, status, gf=None, ga=None):
+        return {"match_id": mid, "league_id": 57, "season": "2026/2027", "round": None,
+                "utc_kickoff": ko - pd.Timedelta(days=giorni), "home_id": 8636,
+                "home_name": "Inter", "away_id": aid, "away_name": aname,
+                "home_goals": gf, "away_goals": ga, "status": status, "source": "test"}
+
+    st.upsert("fixtures", [
+        fx(1, 7, 9875, "Alfa", "finished", 2, 1),          # finite nel calendario, xG completo
+        fx(2, 3, 9876, "Beta", "finished", 1, 0),          # finite, ma xG parziale (manca away)
+        fx(3, 1, 9877, "Gamma", "scheduled"),              # NON finite nel calendario
+    ])
+    st.upsert("match_info", [
+        {"match_id": 1, "status": "finished", "home_id": 8636, "away_id": 9875,
+         "home_xg": 2.0, "away_xg": 1.0, "home_goals": 2, "away_goals": 1},
+        {"match_id": 2, "status": "finished", "home_id": 8636, "away_id": 9876,
+         "home_xg": 1.0, "away_xg": None, "home_goals": 1, "away_goals": 0},
+        # match_info dice «finished» con xG completo: il calendario no → fuori dal campione
+        {"match_id": 3, "status": "finished", "home_id": 8636, "away_id": 9877,
+         "home_xg": 1.5, "away_xg": 0.5, "home_goals": 1, "away_goals": 0},
+    ])
+    st.upsert("team_stats", [
+        {"match_id": 1, "team_id": 8636, "period": "All", "key": "expected_goals", "value": 2.0},
+        {"match_id": 1, "team_id": 8636, "period": "All",
+         "key": "expected_goals_open_play", "value": 1.0},
+        {"match_id": 3, "team_id": 8636, "period": "All", "key": "expected_goals", "value": 1.5},
+    ])
+    ma = MatchAnalysis(st)
+    xg = ma.season_xg("Inter", 8636, ko)
+    assert xg["source"] == "FotMob" and xg["played"] == 1   # solo la gara 1
+    assert (xg["xg"], xg["xga"]) == (2.0, 1.0)
+    assert xg["pts"] == 3 and xg["xpts"] is not None
+    # lo split usa lo stesso campione del calendario: la gara 3 (match_info «finished»,
+    # calendario no) resta fuori
+    style = ma.season_style("Inter", 8636, ko)
+    assert style["split_played"] == 1 and style["open_pm"] == 1.0
+    st.close()
+
+
 def test_site_build_end_to_end(tmp_path):
     st = _seed(tmp_path)
     # voti di stagione per la gara futura (Udinese 8600 – Lazio 8543): senza rating_title

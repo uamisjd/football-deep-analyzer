@@ -37,10 +37,13 @@ log = logging.getLogger(__name__)
 #      calibrazione è stata ristimata su questa ricetta, non riutilizzata dalla precedente.
 MODEL_VERSION = "dc-elo-tilt-0.4"
 
-# Market-value prior (P2 audit §market-value prior): world-cup-predictor Brier 0.6123→0.5907
-# k calibrato su backtest: 0.12 è il valore che massimizza log-loss fuori campione su 5.7k gare
-# con valori FotMob disponibili (grid 0.05..0.25). Ratio clip 0.2..5.0 per evitare estremi
-# a inizio stagione (valori mancanti → nessun tilt).
+# Market-value prior (P2 audit §market-value prior): world-cup-predictor Brier 0.6123→0.5907.
+# Misura offline (scripts/audit_modelli.py; docs/48, docs/69 §1 e docs/71): i valori FotMob
+# dei titolari esistono per **341 gare** del backtest (5,8%), non 5.7k; su quel campione solo
+# k=0,03 ha un intervallo di confidenza che esclude lo zero, mentre k=0,12 — il valore qui
+# sotto — no. La funzione non è chiamata da predict_matches(): è un candidato di
+# laboratorio, valutato con il protocollo preregistrato di docs/71.
+# Ratio clip 0.2..5.0 per evitare estremi a inizio stagione (valori mancanti → nessun tilt).
 MARKET_VALUE_K: float = 0.12
 MARKET_VALUE_RATIO_CLIP: tuple[float, float] = (0.2, 5.0)
 

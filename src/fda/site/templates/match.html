@@ -186,12 +186,12 @@
       <h3 style="margin:0 0 8px">{{ name }}</h3>
       {% if a %}
       <div class="tablewrap"><table>
-        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small" title="Posizione e punti in classifica attuale, non alla data della gara">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
+        <tr><th scope="col" class="mut small" style="width:78px">data</th><th scope="col" class="mut small">avversario</th><th scope="col" class="mut small" title="Rango dell'avversario nella graduatoria Elo del campionato alla data della gara, non nella classifica a punti di oggi">forza avv.</th><th scope="col" class="r" style="width:34px">es.</th><th scope="col" class="r" style="width:46px">ris.</th><th scope="col" class="r" style="width:54px" title="xG creato">xG</th><th scope="col" class="r" style="width:54px" title="xG concesso">xGA</th></tr>
         {% for r in a.rows %}
         <tr>
           <td class="mut small">{{ r.date|it_dt_short }}</td>
           <td class="small">{% if r.home %}vs{% else %}@{% endif %} {{ r.opp or '—' }}</td>
-          <td class="small mut">{% if r.opp_rank %}{{ r.opp_rank }}ª{% if r.opp_pts %} ({{ r.opp_pts }} pt){% endif %}{% else %}—{% endif %}</td>
+          <td class="small mut">{% if r.opp_rank %}<span class="form-opp-rank" title="Elo dell'avversario prima della gara: {{ r.opp_elo|round|int|it_num }}. Rango nella graduatoria Elo del campionato alla stessa data, non nella classifica a punti di oggi.">{{ r.opp_rank }}ª ⓘ</span>{% else %}—{% endif %}</td>
           <td class="r"><span class="pill {{ r.res }}">{{ r.res }}</span></td>
           <td class="r small">{{ r.gf }}-{{ r.ga }}</td>
           <td class="r small">{{ r.xg|dec }}</td>
