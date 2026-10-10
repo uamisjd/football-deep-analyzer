@@ -1,3 +1,23 @@
+## 2026-10-10 — Riscrittura di leggibilità del card «laboratorio» (docs/74 §11)
+
+L'utente: «non è di facile lettura, non so cosa vedere o cosa voglia dirmi». Rilievo giusto e
+causa misurabile: **sei colonne, 231 celle, nessun messaggio** — la sola cella «Misurato
+sull'archivio» portava 47 parole con quattro numeri a cinque decimali, più lunga di ogni altra
+cella della scheda. Riscritto attorno a **una frase per idea generata dal calcolo**
+(`_frase` in `laboratorio.py`): «Sposterebbe 1,4 punti sull'1X2: troppo poco per entrare, e
+ottenuto con l'unico k che la misura sostiene»; se l'idea non sposta la frase dice «non sposta
+nulla», se manca l'input «il conto non si può fare» — e un test verifica i tre casi. Da **sei
+colonne a tre** («Cosa dice» · «Quanto sposterebbe» · «Su cosa poggia»): IC, Δlog-loss, ΔRPS e
+provenienza passano nel ⓘ; l'1X2 alternativa si confronta con quella di oggi; apertura e
+chiusura più corte. **Non** cambiano i numeri, le formule, la posizione né gli attributi
+`data-*`: [46] continua a verificare le stesse 267 righe con **2.206 controlli**. Resta
+dichiarato che l'1X2 della colonna centrale è una previsione alternativa: con il k corretto la
+distanza è 1–3 pp sul mercato (0/53 oltre 5) e fino a 8 sulle assenze (9/89).
+Gate: **584 test**, Ruff pulito, `verify_site` **210.925 · 0**, parità **89 schede**,
+`resa_375` **27.675 · 0**.
+
+---
+
 ## 2026-10-10 — Revisione del card «laboratorio»: il k sbagliato (docs/74 §10)
 
 L'utente chiede di verificare e revisionare il card appena chiuso: «funziona? serve? riesce a

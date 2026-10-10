@@ -263,9 +263,39 @@ def test_il_card_esce_sotto_la_previsione_e_solo_sulle_prossime(tmp_path):
     assert "non usate</b> in questa previsione" in futura
     righe = re.findall(r'<tr data-idea="([a-z]+)"', futura)
     assert righe == ["mercato", "assenze", "riposo"]
-    for chiave in ("341 gare", "98 gare", "1.591 λ", "ΔRPS"):
+    # la lettura (docs/74 §11): tre colonne, la prima con la frase; le misure stanno nel ⓘ
+    assert "Cosa dice" in futura and "Su cosa poggia" in futura
+    for chiave in ("341 gare", "98 gare", "1.591 di 5.895", "RPS"):
         assert chiave in futura, f"manca la misura d'archivio: {chiave}"
+    assert futura.count("Sposterebbe") + futura.count("non sposta nulla") >= 3, \
+        "ogni riga deve dire che cosa succede su questa partita"
     st.close()
+
+
+def test_la_frase_nasce_dai_numeri_e_non_li_racconta_a_parte():
+    """La riga da leggere è generata dal calcolo: se non sposta, non può dire che sposta.
+
+    È la correzione di leggibilità del 2026-10-10 (`docs/74` §11): la prima versione era una
+    tabella di sei colonne senza un messaggio. Qui si verifica che la frase cambi con il
+    numero e che i tre casi (sposta / non sposta / dato mancante) escano distinti.
+    """
+    mosso = laboratorio(_base(), rest_home=7, rest_away=2, valore_home=320e6, valore_away=80e6,
+                        perso_home=0.9, perso_away=0.0)
+    righe = {r["key"]: r for r in mosso["righe"]}
+    assert "Sposterebbe" in righe["mercato"]["frase"]
+    assert f'{righe["mercato"]["d_pp"]:.1f}'.replace(".", ",") in righe["mercato"]["frase"]
+    # «non sposta nulla» è una misura: λ identiche a quelle pubblicate
+    fermo = laboratorio(_base(), rest_home=20, rest_away=19, valore_home=None, valore_away=None,
+                        perso_home=0.0, perso_away=0.0)
+    fermo_r = {r["key"]: r for r in fermo["righe"]}
+    assert "non sposta nulla" in fermo_r["riposo"]["frase"]
+    assert "Sposterebbe" not in fermo_r["riposo"]["frase"]
+    # senza input la frase dice che il conto non si può fare, e non inventa uno zero
+    nullo = laboratorio(_base(), rest_home=None, rest_away=None, valore_home=None,
+                        valore_away=None, perso_home=None, perso_away=None)
+    for r in nullo["righe"]:
+        assert "non si può fare" in r["frase"], r["frase"]
+        assert "Sposterebbe" not in r["frase"]
 
 
 def test_l_invariante_46_ricalcola_il_card(tmp_path):

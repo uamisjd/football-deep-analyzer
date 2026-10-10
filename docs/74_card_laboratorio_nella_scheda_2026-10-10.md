@@ -19,19 +19,29 @@ Titolo: **«Il laboratorio — idee misurate, _non usate_ in questa previsione»
 ripete il patto: le tre idee esistono nel codice e sono state misurate, nessuna è applicata, la
 previsione in cima alla scheda non le contiene.
 
-Una riga per idea, sei colonne:
+Una riga per idea, **tre colonne** (dopo la riscrittura di leggibilità dell'11/10, §11 — la
+prima versione ne aveva sei ed era corretta ma illeggibile):
 
 | Colonna | Contenuto |
 |---|---|
-| **Idea** | nome + ⓘ con la formula applicata e le sue costanti |
-| **Dato usato** | l'input di casa e di trasferta, oppure «dato non disponibile» con la ragione |
-| **Se fosse applicata** | λ della partita e 1X2 calcolati con l'idea (stessa griglia della previsione) |
-| **Spostamento** | Δλ per squadra e Δ sull'1X2 in punti percentuali, oppure «non sposta nulla» |
-| **Misurato sull'archivio** | campione, effetto misurato con intervallo di confidenza, documento di provenienza |
-| **Verdetto** | una riga + ⓘ con la ragione per esteso |
+| **Cosa dice** | nome, verdetto in etichetta, e **una frase** generata dal calcolo: quanto sposterebbe su questa partita e perché non entra |
+| **Quanto sposterebbe** | l'1X2 che uscirebbe (confronto con quella di oggi e λ), il confronto con la costante del codice, e il dato usato |
+| **Su cosa poggia** | campione in una riga e misura in una riga; il testo lungo con gli intervalli di confidenza sta nel ⓘ |
 
-In chiusura: le λ di partenza (quelle della previsione salvata), quante idee sposterebbero
-qualcosa su questa partita, e il richiamo a `verify_site` che ricontrolla le formule.
+La frase della prima colonna **nasce dai numeri** (`_frase`): se l'idea non sposta, la riga dice
+«non sposta nulla»; se manca l'input, dice che «il conto non si può fare». Non può raccontare uno
+spostamento che non c'è, e un test (`test_la_frase_nasce_dai_numeri_e_non_li_racconta_a_parte`)
+verifica i tre casi. Esempio reale (Genoa–Fiorentina):
+
+* «Sposterebbe **1,4 punti** sull'1X2 di questa partita: troppo poco per entrare, e ottenuto con
+  l'unico k che la misura sostiene.»
+* «Sposterebbe **1,8 punti** sull'1X2, ma su 98 gare non si può dire se aiuta o fa danno: non
+  entra, e non è ancora testabile.»
+* «Questa settimana **non sposta nulla**: le due squadre vengono dalla stessa sosta. Resta fuori
+  comunque: misurato, peggiora la previsione.»
+
+In chiusura: la previsione salvata non si tocca (λ e 1X2 restano quelle pubblicate in cima),
+quante idee sposterebbero qualcosa, e il richiamo a `verify_site` che ricontrolla le formule.
 
 Le misure d'archivio **non sono ricalcolate a ogni build**: richiedono il backtest completo e
 sono i numeri registrati in `docs/69` §1 e `docs/71` §3, citati con campione e provenienza.
@@ -166,7 +176,7 @@ La lista delle idee è l'unico punto in cui si dichiara «che cosa c'è in labor
 
 | Gate | Esito |
 |---|---|
-| `pytest -q` | **583 passed** (571 prima + 12 nuovi) |
+| `pytest -q` | **584 passed** (571 prima + 13 nuovi) |
 | `ruff check .` | **pulito** (zero segnalazioni su tutto il repo) |
 | build | **470** schede / 2.364 partite / 7.508 giocatori |
 | `verify_site` | **210.925 controlli · 0 problemi** (baseline 208.630; [46] 2.206) |
@@ -242,3 +252,35 @@ documento che la registra.
 * Il card non elenca le idee **scartate prima di essere candidate** (distanza della trasferta,
   età dei titolari, turnover): stanno già dichiarate nella card «Fattori». Se il laboratorio
   cresce, quella lista è il posto dove unificarle.
+
+## 11. Riscrittura di leggibilità (11/10): «non so cosa vedere o cosa voglia dirmi»
+
+L'utente, davanti al card finito: «non è di facile lettura, non so cosa vedere o cosa voglia
+dirmi». Il rilievo è giusto e la causa è misurabile: **sei colonne, 231 celle, nessun messaggio**.
+Il lettore doveva farsi da solo la sintesi di tre righe che contenevano λ, Δλ, due 1X2, due
+intervalli di confidenza, un Δlog-loss, un ΔRPS e una formula con due k. La cella «Misurato
+sull'archivio» da sola portava 47 parole con quattro numeri a cinque decimali: più lunga di
+qualsiasi altra cella della scheda.
+
+Che cosa è cambiato:
+
+1. **Una frase per idea, generata dal calcolo** (`_frase` in `laboratorio.py`), in prima colonna:
+   quanto sposterebbe **su questa partita** e perché non entra. È la sola cosa che il lettore
+   deve leggere; il resto sono i numeri che la sostengono. La frase non è un testo fisso: se
+   l'idea non sposta dice «non sposta nulla», se manca l'input dice che «il conto non si può
+   fare», e un test verifica i tre casi.
+2. **Da sei colonne a tre**: «Cosa dice» · «Quanto sposterebbe» · «Su cosa poggia». Gli
+   intervalli di confidenza, il Δlog-loss, il ΔRPS e la provenienza passano nel ⓘ, dove chi li
+   cerca li trova senza doverli leggere per forza.
+3. **L'1X2 alternativa si confronta con quella di oggi** («oggi 34 / 28 / 38»): il numero da
+   guardare è la differenza, non il valore.
+4. **Apertura e chiusura più corte**: due righe che dicono cosa guardare («Per ognuna: cosa
+   dice, quanto sposterebbe, su cosa poggia») e che la previsione non si tocca.
+
+Cosa **non** è cambiato: i numeri, le formule, la posizione del card e gli attributi `data-*`
+(quindi [46] continua a verificare le stesse 267 righe con 2.206 controlli, nessuno riscritto).
+
+Il rischio che resta, dichiarato: l'1X2 della colonna centrale è una previsione alternativa
+pubblicata sotto quella vera. Con il k corretto (§10) la distanza è di 1–3 punti sul mercato
+(0/53 schede oltre i 5) e fino a 8 sulle assenze (9/89 oltre i 5): la mitigazione è ancora
+testuale, e la frase della prima colonna è la parte che lavora di più.

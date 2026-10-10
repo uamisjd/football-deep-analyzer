@@ -89,6 +89,17 @@ class Idea:
     k_dichiarato: float | None = None
     k_dichiarato_label: str = ""
     nota_k: str = ""      # ⓘ della colonna dello spostamento: perché questo k e non l'altro
+    # ---- la lettura, in una riga: è la prima cosa che il lettore vede (revisione del
+    #      2026-10-10, `docs/74` §11). ``frase_sposta`` contiene ``{pp}``, lo spostamento
+    #      misurato sull'1X2 di questa partita; le altre due coprono i casi in cui il numero
+    #      non c'è (nessuno spostamento, dato mancante), che sono misure a tutti gli effetti.
+    frase_sposta: str = ""
+    frase_ferma: str = ""
+    frase_manca: str = ""
+    # ---- la misura in due righe brevi per la tabella; il testo lungo (con IC e provenienza)
+    #      resta nel ⓘ, dove chi vuole i numeri li trova senza doverli leggere per forza.
+    campione_breve: str = ""
+    misura_breve: str = ""
 
 
 #: Le tre idee, nell'ordine in cui escono in pagina: prima quella con il campione più
@@ -117,6 +128,12 @@ IDEE: tuple[Idea, ...] = (
         k_usato_label="k = 0,03 — l'unico con IC fuori dallo zero",
         k_dichiarato=MARKET_VALUE_K,
         k_dichiarato_label="k = 0,12 — la costante nel codice",
+        frase_sposta=("Sposterebbe {pp} punti sull'1X2 di questa partita: troppo poco per "
+                      "entrare, e ottenuto con l'unico k che la misura sostiene."),
+        frase_ferma="Su questa partita non sposta nulla di visibile, nemmeno con il k più grande.",
+        frase_manca="Su questa partita il conto non si può fare: manca il dato.",
+        campione_breve="341 gare",
+        misura_breve="solo k = 0,03 ha un intervallo di confidenza fuori dallo zero",
         nota_k=("Il what-if è calcolato con k = 0,03, l'unico valore dell'intervallo con un "
                 "intervallo di confidenza che esclude lo zero. Sotto, per confronto, lo stesso "
                 "calcolo con k = 0,12 — la costante oggi nel codice — che la misura NON "
@@ -146,6 +163,12 @@ IDEE: tuple[Idea, ...] = (
         k_usato_label="k = 0,20 — il massimo della griglia preregistrata",
         k_dichiarato=ABSENCES_K,
         k_dichiarato_label="k = 0,30 — la costante nel codice",
+        frase_sposta=("Sposterebbe {pp} punti sull'1X2, ma su 98 gare non si può dire se aiuta "
+                      "o fa danno: non entra, e non è ancora testabile."),
+        frase_ferma="Su questa partita non sposta nulla: nessun assente pesato da contare.",
+        frase_manca="Su questa partita il conto non si può fare: manca la distinta.",
+        campione_breve="98 gare",
+        misura_breve="sotto le 300 gare che il protocollo chiede per decidere",
         nota_k=("Nessun k è sostenuto: con 98 gare l'esito del protocollo è «non testabile». Il "
                 "what-if usa k = 0,20, il valore più alto della griglia preregistrata "
                 "({0; 0,1; 0,2}): è il tetto di ciò che il protocollo prenderebbe in esame, non "
@@ -165,6 +188,13 @@ IDEE: tuple[Idea, ...] = (
                 "a tre settimane di distanza, con lo stesso segno"),
         fonte="docs/69 §1 · docs/71 §3",
         verdetto="non usata: la misura è contraria",
+        frase_sposta=("Sposterebbe {pp} punti sull'1X2, ma quando è stato misurato ha peggiorato "
+                      "la previsione: non entra."),
+        frase_ferma=("Questa settimana non sposta nulla: le due squadre vengono dalla stessa "
+                     "sosta. Resta fuori comunque: misurato, peggiora la previsione."),
+        frase_manca="Su questa partita il conto non si può fare: manca il calendario.",
+        campione_breve="1.591 di 5.895 previsioni",
+        misura_breve="applicarlo peggiora la previsione (RPS più alto), due volte",
         verdetto_help=("È l'unica idea con una misura ripetuta e stabile, e dice che applicarla "
                        "peggiora la previsione (RPS più alto = previsione peggiore). L'intervallo "
                        "di confidenza esclude lo zero: non è «non si vede», è «fa danno». "
@@ -186,6 +216,21 @@ def _float(v: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return out if np.isfinite(out) else None
+
+
+def _frase(idea: Idea, disponibile: bool, sposta: bool, d_pp: float, motivo: str | None) -> str:
+    """La riga da leggere: che cosa dice l'idea su **questa** partita, in una frase.
+
+    È la prima cosa che il lettore vede (revisione del 2026-10-10, `docs/74` §11): la tabella
+    era corretta e illeggibile, sei colonne di numeri senza un messaggio. La frase nasce dai
+    numeri appena calcolati, quindi non può raccontare uno spostamento che non c'è: se l'idea
+    non sposta, lo dice, e «non sposta nulla» è una misura — non una riga vuota.
+    """
+    if not disponibile:
+        return idea.frase_manca if not motivo else f"{idea.frase_manca} ({motivo})."
+    if not sposta:
+        return idea.frase_ferma
+    return idea.frase_sposta.format(pp=f"{d_pp:.1f}".replace(".", ","))
 
 
 def _applica(key: str, lh: float, la: float, ih: float | None, ia: float | None,
@@ -281,6 +326,9 @@ def laboratorio(
             d_pp3 = max(abs(p3[k] - base[k]) for k in range(3)) * 100.0
 
         righe.append({
+            "frase": _frase(idea, disponibile, sposta, d_pp, None if disponibile else motivo),
+            "campione_breve": idea.campione_breve,
+            "misura_breve": idea.misura_breve,
             "key": idea.key,
             "nome": idea.nome,
             "icona": idea.icona,
