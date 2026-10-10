@@ -1,3 +1,33 @@
+## 2026-10-10 — PR #98 fusa dall'utente: forma con Elo storico e benchmark offline col mercato
+
+Merge eseguito dall'**utente** il 2026-10-09 23:42:02Z (merge commit `98e087b`, 2 genitori:
+`5b1119b` su `main` e `551feea` capo del ramo), 16 file, +1.598/−72, 9 commit. In `main`:
+**B** ([docs/66](66_la_forma_dice_contro_chi_2026-10-09.md): Elo storico alla vigilia nella
+forma, ranghi degli avversari, giudizio solo oltre sd/√n), **D**
+([docs/67](67_modello_contro_mercato_offline_2026-10-09.md): benchmark offline modello contro
+mercato, 1.071 gare NED1/POR1, ΔRPS +0,008807 grezzo), la **revisione indipendente**
+([docs/68](68_revisione_forma_mercato_2026-10-10.md): 246 fit Elo su prefissi troncati, 8.191
+confronti senza differenze, [44] con oracolo temporale) e la **coda**
+([docs/69](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md)). Gate dell'ultimo giro:
+**568 test**, Ruff pulito, `verify_site` **202.969 · 0 problemi**, `resa_375` **27.255 · 0**,
+parità **89 schede · pulita**. Registrazione in `docs/13` §9.24.
+
+**Verifica post-merge (2026-10-10, prima del turno di lavoro):** run su `main` — `tests`
+**success** (`38005701607`, push del merge, 2m26s; il check della PR `38005240962` era verde in
+2m14s), `daily` schedulato `37996976659` success; il `daily` attivato dal push del merge
+(`38005701599`) è **fallito allo step `verify_site`** con 2 problemi «campione» (pagine
+`5781769`, `5781776`): il campione della card «Le due squadre» contava una gara finita in
+`match_info` con xG ma non ancora finita nel calendario — disallineamento introdotto dal
+collect fresco, non un regressione del branch (il gate sul branch era verde). Issue di guasto
+**#99** aperta in automatico; nessun commit dati né deploy: il sito è fermo all'ultimo deploy
+funzionante. `docs/_audit_modelli.json` è **invariato** dal 2026-09-20 (`e79c377`): snapshot con
+calibrazione λ×1,040063 (fitted 2026-09-13, backtest 5.891 righe) — **non** uno snapshot del
+2026-10-09; la calibrazione λ×**1,039385** è quella di **produzione** (`calibration.parquet`,
+fitted 2026-10-09 22:03:50, n_fit 4.770, backtest 5.895 righe), verificata. Diagnosi e hotfix
+nel giro qui sotto.
+
+---
+
 ## 2026-10-10 — Coda verificata e handoff post-merge (`arena/eb94e8df`)
 
 L'utente ha chiesto se resta altro in sospeso, se le voci sono quelle giuste e se farle ora o

@@ -1444,3 +1444,44 @@ differenza · `resa_375` **26.565 · 0**. Check GitHub `tests` verdi su tutti i 
 **Effetti in produzione:** la PR tocca `src/`, `tests/` e `scripts/`, fuori da `paths-ignore`,
 quindi il push del merge ha attivato **`tests` (`37990767502`)** e **`daily` (`37990767543`)` su
 `main`.
+
+### §9.24 — PR #98: forma con Elo storico e confronto RPS/Brier offline col mercato (2026-10-09, merge dell'utente)
+
+**Nessuna deroga:** la regola «il merge lo esegue l'utente» è stata rispettata — l'utente ha
+eseguito il merge in prima persona (PR #98, `merged_by=uamisjd`, `merged_at=2026-10-09T23:42:02Z`,
+merge commit **`98e087ba0685f60054d73c62a57b27450fc38365`**, 2 genitori: `5b1119b` su `main` e
+`551feea` capo del ramo `arena/eb94e8df-football-deep-analyzer`). L'agente ha verificato e
+registrato, non ha eseguito il merge.
+
+**Contenuto (16 file, +1.598/−72, 9 commit):** voce **B** — Elo storico alla vigilia nella
+forma, rango degli avversari, giudizio oltre sd/√n ([`docs/66`](66_la_forma_dice_contro_chi_2026-10-09.md));
+voce **D** — benchmark offline modello contro mercato, 1.071 gare NED1/POR1, ΔRPS +0,008807
+grezzo e ΔBrier +0,019602 ([`docs/67`](67_modello_contro_mercato_offline_2026-10-09.md));
+**revisione indipendente** ([`docs/68`](68_revisione_forma_mercato_2026-10-10.md)): 246 fit
+Elo su prefissi troncati, 8.191 confronti senza differenze, RPS/Brier indipendenti, [44] con
+oracolo temporale e ricontrollo di lista/punteggi/sede/pallini, benchmark che rifiuta chiavi di
+lega vuote; la **coda** post-merge ([`docs/69`](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md)).
+Nuovi test (`test_benchmark_quote.py`, `test_oggi_depth.py`, `test_verify_scripts.py`),
+`benchmark_quote.py` in modalità `--offline`, tooltip Elo storico in `match.html`.
+
+**Gate sul branch prima del merge:** **568 test**, Ruff pulito, `verify_site` **202.969 ·
+0 problemi**, `resa_375` **27.255 · 0**, parità **89 schede · pulita**. Check `tests` della PR
+verde (run `38005240962`, 2m14s).
+
+**Effetti in produzione:** la PR tocca `src/`, `tests/` e `scripts/`, fuori da `paths-ignore`,
+quindi il push del merge ha attivato **`tests` (`38005701607`, success, 2m26s)** e **`daily`
+(`38005701599`)** su `main`. Il `daily` è **fallito** allo step `verify_site`: 2 problemi
+«campione» sulle pagine `5781769` e `5781776` — la card «Le due squadre» contava una gara
+finita in `match_info` con xG completo ma non ancora finita nel calendario (il controllo
+`gare_prima` di [44], ereditato dalla PR #97, non è stato toccato da questa PR: il
+disallineamento è nato dal collect fresco, non dal codice del branch). Issue di guasto
+**#99** aperta in automatico; nessun commit dati né deploy. Diagnosi e hotfix nel giro
+seguente di `docs/STATO.md`.
+
+**Verifica post-merge dell'agente (2026-10-10):** `gh run list --branch main --limit 3` →
+`daily` push `38005701599` **failure** (passo `verify_site`), `tests` push `38005701607`
+success, `daily` schedulato `37996976659` success. `docs/_audit_modelli.json` invariato dal
+2026-09-20 (`e79c377`: λ×1,040063 fitted 2026-09-13, backtest 5.891 righe): **non** è uno
+snapshot del 2026-10-09 — la calibrazione λ×1,039385 è quella di **produzione**
+(`calibration.parquet`, fitted 2026-10-09 22:03:50, n_fit 4.770, backtest 5.895 righe),
+verificata.
