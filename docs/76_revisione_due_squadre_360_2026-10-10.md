@@ -1,0 +1,167 @@
+# 76 — Card «Le due squadre»: controllo a 360 gradi (2026-10-10)
+
+Richiesta dell'utente: «verifica e revisiona come il sito presenta le schede di ogni partita —
+della card "Le due squadre" fai un controllo a 360 gradi di cosa propone e come lo propone,
+cosa si deve aggiustare e cosa aggiungere». Metodo `docs/00` B.10: per ogni punto **misura →
+correzione → invariante o test**; perimetro **tutte le schede** (build del 2026-10-10 13:29
+UTC: 470 pagine, 940 riquadri di squadra, 89 pre-partita).
+
+La card era già stata revisionata il 9/10 in quattro giri (`docs/64`, PR #97); restavano in
+coda le tre voci E di `docs/65` §2 (incrocio attacco–difesa, trend contro media di stagione,
+assenti collegati alle notizie). Il controllo le riprende una per una e aggiunge due difetti
+nuovi trovati dall'audit.
+
+## §1 — Difetto: la gara descritta entrava nel proprio campione «alla vigilia»
+
+### La misura
+
+L'audit (`scripts/audit_due_squadre.py`, censimento della sezione su tutte le pagine +
+confronto con `understat_team_matches`) ha trovato **3 schede finite con 6 riquadri** in cui il
+campione di stagione includeva **la partita stessa descritta dalla scheda**:
+
+| scheda | gara | data Understat | kickoff FotMob |
+|---|---|---|---|
+| `5749662` | Cagliari–Lecce | 16:00 | 16:30 |
+| `5802918` | Lille–PSG | 18:45 | 19:00 |
+| `5868012` | Atlético Madrid–Málaga | 19:00 | 19:05 |
+
+Understat data la gara qualche minuto **prima** del calcio d'inizio FotMob: il taglio
+`date < before` introdotto in `docs/64` §7 la lasciava passare. Conseguenze visibili:
+Atlético–Málaga pubblicava «xG creati 1,34 (Understat, 1 gara)», «xPTS 2,4 vs 3» e «PPDA 7,5»
+— tutti numeri **della partita stessa** — presentati come «stagione alla vigilia», mentre la
+forma (correttamente vuota) e il piè di card («tutti i numeri sono fermi alla vigilia»)
+dicevano il contrario. Il riferimento di lega delle stesse schede includeva le due righe.
+
+Perché i gate non lo vedevano: l'oracolo indipendente dell'invariante [44]
+(`gare_prima` in `scripts/verify_site.py`) applicava lo **stesso** taglio ingenuo
+`date < ko`, quindi generatore e verificatore erano d'accordo sull'errore.
+
+### La correzione
+
+Una squadra gioca al più **una partita in 24 ore**: le righe Understat delle due squadre
+della gara descritta entro 24 ore dal calcio d'inizio sono esattamente quella gara.
+
+- `analysis.py`: `_squadre_descritta()` ricava dal calendario le due squadre della partita
+  della scheda (team_id + calcio d'inizio); `_us_alla_vigilia()` applica il taglio
+  `date < before` **escludendo** quelle righe. Usato dal campione di `season_xg` e dalla
+  media di lega di `_league_xg_reference` (stessa finestra per entrambi, cache aggiornata).
+  Il ramo FotMob non è toccato: il suo taglio usa i kickoff dello stesso calendario
+  (`kickoff < before`, l'uguaglianza esclude la gara).
+- `verify_site.py` [44]: l'oracolo `gare_prima` applica la stessa regola **senza passare dal
+  generatore** — se il taglio sparisce dal codice, il gate vede lo scarto anche se l'HTML è
+  coerente col codice rotto (lo stesso principio di `docs/64` §7).
+
+### L'effetto (misurato dopo la build)
+
+| riquadro | prima | dopo |
+|---|---|---|
+| Cagliari (`5749662`) | «1 gara» (la gara stessa) | **2 gare** (22/08 e 30/08, verificate sui Parquet) |
+| Lecce (`5749662`) | «1 gara» (la gara stessa) | **2 gare** (23/08 e 31/08) |
+| Lille (`5802918`) | «1 gara» (la gara stessa) | **1 gara** (23/08) |
+| PSG (`5802918`) | «1 gara» (la gara stessa) | **1 gara** (23/08) |
+| Atlético Madrid e Málaga (`5868012`) | numeri della gara spacciati per stagione | **«nessuna gara di campionato prima di questa»** |
+
+I riquadri con la dichiarazione «nessuna gara prima» passano da 130 a **132** e tornano a
+coincidere esattamente con i riquadri senza forma (132) e senza riposo (132): le tre misure,
+che prima divergevano di 2, ora si spiegano a vicenda.
+
+Test: `tests/test_site.py::test_finestra_vigilia_esclude_la_gara_descritta` (riga a −5 min
+esclusa, riga a −25 ore inclusa).
+
+## §2 — Aggiunta: la striscia «Attacco contro difesa» (voce E1 di docs/65)
+
+Le quattro caselle xG dicono attacco e difesa di ogni squadra contro la media del campionato,
+ma l'incrocio che risponde a «l'attacco di A contro la difesa di B» restava da fare a mente.
+Misura di copertura: sulle **89 schede pre-partita** della build, **89 su 89** hanno entrambe
+le squadre con i due rapporti di lega (campione ≥3 gare, stessa fonte) — a metà ottobre il
+campionato è abbastanza avanti perché la condizione sia sempre vera; a inizio stagione la
+striscia semplicemente non esce.
+
+`attacco_contro_difesa()` in `analysis.py` restituisce i quattro rapporti solo se:
+
+1. la gara **non è finita** (l'incrocio serve all'attesa, non al racconto);
+2. entrambe le squadre hanno `xg_ratio` **e** `xga_ratio` (niente confronti su metà campione);
+3. le due squadre hanno la **stessa fonte** xG (i due modelli hanno scale diverse, `docs/64`
+   §2.3: oggi 0 schede a fonti miste grazie agli alias, ma la condizione resta esplicita).
+
+Resa: una riga a tutta larghezza dentro la card, «Espanyol crea 0,84× la media del campionato
+e affronta una difesa che concede 0,75× · Atlético Madrid crea 1,21× e affronta una difesa
+che concede 0,84×», col ⓘ che dichiara la convenzione (sopra 1,00× = più della media) e che
+sono gli stessi numeri delle quattro caselle, già letti uno contro l'altro. Il piè di card la
+descrive. Nessun numero nuovo: solo i quattro rapporti già verificati da [44].
+
+Invariante: **[44] estesa** — su ogni scheda verifica presenza/assenza della striscia contro i
+requisiti ricalcolati e, quando c'è, che i quattro numeri stampati siano quelli attesi.
+Test: `test_attacco_contro_difesa_solo_quando_regge` (le quattro condizioni),
+`test_card_due_squadre_attacco_contro_difesa_in_pagina` (resa e assenza a gara finita), casi
+12 di `test_verify_site_due_squadre_su_ogni_scheda` (numero manomesso, striscia rimossa,
+striscia su gara non più pre-partita).
+
+## §3 — Difetto: 62 pannelli pre-partita muti sulla distinta (3 anche sulle assenze)
+
+### La misura
+
+Audit sui 178 pannelli pre-partita: **62** non avevano distinta pubblicata (la fonte la rende
+disponibile a ridosso del calcio d'inizio; le schede più lontane non ce l'hanno ancora) e
+**non dicevano nulla** — il lettore non distingueva «non ancora pubblicata» da «dato perso».
+Di questi, **3** (Telstar in `5781774`, Toulouse in `5802957`, Atlético Madrid in `5868094`)
+non avevano neppure la lista degli indisponibili: silenzio completo. La direttiva utente del
+2026-09-08 chiede proprio di distinguere *dato assente*, *non ancora pubblicato* e *fallback*.
+
+### La correzione
+
+`match.html`: dopo il blocco della distinta, `{% elif c.status != 'finished' %}` dichiara:
+
+- «**Formazione non ancora pubblicata dalla fonte**: gli indisponibili qui sopra sono
+  l'ultimo aggiornamento raccolto e possono cambiare a ridosso del calcio d'inizio» — quando
+  la lista degli assenti c'è ma la distinta no (59 pannelli);
+- «**La fonte non ha ancora pubblicato la distinta di questa squadra**: formazione e
+  indisponibili compariranno a ridosso del calcio d'inizio» — quando non c'è nulla (3).
+
+Dopo la build: **62 dichiarazioni su 62 pannelli senza distinta** (59 + 3), 0 pannelli muti.
+Le schede finite non sono toccate (62 = tutte le distinte mancanti sono pre-partita: le 381
+finite hanno la distinta 940−878 = 62 volte in meno, conto esatto).
+Test: `test_card_due_squadre_distinta_non_pubblicata_dichiarata`.
+
+## §4 — Voci E2 ed E3 misurate e non pubblicate
+
+- **E2 (trend ultime 3-5 gare contro la media di stagione)**: è già pubblicato dalla card
+  «Come arrivano» (`docs/60`): xG creati e concessi delle ultime 3 contro le 3 precedenti,
+  con la media di stagione dichiarata altrove. Aggiungerlo qui violerebbe la regola di
+  `docs/30` (un dato in un posto solo). **Non duplicato.**
+- **E3 (assenti senza numeri collegati alle notizie)**: misura nuova — sui 292 assenti
+  pre-partita senza minuti in stagione, solo **12 (4%)** compaiono nelle notizie della loro
+  squadra nei 7 giorni precedenti, e parte dei riscontri sono rumore (voci di mercato, classifiche
+  «Golden Boy»). Un collegamento che manca 96 volte su 100 e qualche volta sbaglia non
+  migliora la scheda. **Non pubblicato; la riga continua a spiegare il «senza minuti in
+  stagione · n.d.» col ⓘ esistente.** Restano dichiarati i 289 casi della build.
+
+## §5 — Gate (tutti rifatti dopo l'ultima modifica al sorgente)
+
+- `pytest` → **589 passed** (erano 584);
+- `ruff check .` → pulito;
+- `fda build` → **470 schede / 2.364 fixture / 7.530 giocatori**;
+- `scripts/verify_site.py` → **nessun problema · 211.906 controlli** (erano 210.499; +89
+  verifiche della striscia, +6 della finestra corretta sulle tre schede);
+- `scripts/parita_schede.py` → **89 schede, nessuna differenza**;
+- `scripts/resa_375.py` → **27.696 misure · 0 problemi**;
+- conteggi indipendenti sui Parquet per le tre schede del §1 (righe Understat prima del
+  kickoff: Cagliari 3−1=2, Lecce 3−1=2, Lille 2−1=1, PSG 2−1=1, Atlético/Málaga 1−1=0).
+
+Nessuna richiesta alle fonti esterne: tutte le misure vengono dai Parquet in `data/processed`.
+Lo script riusabile è `scripts/audit_due_squadre.py` (censimento della card su tutte le
+pagine + casi anomali).
+
+## §6 — Stato della card dopo questo giro
+
+Ogni riquadro di squadra contiene: forma con verso dei gol e forza degli avversari, xG
+creati/concessi con rapporto di lega (stessa fonte), xPTS con banda di rumore, indice di
+pressione su 7 leghe, riposo con data e coppa; la sezione dichiara la distinta non pubblicata,
+pubblica l'incrocio attacco–difesa quando regge, e il piè di card descrive tutto. Residui
+invariati da `docs/64` §6 (id di fase NED1, campione xG una gara avanti quando la fonte
+anticipa, PPDA come media di gare) più: la striscia attacco–difesa a inizio stagione uscirà
+solo sulle schede con ≥3 gare per parte (comportamento dichiarato, non un buco).
+
+Coda della revisione sezione per sezione (da `docs/65` §2.F, invariata): «Panchina e posta in
+gioco», «Mercato: arrivi e partenze», «Vita del club», «Previsione del modello ensemble»,
+«Verifica approfondita», «Confronto di stagione», «Clima del club».

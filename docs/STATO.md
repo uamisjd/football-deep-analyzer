@@ -1,3 +1,24 @@
+## 2026-10-10 — Card «Le due squadre»: controllo a 360 gradi (docs/76)
+
+Richiesta dell'utente: revisione completa di cosa propone e come lo propone la card «Le due
+squadre», su tutte le schede. Trovato e corretto un difetto di verità che i gate non vedevano:
+**la gara descritta entrava nel proprio campione «alla vigilia»** su 3 schede (Cagliari–Lecce,
+Lille–PSG, Atlético Madrid–Málaga), perché Understat data la partita qualche minuto prima del
+kickoff FotMob e il taglio `date < before` la lasciava passare — l'oracolo di [44] applicava
+lo stesso taglio ingenuo, per questo passava. Finestra riscritta (`_us_alla_vigilia` +
+`_squadre_descritta`), oracolo aggiornato con la stessa regola, e le tre schede ora mostrano i
+campioni veri (Atlético/Málaga: «nessuna gara di campionato prima di questa», 130 → 132
+riquadri dichiarati). Aggiunti: **striscia «Attacco contro difesa»** (voce E1 di docs/65:
+l'incrocio che il lettore faceva a mente, 89/89 schede pre-partita la pubblicano, solo con
+entrambi i rapporti dalla stessa fonte; [44] verifica presenza e numeri) e **dichiarazione
+della distinta non ancora pubblicata** (62 pannelli pre-partita prima muti, 3 anche sulle
+assenze: ora 62/62 dichiarano). Misurate e non pubblicate: E2 (il trend è già in «Come
+arrivano», non si duplica per docs/30) ed E3 (assenti→notizie: copertura 4%, troppo rumore).
+Gate: **589 test**, Ruff pulito, build **470/2.364/7.530**, `verify_site` **211.906 · 0**,
+parità **89 schede**, `resa_375` **27.696 · 0**. Nessuna richiesta alle fonti.
+
+---
+
 ## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)
 
 L'utente segnala lo screenshot di un errore visto stamattina: è l'issue #99 «Fallimento run

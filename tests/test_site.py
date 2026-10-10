@@ -2577,3 +2577,126 @@ def test_card_due_squadre_senza_gare_precedenti_resta_completa(tmp_path):
     assert "Che cosa c'è in questa card:" in sec
     assert int(fx[fx.match_id == 5749645].iloc[0].home_id) > 0
     st.close()
+
+def test_finestra_vigilia_esclude_la_gara_descritta(tmp_path):
+    """`docs/76` §1: la partita descritta non entra nel proprio campione «alla vigilia».
+
+    Understat data la gara qualche minuto **prima** del calcio d'inizio FotMob (misurato
+    il 2026-10-10 su 6 riquadri: Cagliari–Lecce 16:00 vs 16:30, Lille–PSG 18:45 vs 19:00,
+    Atlético Madrid–Málaga 19:00 vs 19:05): il taglio ingenuo ``date < before`` la lasciava
+    entrare e la scheda pubblicava i numeri della partita stessa come «stagione alla
+    vigilia». Una squadra gioca al più una partita in 24 ore: le righe delle due squadre
+    della gara entro quella finestra sono la gara descritta e restano fuori, mentre una
+    partita davvero precedente (≥25 ore prima) entra nel campione.
+    """
+    st = _seed(tmp_path)
+    fx = st.read("fixtures")
+    finita = fx[fx.match_id == 5749645].iloc[0]
+    ko = pd.to_datetime(finita.utc_kickoff, utc=True)
+    tid, nome = int(finita.home_id), str(finita.home_name)
+
+    def _riga(when, xg):
+        return {"league_slug": "Serie_A", "season": 2026, "team_id": 999400,
+                "team_name": nome, "date": when.isoformat(), "is_home": True,
+                "goals": 2, "goals_against": 0, "xg": xg, "xga": 0.4,
+                "xpts": 2.6, "pts": 3, "ppda": 7.0}
+
+    ma = MatchAnalysis(st)
+    base = ma.season_xg(nome, tid, ko)
+    n_base = int(base["played"]) if base else 0
+    # la gara descritta, datata dalla fonte 5 minuti prima del calcio d'inizio
+    st.upsert("understat_team_matches", [_riga(ko - timedelta(minutes=5), 3.5)])
+    dopo = MatchAnalysis(st).season_xg(nome, tid, ko)
+    assert (int(dopo["played"]) if dopo else 0) == n_base, \
+        "la gara descritta è entrata nel suo stesso campione alla vigilia"
+    # una gara davvero precedente (25 ore prima) entra invece nel campione
+    st.upsert("understat_team_matches", [_riga(ko - timedelta(hours=25), 1.1)])
+    prima = MatchAnalysis(st).season_xg(nome, tid, ko)
+    assert prima and int(prima["played"]) == n_base + 1
+    assert prima["xg_pm"] != (dopo or {}).get("xg_pm"), "la gara precedente sposta la media"
+    st.close()
+
+
+def test_attacco_contro_difesa_solo_quando_regge():
+    """`docs/76` §2: l'incrocio esce solo con due rapporti completi dalla stessa fonte."""
+    completo_a = {"source": "Understat", "xg_ratio": 1.6, "xga_ratio": 0.7}
+    completo_b = {"source": "Understat", "xg_ratio": 1.1, "xga_ratio": 0.9}
+    ma = MatchAnalysis.__new__(MatchAnalysis)          # nessuna tabella necessaria
+    out = ma.attacco_contro_difesa(completo_a, completo_b)
+    assert out == {"source": "Understat", "home_crea": 1.6, "away_concede": 0.9,
+                   "away_crea": 1.1, "home_concede": 0.7}
+    assert ma.attacco_contro_difesa(None, completo_b) is None
+    assert ma.attacco_contro_difesa(completo_a, None) is None
+    assert ma.attacco_contro_difesa(completo_a, {**completo_b, "xga_ratio": None}) is None
+    assert ma.attacco_contro_difesa(completo_a, {**completo_b, "source": "FotMob"}) is None, \
+        "i due modelli xG hanno scale diverse: l'incrocio mescolerebbe fonti (docs/64 §2.3)"
+
+
+def test_card_due_squadre_attacco_contro_difesa_in_pagina(tmp_path):
+    """`docs/76` §2 (voce E1 di docs/65): la striscia pubblica l'incrocio già letto.
+
+    Pubblicata solo prima della gara e solo quando entrambe le squadre hanno i due
+    rapporti di lega; i quattro numeri sono quelli delle caselle xG della stessa card.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900020, 3, "Inter", "Napoli", now)])
+    righe = []
+    for t in range(11):
+        nome = ["Inter", "Napoli", *[f"Prova {i}" for i in range(9)]][t]
+        for i in range(4):
+            righe.append({
+                "league_slug": "Serie_A", "season": 2026, "team_id": 999100 + t,
+                "team_name": nome, "date": (now - timedelta(days=7 * (4 - i))).isoformat(),
+                "is_home": bool(i % 2), "goals": 2, "goals_against": 1,
+                "xg": 2.4 if t == 0 else 1.2, "xga": 0.8 if t == 0 else 1.4,
+                "xpts": 2.2 if t == 0 else 1.2, "pts": 3 if t == 0 else 1,
+                "ppda": 8.0 if t == 0 else 14.0})
+    st.upsert("understat_team_matches", righe)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900020, 5749645})
+    sec = (out / "partite" / "5900020.html").read_text(encoding="utf-8")
+    sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    blocco = re.search(r"Attacco contro difesa</div>(.*?)</div>", sec, re.DOTALL)
+    assert blocco, "la striscia manca con entrambe le squadre sopra le 3 gare"
+    ma = MatchAnalysis(st)
+    riga = st.read("fixtures").query("match_id == 5900020").iloc[0]
+    ko = pd.to_datetime(riga.utc_kickoff, utc=True)
+    atteso = ma.attacco_contro_difesa(
+        ma.season_xg("Inter", int(riga.home_id), ko),
+        ma.season_xg("Napoli", int(riga.away_id), ko))
+    assert atteso is not None
+    vals = [v.replace(",", ".") for v in re.findall(r"<b>([\d,]+)×</b>", blocco.group(1))]
+    assert [float(v) for v in vals] == pytest.approx(
+        [atteso["home_crea"], atteso["away_concede"],
+         atteso["away_crea"], atteso["home_concede"]], abs=0.011)
+    # a gara finita l'incrocio non si pubblica: la partita ha già risposto
+    finita = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    finita = finita.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert "Attacco contro difesa" not in finita
+    st.close()
+
+
+def test_card_due_squadre_distinta_non_pubblicata_dichiarata(tmp_path):
+    """`docs/76` §3: senza distinta la card lo dice, non tace.
+
+    Misurato sulla build del 2026-10-10: 62 pannelli pre-partita su 178 non dicevano
+    nulla sulla distinta (il lettore non distingueva «non ancora pubblicata» da «dato
+    perso»); 3 di questi tacevano anche sugli indisponibili. La dichiarazione usa la
+    distinzione richiesta dalla direttiva utente fra dato assente e non ancora pubblicato.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_lontana(5900021, 6, "Verona", "Genoa", now)])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900021, 5749669})
+    sec = (out / "partite" / "5900021.html").read_text(encoding="utf-8")
+    sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert sec.count("non ha ancora pubblicato la distinta") == 2, \
+        "entrambe le squadre senza distinta devono dichiararlo"
+    assert "a ridosso del calcio d'inizio" in sec
+    # la scheda con la distinta (probabile) non deve mostrare la dichiarazione
+    con = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    con = con.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
+    assert "non ha ancora pubblicato la distinta" not in con
+    st.close()

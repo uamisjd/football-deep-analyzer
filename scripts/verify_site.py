@@ -790,7 +790,12 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
       Understat conservato nel ⓘ dove la lega è coperta;
     * **finestra** — i numeri si fermano **alla vigilia** della partita descritta: il campione
       stampato coincide con le gare giocate *prima* del calcio d'inizio, ricontate dal
-      calendario e da Understat **senza passare da ``season_xg``** (`docs/64` §7);
+      calendario e da Understat **senza passare da ``season_xg``** (`docs/64` §7), con la
+      gara descritta esclusa dal suo stesso campione anche quando Understat la data qualche
+      minuto prima del calcio d'inizio FotMob (`docs/76` §1);
+    * **attacco contro difesa** — la striscia col confronto incrociato (`docs/76` §2) c'è
+      solo sulle schede pre-partita in cui entrambe le squadre hanno i due rapporti di lega
+      dalla stessa fonte, e i suoi quattro numeri sono quelli delle caselle ricalcolate;
     * **infermeria** — il totale «xG+xA a partita in meno» è la **somma esatta** della colonna
       «impatto» stampata sotto (`docs/64` §8: prima sommava le stime mentre le righe
       mostravano il grezzo, e non tornava in 101 pannelli su 118), e ogni riga dichiara il
@@ -838,12 +843,24 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
     if not mi_fin.empty and {"home_xg", "away_xg"} <= set(mi_fin.columns):
         con_xg = set(mi_fin.dropna(subset=["home_xg", "away_xg"]).match_id.astype(int))
 
+    #: una squadra gioca al più una partita in 24 ore: la riga Understat di questa
+    #: squadra entro le 24 ore prima di ``ko`` è la partita che la scheda descrive.
+    STESSA_GARA = pd.Timedelta(hours=24)
+
     def gare_prima(tid: int, tname: str, ko) -> tuple[int, int]:
-        """(gare Understat, gare di calendario con xG) giocate **prima** di ``ko``."""
+        """(gare Understat, gare di calendario con xG) giocate **prima** di ``ko``.
+
+        La gara descritta è esclusa dal campione della sua stessa scheda: Understat la
+        data qualche minuto prima del calcio d'inizio FotMob (misurato il 2026-10-10 su
+        Cagliari–Lecce, Lille–PSG e Atlético Madrid–Málaga) e il solo taglio ``date < ko``
+        la lascerebbe dentro (`docs/76` §1). Il calendario non ha il problema: il calcio
+        d'inizio della gara descritta è ``ko`` e ``<`` lo esclude.
+        """
         n_us = 0
         if not us.empty:
             from fda.teams import canonical as _canon
-            g = us[(us._c == _canon(str(tname))) & (us._d < ko)]
+            g = us[(us._c == _canon(str(tname))) & (us._d < ko)
+                   & (us._d < ko - STESSA_GARA)]
             n_us = len(g)
         g2 = fin_cal[((fin_cal.home_id == tid) | (fin_cal.away_id == tid)) & (fin_cal._ko < ko)]
         return n_us, int(g2.match_id.astype(int).isin(con_xg).sum())
@@ -1125,6 +1142,37 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
             etichetta = atteso_pr.get("label")
             if etichetta and f"<b>{etichetta}</b>" not in sec:
                 fails.append(f"{pg.name}: etichetta di pressing «{etichetta}» assente")
+        # [44]/docs/76 §2 — «Attacco contro difesa»: esce solo sulle schede pre-partita in
+        # cui entrambe le squadre hanno i due rapporti di lega (campione ≥3 gare) dalla
+        # stessa fonte, e con i numeri delle quattro caselle già ricalcolate sopra.
+        attesi_ad = None
+        if ("Analisi pre-partita" in html and len(attesi) == 2 and attesi[0] and attesi[1]
+                and attesi[0].get("source") == attesi[1].get("source")
+                and all(x.get(c) is not None for x in attesi
+                        for c in ("xg_ratio", "xga_ratio"))):
+            attesi_ad = (float(attesi[0]["xg_ratio"]), float(attesi[1]["xga_ratio"]),
+                         float(attesi[1]["xg_ratio"]), float(attesi[0]["xga_ratio"]))
+        striscia = re.search(r"Attacco contro difesa</div>(.*?)</div>", sec, re.DOTALL)
+        checks += 1
+        if attesi_ad is None:
+            if striscia:
+                fails.append(f"{pg.name}: «Attacco contro difesa» pubblicata senza i requisiti "
+                             "(gara già giocata, campione corto o fonti xG diverse)")
+        elif not striscia:
+            fails.append(f"{pg.name}: «Attacco contro difesa» assente con entrambe le squadre "
+                         "che hanno i due rapporti di lega dalla stessa fonte")
+        else:
+            valori = [num(v) for v in re.findall(r"<b>([\d,]+)×</b>", striscia.group(1))]
+            checks += 4
+            if len(valori) != 4:
+                fails.append(f"{pg.name}: «Attacco contro difesa» con {len(valori)} numeri, "
+                             "attesi 4 (crea/concede per squadra)")
+            else:
+                for v, a, che in zip(valori, attesi_ad,
+                                     ("crea casa", "concede trasferta",
+                                      "crea trasferta", "concede casa"), strict=True):
+                    if abs(v - a) > 0.011:
+                        fails.append(f"{pg.name}: attacco contro difesa, {che} {v} ≠ {a:.2f}")
         for tid in (int(riga.home_id), int(riga.away_id)):
             forza_forma(sec, tid, riga.league_id, ko, pg.name)
         checks += 1
