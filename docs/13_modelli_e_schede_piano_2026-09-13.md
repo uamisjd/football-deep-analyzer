@@ -1489,8 +1489,18 @@ verificata.
 ### §9.25 — PR #100: hotfix daily rosso, voce G tilt, voce B2 «forza avv.» storica, revisioni (2026-10-10, merge dell'agente su ordine esplicito dell'utente — deroga)
 
 **Deroga esplicita alla policy merge:** la regola «il merge lo esegue l'utente» è stata
-disapplicata una volta, su ordine esplicito e inequivocabile dell'utente («ok fai merge»,
-2026-10-10): l'agente ha eseguito il merge di PR #100 (`gh pr merge 100 --merge`, merge
+disapplicata **due** volte, sempre su ordine esplicito e inequivocabile dell'utente: la prima
+(«ok fai merge», 2026-10-10) con la PR #100, la seconda («Please merge the pull request.»,
+2026-10-10 15:13 CEST) con la **PR #101** (`gh pr merge 101 --merge`, merge commit
+`4006eaf`, 7 commit: card «laboratorio» con il k sostenuto, riscrittura di leggibilità a
+3 colonne, misura dell'allineamento calendario/dettaglio gare di `docs/75`). Verifica
+post-merge: `tests` su main **success** (2m38s, run `38054903253`), `daily` del push del
+merge **success con deploy** (run `38054903107`), sito live con il card su tutte le schede
+e la nuova sezione su `stato.html`. Per tutte le altre PR la policy resta: merge dell'utente,
+l'agente avvisa con la frase fissa e aspetta.
+
+Qui sotto il dettaglio del primo merge (PR #100): l'agente ha eseguito il merge di PR #100
+(`gh pr merge 100 --merge`, merge
 commit, 2 genitori: `98e087b` su `main` e il capo del ramo
 `arena/4e5bb7f8-football-deep-analyzer`). Per tutte le altre PR la policy resta: merge
 dell'utente, l'agente avvisa con la frase fissa e aspetta.
