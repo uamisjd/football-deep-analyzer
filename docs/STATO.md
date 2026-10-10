@@ -1,3 +1,29 @@
+## 2026-10-10 — Card «laboratorio» nell'area previsione della scheda (docs/74)
+
+L'utente apre la voce («vai») con il design delle otto condizioni di
+[docs/73](73_revisione_sezione_laboratorio_previsione_2026-10-10.md). Fatto: nuovo modulo
+`src/fda/site/laboratorio.py` (what-if per idea + misure d'archivio registrate con campione e
+IC), card `id="laboratorio"` in `match.html` **dopo** `id="scomposizione"` e solo sulle partite
+ancora da giocare, invariante **[46]** in `scripts/verify_site.py`, 9 test nuovi. Il what-if
+parte dalle λ e dal ρ della **previsione salvata** e ricalcola l'1X2 con la stessa griglia
+Dixon-Coles dell'audit (`dc_grid.tau_grid`); le tre formule sono quelle dichiarate in
+`predict.py` (decisione **C**: restano candidati non cablati, ora con una casa visibile).
+Misurato sulle **89** schede pre-partita: valore titolari dato mancante **36/89**, sposta 53/89
+(Δλ mediana 0,040, p90 0,230; Δ1X2 mediana 6 pp, max 13); indisponibili spostano 85/89 (Δλ
+0,060; Δ1X2 mediana 3 pp); **riposo 0/89 — non sposta nulla** (sosta di ottobre, fattore 1,02
+per tutti e totale preservato). Peso mediano pagina 131 KB (tetto 900). [46] ricalcola λ e 1X2
+**senza importare le formule del modello** (riscritte dalle regole, confrontate a 1e-12 con
+quelle di `predict.py` su 69 combinazioni di input) e rilegge gli input dai Parquet — riposo
+dall'oracolo calendario + coppe, valore da `match_info`; per gli indisponibili usa il lettore
+condiviso già verificato da [44] (dichiarato). **[46]: 89 pagine, 267 righe, 1.780 controlli.**
+La previsione salvata non cambia: `predictions.parquet` byte-identico dopo la generazione.
+Gate: **580 test** (571+9), Ruff pulito, build 470/2.364/7.508, `verify_site` **210.499 · 0**
+(baseline 208.630), parità **89 schede · 25 id identici**, `resa_375` **27.675 · 0**.
+**A5:** `STATO.md` arriva a **13 giri** (sotto gli 80 KB) — rotazione dell'archivio matura, da
+fare su richiesta.
+
+---
+
 ## 2026-10-10 — PR #100 fusa (agente, su ordine esplicito dell'utente — deroga) + handoff nuova sessione
 
 L'utente ha ordinato esplicitamente il merge («ok fai merge») — deroga una tantum alla
