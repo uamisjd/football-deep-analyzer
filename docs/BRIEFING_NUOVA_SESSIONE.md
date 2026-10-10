@@ -33,10 +33,11 @@ registrata in `docs/13` §9.25). 6 commit: registrazione merge #98 + verifica po
   protocollo preregistrato in `docs/71` §3, mai cablati in `predict_matches()`. Il merge
   di #100 vale la scelta. Se l'utente cambia idea (B: modulo di laboratorio), è uno
   spostamento piccolo con proof di previsioni byte-identiche.
-- **Prossima voce (design pronto, da aprire quando l'utente vuole): il card
-  «laboratorio»** nell'area previsione della scheda partita (`docs/73`): un card a tutta
-  larghezza dopo `id="scomposizione"`, **sotto** la previsione salvata, etichettato «idee
-  misurate, **non usate**»: per ogni idea, what-if su questa partita (λ tiltata + 1X2
+- **Voce aperta il 2026-10-10 (PR #101, sessione `arena/3893ee00`): il card
+  «laboratorio»** nell'area previsione della scheda partita — il design era pronto in
+  `docs/73`, la realizzazione è documentata in [`docs/74`](74_card_laboratorio_nella_scheda_2026-10-10.md).
+  Un card a tutta larghezza dopo `id="scomposizione"`, **sotto** la previsione salvata,
+  etichettato «idee misurate, **non usate**»: per ogni idea, what-if su questa partita (λ tiltata + 1X2
   ricalcolata con la stessa griglia dell'audit) + effetto misurato in aggregato con IC +
   verdetto + «dato non disponibile» dove manca l'input. Nuovo invariante **[46]** in
   `scripts/verify_site.py`: ricalcolo **indipendente** delle tre formule (non importa le
@@ -49,6 +50,13 @@ registrata in `docs/13` §9.25). 6 commit: registrazione merge #98 + verifica po
   ~135 KB contro tetto 900 KB. Stima: una voce intera (card + calcolo in `analysis.py` +
   [46] + test + gate pieni). La previsione salvata resta byte-identica (il card legge, non
   scrive).
+  **Com'è venuta (misurato sulle 89 schede pre-partita):** valore titolari dato mancante
+  **36/89**, sposta 53/89 (Δλ mediana 0,040, p90 0,230; Δ1X2 mediana 6 pp, max 13);
+  indisponibili 85/89 (Δλ 0,060; 3 pp); **riposo 0/89, non sposta nulla** (sosta di ottobre).
+  Il calcolo sta in `src/fda/site/laboratorio.py` (non in `analysis.py`); [46] ricalcola le
+  tre formule senza importare `predict.py` e i test ne provano l'uguaglianza a 1e-12 su 69
+  combinazioni di input. Gate: **580 test**, Ruff pulito, `verify_site` **210.499 · 0**,
+  parità **89 schede**, `resa_375` **27.675 · 0**.
 - **Numeri di riferimento:** calibrazione produzione λ×**1,039385** (fitted 2026-10-09
   22:03:50, n_fit 4.770, backtest 5.895 righe); `docs/_audit_modelli.json` è lo snapshot
   del **2026-09-20** (λ×1,040063) — invariato, **non** uno snapshot del 2026-10-09;
@@ -63,9 +71,10 @@ registrata in `docs/13` §9.25). 6 commit: registrazione merge #98 + verifica po
   (blob lazy). Non fidarsi di `git log --diff-filter=A` (avverte `docs/69`).
 - **Checklist all'entrata:** 1) `gh run list --branch main --limit 3` — primo daily
   post-merge verde? issue #99 chiusa? 2) `git fetch` e allineare il branch al remote se il
-  log locale è corto. 3) Se l'utente chiede il card «laboratorio»: nuova voce da `docs/73`.
-  4) Se il daily è ancora rosso: diagnosticare (non ipotizzare); la classe del campione è
-  coperta da `docs/70`.
+  log locale è corto. 3) Il card «laboratorio» è **in produzione da #101** (dopo il merge:
+  89 schede, [46] in `verify_site`, `docs/74`); se l'utente chiede altro, la coda riparte
+  da `docs/74` §9. 4) Se il daily è rosso: diagnosticare (non ipotizzare); la classe del
+  campione del 10/10 è coperta da `docs/70`.
 - **Regole persistenti:** merge dell'utente salvo deroga esplicita (questa sessione l'ha
   avuta per #100); italiano per chat, documenti, titoli di PR e commit; commit piccoli con
   push immediato; `docs/STATO.md` aggiornato a ogni turno; nessuna fonte nuova senza
