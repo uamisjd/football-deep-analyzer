@@ -3999,6 +3999,258 @@ def check_forza_avversari_storica(site: Path, data: Path | None) -> tuple[list[s
     return fails, checks
 
 
+# --------------------------------------------------------------------------------- [46]
+# Il card «laboratorio» (docs/73) pubblica per ogni idea il what-if su quella partita: λ
+# inclinata e 1X2 ricalcolata. Le tre formule qui sotto sono **riscritte per conto proprio**
+# dalle regole dichiarate (docs/69 §1, docs/71 §3, docs/73 §3) e NON importano
+# `fda.models.predict`: è lo schema degli oracoli di [44] e [45] — se il card e il modello
+# sbagliassero insieme, qui si vedrebbe. La griglia Dixon-Coles resta invece quella
+# condivisa (`dc_grid.tau_grid`): il progetto ne ha una sola per modelli, calibrazione e
+# sito, e duplicarla sarebbe il modo più sicuro di far divergere due pagine.
+MERCATO_K = 0.12
+MERCATO_CLIP = (0.2, 5.0)
+ASSENZE_K = 0.30
+ASSENZE_AVG = 2.0
+ASSENZE_CLIP = (0.70, 1.00)
+RIPOSO_BREVE, RIPOSO_CORTO, RIPOSO_LUNGO = 2, 4, 7
+RIPOSO_FATTORI = (0.95, 0.98, 1.02)
+
+
+def _lab_mercato(lh: float, la: float, hv: float | None, av: float | None) -> tuple[float, float]:
+    """λ inclinate dal rapporto dei valori: (rapporto clip)**k sul rapporto, totale invariato."""
+    if hv is None or av is None or hv <= 0 or av <= 0 or la <= 0 or (lh + la) <= 0:
+        return lh, la
+    lo, hi = MERCATO_CLIP
+    adj = min(max(hv / av, lo), hi) ** MERCATO_K
+    totale = lh + la
+    r = (lh / la) * (adj ** 2)
+    return (totale * r / (1.0 + r), totale / (1.0 + r))
+
+
+def _lab_assenze(lh: float, la: float, ch: float | None, ca: float | None) -> tuple[float, float]:
+    """λ × (1 − k · perso/2) per squadra, fattore in [0,70; 1,00], poi totale rinormalizzato."""
+    lh_f, la_f = float(lh), float(la)
+    totale = lh_f + la_f
+    lo, hi = ASSENZE_CLIP
+    if ch is not None and ch > 0:
+        lh_f *= min(max(1.0 - ASSENZE_K * float(ch) / ASSENZE_AVG, lo), hi)
+    if ca is not None and ca > 0:
+        la_f *= min(max(1.0 - ASSENZE_K * float(ca) / ASSENZE_AVG, lo), hi)
+    nuovo = lh_f + la_f
+    if nuovo > 0 and totale > 0:
+        lh_f *= totale / nuovo
+        la_f *= totale / nuovo
+    return (max(0.25, lh_f), max(0.25, la_f))
+
+
+def _lab_riposo(lh: float, la: float, rh: float | None, ra: float | None) -> tuple[float, float]:
+    """Fattore per giorni di riposo (≤2 → 0,95 · ≤4 → 0,98 · ≥7 → 1,02), totale invariato."""
+
+    def fattore(giorni: float | None) -> float | None:
+        if giorni is None:
+            return None
+        g = int(giorni)
+        if g <= RIPOSO_BREVE:
+            return RIPOSO_FATTORI[0]
+        if g <= RIPOSO_CORTO:
+            return RIPOSO_FATTORI[1]
+        if g >= RIPOSO_LUNGO:
+            return RIPOSO_FATTORI[2]
+        return 1.0
+
+    fh, fa = fattore(rh), fattore(ra)
+    lh_f, la_f = float(lh), float(la)
+    totale = lh_f + la_f
+    if fh is not None:
+        lh_f *= fh
+    if fa is not None:
+        la_f *= fa
+    if fh is not None or fa is not None:
+        nuovo = lh_f + la_f
+        if nuovo > 0 and totale > 0:
+            lh_f *= totale / nuovo
+            la_f *= totale / nuovo
+    return (max(0.25, lh_f), max(0.25, la_f))
+
+
+def _lab_1x2(lh: float, la: float, rho: float) -> tuple[float, float, float]:
+    """1X2 dalla griglia condivisa: le tre somme che la pagina pubblica."""
+    import numpy as np
+
+    from fda.models.dc_grid import GRID_SIZE, tau_grid
+
+    g = tau_grid(lh, la, rho, size=GRID_SIZE)
+    i, j = np.indices(g.shape)
+    return (float(g[i > j].sum()), float(g[i == j].sum()), float(g[i < j].sum()))
+
+
+_LAB_CARD_RE = re.compile(
+    r'<div class="card detail-card" id="laboratorio"\s+data-lh="([-\d.]+)" data-la="([-\d.]+)" '
+    r'data-p1="(\d+)" data-px="(\d+)" data-p2="(\d+)">(.*?)\n</div>', re.DOTALL)
+_LAB_RIGA_RE = re.compile(
+    r'<tr data-idea="([a-z]+)" data-in-h="([^"]*)" data-in-a="([^"]*)" '
+    r'data-lh="([-\d.]+)" data-la="([-\d.]+)" data-p1="(\d+)" data-px="(\d+)" data-p2="(\d+)">')
+
+
+def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[46] card «laboratorio»: il what-if ricalcolato senza le formule del modello.
+
+    Chiude la condizione 5 di `docs/73` §5: le λ e l'1X2 che il card attribuisce alle tre
+    idee (mercato, assenze, riposo) devono poter essere rifatte **da zero** — formule
+    riscritte in questo file, input riletti dai Parquet — e combaciare con ciò che la
+    pagina stampa. Così il card non può raccontare un effetto diverso da quello che le
+    regole dichiarate producono, e la previsione salvata resta l'unica previsione.
+
+    Indipendenza, con onestà: gli **input** sono ricalcolati qui (riposo dal calendario
+    campionato + coppe, valore dei titolari da `match_info`); il contributo perso degli
+    indisponibili usa il lettore condiviso `MatchAnalysis.absences_weight`, perché è la
+    somma stabilizzata di una colonna già verificata da [44] — qui si controlla che il
+    card la usi, non si rifà la stabilizzazione.
+    """
+    import pandas as pd
+
+    from fda.site.analysis import MatchAnalysis
+    from fda.site.fmt import pct_triple
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    preds = st.read("predictions")
+    fx = st.read("fixtures")
+    info = st.read("match_info")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if preds.empty or fx.empty or not pages:
+        return fails, checks
+    fx = fx.copy()
+    fx["utc_kickoff"] = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+    # ---- oracolo del calendario: campionato + coppe (lo stesso principio di `rest_days`)
+    colonne = ["match_id", "utc_kickoff", "status", "home_id", "away_id"]
+    cal = fx[colonne]
+    # tabella assente (run senza coppe): `Store.read` restituisce un DataFrame vuoto
+    cup = st.read("cup_fixtures")
+    if not cup.empty:
+        cup = cup.copy()
+        cup["utc_kickoff"] = pd.to_datetime(cup.utc_kickoff, utc=True, errors="coerce")
+        cal = pd.concat([cal, cup[colonne]], ignore_index=True, sort=False)
+    finiti = cal[cal.status == "finished"].dropna(subset=["utc_kickoff"])
+
+    def riposo(tid: int, kickoff) -> int | None:
+        if pd.isna(kickoff):
+            return None
+        prima = finiti[(finiti.utc_kickoff < kickoff)
+                       & ((finiti.home_id == tid) | (finiti.away_id == tid))]
+        if prima.empty:
+            return None
+        return int((kickoff - prima.utc_kickoff.max()).total_seconds() // 86400)
+
+    if "match_id" in preds.columns and "made_at" in preds.columns:
+        preds = preds.sort_values("made_at").groupby("match_id", as_index=False).tail(1)
+    pred_idx = preds.set_index("match_id") if "match_id" in preds.columns else None
+    info_idx = (info.set_index("match_id")
+                if not info.empty and "match_id" in info.columns else None)
+    fx_idx = fx.set_index("match_id")
+    # lettore condiviso per gli indisponibili: la somma stabilizzata di una colonna che [44]
+    # verifica già riga per riga — qui si controlla che il card la usi per il what-if.
+    ma = MatchAnalysis(st)
+
+    def perso(match_id: int, tid: int) -> float | None:
+        """xG+xA/90 persi: ``None`` = la fonte non pubblica la distinta, ``0.0`` = nessun assente."""
+        ab = ma.absences_weight(match_id, tid)
+        if ab is not None:
+            v = ab.get("contrib_lost_p90")
+            return 0.0 if v is None else round(float(v), 2)
+        # nessun indisponibile: se la distinta c'è è uno zero misurato, altrimenti è un dato
+        # che la fonte non pubblica e tale resta (nessuno «0» inventato dal controllo).
+        if not ma.lineup.empty and ((ma.lineup.match_id == match_id)
+                                    & (ma.lineup.team_id == tid)).any():
+            return 0.0
+        return None
+
+    n_pagine = 0
+    n_righe = 0
+    for pg in pages:
+        try:
+            mid = int(pg.stem)
+        except ValueError:
+            continue
+        html = pg.read_text(encoding="utf-8")
+        m = _LAB_CARD_RE.search(html)
+        if not m:
+            continue
+        if pred_idx is None or mid not in pred_idx.index or mid not in fx_idx.index:
+            fails.append(f"{pg.name}: card «laboratorio» senza previsione o calendario")
+            continue
+        riga_fx = fx_idx.loc[mid]
+        pred = pred_idx.loc[mid]
+        n_pagine += 1
+        lh, la = float(pred["lambda_home"]), float(pred["lambda_away"])
+        # ρ non è pubblicato in pagina: si legge dalla riga salvata (0 se la colonna manca,
+        # come fanno il modello e la griglia quando il dato non c'è)
+        rho = 0.0
+        if "dc_rho" in preds.columns and pd.notna(pred["dc_rho"]):
+            rho = float(pred["dc_rho"])
+        checks += 2
+        # la base del card è la previsione salvata: λ e 1X2 devono essere le sue
+        if abs(float(m.group(1)) - lh) > 0.005 + 1e-9 or abs(float(m.group(2)) - la) > 0.005 + 1e-9:
+            fails.append(f"{pg.name}: λ di partenza del card {m.group(1)}/{m.group(2)} ≠ "
+                         f"previsione salvata {lh:.2f}/{la:.2f}")
+        base_pub = [int(m.group(3)), int(m.group(4)), int(m.group(5))]
+        base_calc = list(pct_triple(_lab_1x2(lh, la, rho), 0))
+        if base_pub != base_calc:
+            fails.append(f"{pg.name}: 1X2 di partenza del card {base_pub} ≠ ricalcolato {base_calc}")
+
+        kickoff = riga_fx.utc_kickoff
+        previsti = {
+            "mercato": None,
+            "assenze": (perso(mid, int(riga_fx.home_id)), perso(mid, int(riga_fx.away_id))),
+            "riposo": (riposo(int(riga_fx.home_id), kickoff), riposo(int(riga_fx.away_id), kickoff)),
+        }
+        if info_idx is not None and mid in info_idx.index:
+            hv = info_idx.loc[mid].get("home_starters_value_eur")
+            av = info_idx.loc[mid].get("away_starters_value_eur")
+            hv = None if hv is None or pd.isna(hv) or float(hv) <= 0 else round(float(hv))
+            av = None if av is None or pd.isna(av) or float(av) <= 0 else round(float(av))
+            previsti["mercato"] = (hv, av) if (hv is not None and av is not None) else (None, None)
+        for riga in _LAB_RIGA_RE.finditer(m.group(6)):
+            n_righe += 1
+            idea, ih_p, ia_p = riga.group(1), riga.group(2), riga.group(3)
+            checks += 1
+            atteso = previsti.get(idea)
+            if atteso is None:
+                continue
+            ih_a, ia_a = atteso
+
+            def _num(txt: str) -> float | None:
+                return float(txt) if txt not in ("", None) else None
+
+            checks += 2
+            if _num(ih_p) != ih_a or _num(ia_p) != ia_a:
+                fails.append(f"{pg.name}: {idea}, dato usato {ih_p or 'n.d.'}/{ia_p or 'n.d.'} "
+                             f"≠ ricalcolato {ih_a}/{ia_a}")
+                continue        # con l'input sbagliato, λ e 1X2 non sono giudicabili
+            if idea == "mercato":
+                lh2, la2 = _lab_mercato(lh, la, ih_a, ia_a)
+            elif idea == "assenze":
+                lh2, la2 = _lab_assenze(lh, la, ih_a, ia_a)
+            else:
+                lh2, la2 = _lab_riposo(lh, la, ih_a, ia_a)
+            checks += 2
+            if (abs(float(riga.group(4)) - lh2) > 0.005 + 1e-9
+                    or abs(float(riga.group(5)) - la2) > 0.005 + 1e-9):
+                fails.append(f"{pg.name}: {idea}, λ {riga.group(4)}/{riga.group(5)} "
+                             f"≠ ricalcolato {lh2:.2f}/{la2:.2f}")
+                continue
+            pub = [int(riga.group(6)), int(riga.group(7)), int(riga.group(8))]
+            calc = list(pct_triple(_lab_1x2(lh2, la2, rho), 0))
+            checks += 1
+            if pub != calc:
+                fails.append(f"{pg.name}: {idea}, 1X2 {pub} ≠ ricalcolato {calc} "
+                             f"(λ {lh2:.2f}/{la2:.2f})")
+    print(f"[46] card «laboratorio»: {n_pagine} pagine, {n_righe} righe what-if ricalcolate")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -4065,6 +4317,9 @@ def main() -> int:
             site, Path(args.data) if args.data else None)
         fails += vigilia
         checks += vigilia_checks
+        lab, lab_checks = check_laboratorio(site, Path(args.data) if args.data else None)
+        fails += lab
+        checks += lab_checks
         squadre, squadre_checks = check_due_squadre(site, Path(args.data) if args.data else None)
         fails += squadre
         checks += squadre_checks

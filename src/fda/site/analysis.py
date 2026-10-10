@@ -45,6 +45,7 @@ from .advanced import (
     xg_race,
 )
 from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_triple
+from .laboratorio import laboratorio as whatif_laboratorio
 from .rates import (
     MIN_DEN_FOR_RATE,
     Pool,
@@ -2164,6 +2165,60 @@ class MatchAnalysis:
         return {**prof, "dev": float(y) / float(ly) - 1.0}
 
     # ---- fattori che spostano la partita (audit 2026-09-20: valore quantitativo pre-partita) ----
+
+    def laboratorio(self, match_id: int, home_id: int, away_id: int, kickoff: datetime,
+                    prediction: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Il card «laboratorio»: le tre idee misurate e **non usate** su questa partita.
+
+        Raccoglie gli input per-partita (giorni di riposo dal calendario campionato + coppe,
+        valore dei titolari da ``match_info``, xG+xA/90 persi dagli indisponibili) e
+        delega il what-if a :func:`fda.site.laboratorio.laboratorio`: λ inclinata e 1X2
+        ricalcolata con la stessa griglia Dixon-Coles dell'audit, partendo dalla previsione
+        **salvata** (il card legge, non scrive).
+
+        La distinzione che conta, qui come altrove: «0 assenti con la distinta pubblicata»
+        è uno zero **misurato**, mentre «distinta non pubblicata» è un dato mancante e in
+        pagina esce come «dato non disponibile» (regola del progetto, docs/73 §5.3).
+        """
+        if not prediction:
+            return None
+
+        def _perso(tid: int) -> float | None:
+            try:
+                ab = self.absences_weight(match_id, tid)
+            except Exception:
+                ab = None
+            if ab is not None:
+                v = ab.get("contrib_lost_p90")
+                try:
+                    return float(v) if v is not None else 0.0
+                except (TypeError, ValueError):
+                    return None
+            # nessun indisponibile: se la distinta c'è, è uno zero misurato; altrimenti è
+            # un dato che la fonte non pubblica e tale resta (nessuno «0» inventato).
+            try:
+                if ((self.lineup.match_id == match_id) & (self.lineup.team_id == tid)).any():
+                    return 0.0
+            except Exception:
+                pass
+            return None
+
+        hv = av = None
+        if not self.info.empty:
+            riga = self.info[self.info.match_id == match_id]
+            if not riga.empty:
+                d = riga.iloc[0].to_dict()
+                hv, av = _val(d, "home_starters_value_eur"), _val(d, "away_starters_value_eur")
+        try:
+            return whatif_laboratorio(
+                prediction,
+                rest_home=self.rest_days(home_id, kickoff),
+                rest_away=self.rest_days(away_id, kickoff),
+                valore_home=hv, valore_away=av,
+                perso_home=_perso(home_id), perso_away=_perso(away_id),
+            )
+        except Exception:
+            return None
 
     def fattori_chiave(self, match_id: int, home_id: int, home_name: str, away_id: int, away_name: str,
                        kickoff: datetime, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -5949,6 +6004,11 @@ class MatchAnalysis:
                              if status != "finished" else None)
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
+        # card «laboratorio» (docs/73): idee misurate e non usate, solo sulle partite ancora
+        # da giocare — su una gara finita il «cosa cambierebbe» non ha più senso di essere
+        # mostrato accanto al risultato.
+        ctx["laboratorio"] = (self.laboratorio(match_id, home_id, away_id, kickoff, ctx["prediction"])
+                              if status != "finished" else None)
         ctx["fav_record"] = self.favorite_track_record(ctx["prediction"])
         ctx["league_pos"] = self.league_goals_percentile(ctx["prediction"])
         ctx["league_over"] = self.league_over_avg(ctx["prediction"])
