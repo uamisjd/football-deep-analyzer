@@ -2128,8 +2128,8 @@ class MatchAnalysis:
         ko = pd.Timestamp(kickoff)
         if ko.tzinfo is None:
             ko = ko.tz_localize("UTC")
-        fin = self.info[(self.info.status == "finished")
-                        & (pd.to_datetime(self.info.utc_kickoff, utc=True) < ko)]
+        fin = self._finite_nel_calendario()
+        fin = fin[pd.to_datetime(fin.utc_kickoff, utc=True) < ko]
         if fin.empty:
             return None
         ids = set(fin.match_id.astype(int))
@@ -3715,6 +3715,20 @@ class MatchAnalysis:
             self._ko_cache = s
         return s
 
+    def _finite_nel_calendario(self) -> pd.DataFrame:
+        """Righe ``match_info`` delle gare finite **nel calendario** (``fixtures``).
+
+        Il calendario è l'autorità su «gara giocata» (docs/64 §7, invariante [44]
+        ``gare_prima``): ``match_info`` può essere avanti — stato ``finished`` con xG
+        mentre il calendario è ancora indietro, per una cache HTTP incoerente fra le
+        fasi del collect (caso reale: daily ``38005701599``, issue #99) — e non deve
+        gonfiare un campione pubblicato. Senza calendario si ripiega su ``match_info``.
+        """
+        if self.info.empty or self.fixtures.empty:
+            return self.info
+        cal = self.fixtures[self.fixtures.status == "finished"]
+        return self.info[self.info.match_id.astype(int).isin(set(cal.match_id.astype(int)))]
+
     def _us_dates(self) -> pd.Series:
         """Date delle gare-squadra Understat come timestamp UTC (cache di istanza)."""
         s = getattr(self, "_usdt_cache", None)
@@ -3772,8 +3786,8 @@ class MatchAnalysis:
                     out["ppda"] = float(ppda.mean())
         elif source == "FotMob" and key is not None and not self.info.empty and not self.fixtures.empty:
             mids = set(self.fixtures.loc[self.fixtures.league_id == key, "match_id"].astype(int))
-            fin = self.info[(self.info.status == "finished")
-                            & self.info.match_id.astype(int).isin(mids)]
+            fin = self._finite_nel_calendario()
+            fin = fin[fin.match_id.astype(int).isin(mids)]
             if before is not None:
                 ko = fin.match_id.astype(int).map(self._match_kickoffs())
                 fin = fin[ko < before]
@@ -3859,9 +3873,16 @@ class MatchAnalysis:
                 slug = rows.league_slug.iloc[0] if "league_slug" in rows.columns else None
                 return self._with_league_ref(out, "Understat", slug, cut)
         if not self.info.empty:
-            fin = self.info[self.info.status == "finished"]
+            # [44] docs/64 §7: il campione è quello dell'oracolo del gate — gare finite
+            # **nel calendario** prima della vigilia, con xG completo di entrambe le
+            # squadre, così «xG creati» e «xG concessi» restano sulla stessa serie e il
+            # numero stampato è quello ricontato dal calendario. Un disallineamento
+            # match_info/calendario (daily 38005701599, issue #99) non gonfia il campione.
+            fin = self._finite_nel_calendario()
             if cut is not None:
                 fin = fin[fin.match_id.astype(int).map(self._match_kickoffs()) < cut]
+            if {"home_xg", "away_xg"} <= set(fin.columns):
+                fin = fin.dropna(subset=["home_xg", "away_xg"])
             h = fin[fin.home_id == team_id]
             a = fin[fin.away_id == team_id]
             xg = pd.concat([h.home_xg, a.away_xg]).dropna()
@@ -3906,7 +3927,7 @@ class MatchAnalysis:
         """xG azione manovrata / palle inattive per gara, dalle partite finite FotMob."""
         if self.team_stats.empty or self.info.empty:
             return {}
-        finite = self.info[self.info.status == "finished"]
+        finite = self._finite_nel_calendario()
         cut = self._as_utc(before)
         if cut is not None:
             finite = finite[finite.match_id.astype(int).map(self._match_kickoffs()) < cut]

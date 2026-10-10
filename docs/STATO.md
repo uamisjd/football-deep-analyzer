@@ -1,3 +1,21 @@
+## 2026-10-10 — Hotfix P0: daily rosso post-merge #98 (campione «Le due squadre» gonfiato da `match_info`)
+
+Il `daily` `38005701599` (push del merge) è fallito a `verify_site` con 2 problemi «campione»
+(`5781769`, `5781776`): il generatore contava il campione da `match_info` (stato + xG del
+solo squadra) mentre l'oracolo [44] `gare_prima` riconta dal **calendario** — il collect
+fresco aveva portato `match_info` avanti (gara finita con xG, calendario indietro per cache
+HTTP). Diagnosi e correzione in [docs/70](70_daily_rosso_campione_calendario_hotfix_2026-10-10.md):
+nuovo `_finite_nel_calendario()` applicato a `season_xg`, `_season_xg_split`, `cards_season`,
+`_with_league_ref`; in `season_xg` campione anche ristretto a xG completo di entrambe
+(«xG creati» e «xG concessi» sulla stessa serie). **No-op dimostrato**: build prima/dopo
+→ 4.250 file, contenuto identico (normalizzati i timestamp); gate **569 test**, Ruff
+pulito, `verify_site` **202.969 · 0**, parità **89 schede · pulita**, `resa_375`
+**27.255 · 0**. Nuovo test di regressione + un test esistente completato con il calendario
+nel fixture. Ricetta di produzione intatta. Prossimo `daily` verde per costruzione; issue
+#99 si chiude da sola. La verifica richiesta sul merge è in cima a `docs/13` §9.24.
+
+---
+
 ## 2026-10-10 — PR #98 fusa dall'utente: forma con Elo storico e benchmark offline col mercato
 
 Merge eseguito dall'**utente** il 2026-10-09 23:42:02Z (merge commit `98e087b`, 2 genitori:
