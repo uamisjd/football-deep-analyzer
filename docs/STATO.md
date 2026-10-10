@@ -1,3 +1,20 @@
+## 2026-10-10 — Voce B2: «forza avv.» storica nella tabella «Come arrivano» (anacronismo docs/60 §5 chiuso)
+
+La colonna «forza avv.» mostrava la classifica a punti di **oggi** su gare passate
+(`self.standing(opp)` in `arrival_trend`). Ora ogni riga porta il rango nella **graduatoria
+Elo del campionato alla data della gara** e l'Elo storico nel tooltip — la macchina della
+striscia «Forma» (docs/66); la dichiarazione (th + cella ⓘ) è aggiornata. Documentato in
+[docs/72](72_forza_avversario_storica_come_arrivano_2026-10-10.md). Controlli: [43] esteso
+(dichiarazione del rango alla vigilia + cella verificata) e **[45] nuovo, oracolo**
+(`check_forza_avversari_storica`: rango ed Elo ricalcolati con l'oracolo cronologico di
+[44], senza i lettori del generatore — 923 righe verificate, 226 istanti Elo). Test
+`test_arrival_trend_forza_avversario_alla_vigilia`. Build completa: 464/2.364/7.510;
+**571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**, parità **89 schede ·
+pulita** (7 leghe), `resa_375` **27.255 · 0**. Copertura: 923 celle con rango+Elo alla
+vigilia (99,7% delle righe, docs/69 §2), zero fonti nuove. Ricetta di produzione intatta.
+
+---
+
 ## 2026-10-10 — Voce G: tilt dichiarati, commento falso corretto, campione assenze misurato, protocollo preregistrato
 
 Voce G della [coda](docs/69) §1, documentata in [docs/71](71_tilt_commento_falso_campione_assenze_e_protocollo_preregistrato_2026-10-10.md).

@@ -4474,19 +4474,18 @@ class MatchAnalysis:
         # sparkline xG + strength avversario (P1 audit)
         spark_xg = [round(float(r["xg"]),2) for r in rows]
         spark_xga = [round(float(r["xga"]),2) for r in rows]
-        # avversario strength: prova a prendere classifica avversario
+        # forza dell'avversario **alla vigilia di ognuna delle gare della tabella**
+        # (docs/60 §5: prima era la classifica a punti di oggi, un anacronismo) —
+        # rango nella graduatoria Elo del campionato alla data della gara ed Elo
+        # storico nel tooltip: la stessa macchina della striscia «Forma» (docs/66),
+        # non la classifica di oggi.
+        league_id = self._team_league_id(team_id)
         for r in rows:
             opp = r.get("opp") or ""
-            st = self.standing(opp) if opp else None
-            if st:
-                r["opp_rank"] = st.get("rank")
-                r["opp_pts"] = st.get("points")
-                r["opp_pos"] = f"{st.get('rank')}ª"
-            else:
-                r["opp_rank"] = None
-                r["opp_pts"] = None
-                r["opp_pos"] = None
-        # Elo avversario se disponibile da predictions? usa standing fallback
+            r["opp_elo"] = self.team_elo(opp, r["date"]) if opp else None
+            league = (self.league_elo(league_id, r["date"])
+                      if opp and league_id is not None else None)
+            r["opp_rank"] = league["ranks"].get(canonical(opp)) if league else None
         return {"source": source, "played": len(rows), "rows": rows,
                 "xg_pm": sum(xg) / len(xg), "xga_pm": sum(xga) / len(xga),
                 "pts": sum(r["pts"] for r in rows), "xpts": round(sum(r["xpts"] for r in rows), 1),
