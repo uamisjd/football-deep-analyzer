@@ -20,9 +20,20 @@ from pathlib import Path
 
 import pytest
 
-from fda.models.predict import absences_tilt, market_value_tilt, rest_tilt
+from fda.models.predict import (
+    ABSENCES_K,
+    MARKET_VALUE_K,
+    absences_tilt,
+    market_value_tilt,
+    rest_tilt,
+)
 from fda.site.build import SiteBuilder
-from fda.site.laboratorio import IDEE, laboratorio
+from fda.site.laboratorio import (
+    ASSENZE_K_PROTOCOLLO,
+    IDEE,
+    MERCATO_K_SOSTENUTO,
+    laboratorio,
+)
 from tests.test_site import _seed
 
 
@@ -53,21 +64,26 @@ def test_le_formule_dell_oracolo_coincidono_con_quelle_del_modello():
     valori = [(None, None), (100e6, 50e6), (50e6, 400e6), (1e9, 1e6), (12e6, 90e6)]
     persi = [(None, None), (0.0, 0.0), (0.4, 0.0), (0.0, 1.9), (2.4, 0.7), (9.9, 9.9)]
     riposi = [(None, None), (1, 1), (2, 7), (3, 3), (4, 5), (6, 9), (7, 7), (20, 19), (0, 12)]
+    # i due k con cui il card pubblica il what-if: quello sostenuto e la costante del codice
+    k_mercato = (MERCATO_K_SOSTENUTO, MARKET_VALUE_K)
+    k_assenze = (ASSENZE_K_PROTOCOLLO, ABSENCES_K)
     confronto = 0
     for lh, la in coppie_lambda:
         for hv, av in valori:
-            atteso = market_value_tilt(lh, la, hv, av)[:2]
-            assert vs._lab_mercato(lh, la, hv, av) == pytest.approx(atteso, abs=1e-12)
-            confronto += 1
+            for k in k_mercato:
+                assert vs._lab_mercato(lh, la, hv, av, k=k) == pytest.approx(
+                    market_value_tilt(lh, la, hv, av, k=k)[:2], abs=1e-12)
+                confronto += 1
         for ch, ca in persi:
-            assert vs._lab_assenze(lh, la, ch, ca) == pytest.approx(
-                absences_tilt(lh, la, ch, ca)[:2], abs=1e-12)
-            confronto += 1
+            for k in k_assenze:
+                assert vs._lab_assenze(lh, la, ch, ca, k=k) == pytest.approx(
+                    absences_tilt(lh, la, ch, ca, k=k)[:2], abs=1e-12)
+                confronto += 1
         for rh, ra in riposi:
             assert vs._lab_riposo(lh, la, rh, ra) == pytest.approx(
                 rest_tilt(lh, la, rh, ra)[:2], abs=1e-12)
             confronto += 1
-    assert confronto == 3 * (len(valori) + len(persi) + len(riposi))
+    assert confronto == 3 * (2 * len(valori) + 2 * len(persi) + len(riposi))
 
 
 def test_il_what_if_sposta_le_lambda_e_ricalcola_l_1x2():
@@ -122,6 +138,75 @@ def test_una_sosta_uguale_per_tutti_non_sposta_nulla():
     # «nessun assente con la distinta pubblicata» è uno zero misurato: disponibile, ma non sposta
     assert righe["assenze"]["disponibile"] and righe["assenze"]["in_home"] == 0.0
     assert righe["assenze"]["sposta"] is False
+
+
+def test_le_misure_d_archivio_sono_quelle_registrate_nei_documenti():
+    """Campioni, intervalli e verdetti sono **misure registrate**, pinnati uno per uno.
+
+    [46] verifica i numeri che si possono ricalcolare a ogni build (λ e 1X2 del what-if).
+    Questi no: vengono dal backtest, e nessun ricalcolo quotidiano li rifà. Sono quindi
+    costanti con provenienza, e il rischio è che restino indietro quando una misura viene
+    rifatta: qui si pinnano sui valori di `docs/69` §1 e `docs/71` §2-§3, così chi li
+    cambia deve aver rifatto la misura e aggiornato il documento che la registra.
+
+    I numeri sono confrontati in forma normalizzata (il meno tipografico «−» vale «-»):
+    quello che conta è la cifra, non il glifo con cui è scritta.
+    """
+    def _n(testo: str) -> str:
+        return testo.replace("\u2212", "-").replace("\u2013", "-")
+
+    idee = {i.key: i for i in IDEE}
+    assert set(idee) == {"mercato", "assenze", "riposo"}
+
+    mercato = idee["mercato"]
+    assert mercato.campione.startswith("341 gare")                  # docs/69 §1
+    assert _n(mercato.misura).count("-0,004785") == 1               # k = 0,03, l'unico con IC fuori zero
+    assert "[−0,008769; −0,000581]".replace("\u2212", "-") in _n(mercato.misura)
+    assert _n(mercato.misura).count("-0,009475") == 1               # k = 0,12, indistinguibile da zero
+    assert "[−0,025091; +0,007122]".replace("\u2212", "-") in _n(mercato.misura)
+    assert mercato.k_usato == MERCATO_K_SOSTENUTO == 0.03
+    assert mercato.k_dichiarato == MARKET_VALUE_K == 0.12
+
+    assenze = idee["assenze"]
+    assert "98 gare" in assenze.campione and "137 → 98" in assenze.campione    # docs/71 §2
+    assert "300 gare" in assenze.misura and "5 leghe su 7" in assenze.misura   # docs/71 §3.2
+    assert assenze.verdetto.startswith("non testabile")
+    assert assenze.k_usato == ASSENZE_K_PROTOCOLLO == 0.20          # tetto della griglia {0; 0,1; 0,2}
+    assert assenze.k_dichiarato == ABSENCES_K == 0.30               # fuori dalla griglia
+
+    riposo = idee["riposo"]
+    assert "1.591 λ" in riposo.campione and "5.895" in riposo.campione         # docs/69 §1
+    assert "+0,0000787" in riposo.misura and "[+0,0000154; +0,000141]" in riposo.misura
+    assert riposo.verdetto.startswith("non usata")
+    assert riposo.k_usato is None and riposo.k_dichiarato is None
+
+    # il k del what-if è quello sostenuto, non la costante del codice (revisione del
+    # 2026-10-10, `docs/74` §10): con il k sbagliato lo spostamento vale ~4 volte tanto.
+    assert MERCATO_K_SOSTENUTO < MARKET_VALUE_K
+    assert ASSENZE_K_PROTOCOLLO < ABSENCES_K
+    for idea in IDEE:
+        assert idea.fonte.startswith("docs/")
+        assert idea.formula and idea.verdetto and idea.verdetto_help
+
+
+def test_il_confronto_con_il_k_dichiarato_esce_in_pagina(tmp_path):
+    """Il what-if col k sostenuto e il confronto col k del codice: due numeri, due attributi."""
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    futura = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    st.close()
+    righe = re.findall(r'<tr data-idea="([a-z]+)"[^>]*>', futura)
+    assert righe == ["mercato", "assenze", "riposo"]
+    mercato = re.search(r'<tr data-idea="mercato"[^>]*>', futura).group(0)
+    assenze = re.search(r'<tr data-idea="assenze"[^>]*>', futura).group(0)
+    riposo = re.search(r'<tr data-idea="riposo"[^>]*>', futura).group(0)
+    # le due idee con un k pubblicano entrambe le coppie di λ (what-if + confronto)
+    for riga in (mercato, assenze):
+        assert "data-lh2=" in riga and "data-q1=" in riga, riga
+    assert "data-lh2=" not in riposo, "il riposo non ha un k: nessun confronto"
+    assert "k = 0,03" in futura and "k = 0,12" in futura
+    assert "k = 0,20" in futura and "k = 0,30" in futura
 
 
 def test_senza_previsione_niente_card():
@@ -193,6 +278,23 @@ def test_l_invariante_46_ricalcola_il_card(tmp_path):
     fails, checks = vs.check_laboratorio(out, tmp_path / "processed")
     assert not fails, fails[:5]
     assert checks >= 10, f"troppi pochi controlli: {checks}"
+
+
+def test_l_invariante_46_vede_anche_un_confronto_falso(tmp_path):
+    """[46] controlla anche la seconda coppia: il k del codice non è un numero di facciata."""
+    vs = _verify_site()
+    st = _seed(tmp_path)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    st.close()
+    pagina = out / "partite" / "5749669.html"
+    html = pagina.read_text(encoding="utf-8")
+    riga = re.search(r'<tr data-idea="mercato"[^>]*data-lh2="([-\d.]+)"', html)
+    assert riga, "la riga del mercato non pubblica il confronto col k dichiarato"
+    falsa = html.replace(f'data-lh2="{riga.group(1)}"', 'data-lh2="2.50"', 1)
+    pagina.write_text(falsa, encoding="utf-8")
+    fails, _ = vs.check_laboratorio(out, tmp_path / "processed")
+    assert fails and any("confronto" in f for f in fails), fails[:5]
 
 
 def test_l_invariante_46_vede_un_numero_falso(tmp_path):

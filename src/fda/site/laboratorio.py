@@ -37,11 +37,31 @@ from typing import Any
 import numpy as np
 
 from ..models.dc_grid import GRID_SIZE, tau_grid
-from ..models.predict import absences_tilt, market_value_tilt, rest_tilt
+from ..models.predict import (
+    ABSENCES_K,
+    MARKET_VALUE_K,
+    absences_tilt,
+    market_value_tilt,
+    rest_tilt,
+)
 
 #: sotto questo spostamento (gol attesi per squadra) l'idea non cambia nulla di visibile:
 #: le λ sono pubblicate con due decimali, quindi 0,005 è il primo scarto che si vede.
 SOGLIA_SPOSTA = 0.005
+
+#: Due k per idea, e la differenza conta più del numero (revisione del 2026-10-10, `docs/74` §10):
+#: il what-if va calcolato con il k che la **misura** sostiene — non con la costante che il
+#: codice si porta dietro e che la misura non distingue dallo zero. Mostrare solo il secondo
+#: darebbe al lettore uno spostamento ~4 volte più grande di quello che entrerebbe davvero.
+#: * mercato: k = 0,03 è l'unico con un intervallo di confidenza che esclude lo zero
+#:   (`docs/69` §1); la griglia preregistrata è {0; 0,03; 0,06; 0,09} (`docs/71` §3).
+#: * assenze: nessun k è sostenuto (98 gare, sotto i 300 del protocollo), quindi si mostra il
+#:   **massimo della griglia preregistrata** (0,20) come tetto di ciò che il protocollo
+#:   prenderebbe in considerazione; la griglia è {0; 0,1; 0,2}.
+#: Il k dichiarato nel codice (0,12 e 0,30) resta pubblicato accanto, per confronto: non è un
+#: candidato della griglia, ed è per questo che non è il numero della riga.
+MERCATO_K_SOSTENUTO: float = 0.03
+ASSENZE_K_PROTOCOLLO: float = 0.20
 
 #: formato delle λ pubblicate (decimali): vale per il card e per chi lo ricalcola ([46]).
 ND_LAMBDA = 2
@@ -61,6 +81,14 @@ class Idea:
     fonte: str            # documento che registra la misura
     verdetto: str         # una riga: che cosa se n'è fatto
     verdetto_help: str    # ⓘ del verdetto: la ragione per esteso
+    # «k» dell'idea, se ne ha uno: quello con cui il card calcola il what-if (sostenuto dalla
+    # misura, o il massimo previsto dal protocollo) e quello dichiarato nel codice, pubblicato
+    # accanto per confronto. `None` per le idee senza k (il riposo: fattori fissi).
+    k_usato: float | None = None
+    k_usato_label: str = ""
+    k_dichiarato: float | None = None
+    k_dichiarato_label: str = ""
+    nota_k: str = ""      # ⓘ della colonna dello spostamento: perché questo k e non l'altro
 
 
 #: Le tre idee, nell'ordine in cui escono in pagina: prima quella con il campione più
@@ -72,27 +100,38 @@ IDEE: tuple[Idea, ...] = (
         icona="💰",
         unita="M€",
         formula=("Il rapporto fra il valore dei titolari (casa/trasferta), limitato fra 0,2 e 5, "
-                 "inclina le λ di rapporto^k con k = 0,12; il totale dei gol attesi resta quello "
-                 "del modello — l'idea sposta il peso fra le due squadre, non i gol della partita."),
+                 "inclina le λ di rapporto^k; il totale dei gol attesi resta quello del modello "
+                 "— l'idea sposta il peso fra le due squadre, non i gol della partita."),
         campione="341 gare dell'archivio (5,8%): è l'unica idea con un campione testabile",
         misura=("solo k = 0,03 ha un intervallo che esclude lo zero (Δlog-loss −0,004785, IC95 "
-                "[−0,008769; −0,000581]); k = 0,12 — quello mostrato qui — è indistinguibile "
+                "[−0,008769; −0,000581]); k = 0,12 — la costante nel codice — è indistinguibile "
                 "dallo zero (−0,009475, IC95 [−0,025091; +0,007122])"),
         fonte="docs/69 §1 · docs/71 §3",
         verdetto="non usata: la misura non sostiene questo k",
-        verdetto_help=("Il guadagno misurato è su k = 0,03, un terzo di quello provato qui, e con "
-                       "una correlazione di 0,883 fra valore e modello: quasi tutto ciò che il "
-                       "valore sa, il modello lo sa già. Promuoverla richiederebbe una MODEL_VERSION "
-                       "nuova e una calibrazione ristimata sul backtest con il fattore dentro."),
+        verdetto_help=("Il guadagno misurato è su k = 0,03, un quarto della costante che il codice "
+                       "si porta dietro, e con una correlazione di 0,883 fra valore e modello: "
+                       "quasi tutto ciò che il valore sa, il modello lo sa già. Promuoverla "
+                       "richiederebbe una MODEL_VERSION nuova e una calibrazione ristimata sul "
+                       "backtest con il fattore dentro."),
+        k_usato=MERCATO_K_SOSTENUTO,
+        k_usato_label="k = 0,03 — l'unico con IC fuori dallo zero",
+        k_dichiarato=MARKET_VALUE_K,
+        k_dichiarato_label="k = 0,12 — la costante nel codice",
+        nota_k=("Il what-if è calcolato con k = 0,03, l'unico valore dell'intervallo con un "
+                "intervallo di confidenza che esclude lo zero. Sotto, per confronto, lo stesso "
+                "calcolo con k = 0,12 — la costante oggi nel codice — che la misura NON "
+                "distingue dallo zero: sposta circa quattro volte tanto, e non è una stima di "
+                "ciò che entrerebbe in produzione."),
     ),
     Idea(
         key="assenze",
         nome="Indisponibili pesati",
         icona="🏥",
         unita="xG+xA/90",
-        formula=("Ogni λ è moltiplicata per 1 − 0,30 × (xG+xA/90 persi) / 2,0, con il fattore "
+        formula=("Ogni λ è moltiplicata per 1 − k × (xG+xA/90 persi) / 2,0, con il fattore "
                  "limitato fra 0,70 e 1,00; il totale dei gol attesi resta quello del modello. "
-                 "L'input è la stessa somma pubblicata nella card «Indisponibili»."),
+                 "L'input è la stessa somma pubblicata nella card «Indisponibili», dove la riga "
+                 "esce (87 schede su 89 in questo build)."),
         campione="98 gare (1,7% dell'archivio); campione instabile: 137 → 98 in tre settimane",
         misura=("sotto la soglia minima del protocollo preregistrato (≥ 300 gare e ≥ 5 leghe su 7): "
                 "esito «non testabile», non «neutro»"),
@@ -103,6 +142,15 @@ IDEE: tuple[Idea, ...] = (
                        "tabelle per-partita non portavano più la lista pre-partita degli "
                        "indisponibili. Con un campione che si muove da solo, nessuna misura "
                        "regge: il protocollo preregistrato chiede almeno 300 gare."),
+        k_usato=ASSENZE_K_PROTOCOLLO,
+        k_usato_label="k = 0,20 — il massimo della griglia preregistrata",
+        k_dichiarato=ABSENCES_K,
+        k_dichiarato_label="k = 0,30 — la costante nel codice",
+        nota_k=("Nessun k è sostenuto: con 98 gare l'esito del protocollo è «non testabile». Il "
+                "what-if usa k = 0,20, il valore più alto della griglia preregistrata "
+                "({0; 0,1; 0,2}): è il tetto di ciò che il protocollo prenderebbe in esame, non "
+                "un k misurato. Sotto, per confronto, la costante k = 0,30 che il codice si porta "
+                "dietro e che è fuori dalla griglia."),
     ),
     Idea(
         key="riposo",
@@ -138,6 +186,22 @@ def _float(v: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return out if np.isfinite(out) else None
+
+
+def _applica(key: str, lh: float, la: float, ih: float | None, ia: float | None,
+             k: float | None, disponibile: bool) -> tuple[float, float]:
+    """Applica la formula dell'idea alle λ: con ``k`` se l'idea ne ha uno, senza altrimenti.
+
+    Senza input non si applica nulla: le λ restano quelle pubblicate, e in pagina la riga lo
+    dichiara («dato non disponibile») invece di simulare uno zero.
+    """
+    if not disponibile:
+        return lh, la
+    if key == "mercato":
+        return market_value_tilt(lh, la, ih, ia, k=MARKET_VALUE_K if k is None else k)[:2]
+    if key == "assenze":
+        return absences_tilt(lh, la, ih, ia, k=ABSENCES_K if k is None else k)[:2]
+    return rest_tilt(lh, la, ih, ia)[:2]
 
 
 def laboratorio(
@@ -198,19 +262,23 @@ def laboratorio(
             motivo = "nessuna gara precedente in calendario per entrambe"
         disponibile = ih is not None or ia is not None
 
-        # ---- what-if: le λ che l'idea produrrebbe, con le formule dichiarate in predict.py
-        if not disponibile:
-            lh2, la2 = lh, la
-        elif idea.key == "mercato":
-            lh2, la2 = market_value_tilt(lh, la, ih, ia)[:2]
-        elif idea.key == "assenze":
-            lh2, la2 = absences_tilt(lh, la, ih, ia)[:2]
-        else:
-            lh2, la2 = rest_tilt(lh, la, ih, ia)[:2]
-        lh2, la2 = float(lh2), float(la2)
+        # ---- what-if: le λ che l'idea produrrebbe, con le formule dichiarate in predict.py.
+        # Due passate quando l'idea ha un k: quella con il k **sostenuto** (o il massimo della
+        # griglia preregistrata) è il numero della riga; quella con la costante del codice è il
+        # confronto pubblicato sotto (revisione del 2026-10-10, `docs/74` §10).
+        lh2, la2 = (float(v) for v in _applica(idea.key, lh, la, ih, ia, idea.k_usato, disponibile))
         sposta = max(abs(lh2 - lh), abs(la2 - la)) > SOGLIA_SPOSTA
         p2 = _p1x2(lh2, la2, rho) if disponibile else base
         d_pp = max(abs(p2[k] - base[k]) for k in range(3)) * 100.0
+        # confronto con la costante dichiarata nel codice (solo per le idee con un k)
+        lh3 = la3 = None
+        p3: tuple[float, float, float] | None = None
+        d_pp3 = None
+        if disponibile and idea.k_dichiarato is not None:
+            lh3, la3 = (float(v) for v in
+                        _applica(idea.key, lh, la, ih, ia, idea.k_dichiarato, disponibile))
+            p3 = _p1x2(lh3, la3, rho)
+            d_pp3 = max(abs(p3[k] - base[k]) for k in range(3)) * 100.0
 
         righe.append({
             "key": idea.key,
@@ -223,6 +291,18 @@ def laboratorio(
             "fonte": idea.fonte,
             "verdetto": idea.verdetto,
             "verdetto_help": idea.verdetto_help,
+            "k_usato": idea.k_usato,
+            "k_usato_label": idea.k_usato_label,
+            "k_dichiarato": idea.k_dichiarato,
+            "k_dichiarato_label": idea.k_dichiarato_label,
+            "nota_k": idea.nota_k,
+            # what-if con la costante del codice, pubblicato sotto per confronto
+            "lh_decl": None if lh3 is None else round(lh3, ND_LAMBDA),
+            "la_decl": None if la3 is None else round(la3, ND_LAMBDA),
+            "p_home_decl": None if p3 is None else p3[0],
+            "p_draw_decl": None if p3 is None else p3[1],
+            "p_away_decl": None if p3 is None else p3[2],
+            "d_pp_decl": d_pp3,
             # input: «None» resta «None» anche in pagina — «dato non disponibile», non 0
             "in_home": ih,
             "in_away": ia,

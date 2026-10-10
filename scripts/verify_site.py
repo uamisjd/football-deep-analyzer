@@ -4009,6 +4009,12 @@ def check_forza_avversari_storica(site: Path, data: Path | None) -> tuple[list[s
 # sito, e duplicarla sarebbe il modo più sicuro di far divergere due pagine.
 MERCATO_K = 0.12
 MERCATO_CLIP = (0.2, 5.0)
+#: k con cui il card calcola il what-if **pubblicato** (`docs/74` §10): il mercato usa l'unico
+#: k con un intervallo di confidenza fuori dallo zero (0,03, `docs/69` §1); le assenze non ne
+#: hanno nessuno sostenuto e usano il tetto della griglia preregistrata (0,20, `docs/71` §3).
+#: La costante nel codice (0,12 e 0,30) è pubblicata accanto come confronto: [46] verifica entrambe.
+MERCATO_K_SOSTENUTO = 0.03
+ASSENZE_K_PROTOCOLLO = 0.20
 ASSENZE_K = 0.30
 ASSENZE_AVG = 2.0
 ASSENZE_CLIP = (0.70, 1.00)
@@ -4016,26 +4022,28 @@ RIPOSO_BREVE, RIPOSO_CORTO, RIPOSO_LUNGO = 2, 4, 7
 RIPOSO_FATTORI = (0.95, 0.98, 1.02)
 
 
-def _lab_mercato(lh: float, la: float, hv: float | None, av: float | None) -> tuple[float, float]:
+def _lab_mercato(lh: float, la: float, hv: float | None, av: float | None,
+                 k: float = MERCATO_K) -> tuple[float, float]:
     """λ inclinate dal rapporto dei valori: (rapporto clip)**k sul rapporto, totale invariato."""
     if hv is None or av is None or hv <= 0 or av <= 0 or la <= 0 or (lh + la) <= 0:
         return lh, la
     lo, hi = MERCATO_CLIP
-    adj = min(max(hv / av, lo), hi) ** MERCATO_K
+    adj = min(max(hv / av, lo), hi) ** k
     totale = lh + la
     r = (lh / la) * (adj ** 2)
     return (totale * r / (1.0 + r), totale / (1.0 + r))
 
 
-def _lab_assenze(lh: float, la: float, ch: float | None, ca: float | None) -> tuple[float, float]:
+def _lab_assenze(lh: float, la: float, ch: float | None, ca: float | None,
+                 k: float = ASSENZE_K) -> tuple[float, float]:
     """λ × (1 − k · perso/2) per squadra, fattore in [0,70; 1,00], poi totale rinormalizzato."""
     lh_f, la_f = float(lh), float(la)
     totale = lh_f + la_f
     lo, hi = ASSENZE_CLIP
     if ch is not None and ch > 0:
-        lh_f *= min(max(1.0 - ASSENZE_K * float(ch) / ASSENZE_AVG, lo), hi)
+        lh_f *= min(max(1.0 - k * float(ch) / ASSENZE_AVG, lo), hi)
     if ca is not None and ca > 0:
-        la_f *= min(max(1.0 - ASSENZE_K * float(ca) / ASSENZE_AVG, lo), hi)
+        la_f *= min(max(1.0 - k * float(ca) / ASSENZE_AVG, lo), hi)
     nuovo = lh_f + la_f
     if nuovo > 0 and totale > 0:
         lh_f *= totale / nuovo
@@ -4089,7 +4097,9 @@ _LAB_CARD_RE = re.compile(
     r'data-p1="(\d+)" data-px="(\d+)" data-p2="(\d+)">(.*?)\n</div>', re.DOTALL)
 _LAB_RIGA_RE = re.compile(
     r'<tr data-idea="([a-z]+)" data-in-h="([^"]*)" data-in-a="([^"]*)" '
-    r'data-lh="([-\d.]+)" data-la="([-\d.]+)" data-p1="(\d+)" data-px="(\d+)" data-p2="(\d+)">')
+    r'data-lh="([-\d.]+)" data-la="([-\d.]+)" data-p1="(\d+)" data-px="(\d+)" data-p2="(\d+)"'
+    r'(?: data-lh2="([-\d.]+)" data-la2="([-\d.]+)" data-q1="(\d+)" data-qx="(\d+)" '
+    r'data-q2="(\d+)")?>')
 
 
 def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
@@ -4230,23 +4240,50 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
                              f"≠ ricalcolato {ih_a}/{ia_a}")
                 continue        # con l'input sbagliato, λ e 1X2 non sono giudicabili
             if idea == "mercato":
-                lh2, la2 = _lab_mercato(lh, la, ih_a, ia_a)
+                k, k_decl = MERCATO_K_SOSTENUTO, MERCATO_K
+                lh2, la2 = _lab_mercato(lh, la, ih_a, ia_a, k=k)
             elif idea == "assenze":
-                lh2, la2 = _lab_assenze(lh, la, ih_a, ia_a)
+                k, k_decl = ASSENZE_K_PROTOCOLLO, ASSENZE_K
+                lh2, la2 = _lab_assenze(lh, la, ih_a, ia_a, k=k)
             else:
+                k = k_decl = None
                 lh2, la2 = _lab_riposo(lh, la, ih_a, ia_a)
             checks += 2
             if (abs(float(riga.group(4)) - lh2) > 0.005 + 1e-9
                     or abs(float(riga.group(5)) - la2) > 0.005 + 1e-9):
                 fails.append(f"{pg.name}: {idea}, λ {riga.group(4)}/{riga.group(5)} "
-                             f"≠ ricalcolato {lh2:.2f}/{la2:.2f}")
+                             f"≠ ricalcolato {lh2:.2f}/{la2:.2f} (k={k})")
                 continue
             pub = [int(riga.group(6)), int(riga.group(7)), int(riga.group(8))]
             calc = list(pct_triple(_lab_1x2(lh2, la2, rho), 0))
             checks += 1
             if pub != calc:
                 fails.append(f"{pg.name}: {idea}, 1X2 {pub} ≠ ricalcolato {calc} "
-                             f"(λ {lh2:.2f}/{la2:.2f})")
+                             f"(λ {lh2:.2f}/{la2:.2f}, k={k})")
+            # ---- seconda coppia: lo stesso what-if con la costante dichiarata nel codice,
+            #      pubblicata sotto per confronto (`docs/74` §10). Se manca in pagina ma il
+            #      k dichiarato esiste (o viceversa), la riga non racconta la stessa regola.
+            if riga.group(9) and k_decl is not None:
+                if idea == "mercato":
+                    lh3, la3 = _lab_mercato(lh, la, ih_a, ia_a, k=k_decl)
+                else:
+                    lh3, la3 = _lab_assenze(lh, la, ih_a, ia_a, k=k_decl)
+                checks += 2
+                if (abs(float(riga.group(9)) - lh3) > 0.005 + 1e-9
+                        or abs(float(riga.group(10)) - la3) > 0.005 + 1e-9):
+                    fails.append(f"{pg.name}: {idea}, λ di confronto {riga.group(9)}/"
+                                 f"{riga.group(10)} ≠ ricalcolato {lh3:.2f}/{la3:.2f} "
+                                 f"(k={k_decl})")
+                else:
+                    q = [int(riga.group(11)), int(riga.group(12)), int(riga.group(13))]
+                    q_calc = list(pct_triple(_lab_1x2(lh3, la3, rho), 0))
+                    checks += 1
+                    if q != q_calc:
+                        fails.append(f"{pg.name}: {idea}, 1X2 di confronto {q} "
+                                     f"≠ ricalcolato {q_calc} (k={k_decl})")
+            elif k_decl is not None and ih_a is not None:
+                fails.append(f"{pg.name}: {idea}: manca il confronto con il k dichiarato "
+                             f"({k_decl}) pubblicato accanto al what-if")
     print(f"[46] card «laboratorio»: {n_pagine} pagine, {n_righe} righe what-if ricalcolate")
     return fails, checks
 

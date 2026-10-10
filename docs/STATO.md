@@ -1,3 +1,26 @@
+## 2026-10-10 — Revisione del card «laboratorio»: il k sbagliato (docs/74 §10)
+
+L'utente chiede di verificare e revisionare il card appena chiuso: «funziona? serve? riesce a
+rendere la lettura della partita più precisa?». **Funziona** (4 riscontri: [46] vede i numeri
+falsi, `predictions.parquet` byte-identico, **0 conflitti** con la card «Fattori» su 87 schede,
+parità e resa verdi). **Serve**, ma la prima versione no: il difetto trovato è che il what-if
+del mercato era calcolato con **k = 0,12**, la costante del codice, mentre il card stesso
+diceva che la misura sostiene solo **k = 0,03** — misurato: Δλ mediana 0,138 contro 0,036, Δ1X2
+**6 pp contro 1,4** (Genoa–Fiorentina 5,5 → 1,4). Correzione (scelta dall'utente fra quattro
+opzioni): il what-if usa il **k sostenuto** (0,03) o, dove nessun k è sostenuto, il **tetto
+della griglia preregistrata** (0,20 per le assenze, contro 0,30 nel codice); la costante resta
+pubblicata sotto come confronto, e [46] verifica **entrambe** le coppie (**2.206 controlli**).
+Effetto misurato anche sul rischio «secondo pronostico»: schede con Δ1X2 ≥ 5 pp **35/53 → 0/53**
+(mercato) e **27/89 → 9/89** (assenze). **Non rende la previsione più precisa e non può**:
+aggiunge precisione sul modello, non sulla partita (lo dice il §10 di docs/74). Non corretti perché
+non sono difetti: la riga del riposo a 0/89 è la sosta (il 49,8% delle 325 gare già giocate ha
+però fattori asimmetrici) e il distanziamento dell'1X2 alternativa resta affidato al testo.
+Nuovi: test che pinna campioni/IC/verdetti su `docs/69` §1 e `docs/71` §3, e test che [46] vede
+un confronto falso. Gate: **583 test**, Ruff pulito, `verify_site` **210.925 · 0**, parità
+**89 schede**, `resa_375` **27.675 · 0**.
+
+---
+
 ## 2026-10-10 — Card «laboratorio» nell'area previsione della scheda (docs/74)
 
 L'utente apre la voce («vai») con il design delle otto condizioni di

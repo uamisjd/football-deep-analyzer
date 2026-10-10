@@ -67,23 +67,31 @@ Due distinguo, perché «zero» e «mancante» non sono la stessa cosa:
 * **indisponibili**: nessun assente **con la distinta pubblicata** è uno zero misurato (`0,0`),
   mentre senza distinta è un dato mancante e resta «dato non disponibile».
 
+> **Aggiornamento del 2026-10-10 (dopo la revisione §10).** Il what-if è ora calcolato con il
+> **k che la misura sostiene** (o con il tetto della griglia preregistrata), non con la costante
+> che il codice si porta dietro: quella è pubblicata sotto, per confronto. La §10 racconta la
+> revisione, le misure che l'hanno imposta e i numeri corretti.
+
 ## 3. Che cosa sposta davvero, sulle 89 schede di oggi
 
 Misurato sulle pagine generate da questo build (89 schede pre-partita, 7 leghe):
 
-| Idea | dato mancante | sposta λ > 0,005 | Δλ mediana | Δλ p90 | Δλ max | Δ1X2 mediana · p90 · max |
+| Idea (con il k del §10) | dato mancante | sposta λ > 0,005 | Δλ mediana | Δλ p90 | Δλ max | Δ1X2 mediana · max |
 |---|---:|---:|---:|---:|---:|---|
-| valore titolari | **36/89** | 53/89 | 0,040 | 0,230 | 0,310 | 6 · 10 · 13 pp |
-| indisponibili | 0/89 | 85/89 | 0,060 | 0,160 | 0,270 | 3 · 7 · 11 pp |
-| riposo | 0/89 | **0/89** | 0,000 | 0,000 | 0,000 | 0 · 0 · 0 pp |
+| valore titolari, k = 0,03 | **36/89** | 51/53 | 0,040 | 0,070 | 0,080 | 2 · 3 pp |
+| indisponibili, k = 0,20 | 0/89 | 85/89 | 0,040 | 0,100 | 0,200 | 2 · 8 pp |
+| riposo (fattori fissi) | 0/89 | **0/89** | 0,000 | 0,000 | 0,000 | 0 · 0 pp |
 
-Pagine per numero di idee che spostano: **2** con nessuna, **36** con una, **51** con due.
+Sotto, per confronto, lo stesso calcolo con la **costante nel codice** (k = 0,12 e 0,30):
+valore titolari Δλ mediana **0,140** (max 0,310) e Δ1X2 mediana **6 pp, max 13**;
+indisponibili Δλ 0,060 (max 0,270) e Δ1X2 mediana 3 pp, max 11. È lo stesso what-if, quattro
+volte più grande, e non è una stima di ciò che entrerebbe.
 
 Lettura, senza girarci intorno:
 
-* il **valore dei titolari** è l'idea che sposta di più (fino a 13 punti sull'1X2) ed è
-  esattamente quella che la misura **non** sostiene: è il caso da guardare per capire perché il
-  card serve — senza, quel numero sarebbe stato un argomento a favore;
+* il **valore dei titolari**, al k che la misura sostiene, sposta **2 punti sull'1X2** (massimo
+  3): è l'idea con il campione più grande e l'effetto più piccolo, e il confronto con il k del
+  codice (6 pp, fino a 13) misura quanto quella costante sia lontana da ciò che è sostenuto;
 * gli **indisponibili** spostano poco (mediana 3 pp) e il loro campione è sotto la soglia
   minima del protocollo preregistrato (98 gare contro 300): «non testabile», non «neutro»;
 * il **riposo** in questa finestra **non sposta nulla**: è la sosta di ottobre e tutte le
@@ -158,12 +166,70 @@ La lista delle idee è l'unico punto in cui si dichiara «che cosa c'è in labor
 
 | Gate | Esito |
 |---|---|
-| `pytest -q` | **580 passed** (571 prima + 9 nuovi) |
+| `pytest -q` | **583 passed** (571 prima + 12 nuovi) |
 | `ruff check .` | **pulito** (zero segnalazioni su tutto il repo) |
 | build | **470** schede / 2.364 partite / 7.508 giocatori |
-| `verify_site` | **210.499 controlli · 0 problemi** (baseline 208.630) |
+| `verify_site` | **210.925 controlli · 0 problemi** (baseline 208.630; [46] 2.206) |
 | `parita_schede` | **89 schede · 25 id identici · nessuna differenza** |
 | `resa_375` | **27.675 misure · 0 problemi a 375 px** |
+
+## 10. Revisione del pomeriggio (2026-10-10): tre domande, tre risposte misurate
+
+Dopo la chiusura della prima versione, tre domande: «funziona? serve? riesce a rendere la
+lettura della partita più precisa?». Verificate, non discusse.
+
+**Funziona?** Sì, su quattro riscontri indipendenti. [46] ricalcola le 267 righe e un test prova
+che **vede** una λ falsa (e, dopo la correzione, anche un confronto falso). `predictions.parquet`
+è byte-identico dopo la generazione. **Zero conflitti** con la card «Fattori»: sulle 87 schede
+in cui entrambe pubblicano il dato degli indisponibili, il numero è lo stesso (tolleranza 0,005).
+Parità e resa a 375 px restano verdi.
+
+**Serve?** Sì — ma la prima versione no, e la revisione l'ha cambiata. Il difetto trovato:
+
+> **R1 — il numero più vistoso veniva da una costante che il card stesso bocciava.** La riga del
+> mercato usava k = 0,12 mentre la colonna accanto scrive che la misura sostiene solo k = 0,03.
+> Misurato sulle 53 schede con il dato: Δλ mediana **0,138** contro **0,036**; sull'1X2 **6 pp
+> contro 1,4** (Genoa–Fiorentina: 5,5 → 1,4). Mostrare l'effetto di un k che la misura non
+> distingue dallo zero è l'equivoco che il card nasce per evitare. Lo stesso valeva per le
+> assenze: k = 0,30 nel codice contro la griglia preregistrata {0; 0,1; 0,2}.
+
+Correzione: il what-if si calcola con il **k sostenuto** (0,03 per il mercato, l'unico con
+intervallo di confidenza fuori dallo zero) o, dove nessun k è sostenuto, con il **tetto della
+griglia preregistrata** (0,20 per le assenze). La costante del codice resta pubblicata sotto,
+etichettata come tale. [46] verifica **entrambe** le coppie (2.206 controlli).
+
+L'effetto collaterale è misurabile e va a segno anche sul secondo rischio:
+
+| Rischio «secondo pronostico» (schede con Δ1X2 ≥ 5 pp) | prima | dopo |
+|---|---:|---:|
+| valore titolari | 35/53 | **0/53** |
+| indisponibili | 27/89 | **9/89** |
+| riposo | 0/89 | 0/89 |
+
+Due rischi minori, **non** corretti perché non sono difetti:
+
+* **R2 — la riga del riposo**: 0/89 oggi, e non è un buco: la sosta dà 7–28 giorni a tutte e due
+  le squadre (fattore 1,02 a entrambe, totale preservato). È però intermittente: sulle **325
+  gare già giocate di questa stagione il 49,8%** ha fattori di riposo diversi fra le due squadre
+  (Δλ mediana 0,012, max 0,042 — sempre sopra la soglia di visibilità). In una settimana normale
+  la riga parla.
+* **R3 — la visibilità**: il distanziamento dell'1X2 alternativa resta affidato al testo
+  (titolo, etichetta, verdetto, ⓘ). Con la correzione del k, i casi in cui l'alternativa è
+  davvero lontana da quella pubblicata sono scesi da 62 a 9 su 231 righe.
+
+**Rende la lettura della partita più precisa? No — e non può.** La previsione non cambia per
+costruzione (§6): il card aggiunge precisione **sul modello** (quanto peserebbe ogni idea, su
+quale campione, con quale verdetto), non sulla partita. Serve a chi vuole sapere che cosa **non**
+c'è nel numero in cima alla scheda e quanto costerebbe aggiungerlo; non rende quel numero più
+preciso. Chi leggesse l'1X2 alternativa come «la previsione vera» avrebbe un'informazione
+peggiore di prima: è il rischio che R1 ha reso trascurabile sul mercato (0/53) e che resta da
+tenere d'occhio sulle assenze (9/89).
+
+**Un limite dichiarato**: [46] verifica i numeri ricalcolabili, non le frasi. Campioni,
+intervalli e verdetti sono costanti con provenienza; il test
+`test_le_misure_d_archivio_sono_quelle_registrate_nei_documenti` li pinna uno per uno sui valori
+di `docs/69` §1 e `docs/71` §2-§3, così chi li cambia deve aver rifatto la misura e aggiornato il
+documento che la registra.
 
 ## 9. Cosa resta aperto
 
