@@ -17,6 +17,17 @@ la scelta). **Prossima voce:** il card «laboratorio» nell'area previsione dell
 `docs/BRIEFING_NUOVA_SESSIONE.md` (nuova sezione in cima). Ricetta di produzione e
 calibrazione intatte (λ×1,039385); nessuna fonte nuova.
 
+**Verifica d'ingresso — sessione `arena/3893ee00`, 2026-10-10 09:55 UTC (checklist handoff):**
+1) **Produzione verde:** il primo `daily` post-merge #100 (run `38041454706`, 15m9s) è
+**success** e ha pushato il commit dati `d7bb537` (09:42 UTC); `tests` `38041454712` success;
+l'issue di guasto **#99 è CLOSED** alle 09:42:24Z, chiusa da sola come previsto. Nessun run
+rosso dopo il merge (l'ultimo failure è il `daily` schedulato delle 01:42, pre-merge).
+2) **Branch allineato:** `HEAD` = `origin/main` = `d7bb537`; nessun reset necessario, nessun
+commit locale perso. 3) **Sandbox:** `.venv` ricreato, suite **571 test** individuati
+(10 passed / 561 deselected su `tilt|verify_site_forza|arrival_trend`). Nessuna modifica a
+codice, dati o modelli in questo turno. **A5:** `STATO.md` conta **12 giri** (45,8 KB, sotto
+gli 80 KB) — la rotazione dell'archivio è matura, da fare su richiesta.
+
 ---
 
 ## 2026-10-10 — Revisione richiesta: card «laboratorio» nell'area previsione della scheda (docs/73)

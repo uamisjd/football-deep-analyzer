@@ -18,11 +18,13 @@ registrata in `docs/13` §9.25). 6 commit: registrazione merge #98 + verifica po
 - **Gate alla fusione:** **571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**,
   parità **89 schede · pulita** (7 leghe), `resa_375` **27.255 · 0**, CI PR verde.
   Build: 464 schede / 2.364 partite / 7.510 giocatori; 89 pagine pre-partita.
-- **Produzione (verificare appena entri):** il daily su `main` era **rosso** dal merge #98
-  (sito fermo all'ultimo deploy; issue di guasto **#99** aperta in automatico). L'hotfix
-  rende il generatore conforme all'oracolo del calendario **per costruzione**: il primo
-  daily post-merge deve essere **success** e l'issue #99 si chiude da sola. Comando:
-  `gh run list --branch main --limit 3`. Se ancora rosso: la diagnosi del meccanismo è
+- **Produzione (✅ verificato all'entrata della sessione `arena/3893ee00`, 2026-10-10
+  09:55 UTC):** primo `daily` post-merge **success** (run `38041454706`, commit dati
+  `d7bb537` 09:42 UTC), `tests` success, **issue #99 CLOSED** alle 09:42:24Z da sola;
+  nessun run rosso dopo il merge. (Prima dell'hotfix il daily su `main` era **rosso** dal
+  merge #98 — sito fermo all'ultimo deploy, issue di guasto **#99** aperta in automatico;
+  l'hotfix rende il generatore conforme all'oracolo del calendario **per costruzione**.)
+  Se in futuro tornasse rosso: la diagnosi del meccanismo è
   in `docs/70` §2 (disallineamento `match_info`/calendario), la classe è coperta — un
   nuovo rosso sarebbe un'altra istanza da diagnosticare, non da ipotizzare.
 - **A/B/C (voce G): risolta = C.** I tre tilt (`absences_tilt`, `rest_tilt`,
