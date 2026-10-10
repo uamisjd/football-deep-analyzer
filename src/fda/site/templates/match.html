@@ -610,6 +610,51 @@
 </div>
 {% endif %}
 
+{% if c.laboratorio %}
+{#- Card «laboratorio» (docs/73): le tre idee misurate e **non** usate nella previsione.
+    Sta **sotto** la previsione salvata e sotto «Come nasce questa probabilità»: è una
+    finestra sul laboratorio, non un secondo pronostico. Ogni riga porta il what-if su
+    questa partita (λ e 1X2 ricalcolate con la stessa griglia Dixon-Coles della
+    previsione), l'effetto misurato sull'archivio con campione e intervallo, il verdetto
+    e «dato non disponibile» dove l'input manca. Gli attributi data-* sono gli stessi
+    numeri stampati, con la precisione con cui escono in pagina: servono all'invariante
+    [46] di scripts/verify_site.py, che li ricalcola senza importare le formule. -#}
+{% set lab = c.laboratorio %}
+{% set lb = (lab.p_home, lab.p_draw, lab.p_away)|pct3 %}
+<div class="card detail-card" id="laboratorio" data-lh="{{ lab.lh }}" data-la="{{ lab.la }}" data-p1="{{ lb[0] }}" data-px="{{ lb[1] }}" data-p2="{{ lb[2] }}">
+  <h2>Il laboratorio — idee misurate, <b>non usate</b> in questa previsione <span class="help" title="Le tre idee della tabella esistono nel codice del modello e sono state misurate sul nostro archivio. Nessuna è applicata: la previsione in cima alla scheda non le contiene. Il card serve a rendere visibile la misura — anche quando la misura dice che un'idea non funziona.">ⓘ</span></h2>
+  <p class="small mut">Tre idee che il modello <b>non</b> usa. Per ognuna: <b>cosa dice</b> su questa partita (da leggere per prima), <b>quanto sposterebbe</b> l'1X2 se fosse applicata, e <b>su cosa poggia</b> la misura. Nessuna di queste tre è nella previsione in cima alla scheda: qui si misura, non si applica.</p>
+  <p class="small mut" style="margin:6px 0 0">Il conto parte dalle λ pubblicate e usa la stessa griglia della previsione. Dove l'idea ha un k, si usa quello che la misura sostiene; la costante nel codice sta sotto, per confronto, e non è una stima di ciò che entrerebbe. Dove manca l'input si legge «dato non disponibile» invece di uno zero inventato.</p>
+  {#- Tre colonne, non sei: la prima è «cosa dice l'idea», le altre due sono i numeri che la
+      sostengono. Nella versione precedente la tabella aveva sei colonne e la misura d'archivio
+      (con due intervalli di confidenza) stava in una cella: corretta e illeggibile. Ora il
+      lettore trova una frase e, se vuole, i numeri (revisione del 2026-10-10, docs/74 §11). -#}
+  <div class="tablewrap"><table>
+    <tr>
+      <th scope="col" style="width:46%">Cosa dice <span class="help" title="Da leggere per prima: una riga per idea, con lo spostamento misurato su QUESTA partita e la ragione per cui l'idea non è nella previsione. Le altre due colonne sono i numeri che la sostengono.">ⓘ</span></th>
+      <th scope="col">Quanto sposterebbe</th>
+      <th scope="col">Su cosa poggia</th>
+    </tr>
+    {% for r in lab.righe %}
+    {% set rp = (r.p_home, r.p_draw, r.p_away)|pct3 %}
+    {% set rd = (r.p_home_decl, r.p_draw_decl, r.p_away_decl)|pct3 if r.p_home_decl is not none else none %}
+    <tr data-idea="{{ r.key }}" data-in-h="{% if r.in_home is not none %}{{ r.in_home }}{% endif %}" data-in-a="{% if r.in_away is not none %}{{ r.in_away }}{% endif %}" data-lh="{{ r.lh }}" data-la="{{ r.la }}" data-p1="{{ rp[0] }}" data-px="{{ rp[1] }}" data-p2="{{ rp[2] }}"{% if rd %} data-lh2="{{ r.lh_decl }}" data-la2="{{ r.la_decl }}" data-q1="{{ rd[0] }}" data-qx="{{ rd[1] }}" data-q2="{{ rd[2] }}"{% endif %}>
+      <td>
+        <b>{{ r.icona }} {{ r.nome }}</b> <span class="tag" style="font-size:10px">{{ r.verdetto.split(":")[0] }}</span>
+        <span class="help" title="{{ r.formula }}">ⓘ</span><br>
+        <span class="small">{{ r.frase }}</span>
+      </td>
+      <td class="small">{% if not r.disponibile %}<span class="mut" title="{{ r.motivo }}">dato non disponibile</span>{% else %}<b>1X2 {{ rp[0] }} / {{ rp[1] }} / {{ rp[2] }}</b><br><span class="mut">oggi {{ lb[0] }} / {{ lb[1] }} / {{ lb[2] }} · λ {{ r.lh|dec }} / {{ r.la|dec }}</span>{% if rd %}<br><span class="mut" style="opacity:.8" title="{{ r.nota_k }}">col {{ r.k_dichiarato_label }}: {{ rd[0] }} / {{ rd[1] }} / {{ rd[2] }}</span>{% endif %}<br><span class="mut small">{% if r.key == 'mercato' %}{{ r.in_home|fee_it }} contro {{ r.in_away|fee_it }}{% elif r.key == 'assenze' %}{{ r.in_home|dec }} contro {{ r.in_away|dec }} xG+xA/90 mancanti{% else %}{{ r.in_home|int }} e {{ r.in_away|int }} giorni dall'ultima gara{% endif %}</span>{% endif %}</td>
+      <td class="small mut">{{ r.campione_breve }}<br><span style="color:var(--fg)">{{ r.misura_breve }}</span> <span class="help" title="{{ r.campione }} — {{ r.misura }} · {{ r.fonte }}. {{ r.verdetto_help }}">ⓘ</span></td>
+    </tr>
+    {% endfor %}
+  </table></div>
+  {#- la chiusura dichiara il patto: le λ di partenza sono quelle della previsione salvata,
+      lo spostamento è misurato sulle 3 idee, e nessuna delle due colonne tocca l'altra. -#}
+  <p class="small mut" style="margin:8px 0 0">La previsione salvata non si tocca: λ {{ lab.lh|dec }} / {{ lab.la|dec }} e 1X2 {{ lb[0] }} / {{ lb[1] }} / {{ lb[2] }} restano quelle pubblicate in cima. {% if lab.n_spostano == 0 %}nessuna delle {{ lab.n_idee }} cambierebbe questa partita in modo visibile{% else %}{{ lab.n_spostano }} {{ 'idea' if lab.n_spostano == 1 else 'idee' }} su {{ lab.n_idee }} {{ 'sposterebbe' if lab.n_spostano == 1 else 'sposterebbero' }} qualcosa, nessuna abbastanza da entrare{% endif %}. Le tre formule sono ricontrollate a ogni generazione da <code>scripts/verify_site.py</code> (invariante 46), che le riscrive per conto proprio senza leggere quelle del modello.</p>
+</div>
+{% endif %}
+
 {% if c.fav_record %}
 {% set fr = c.fav_record %}
 <div class="card detail-card" id="fascia-storica">

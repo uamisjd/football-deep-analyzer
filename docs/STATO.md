@@ -1,3 +1,97 @@
+## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)
+
+L'utente segnala lo screenshot di un errore visto stamattina: è l'issue #99 «Fallimento run
+giornaliero», aperta alle **01:54** dal run `38005701599`, con «campione FotMob 8 gare, ma prima
+del calcio d'inizio ne risultano 7» su due schede (`5781769`, `5781776`). **Non era un errore di
+calcolo**: `match_info` diceva «finita con xG» mentre il calendario diceva ancora «da giocare»
+(cache HTTP incoerente fra le fasi del collect), e il campione si contava su `match_info`. Il
+fix (`_finite_nel_calendario`, il calendario è l'autorità su «gara giocata») è entrato con la
+**PR #100, fusa alle 03:47** — cioè *prima* che l'utente vedesse l'errore; l'issue è rimasta
+aperta solo fino al primo run verde (11:42). Dati di oggi allineati: 381/381, zero scostamenti.
+
+Ho aggiunto quello che mancava: con il fix lo scostamento era diventato **silenzioso** (prima
+fermava il daily, ora la gara viene solo esclusa e per un run il campione è corto di una gara
+senza dirlo). Nuova funzione `allineamento_fonti()` e **card «Allineamento calendario / dettaglio
+gare» su `stato.html`**: quattro numeri (finite nel calendario, con xG = il campione pubblicato,
+senza xG, con xG ma non ancora finite) — quando le due code sono a zero la pagina lo dice.
+Corretta anche una parola francese rimasta in un docstring («disait» → «diceva»). La causa a
+monte (la cache HTTP del collect) **non** è stata toccata: è una modifica di pipeline, non un
+bugfix, e oggi non si riproduce.
+
+Gate: **585 test**, Ruff pulito, `verify_site` **210.926 · 0**, parità **89 schede**,
+`resa_375` **27.676 · 0**.
+
+---
+
+## 2026-10-10 — Riscrittura di leggibilità del card «laboratorio» (docs/74 §11)
+
+L'utente: «non è di facile lettura, non so cosa vedere o cosa voglia dirmi». Rilievo giusto e
+causa misurabile: **sei colonne, 231 celle, nessun messaggio** — la sola cella «Misurato
+sull'archivio» portava 47 parole con quattro numeri a cinque decimali, più lunga di ogni altra
+cella della scheda. Riscritto attorno a **una frase per idea generata dal calcolo**
+(`_frase` in `laboratorio.py`): «Sposterebbe 1,4 punti sull'1X2: troppo poco per entrare, e
+ottenuto con l'unico k che la misura sostiene»; se l'idea non sposta la frase dice «non sposta
+nulla», se manca l'input «il conto non si può fare» — e un test verifica i tre casi. Da **sei
+colonne a tre** («Cosa dice» · «Quanto sposterebbe» · «Su cosa poggia»): IC, Δlog-loss, ΔRPS e
+provenienza passano nel ⓘ; l'1X2 alternativa si confronta con quella di oggi; apertura e
+chiusura più corte. **Non** cambiano i numeri, le formule, la posizione né gli attributi
+`data-*`: [46] continua a verificare le stesse 267 righe con **2.206 controlli**. Resta
+dichiarato che l'1X2 della colonna centrale è una previsione alternativa: con il k corretto la
+distanza è 1–3 pp sul mercato (0/53 oltre 5) e fino a 8 sulle assenze (9/89).
+Gate: **584 test**, Ruff pulito, `verify_site` **210.925 · 0**, parità **89 schede**,
+`resa_375` **27.675 · 0**.
+
+---
+
+## 2026-10-10 — Revisione del card «laboratorio»: il k sbagliato (docs/74 §10)
+
+L'utente chiede di verificare e revisionare il card appena chiuso: «funziona? serve? riesce a
+rendere la lettura della partita più precisa?». **Funziona** (4 riscontri: [46] vede i numeri
+falsi, `predictions.parquet` byte-identico, **0 conflitti** con la card «Fattori» su 87 schede,
+parità e resa verdi). **Serve**, ma la prima versione no: il difetto trovato è che il what-if
+del mercato era calcolato con **k = 0,12**, la costante del codice, mentre il card stesso
+diceva che la misura sostiene solo **k = 0,03** — misurato: Δλ mediana 0,138 contro 0,036, Δ1X2
+**6 pp contro 1,4** (Genoa–Fiorentina 5,5 → 1,4). Correzione (scelta dall'utente fra quattro
+opzioni): il what-if usa il **k sostenuto** (0,03) o, dove nessun k è sostenuto, il **tetto
+della griglia preregistrata** (0,20 per le assenze, contro 0,30 nel codice); la costante resta
+pubblicata sotto come confronto, e [46] verifica **entrambe** le coppie (**2.206 controlli**).
+Effetto misurato anche sul rischio «secondo pronostico»: schede con Δ1X2 ≥ 5 pp **35/53 → 0/53**
+(mercato) e **27/89 → 9/89** (assenze). **Non rende la previsione più precisa e non può**:
+aggiunge precisione sul modello, non sulla partita (lo dice il §10 di docs/74). Non corretti perché
+non sono difetti: la riga del riposo a 0/89 è la sosta (il 49,8% delle 325 gare già giocate ha
+però fattori asimmetrici) e il distanziamento dell'1X2 alternativa resta affidato al testo.
+Nuovi: test che pinna campioni/IC/verdetti su `docs/69` §1 e `docs/71` §3, e test che [46] vede
+un confronto falso. Gate: **583 test**, Ruff pulito, `verify_site` **210.925 · 0**, parità
+**89 schede**, `resa_375` **27.675 · 0**.
+
+---
+
+## 2026-10-10 — Card «laboratorio» nell'area previsione della scheda (docs/74)
+
+L'utente apre la voce («vai») con il design delle otto condizioni di
+[docs/73](73_revisione_sezione_laboratorio_previsione_2026-10-10.md). Fatto: nuovo modulo
+`src/fda/site/laboratorio.py` (what-if per idea + misure d'archivio registrate con campione e
+IC), card `id="laboratorio"` in `match.html` **dopo** `id="scomposizione"` e solo sulle partite
+ancora da giocare, invariante **[46]** in `scripts/verify_site.py`, 9 test nuovi. Il what-if
+parte dalle λ e dal ρ della **previsione salvata** e ricalcola l'1X2 con la stessa griglia
+Dixon-Coles dell'audit (`dc_grid.tau_grid`); le tre formule sono quelle dichiarate in
+`predict.py` (decisione **C**: restano candidati non cablati, ora con una casa visibile).
+Misurato sulle **89** schede pre-partita: valore titolari dato mancante **36/89**, sposta 53/89
+(Δλ mediana 0,040, p90 0,230; Δ1X2 mediana 6 pp, max 13); indisponibili spostano 85/89 (Δλ
+0,060; Δ1X2 mediana 3 pp); **riposo 0/89 — non sposta nulla** (sosta di ottobre, fattore 1,02
+per tutti e totale preservato). Peso mediano pagina 131 KB (tetto 900). [46] ricalcola λ e 1X2
+**senza importare le formule del modello** (riscritte dalle regole, confrontate a 1e-12 con
+quelle di `predict.py` su 69 combinazioni di input) e rilegge gli input dai Parquet — riposo
+dall'oracolo calendario + coppe, valore da `match_info`; per gli indisponibili usa il lettore
+condiviso già verificato da [44] (dichiarato). **[46]: 89 pagine, 267 righe, 1.780 controlli.**
+La previsione salvata non cambia: `predictions.parquet` byte-identico dopo la generazione.
+Gate: **580 test** (571+9), Ruff pulito, build 470/2.364/7.508, `verify_site` **210.499 · 0**
+(baseline 208.630), parità **89 schede · 25 id identici**, `resa_375` **27.675 · 0**.
+**A5:** `STATO.md` arriva a **13 giri** (sotto gli 80 KB) — rotazione dell'archivio matura, da
+fare su richiesta.
+
+---
+
 ## 2026-10-10 — PR #100 fusa (agente, su ordine esplicito dell'utente — deroga) + handoff nuova sessione
 
 L'utente ha ordinato esplicitamente il merge («ok fai merge») — deroga una tantum alla
@@ -16,6 +110,17 @@ la scelta). **Prossima voce:** il card «laboratorio» nell'area previsione dell
 (design e misure pronte in `docs/73`, 8 condizioni). Handoff completo in
 `docs/BRIEFING_NUOVA_SESSIONE.md` (nuova sezione in cima). Ricetta di produzione e
 calibrazione intatte (λ×1,039385); nessuna fonte nuova.
+
+**Verifica d'ingresso — sessione `arena/3893ee00`, 2026-10-10 09:55 UTC (checklist handoff):**
+1) **Produzione verde:** il primo `daily` post-merge #100 (run `38041454706`, 15m9s) è
+**success** e ha pushato il commit dati `d7bb537` (09:42 UTC); `tests` `38041454712` success;
+l'issue di guasto **#99 è CLOSED** alle 09:42:24Z, chiusa da sola come previsto. Nessun run
+rosso dopo il merge (l'ultimo failure è il `daily` schedulato delle 01:42, pre-merge).
+2) **Branch allineato:** `HEAD` = `origin/main` = `d7bb537`; nessun reset necessario, nessun
+commit locale perso. 3) **Sandbox:** `.venv` ricreato, suite **571 test** individuati
+(10 passed / 561 deselected su `tilt|verify_site_forza|arrival_trend`). Nessuna modifica a
+codice, dati o modelli in questo turno. **A5:** `STATO.md` conta **12 giri** (45,8 KB, sotto
+gli 80 KB) — la rotazione dell'archivio è matura, da fare su richiesta.
 
 ---
 

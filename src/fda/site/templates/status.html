@@ -35,4 +35,17 @@
 </table></div>
 {% if audit %}<p class="small mut">Partite analizzate: {{ audit|length }} · {{ audit|selectattr('mancante', 'equalto', 0)|list|length }} senza campi scaduti.</p>{% endif %}
 </div>
+{% if align %}<div class="card">
+<h2>Allineamento calendario / dettaglio gare</h2>
+<p class="small mut">Il campione della card «Le due squadre» è l'intersezione fra le due fonti: le gare <b>finite nel calendario</b> con xG completo di entrambe nel dettaglio gare (<code>match_info</code>). Qui si vede che cosa resta fuori e perché: dopo il fix dell'issue #99 nessuno di questi casi ferma più il daily, quindi senza questa misura uno scostamento resterebbe invisibile.</p>
+<div class="tablewrap"><table>
+<tr><td>Gare finite nel calendario</td><td class="r">{{ align.finite_cal|it_num }}</td></tr>
+<tr><td>…con xG completo: <b>il campione pubblicato</b></td><td class="r">{{ align.in_campione|it_num }}</td></tr>
+<tr><td>Finite nel calendario ma senza xG</td><td class="r">{{ align.senza_xg|it_num }}</td></tr>
+<tr><td>Con xG ma non ancora finite nel calendario</td><td class="r">{{ align.info_avanti|it_num }}</td></tr>
+</table></div>
+{% if align.info_avanti %}<p class="small mut"><span class="bad">{{ align.info_avanti|it_num }} {{ 'gara ha' if align.info_avanti == 1 else 'gare hanno' }} l'xG ma non è ancora finita nel calendario</span>: resta fuori dal campione, che per questa finestra è più corto di quanto la gara sia davvero. Il calendario è l'autorità su «giocata» e si ricompone al run successivo.</p>{% endif %}
+{% if align.senza_xg %}<p class="small mut">{{ align.senza_xg|it_num }} {{ 'gara finita' if align.senza_xg == 1 else 'gare finite' }} senza xG di entrambe: {{ 'resta' if align.senza_xg == 1 else 'restano' }} fuori dal campione, che «xG creati» e «xG concessi» restino sulla stessa serie.</p>{% endif %}
+{% if not align.info_avanti and not align.senza_xg %}<p class="small mut">Le due fonti concordano: nessuna gara esclusa dal campione.</p>{% endif %}
+</div>{% endif %}
 {% endblock %}
