@@ -225,3 +225,55 @@ verdetto c'è; i gate della §5 sono stati rifatti dopo questa revisione: `pytes
 passed**, `ruff` pulito, `fda build` **470/2.364/7.530**, `verify_site` **212.351 · 0**
 (+445 controlli della sintesi), parità **nessuna differenza**, `resa_375` **27.696 · 0**,
 audit: 89 strisce con 36 verdetti oltre il rumore e 53 entro.
+
+## §8 — Revisione della card «Confronto di stagione» (richiesta dell'utente)
+
+### La misura
+
+La card (presente su **tutte le 470 pagine**, 89 pre-partita e 381 finite) non aveva
+**alcuna copertura numerica** nei gate: nessun controllo di `verify_site` ne ricalcolava i
+numeri dalle classifiche. Misurata sulle pagine e sui Parquet:
+
+- **«Nª su 20» scritto anche dove il campionato ha 18 squadre**: la resa hardcodava 20 nel
+  suffisso e nella barra della posizione (`(20−rank)/19`). FRA1, GER1, NED1 e POR1 hanno 18
+  squadre → **257 pagine (55%) pubblicavano un denominatore sbagliato** e una barra fuori
+  scala (es. Angers–Lille: «8ª su 20», barra al 63% invece di 59%);
+- la riga «Punti» evidenzia il migliore **per punti/gara** (scelta di `docs/40` §1: le due
+  squadre possono avere gare in meno), ma la pagina non lo diceva: un lettore poteva leggere
+  l'evidenziazione come un confronto sui punti totali;
+- la nota non dichiarava **l'orologio della classifica**: la card legge la classifica
+  raccolta oggi, quindi sulle schede di gare già giocate comprende i turni successivi — lo
+  sapeva solo il ⓘ dell'xPTS nella card «Le due squadre», non la card stessa;
+- nessun conto fatto per il lettore: il divario in punti restava da sottrarre a mente.
+
+### La correzione
+
+- `analysis.py` — `_n_squadre` conta le squadre del campionato **nella stessa tabella della
+  classifica** (FotMob, riserva ESPN); `season_compare` lo passa alla resa insieme al
+  divario in punti; la nota dichiara l'orologio; la riga «Punti» porta un titolo che spiega
+  l'evidenziazione per punti/gara;
+- `match.html` — barra della posizione e suffisso «Nª su n» scalano sul numero vero di
+  squadre (sulle leghe a 20 la formula `(n−rank)/(n−1)` coincide con la vecchia: zero
+  regressione lì); frase del divario («In classifica X è N punti davanti a Y» / pari punti)
+  davanti alla nota.
+
+### Invarianti e test
+
+- **[45] `check_confronto_stagione`** (nuova): su ogni pagina rilegge le classifiche con la
+  stessa precedenza del generatore e ricalcola posizione, barra, punti e punti/gara, V-N-P,
+  gol fatti/subiti per gara, differenza reti, i rapporti «× media campionato» (media gol
+  della stessa tabella), le evidenziazioni, il titolo della riga «Punti», il divario e la
+  dichiarazione dell'orologio;
+- `test_site.py` estende `test_season_compare` (n_squadre contato dalla tabella, divario,
+  titolo, orologio) e aggiunge il caso di un campionato a 18 squadre;
+- caso 13 di manomissione in `test_verify_scripts.py`: «ª su 20» in una lega a 3 squadre
+  raccolte, barra fuori scala, punti falsi, evidenziazione spostata, orologio rimosso,
+  divario sbagliato, titolo rimosso — tutti catturati.
+
+### Dopo la correzione
+
+Le 470 card pubblicano il denominatore vero del proprio campionato, il divario in punti e
+l'orologio dichiarato. Gate rifatti: `pytest` **590 passed** (era 589), `ruff` pulito,
+`fda build` **470/2.364/7.530**, `verify_site` **228.331 · 0** (+15.980 controlli di [45]),
+parità **nessuna differenza**, `resa_375` **27.696 · 0**; l'oracolo [45] gira sulle 470
+pagine reali con 0 discordanze.

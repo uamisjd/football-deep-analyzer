@@ -31,6 +31,19 @@ aggiornati. Gate rifatti: **589 test**, build **470/2.364/7.530**, `verify_site`
 **212.351 · 0**, parità nessuna differenza, `resa_375` **27.696 · 0**. Dettagli in
 `docs/76` §7.
 
+**Revisione della card «Confronto di stagione» (§8, richiesta dell'utente):** trovata e
+corretta una card senza alcuna copertura numerica nei gate. Il difetto misurato: **«Nª su
+20» scritto anche dove il campionato ha 18 squadre** — la resa hardcodava 20 nel suffisso e
+nella barra della posizione, così FRA1, GER1, NED1 e POR1 pubblicavano un denominatore
+sbagliato su **257 pagine (55%)**. Ora il numero di squadre è contato nella stessa tabella
+della classifica; in più la riga «Punti» dichiara nel titolo che l'evidenziazione è per
+punti/gara, la nota dichiara l'orologio della classifica (raccolta oggi) e la frase del
+divario fa il conto per il lettore. Nuova invariante **[45] `check_confronto_stagione`**
+che ricalcola ogni numero della card dalle classifiche su tutte le pagine; test estesi e
+caso 13 di manomissione. Gate rifatti: **590 test**, build **470/2.364/7.530**,
+`verify_site` **228.331 · 0** (+15.980 controlli di [45]), parità nessuna differenza,
+`resa_375` **27.696 · 0**. Dettagli in `docs/76` §8.
+
 ---
 
 ## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)

@@ -4376,6 +4376,211 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_confronto_stagione(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[45] card «Confronto di stagione»: ogni numero ricalcolato dalle classifiche (docs/76 §8).
+
+    Prima di questa invariante la card non aveva alcuna copertura numerica: il difetto
+    «Nª su 20» nelle quattro leghe a 18 squadre (257 pagine) è rimasto invisibile a tutti i
+    gate. L'oracolo rilegge ``fotmob_standings`` (riserva ``espn_standings``) con la stessa
+    precedenza del generatore e verifica, per ogni pagina con la card: posizione e barra
+    (scala sul numero **vero** di squadre del campionato), punti e punti/gara, V-N-P, gol
+    fatti/subiti per gara, differenza reti, i rapporti «× media campionato» (media gol della
+    stessa tabella), le evidenziazioni, il titolo della riga «Punti», il divario in punti e
+    la dichiarazione dell'orologio nella nota.
+    """
+    import pandas as pd
+
+    from fda.site.fmt import dec, it_plural
+    from fda.store import Store
+    from fda.teams import canonical
+
+    fails: list[str] = []
+    checks = 0
+    st = Store(data) if data else Store()
+    fx = st.read("fixtures")
+    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
+    if fx.empty or not pages:
+        return fails, checks
+    by_id = fx.drop_duplicates("match_id").set_index("match_id")
+    tabelle = [df for df in (st.read("fotmob_standings"), st.read("espn_standings"))
+               if not df.empty and "team_name" in df.columns]
+
+    def squadra(nome: str) -> tuple[Any, Any]:
+        """Riga di classifica e tabella di provenienza, con la precedenza del generatore."""
+        c = canonical(nome)
+        for df in tabelle:
+            righe = df[df.team_name.map(canonical) == c]
+            if not righe.empty:
+                return righe.iloc[0], df
+        return None, None
+
+    def lato(riga_cls: Any) -> dict[str, Any] | None:
+        if riga_cls is None:
+            return None
+        p = float(riga_cls["played"])
+        if p <= 0:
+            return None
+        return {"rank": int(riga_cls["rank"]), "p": p,
+                "pts": float(riga_cls["points"]), "ppg": float(riga_cls["points"]) / p,
+                "gf": float(riga_cls["goals_for"]) / p,
+                "ga": float(riga_cls["goals_against"]) / p,
+                "diff": int(riga_cls["goal_diff"]),
+                "wdl": f"{int(riga_cls['wins'])}-{int(riga_cls['draws'])}-{int(riga_cls['losses'])}"}
+
+    def media_gol(df: Any, code: Any) -> dict[str, float] | None:
+        righe = df[df.league_code == code] if "league_code" in df.columns and code else df.iloc[0:0]
+        giocate = pd.to_numeric(righe["played"], errors="coerce").sum()
+        if giocate <= 0:
+            return None
+        return {"gf": pd.to_numeric(righe["goals_for"], errors="coerce").sum() / giocate,
+                "ga": pd.to_numeric(righe["goals_against"], errors="coerce").sum() / giocate}
+
+    def attesa_best(key_h: float | None, key_a: float | None, higher: bool = True) -> str | None:
+        if key_h is None or key_a is None or key_h == key_a:
+            return None
+        return "h" if (key_h > key_a) == higher else "a"
+
+    for pg in pages:
+        if not pg.stem.isdigit():
+            continue
+        mid = int(pg.stem)
+        if mid not in by_id.index:
+            continue
+        riga = by_id.loc[mid]
+        html = pg.read_text(encoding="utf-8")
+        m = re.search(r'id="confronto".*?</table>', html, re.DOTALL)
+        h_st, h_df = squadra(str(riga.home_name))
+        a_st, a_df = squadra(str(riga.away_name))
+        checks += 1
+        if h_st is None and a_st is None:
+            if m:
+                fails.append(f"{pg.name}: «Confronto di stagione» pubblicata senza classifica "
+                             "per nessuna delle due squadre")
+            continue
+        if not m:
+            fails.append(f"{pg.name}: «Confronto di stagione» assente con almeno una squadra "
+                         "in classifica")
+            continue
+        sec = m.group(0)
+        h, a = lato(h_st), lato(a_st)
+        # ogni riga: (attr del th, attr td casa, cella casa, attr td trasferta, cella trasferta)
+        righe_html = {lab: (th_attr, h_attr, h_html, a_attr, a_html) for th_attr, lab,
+                      h_attr, h_html, a_attr, a_html in re.findall(
+                          r'<tr><th scope="row"([^>]*)>([^<]+)</th>'
+                          r'<td([^>]*)>(.*?)</td><td([^>]*)>(.*?)</td></tr>', sec, re.DOTALL)}
+        if not righe_html:
+            fails.append(f"{pg.name}: tabella del confronto non letta")
+            continue
+        # numero di squadre contato nella tabella della squadra disponibile (casa prima)
+        st_rif, df_rif = (h_st, h_df) if h_st is not None else (a_st, a_df)
+        n_sq = None
+        if df_rif is not None and "league_code" in df_rif.columns:
+            contate = int((df_rif.league_code == st_rif["league_code"]).sum())
+            n_sq = contate if contate >= 2 else None
+        n_sq = n_sq or 20
+
+        def testo(html_cella: str) -> str:
+            return re.sub(r"<[^>]+>", "", html_cella).strip()
+
+        nome_h, nome_a = str(riga.home_name), str(riga.away_name)
+        # --- posizione: valore, barra e «Nª su n» sul numero vero di squadre -------------
+        if "Posizione" in righe_html:
+            for lato_key, lato_v, nome in (("h", h, nome_h), ("a", a, nome_a)):
+                cella = righe_html["Posizione"][2] if lato_key == "h" else righe_html["Posizione"][4]
+                checks += 1
+                if lato_v is None:
+                    if testo(cella) != "—":
+                        fails.append(f"{pg.name}: posizione di {nome} senza classifica ≠ «—»")
+                    continue
+                # la cella stampa il rango e poi il suffisso «Nª su n»: il rango si
+                # controlla sul suffisso, l'attacco del testo sul rango stesso
+                barra = re.search(r"width:([\d.]+)%", cella)
+                suffisso = re.search(r"(\d+)ª su (\d+)", cella)
+                if not barra or not suffisso:
+                    fails.append(f"{pg.name}: barra o suffisso della posizione di {nome} mancanti")
+                    continue
+                if not testo(cella).startswith(str(lato_v["rank"])) or \
+                        int(suffisso.group(1)) != lato_v["rank"]:
+                    fails.append(f"{pg.name}: posizione di {nome} {testo(cella)!r}, "
+                                 f"attesa {lato_v['rank']}")
+                checks += 2
+                attesa = round((n_sq - lato_v["rank"]) / (n_sq - 1) * 100)
+                if abs(float(barra.group(1)) - attesa) > 0.51:
+                    fails.append(f"{pg.name}: barra posizione di {nome} {barra.group(1)}%, "
+                                 f"attesa {attesa}% su {n_sq} squadre")
+                if int(suffisso.group(2)) != n_sq:
+                    fails.append(f"{pg.name}: «su {suffisso.group(2)}» dichiarato ma il "
+                                 f"campionato ha {n_sq} squadre ({nome})")
+        # --- righe numeriche --------------------------------------------------------------
+        medie = media_gol(df_rif, st_rif["league_code"]) if df_rif is not None else None
+        attesi = {
+            "Punti": (f"{h['pts']:.0f} in {it_plural(h['p'], 'gara')}" if h else "—",
+                      f"{a['pts']:.0f} in {it_plural(a['p'], 'gara')}" if a else "—",
+                      attesa_best(h and h["ppg"], a and a["ppg"])),
+            "Punti/gara": (dec(h["ppg"]) if h else "—", dec(a["ppg"]) if a else "—",
+                           attesa_best(h and h["ppg"], a and a["ppg"])),
+            "Risultati (V-N-P)": (h["wdl"] if h else "—", a["wdl"] if a else "—", None),
+            "Gol fatti/gara": (dec(h["gf"]) if h else "—", dec(a["gf"]) if a else "—",
+                               attesa_best(h and h["gf"], a and a["gf"])),
+            "Gol subiti/gara": (dec(h["ga"]) if h else "—", dec(a["ga"]) if a else "—",
+                                attesa_best(h and h["ga"], a and a["ga"], higher=False)),
+            "Differenza reti": ((f"+{h['diff']}" if h["diff"] > 0 else str(h["diff"])) if h else "—",
+                                (f"+{a['diff']}" if a["diff"] > 0 else str(a["diff"])) if a else "—",
+                                attesa_best(h and h["diff"], a and a["diff"])),
+        }
+        if medie:
+            attesi["Attacco (× media campionato)"] = (
+                dec(h["gf"] / medie["gf"]) if h else "—",
+                dec(a["gf"] / medie["gf"]) if a else "—",
+                attesa_best(h and h["gf"] / medie["gf"], a and a["gf"] / medie["gf"]))
+            attesi["Difesa (× media campionato)"] = (
+                dec(h["ga"] / medie["ga"]) if h else "—",
+                dec(a["ga"] / medie["ga"]) if a else "—",
+                attesa_best(h and h["ga"] / medie["ga"], a and a["ga"] / medie["ga"],
+                            higher=False))
+        for label, (att_h, att_a, att_best) in attesi.items():
+            if label not in righe_html:
+                fails.append(f"{pg.name}: riga «{label}» mancante")
+                continue
+            checks += 3
+            if testo(righe_html[label][2]) != att_h:
+                fails.append(f"{pg.name}: «{label}» casa {testo(righe_html[label][2])!r}, "
+                             f"atteso {att_h!r}")
+            if testo(righe_html[label][4]) != att_a:
+                fails.append(f"{pg.name}: «{label}» trasferta {testo(righe_html[label][4])!r}, "
+                             f"atteso {att_a!r}")
+            visto = "h" if 'class="best"' in righe_html[label][1] else (
+                "a" if 'class="best"' in righe_html[label][3] else None)
+            if visto != att_best:
+                fails.append(f"{pg.name}: evidenziazione «{label}» {visto}, attesa {att_best}")
+        # --- titolo della riga «Punti», divario, orologio ---------------------------------
+        checks += 3
+        th_punti = righe_html.get("Punti", ("",))[0]
+        if not ('title="' in th_punti and "punti/gara" in th_punti):
+            fails.append(f"{pg.name}: la riga «Punti» non dichiara nel titolo che "
+                         "l'evidenziazione è per punti/gara")
+        coda = html[html.find('id="confronto"'):]
+        nota = re.search(r'</table></div>\s*<p class="small mut">(.*?)</p>', coda, re.DOTALL)
+        nota_txt = nota.group(1) if nota else ""
+        if "Classifica raccolta oggi" not in nota_txt:
+            fails.append(f"{pg.name}: la nota del confronto non dichiara l'orologio della "
+                         "classifica")
+        if h and a:
+            gap = round(h["pts"] - a["pts"])
+            if gap > 0:
+                attesa_gap = f"In classifica <b>{nome_h}</b> è {max(1, gap)} punt"
+            elif gap < 0:
+                attesa_gap = f"In classifica <b>{nome_a}</b> è {max(1, -gap)} punt"
+            else:
+                attesa_gap = "Le due squadre sono a pari punti in classifica"
+            if attesa_gap not in nota_txt:
+                fails.append(f"{pg.name}: divario in classifica mancante o sbagliato "
+                             f"(atteso {attesa_gap!r}, gap {gap})")
+        elif "In classifica" in nota_txt:
+            fails.append(f"{pg.name}: divario pubblicato con una squadra senza classifica")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -4448,6 +4653,10 @@ def main() -> int:
         squadre, squadre_checks = check_due_squadre(site, Path(args.data) if args.data else None)
         fails += squadre
         checks += squadre_checks
+        confronto, confronto_checks = check_confronto_stagione(
+            site, Path(args.data) if args.data else None)
+        fails += confronto
+        checks += confronto_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks

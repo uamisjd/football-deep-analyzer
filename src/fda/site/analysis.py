@@ -4271,12 +4271,20 @@ class MatchAnalysis:
     # ---- confronto di stagione (tabella di lega) -----------------------------------------------
     @staticmethod
     def _cmp_row(label: str, h: str, a: str, key_h: float | None = None,
-                 key_a: float | None = None, higher: bool = True) -> dict[str, Any]:
-        """Riga della card «Confronto di stagione»; evidenzia il lato migliore se confrontabile."""
+                 key_a: float | None = None, higher: bool = True,
+                 title: str | None = None) -> dict[str, Any]:
+        """Riga della card «Confronto di stagione»; evidenzia il lato migliore se confrontabile.
+
+        ``title`` (docs/76 §8): spiegazione opzionale sull'etichetta della riga — la riga
+        «Punti» la usa per dire che l'evidenziazione ragiona per punti/gara.
+        """
         best = None
         if key_h is not None and key_a is not None and key_h != key_a:
             best = "h" if (key_h > key_a) == higher else "a"
-        return {"label": label, "h": h, "a": a, "best": best}
+        row = {"label": label, "h": h, "a": a, "best": best}
+        if title:
+            row["title"] = title
+        return row
 
     def _league_averages(self, st: dict[str, Any]) -> dict[str, float] | None:
         """Media gol fatti/subiti per gara nel campionato, dalla stessa tabella della classifica."""
@@ -4291,6 +4299,22 @@ class MatchAnalysis:
             if played > 0:
                 return {"gf": pd.to_numeric(rows["goals_for"], errors="coerce").sum() / played,
                         "ga": pd.to_numeric(rows["goals_against"], errors="coerce").sum() / played}
+        return None
+
+    def _n_squadre(self, st: dict[str, Any]) -> int | None:
+        """Numero di squadre del campionato, contato nella stessa tabella della classifica.
+
+        Serve a «Confronto di stagione» (docs/76 §8): la vecchia resa scriveva «Nª su 20»
+        anche nelle leghe a 18 squadre (FRA1, GER1, NED1, POR1) e disegnava la barra della
+        posizione sulla scala 1–20. Il conto viene dalla tabella, non da un'assunzione.
+        """
+        code = st.get("league_code")
+        for df in (self.fm_standings, self.standings):
+            if df.empty or "league_code" not in df.columns:
+                continue
+            n = int((df.league_code == code).sum())
+            if n >= 2:
+                return n
         return None
 
     def season_compare(self, home_st: dict[str, Any] | None,
@@ -4319,11 +4343,17 @@ class MatchAnalysis:
 
             dash = "—"
             h, a = side(home_st), side(away_st)
+            # Numero di squadre del campionato, contato nella tabella di classifica: la resa
+            # scrive «Nª su <n>» e scala la barra su <n>, così le leghe a 18 squadre non
+            # dicono «su 20» (docs/76 §8). Le due squadre sono dello stesso campionato.
+            n_sq = self._n_squadre(home_st or away_st)
             rows = [
                 self._cmp_row("Posizione", str(h["rank"]) if h else dash, str(a["rank"]) if a else dash,
                               key_h=h and h["rank"], key_a=a and a["rank"], higher=False),
                 self._cmp_row("Punti", h["pts_s"] if h else dash, a["pts_s"] if a else dash,
-                              key_h=h and h["ppg"], key_a=a and a["ppg"]),
+                              key_h=h and h["ppg"], key_a=a and a["ppg"],
+                              title="Il migliore è evidenziato per punti/gara: le due squadre "
+                                    "possono avere una partita in più o in meno."),
                 self._cmp_row("Punti/gara", _it2(h["ppg"]) if h else dash, _it2(a["ppg"]) if a else dash,
                               key_h=h and h["ppg"], key_a=a and a["ppg"]),
                 self._cmp_row("Risultati (V-N-P)", h["wdl"] if h else dash, a["wdl"] if a else dash),
@@ -4348,7 +4378,18 @@ class MatchAnalysis:
                 note = "Attacco e difesa rapportati alla media gol del campionato: attacco più alto e difesa più bassa è meglio."
             else:
                 note = "Dalla classifica della stagione in corso."
-            return {"rows": rows, "note": note}
+            # docs/76 §8 — dichiarazione dell'orologio: la classifica è quella raccolta oggi,
+            # non quella alla vigilia; su una gara già giocata comprende anche i turni dopo.
+            note = ("Classifica raccolta oggi: su una gara già giocata comprende anche i turni "
+                    "successivi. " + note)
+            # Divario in punti (sintesi per il lettore: lo fa la scheda, non l'occhio).
+            gap = None
+            if h and a and home_st and away_st:
+                try:
+                    gap = round(float(home_st["points"]) - float(away_st["points"]))
+                except (KeyError, TypeError, ValueError):
+                    gap = None
+            return {"rows": rows, "note": note, "n_squadre": n_sq, "gap": gap}
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             return None
 

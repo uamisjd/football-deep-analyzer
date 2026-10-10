@@ -1374,10 +1374,42 @@ def test_season_compare(tmp_path):
     assert rows["Gol subiti/gara"]["best"] == "h"    # 0,67 vs 1,33
     assert rows["Difesa (× media campionato)"]["best"] == "h"
     assert rows["Punti/gara"]["h"] == "3,00"         # 9 punti in 3 gare
+    # docs/76 §8: numero di squadre contato nella classifica, non assunto a 20
+    # (il seed ha solo 3 squadre di Serie A: il conto deve venire dalla tabella)
+    assert cmp["n_squadre"] == len(st.read("fotmob_standings"))
+    # la riga «Punti» dichiara perché l'evidenziazione ragiona per punti/gara
+    assert "punti/gara" in rows["Punti"]["title"]
+    # il divario in punti e la dichiarazione dell'orologio della classifica
+    assert cmp["gap"] == int(h["points"] - a["points"])
+    assert cmp["note"].startswith("Classifica raccolta oggi")
     one = ma.season_compare(h, None)                 # una sola squadra: lato avversario «—»
     assert all(r["best"] is None for r in one["rows"]) and any(r["a"] == "—" for r in one["rows"])
+    assert one["gap"] is None                        # divario senza l'altra squadra: niente numero
     assert ma.season_compare(None, None) is None     # nessuna classifica → nessuna card
     assert ma.season_compare(ma.standing("Udinese"), ma.standing("Lazio")) is None
+    st.close()
+
+
+def test_season_compare_campionato_a_18_squadre(tmp_path):
+    """docs/76 §8: nelle leghe a 18 squadre la posizione dice «su 18», non «su 20»."""
+    st = _seed(tmp_path)
+    ma = MatchAnalysis(st)
+    righe = [{"league_code": "FRA1", "team_id": 9000 + i, "team_name": f"Squadra {i}",
+              "rank": i, "played": 5, "points": 20 - i, "wins": 6 - i % 3,
+              "draws": 1, "losses": i % 3, "goals_for": 10, "goals_against": 6,
+              "goal_diff": 4} for i in range(1, 19)]
+    st.upsert("fotmob_standings", righe)
+    ma = MatchAnalysis(st)
+    lato = {"league_code": "FRA1", "team_name": "Squadra 1", "rank": 8, "played": 5,
+            "points": 7, "wins": 2, "draws": 1, "losses": 2,
+            "goals_for": 6, "goals_against": 5, "goal_diff": 1}
+    altro = {**lato, "team_name": "Squadra 2", "rank": 4, "points": 10,
+             "wins": 3, "goal_diff": 4}
+    cmp = ma.season_compare(lato, altro)
+    assert cmp["n_squadre"] == 18
+    assert cmp["gap"] == -3
+    pos = next(r for r in cmp["rows"] if r["label"] == "Posizione")
+    assert (pos["h"], pos["a"]) == ("8", "4") and pos["best"] == "a"
     st.close()
 
 

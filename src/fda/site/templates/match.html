@@ -427,15 +427,20 @@
     ancora: «→ precedenti» va a `#precedenti`. -#}
 <div class="grid detail-card" id="club">
   {% if c.season_compare %}
+  {#- docs/76 §8: la posizione scala sul numero vero di squadre del campionato (contato nella
+      classifica, non assunto a 20: 4 leghe su 7 ne hanno 18); la riga «Punti» dichiara nel
+      titolo che l'evidenziazione ragiona per punti/gara; la frase del divario fa il conto per
+      il lettore; la nota dichiara l'orologio della classifica (raccolta oggi). -#}
+  {% set n_sq = c.season_compare.n_squadre or 20 %}
   <div class="card" id="confronto">
     <h2>Confronto di stagione</h2>
     <div class="tablewrap"><table>
       <tr><th scope="col"></th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th></tr>
       {% for r in c.season_compare.rows %}
-      <tr><th scope="row">{{ r.label }}</th><td{% if r.best == 'h' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.h }}{% if r.label == 'Posizione' and r.h != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.h|int))/19*100)|round }}%;background:{% if r.best == 'h' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.h }}ª su 20</span>{% endif %}</td><td{% if r.best == 'a' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.a }}{% if r.label == 'Posizione' and r.a != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.a|int))/19*100)|round }}%;background:{% if r.best == 'a' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.a }}ª su 20</span>{% endif %}</td></tr>
+      <tr><th scope="row"{% if r.title %} title="{{ r.title }}"{% endif %}>{{ r.label }}</th><td{% if r.best == 'h' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.h }}{% if r.label == 'Posizione' and r.h != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ (((n_sq - (r.h|int))/(n_sq - 1))*100)|round }}%;background:{% if r.best == 'h' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.h }}ª su {{ n_sq }}</span>{% endif %}</td><td{% if r.best == 'a' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.a }}{% if r.label == 'Posizione' and r.a != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ (((n_sq - (r.a|int))/(n_sq - 1))*100)|round }}%;background:{% if r.best == 'a' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.a }}ª su {{ n_sq }}</span>{% endif %}</td></tr>
       {% endfor %}
     </table></div>
-    <p class="small mut">{{ c.season_compare.note }}</p>
+    <p class="small mut">{% set g = c.season_compare.gap %}{% if g is not none %}{% if g > 0 %}In classifica <b>{{ c.home_name }}</b> {{ 'è 1 punto' if g == 1 else 'è ' ~ g ~ ' punti' }} davanti a {{ c.away_name }}.{% elif g < 0 %}In classifica <b>{{ c.away_name }}</b> {{ 'è 1 punto' if g == -1 else 'è ' ~ (-g) ~ ' punti' }} davanti a {{ c.home_name }}.{% else %}Le due squadre sono a pari punti in classifica.{% endif %} {% endif %}{{ c.season_compare.note }}</p>
   </div>
   {% endif %}
   {% if c.home_bench or c.away_bench %}
