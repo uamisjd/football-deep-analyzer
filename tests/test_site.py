@@ -2618,13 +2618,25 @@ def test_finestra_vigilia_esclude_la_gara_descritta(tmp_path):
 
 
 def test_attacco_contro_difesa_solo_quando_regge():
-    """`docs/76` §2: l'incrocio esce solo con due rapporti completi dalla stessa fonte."""
-    completo_a = {"source": "Understat", "xg_ratio": 1.6, "xga_ratio": 0.7}
-    completo_b = {"source": "Understat", "xg_ratio": 1.1, "xga_ratio": 0.9}
+    """`docs/76` §2/§7: la sintesi esce solo con due rapporti completi dalla stessa fonte.
+
+    La produzione attesa è il prodotto dei due rapporti (crea × concede l'avversaria) e lo
+    squilibrio è dichiarato solo oltre 1σ: con 20 gare per parte l'errore è piccolo e il
+    confronto 1,44×/0,99× supera la soglia; con 3 gare no.
+    """
+    completo_a = {"source": "Understat", "xg_ratio": 1.6, "xga_ratio": 0.7, "played": 20}
+    completo_b = {"source": "Understat", "xg_ratio": 1.1, "xga_ratio": 0.9, "played": 20}
     ma = MatchAnalysis.__new__(MatchAnalysis)          # nessuna tabella necessaria
     out = ma.attacco_contro_difesa(completo_a, completo_b)
-    assert out == {"source": "Understat", "home_crea": 1.6, "away_concede": 0.9,
-                   "away_crea": 1.1, "home_concede": 0.7}
+    assert out["home_prod"] == pytest.approx(1.6 * 0.9)
+    assert out["away_prod"] == pytest.approx(1.1 * 0.7)
+    assert out["sbilancio"] == pytest.approx(1.44 / 0.77)
+    assert out["oltre_rumore"] is True
+    assert out["q_lo"] < out["sbilancio"] < out["q_hi"]
+    corto_a = {**completo_a, "played": 3}
+    corto_b = {**completo_b, "played": 3}
+    assert ma.attacco_contro_difesa(corto_a, corto_b)["oltre_rumore"] is False, \
+        "con 3 gare per parte lo squilibrio è dentro il rumore e non si dichiara"
     assert ma.attacco_contro_difesa(None, completo_b) is None
     assert ma.attacco_contro_difesa(completo_a, None) is None
     assert ma.attacco_contro_difesa(completo_a, {**completo_b, "xga_ratio": None}) is None
@@ -2657,7 +2669,7 @@ def test_card_due_squadre_attacco_contro_difesa_in_pagina(tmp_path):
     SiteBuilder(store=st, out_dir=out).build_match_pages({5900020, 5749645})
     sec = (out / "partite" / "5900020.html").read_text(encoding="utf-8")
     sec = sec.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
-    blocco = re.search(r"Attacco contro difesa</div>(.*?)</div>", sec, re.DOTALL)
+    blocco = sec.split('id="attacco-difesa"', 1)[1]
     assert blocco, "la striscia manca con entrambe le squadre sopra le 3 gare"
     ma = MatchAnalysis(st)
     riga = st.read("fixtures").query("match_id == 5900020").iloc[0]
@@ -2666,10 +2678,28 @@ def test_card_due_squadre_attacco_contro_difesa_in_pagina(tmp_path):
         ma.season_xg("Inter", int(riga.home_id), ko),
         ma.season_xg("Napoli", int(riga.away_id), ko))
     assert atteso is not None
-    vals = [v.replace(",", ".") for v in re.findall(r"<b>([\d,]+)×</b>", blocco.group(1))]
-    assert [float(v) for v in vals] == pytest.approx(
+    # le due barre riportano la sintesi: crea × concede l'avversaria
+    prodotti = [float(v.replace(",", ".")) for v in
+                re.findall(r"font:700 13px[^>]*>([\d,]+)×</span>", blocco)]
+    assert prodotti == pytest.approx([atteso["home_prod"], atteso["away_prod"]], abs=0.011)
+    barre = [int(v) for v in re.findall(r"width:(\d+)%", blocco)]
+    # le barre leggono il prodotto pieno, non quello arrotondato in etichetta
+    assert barre == [round(min(v, 2.5) / 2.5 * 100)
+                     for v in (atteso["home_prod"], atteso["away_prod"])]
+    # il dettaglio conserva i quattro rapporti delle caselle
+    rapp = [float(v.replace(",", ".")) for v in re.findall(
+        r"crea ([\d,]+)× la media e affronta una difesa che concede ([\d,]+)× · "
+        r".*?crea ([\d,]+)× e affronta una difesa che concede ([\d,]+)×",
+        blocco, re.DOTALL)[0]]
+    assert rapp == pytest.approx(
         [atteso["home_crea"], atteso["away_concede"],
          atteso["away_crea"], atteso["home_concede"]], abs=0.011)
+    # il verdetto c'è solo oltre il rumore, col nome giusto
+    if atteso["oltre_rumore"]:
+        leader = "Inter" if atteso["home_prod"] > atteso["away_prod"] else "Napoli"
+        assert f"<b>{leader}</b> ha il confronto offensivo migliore" in blocco
+    else:
+        assert "entro il rumore del campione" in blocco
     # a gara finita l'incrocio non si pubblica: la partita ha già risposto
     finita = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
     finita = finita.split('id="squadre"', 1)[1].split('id="club"', 1)[0]

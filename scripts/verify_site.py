@@ -1142,37 +1142,77 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
             etichetta = atteso_pr.get("label")
             if etichetta and f"<b>{etichetta}</b>" not in sec:
                 fails.append(f"{pg.name}: etichetta di pressing «{etichetta}» assente")
-        # [44]/docs/76 §2 — «Attacco contro difesa»: esce solo sulle schede pre-partita in
-        # cui entrambe le squadre hanno i due rapporti di lega (campione ≥3 gare) dalla
-        # stessa fonte, e con i numeri delle quattro caselle già ricalcolate sopra.
+        # [44]/docs/76 §7 — «Attacco contro difesa»: esce solo sulle schede pre-partita in
+        # cui entrambe le squadre hanno i due rapporti di lega dalla stessa fonte; la
+        # striscia pubblica la sintesi (produzione attesa = crea × concede l'avversaria),
+        # le barre in scala 0–2,5×, i quattro rapporti di dettaglio e il verdetto sullo
+        # squilibrio solo oltre 1σ (stessa convenzione della banda xPTS).
         attesi_ad = None
         if ("Analisi pre-partita" in html and len(attesi) == 2 and attesi[0] and attesi[1]
                 and attesi[0].get("source") == attesi[1].get("source")
                 and all(x.get(c) is not None for x in attesi
                         for c in ("xg_ratio", "xga_ratio"))):
-            attesi_ad = (float(attesi[0]["xg_ratio"]), float(attesi[1]["xga_ratio"]),
-                         float(attesi[1]["xg_ratio"]), float(attesi[0]["xga_ratio"]))
-        striscia = re.search(r"Attacco contro difesa</div>(.*?)</div>", sec, re.DOTALL)
+            h_ad, a_ad = attesi[0], attesi[1]
+            prod_h = float(h_ad["xg_ratio"]) * float(a_ad["xga_ratio"])
+            prod_a = float(a_ad["xg_ratio"]) * float(h_ad["xga_ratio"])
+            q = prod_h / prod_a
+            cv = 1.036 / 1.692     # sd/media xG per gara-squadra (docs/64 §7)
+            se_ln_q = math.sqrt(sum((cv / (float(r) * math.sqrt(int(x["played"])))) ** 2
+                                    for x in (h_ad, a_ad)
+                                    for r in (x["xg_ratio"], x["xga_ratio"])))
+            attesi_ad = {"prod": (prod_h, prod_a),
+                         "rapporti": (float(h_ad["xg_ratio"]), float(a_ad["xga_ratio"]),
+                                      float(a_ad["xg_ratio"]), float(h_ad["xga_ratio"])),
+                         "q": q, "oltre": abs(math.log(q)) > se_ln_q,
+                         "leader": 0 if prod_h > prod_a else 1}
+        i_ad = sec.find('id="attacco-difesa"')
+        blocco_ad = sec[i_ad:sec.find('<p class="small mut"', i_ad)] if i_ad >= 0 else ""
         checks += 1
         if attesi_ad is None:
-            if striscia:
+            if i_ad >= 0:
                 fails.append(f"{pg.name}: «Attacco contro difesa» pubblicata senza i requisiti "
                              "(gara già giocata, campione corto o fonti xG diverse)")
-        elif not striscia:
+        elif not blocco_ad:
             fails.append(f"{pg.name}: «Attacco contro difesa» assente con entrambe le squadre "
                          "che hanno i due rapporti di lega dalla stessa fonte")
         else:
-            valori = [num(v) for v in re.findall(r"<b>([\d,]+)×</b>", striscia.group(1))]
+            prodotti = [num(v) for v in re.findall(
+                r'font:700 13px[^>]*>([\d,]+)×</span>', blocco_ad)]
+            checks += 2
+            if len(prodotti) != 2 or not all(abs(p - a) <= 0.011
+                                             for p, a in zip(prodotti, attesi_ad["prod"],
+                                                             strict=True)):
+                fails.append(f"{pg.name}: produzioni attese {prodotti}, "
+                             f"calcolate {[round(v, 2) for v in attesi_ad['prod']]}")
+            barre = [int(v) for v in re.findall(r"width:(\d+)%", blocco_ad)]
+            checks += 2
+            attese = [round(min(v, 2.5) / 2.5 * 100) for v in attesi_ad["prod"]]
+            if barre != attese:
+                fails.append(f"{pg.name}: barre {barre}, attese {attese}")
+            rapp = [num(v) for v in re.findall(
+                r"crea ([\d,]+)× la media e affronta una difesa che concede ([\d,]+)× · "
+                r".*?crea ([\d,]+)× e affronta una difesa che concede ([\d,]+)×",
+                blocco_ad, re.DOTALL)[0]] if re.search(
+                r"crea [\d,]+× la media e affronta", blocco_ad) else []
             checks += 4
-            if len(valori) != 4:
-                fails.append(f"{pg.name}: «Attacco contro difesa» con {len(valori)} numeri, "
-                             "attesi 4 (crea/concede per squadra)")
-            else:
-                for v, a, che in zip(valori, attesi_ad,
-                                     ("crea casa", "concede trasferta",
-                                      "crea trasferta", "concede casa"), strict=True):
-                    if abs(v - a) > 0.011:
-                        fails.append(f"{pg.name}: attacco contro difesa, {che} {v} ≠ {a:.2f}")
+            for v, a, che in zip(rapp, attesi_ad["rapporti"],
+                                 ("crea casa", "concede trasferta",
+                                  "crea trasferta", "concede casa"), strict=False):
+                if abs(v - a) > 0.011:
+                    fails.append(f"{pg.name}: attacco contro difesa, {che} {v} ≠ {a:.2f}")
+            if len(rapp) != 4:
+                fails.append(f"{pg.name}: dettaglio dell'incrocio con {len(rapp)} rapporti, "
+                             "attesi 4")
+            checks += 1
+            nomi = (str(riga.home_name), str(riga.away_name))
+            if attesi_ad["oltre"]:
+                if f"<b>{nomi[attesi_ad['leader']]}</b> ha il confronto offensivo migliore" \
+                        not in blocco_ad:
+                    fails.append(f"{pg.name}: verdetto dell'incrocio senza il leader atteso "
+                                 f"{nomi[attesi_ad['leader']]}")
+            elif "entro il rumore del campione" not in blocco_ad:
+                fails.append(f"{pg.name}: squilibrio entro 1σ ma la striscia dichiara un "
+                             "vincitore del confronto")
         for tid in (int(riga.home_id), int(riga.away_id)):
             forza_forma(sec, tid, riga.league_id, ko, pg.name)
         checks += 1

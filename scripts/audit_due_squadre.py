@@ -97,7 +97,10 @@ def main() -> int:
                 agg["panchina_presente"] += body.count("Panchina (")
             elif pre:
                 agg["distinta_assente_pre"] += 1
-        agg["striscia_attacco_difesa"] += m.group(1).count("Attacco contro difesa</div>")
+        agg["striscia_attacco_difesa"] += m.group(1).count('id="attacco-difesa"')
+        agg["striscia_verdetto_oltre"] += m.group(1).count(
+            "ha il confronto offensivo migliore")
+        agg["striscia_verdetto_entro"] += m.group(1).count("entro il rumore del campione")
         # la dichiarazione della distinta non ancora pubblicata può stare dopo il punto in
         # cui il regex dei pannelli taglia il corpo: si conta sulla sezione intera
         agg["distinta_dichiarata_assente"] += m.group(1).count(

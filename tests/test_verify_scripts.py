@@ -603,12 +603,21 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
 
     # 12) attacco contro difesa (docs/76 §2): numero manomesso, striscia rimossa, striscia
     # pubblicata su una gara che non è più pre-partita (i requisiti non sono più soddisfatti)
-    blocco = re.search(r"Attacco contro difesa</div>(.*?)</div>", originale, re.DOTALL)
-    assert blocco, "la scheda sintetica pre-partita deve pubblicare l'incrocio"
-    primo = re.search(r"<b>([\d,]+)×</b>", blocco.group(1)).group(1)
-    assert any("attacco contro difesa" in f for f in
-               rotta(originale.replace(f"<b>{primo}×</b>", "<b>9,99×</b>", 1)))
-    assert any("assente" in f for f in rotta(originale.replace(blocco.group(0), "", 1)))
+    i_ad = originale.find('id="attacco-difesa"')
+    assert i_ad >= 0, "la scheda sintetica pre-partita deve pubblicare l'incrocio"
+    primo = re.search(r'font:700 13px[^>]*>([\d,]+)×</span>', originale[i_ad:]).group(1)
+    assert any("produzioni attese" in f for f in rotta(
+        originale[:i_ad] + originale[i_ad:].replace(f">{primo}×</span>", ">9,99×</span>", 1)))
+    barra = re.search(r'width:(\d+)%', originale[i_ad:]).group(1)
+    assert any("barre" in f for f in rotta(
+        originale[:i_ad] + originale[i_ad:].replace(f"width:{barra}%", "width:99%", 1)))
+    assert any("assente" in f for f in rotta(
+        originale[:i_ad - 5] + originale[originale.find("</div>", i_ad + 500):]))
+    leader = re.search(r"<b>([^<]+)</b> ha il confronto offensivo migliore", originale)
+    if leader:
+        assert any("leader atteso" in f for f in rotta(
+            originale.replace(f"<b>{leader.group(1)}</b> ha il confronto",
+                              "<b>Squadra Falsa</b> ha il confronto", 1)))
     # «Analisi pre-partita» compare anche nel titolo della sezione lettura: si sostituisce
     # ovunque, così la pagina risulta a gara finita e la striscia non ha più i requisiti
     assert any("senza i requisiti" in f for f in

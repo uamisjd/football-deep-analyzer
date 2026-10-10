@@ -157,7 +157,8 @@ pagine + casi anomali).
 Ogni riquadro di squadra contiene: forma con verso dei gol e forza degli avversari, xG
 creati/concessi con rapporto di lega (stessa fonte), xPTS con banda di rumore, indice di
 pressione su 7 leghe, riposo con data e coppa; la sezione dichiara la distinta non pubblicata,
-pubblica l'incrocio attacco–difesa quando regge, e il piè di card descrive tutto. Residui
+pubblica la sintesi dell'incrocio attacco–difesa quando regge (§7), e il piè di card
+descrive tutto. Residui
 invariati da `docs/64` §6 (id di fase NED1, campione xG una gara avanti quando la fonte
 anticipa, PPDA come media di gare) più: la striscia attacco–difesa a inizio stagione uscirà
 solo sulle schede con ≥3 gare per parte (comportamento dichiarato, non un buco).
@@ -165,3 +166,62 @@ solo sulle schede con ≥3 gare per parte (comportamento dichiarato, non un buco
 Coda della revisione sezione per sezione (da `docs/65` §2.F, invariata): «Panchina e posta in
 gioco», «Mercato: arrivi e partenze», «Vita del club», «Previsione del modello ensemble»,
 «Verifica approfondita», «Confronto di stagione», «Clima del club».
+
+## §7 — Revisione della striscia «Attacco contro difesa» (richiesta dell'utente)
+
+### La misura
+
+L'utente, sulla prima versione (§2): «non credo che così com'è mi sia di grande aiuto» — la
+striscia metteva in fila i quattro rapporti del campionato (crea casa, concede trasferta,
+crea trasferta, concede casa) e lasciava al lettore il conto e il confronto. Misurato
+offline sui Parquet (stessa regola B.10), sulle **1.983 gare non giocate** in cui entrambe
+le squadre hanno i due rapporti dalla stessa fonte:
+
+- la sintesi utile è il **prodotto** `crea × concede l'avversaria` per squadra: è la
+  produzione offensiva attesa in questo incrocio rapportata alla media del campionato
+  (stessa combinazione moltiplicativa attacco×difesa che il modello usa coi parametri
+  fittati, qui con gli xG di stagione); 1,00× vale squadra media contro difesa media;
+- distribuzione del prodotto su 1.983 gare: p5 0,40 · mediana 0,93 · p95 1,86 → barra in
+  scala **0–2,5×** (cappata);
+- squilibrio `q` fra le due produzioni (casa su trasferta): mediana 1,00 · p95 4,08 ·
+  massimo 11,5 (Benfica–Rio Ave 2,54× contro 0,22×; Juventus–Lecce e Bayern–Paderborn
+  10,9×);
+- errore: sd/media dell'xG per gara-squadra **1,04 su media 1,69** (`docs/64` §7,
+  `XG_RATIO_CV ≈ 0,612`); SE del rapporto su n gare ≈ CV/√n, quello di q combina in
+  quadratura i quattro rapporti → con questo rumore lo squilibrio **supera 1σ su 918/1.983
+  gare (46%)**, che quindi ricevono un verdetto; le altre restano «entro il rumore».
+
+### La correzione
+
+- `analysis.py` — `attacco_contro_difesa` ora restituisce anche `home_prod`, `away_prod`
+  (i prodotti), `sbilancio` (q), `oltre_rumore` (|ln q| oltre l'errore a 1σ), `q_lo`/`q_hi`
+  (intervallo a 1σ); costante documentata `XG_RATIO_CV = 1,036/1,692`;
+- `match.html` — la striscia (`id="attacco-difesa"`) pubblica ora: titolo con ⓘ di metodo,
+  una **barra per squadra** con in etichetta la produzione attesa, i quattro rapporti come
+  dettaglio sotto le barre, e il **verdetto** — il nome di chi ha il confronto offensivo
+  migliore con il fattore («11,5× la produzione attesa dell'altra») se lo squilibrio supera
+  1σ, altrimenti «entro il rumore del campione» con l'intervallo nell'ⓘ; la barra della
+  squadra in vantaggio si accende solo oltre il rumore;
+- il piè di card descrive la sintesi; la resa a 375 px della griglia barre è coperta da
+  `resa_375` (colonna minmax(60px, auto) + barra elastica).
+
+### Invarianti e test
+
+- [44] di `verify_site.py` riscritto: ricomputa da `attesi` prodotti, barre, rapporti di
+  dettaglio e verdetto (leader giusto oltre 1σ; nessun vincitore entro 1σ) e confronta con
+  la pagina;
+- `test_site.py` aggiorna i due test della striscia (struttura e resa sulla pagina reale
+  di Inter–Napoli);
+- caso 12 di manomissione in `test_verify_scripts.py`: prodotto, barra, assenza e leader
+  falsi vengono tutti catturati.
+
+### Dopo la correzione
+
+Le **89 schede pre-partita** pubblicano la sintesi con barre e verdetto: **36 dichiarano
+chi ha il confronto offensivo migliore** (es. Atalanta–Venezia: «Venezia, 2,0× la
+produzione attesa dell'altra»), **53 restano «entro il rumore del campione»** con
+l'intervallo a 1σ nell'ⓘ. La barra della squadra indietro si spegne solo quando il
+verdetto c'è; i gate della §5 sono stati rifatti dopo questa revisione: `pytest` **589
+passed**, `ruff` pulito, `fda build` **470/2.364/7.530**, `verify_site` **212.351 · 0**
+(+445 controlli della sintesi), parità **nessuna differenza**, `resa_375` **27.696 · 0**,
+audit: 89 strisce con 36 verdetti oltre il rumore e 53 entro.

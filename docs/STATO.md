@@ -17,6 +17,20 @@ arrivano», non si duplica per docs/30) ed E3 (assenti→notizie: copertura 4%, 
 Gate: **589 test**, Ruff pulito, build **470/2.364/7.530**, `verify_site` **211.906 · 0**,
 parità **89 schede**, `resa_375` **27.696 · 0**. Nessuna richiesta alle fonti.
 
+**Revisione della striscia (§7, richiesta dell'utente):** la prima stesura metteva in fila i
+quattro rapporti e lasciava il conto al lettore — «non credo che così com'è mi sia di grande
+aiuto». Ora la striscia pubblica la **sintesi**: una barra per squadra con la **produzione
+offensiva attesa dell'incrocio** (`crea × concede l'avversaria`, scala 0–2,5× misurata su
+1.983 gare: p5 0,40 · mediana 0,93 · p95 1,86), i quattro rapporti come dettaglio sotto le
+barre e il **verdetto** solo oltre il rumore del campione — 1σ che combina gli errori dei
+quattro rapporti (sd 1,04 su media 1,69, `XG_RATIO_CV ≈ 0,612`): **918/1.983 gare (46%)
+ricevono il nome di chi ha il confronto offensivo migliore** (sulle 89 schede pre-partita:
+36 oltre, 53 entro), le altre dichiarano «entro il rumore» con l'intervallo nell'ⓘ. [44]
+riscritto (ricomputa prodotti, barre, rapporti e verdetto), test e caso 12 di manomissione
+aggiornati. Gate rifatti: **589 test**, build **470/2.364/7.530**, `verify_site`
+**212.351 · 0**, parità nessuna differenza, `resa_375` **27.696 · 0**. Dettagli in
+`docs/76` §7.
+
 ---
 
 ## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)

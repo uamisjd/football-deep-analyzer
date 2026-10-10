@@ -4208,13 +4208,15 @@ class MatchAnalysis:
                               away_xg: dict[str, Any] | None) -> dict[str, Any] | None:
         """Confronto incrociato attacco–difesa per la card «Le due squadre» (pre-partita).
 
-        Le quattro caselle della card dicono già attacco e difesa di ogni squadra
-        rapportate alla media del campionato, ma l'incrocio che risponde alla domanda
-        «l'attacco di A contro la difesa di B» restava da fare a mente (voce E di
-        `docs/65`). Si pubblica solo quando **entrambe** le squadre hanno il rapporto
-        di lega sia sui creati sia sui concessi (campione ≥3 gare) e dalla **stessa
-        fonte**: altrimenti il confronto reggerebbe su numeri parziali o non
-        confrontabili (i due modelli xG hanno scale diverse, `docs/64` §2.3).
+        La prima stesura (`docs/76` §2) metteva in fila i quattro rapporti di lega e
+        lasciava al lettore il conto; la revisione richiesta dall'utente (§7) pubblica la
+        **sintesi**: la produzione offensiva attesa di ciascuna squadra, ``crea × concede
+        l'avversaria`` (entrambi rapportati alla media del campionato, stessa fonte) — la
+        combinazione moltiplicativa attacco×difesa che il modello usa coi parametri
+        fittati, qui con gli xG di stagione; 1,00× vale una squadra media contro una
+        difesa media. Si pubblica solo quando **entrambe** le squadre hanno i due rapporti
+        di lega (campione ≥3 gare) e dalla **stessa fonte**: i due modelli xG hanno scale
+        diverse (`docs/64` §2.3) e il confronto reggerebbe su numeri non confrontabili.
         """
         if not home_xg or not away_xg:
             return None
@@ -4222,11 +4224,28 @@ class MatchAnalysis:
             return None
         if any(x.get(c) is None for x in (home_xg, away_xg) for c in ("xg_ratio", "xga_ratio")):
             return None
+        prod_home = float(home_xg["xg_ratio"]) * float(away_xg["xga_ratio"])
+        prod_away = float(away_xg["xg_ratio"]) * float(home_xg["xga_ratio"])
+        q = prod_home / prod_away
+        # SE in scala log dei due prodotti e del loro rapporto (delta method sui 4 rapporti):
+        # lo squilibrio fra i due attacchi si dichiara solo oltre 1σ, come la banda xPTS e
+        # le etichette del pressing (docs/64 §2.2 e §9, docs/76 §7).
+        se_ln_q = math.sqrt(sum((self.XG_RATIO_CV / (float(r) * math.sqrt(int(x["played"])))) ** 2
+                                for x in (home_xg, away_xg)
+                                for r in (x["xg_ratio"], x["xga_ratio"])))
         return {"source": home_xg["source"],
                 "home_crea": float(home_xg["xg_ratio"]),
                 "away_concede": float(away_xg["xga_ratio"]),
                 "away_crea": float(away_xg["xg_ratio"]),
-                "home_concede": float(home_xg["xga_ratio"])}
+                "home_concede": float(home_xg["xga_ratio"]),
+                "home_prod": prod_home, "away_prod": prod_away,
+                "sbilancio": q, "oltre_rumore": bool(abs(math.log(q)) > se_ln_q),
+                "q_lo": math.exp(math.log(q) - se_ln_q),
+                "q_hi": math.exp(math.log(q) + se_ln_q)}
+
+    #: sd/media dello xG per gara-squadra (misurata su 502 gare, docs/64 §7): l'errore
+    #: standard di un rapporto «× la media» su n gare vale circa CV/√n.
+    XG_RATIO_CV: ClassVar[float] = 1.036 / 1.692
 
     def standing(self, team_name: str) -> dict[str, Any] | None:
         """Classifica: prima FotMob (fonte primaria), poi ESPN come riserva."""
