@@ -782,6 +782,54 @@ def insight_drop_stats() -> dict[str, Any] | None:
             "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n}
 
 
+def allineamento_fonti(store: Any) -> dict[str, int]:
+    """Quanto concordano calendario e dettaglio gare su «gara giocata, con xG» (issue #99).
+
+    Il campione pubblicato dalla card «Le due squadre» è l'**intersezione** fra le due
+    fonti: gare finite nel calendario (``fixtures``) con xG completo di entrambe in
+    ``match_info`` (invariante [44], ``docs/64`` §7). Questa funzione misura le due
+    code, cioè quello che resta fuori e il motivo:
+
+    * ``info_avanti`` — ``match_info`` ha la gara finita con xG completo, il calendario
+      non la dà ancora finita. È il caso reale del daily ``38005701599`` (issue #99:
+      cache HTTP incoerente fra le fasi del collect). Prima del fix gonfiava il
+      campione — 8 gare pubblicate contro 7 verificabili — e fermava il gate; dopo il
+      fix la gara resta fuori, quindi per un run il campione è **corto** di una gara.
+    * ``senza_xg`` — il calendario dice «finita» ma l'xG non c'è: la gara è giocata e
+      non entra comunque nel campione.
+
+    I conti finiscono su ``stato.html`` perché dopo il fix nessuno di questi casi
+    ferma più il daily: senza misura, uno scostamento che nessuno vede non è un dato,
+    è un'ipotesi.
+    """
+    vuoto = {"finite_cal": 0, "in_campione": 0, "senza_xg": 0, "info_avanti": 0}
+    try:
+        fx = store.read("fixtures")
+        mi = store.read("match_info")
+    except Exception:                                    # store assente o non leggibile
+        return vuoto
+    if fx is None or mi is None or fx.empty or mi.empty:
+        return vuoto
+    if "match_id" not in fx.columns or "match_id" not in mi.columns:
+        return vuoto
+    fx = fx.dropna(subset=["match_id"]).drop_duplicates("match_id")
+    mi = mi.dropna(subset=["match_id"]).drop_duplicates("match_id")
+
+    def _ids(df: Any, mask: Any) -> set[int]:
+        try:
+            return set(df.loc[mask, "match_id"].astype(int))
+        except Exception:
+            return set()
+
+    cal = _ids(fx, fx.status == "finished") if "status" in fx.columns else set()
+    if {"home_xg", "away_xg"} <= set(mi.columns):
+        xg = _ids(mi, mi.home_xg.notna() & mi.away_xg.notna())
+    else:
+        xg = set()
+    return {"finite_cal": len(cal), "in_campione": len(cal & xg),
+            "senza_xg": len(cal - xg), "info_avanti": len(xg - cal)}
+
+
 def reset_insight_stats() -> None:
     """Azzera i contatori (per i test e per build multipli nello stesso processo)."""
     INSIGHT_DROP_LOG.clear()

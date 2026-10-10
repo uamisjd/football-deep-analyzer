@@ -1,3 +1,28 @@
+## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)
+
+L'utente segnala lo screenshot di un errore visto stamattina: è l'issue #99 «Fallimento run
+giornaliero», aperta alle **01:54** dal run `38005701599`, con «campione FotMob 8 gare, ma prima
+del calcio d'inizio ne risultano 7» su due schede (`5781769`, `5781776`). **Non era un errore di
+calcolo**: `match_info` diceva «finita con xG» mentre il calendario diceva ancora «da giocare»
+(cache HTTP incoerente fra le fasi del collect), e il campione si contava su `match_info`. Il
+fix (`_finite_nel_calendario`, il calendario è l'autorità su «gara giocata») è entrato con la
+**PR #100, fusa alle 03:47** — cioè *prima* che l'utente vedesse l'errore; l'issue è rimasta
+aperta solo fino al primo run verde (11:42). Dati di oggi allineati: 381/381, zero scostamenti.
+
+Ho aggiunto quello che mancava: con il fix lo scostamento era diventato **silenzioso** (prima
+fermava il daily, ora la gara viene solo esclusa e per un run il campione è corto di una gara
+senza dirlo). Nuova funzione `allineamento_fonti()` e **card «Allineamento calendario / dettaglio
+gare» su `stato.html`**: quattro numeri (finite nel calendario, con xG = il campione pubblicato,
+senza xG, con xG ma non ancora finite) — quando le due code sono a zero la pagina lo dice.
+Corretta anche una parola francese rimasta in un docstring («disait» → «diceva»). La causa a
+monte (la cache HTTP del collect) **non** è stata toccata: è una modifica di pipeline, non un
+bugfix, e oggi non si riproduce.
+
+Gate: **585 test**, Ruff pulito, `verify_site` **210.926 · 0**, parità **89 schede**,
+`resa_375` **27.676 · 0**.
+
+---
+
 ## 2026-10-10 — Riscrittura di leggibilità del card «laboratorio» (docs/74 §11)
 
 L'utente: «non è di facile lettura, non so cosa vedere o cosa voglia dirmi». Rilievo giusto e

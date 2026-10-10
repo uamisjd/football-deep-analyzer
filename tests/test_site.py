@@ -10,7 +10,7 @@ import pytest
 
 from fda.collect import collect_league
 from fda.config import league
-from fda.site.analysis import MatchAnalysis
+from fda.site.analysis import MatchAnalysis, allineamento_fonti
 from fda.site.build import SiteBuilder, pct_triple
 from fda.store import TABLE_KEYS, Store
 from tests.test_store_collect import FakeEspn, FakeEspnNoStandings, FakeFotMob, FakeUnderstat
@@ -454,7 +454,7 @@ def test_season_xg_fotmob_calcola_xpts(tmp_path):
 def test_season_xg_campione_solo_gare_finite_nel_calendario(tmp_path):
     """Il campione FotMob è quello del calendario, non di ``match_info`` (issue #99).
 
-    Caso reale del daily ``38005701599``: ``match_info`` disait «finished» con xG
+    Caso reale del daily ``38005701599``: ``match_info`` diceva «finished» con xG
     completo mentre il calendario era ancora indietro (cache HTTP incoerente fra le
     fasi del collect) e la card «Le due squadre» pubblicava un campione gonfiato di
     una gara, fermando il gate [44] («campione FotMob 8 gare, ma prima del calcio
@@ -500,6 +500,46 @@ def test_season_xg_campione_solo_gare_finite_nel_calendario(tmp_path):
     # calendario no) resta fuori
     style = ma.season_style("Inter", 8636, ko)
     assert style["split_played"] == 1 and style["open_pm"] == 1.0
+    # lo stesso disallineamento, visto dalla misura pubblicata su stato.html: la gara 3
+    # (xG completo, calendario non finita) è l'unica «avanti», la gara 2 è senza xG
+    ali = allineamento_fonti(st)
+    assert ali == {"finite_cal": 2, "in_campione": 1, "senza_xg": 1, "info_avanti": 1}
+    st.close()
+
+
+def test_allineamento_fonti_dice_chi_resta_fuori_dal_campione(tmp_path):
+    """La misura di stato.html conta le due code, non solo il campione buono.
+
+    Con le due fonti concordi i conti tornano a zero su entrambe le code: è il caso
+    normale, ed è quello che la pagina deve pubblicare senza allarmi.
+    """
+    st = Store(tmp_path / "processed")
+    ko = pd.Timestamp("2026-10-16 18:00", tz="UTC")
+
+    def fx(mid, status):
+        return {"match_id": mid, "league_id": 57, "season": "2026/2027", "round": None,
+                "utc_kickoff": ko - pd.Timedelta(days=mid), "home_id": 8636,
+                "home_name": "Inter", "away_id": 9874 + mid, "away_name": f"Avv{mid}",
+                "home_goals": 1, "away_goals": 0, "status": status, "source": "test"}
+
+    def info(mid, hxg, axg):
+        return {"match_id": mid, "status": "finished", "home_id": 8636, "away_id": 9874 + mid,
+                "home_xg": hxg, "away_xg": axg, "home_goals": 1, "away_goals": 0}
+
+    st.upsert("fixtures", [fx(1, "finished"), fx(2, "finished"), fx(3, "scheduled")])
+    st.upsert("match_info", [info(1, 1.0, 0.5), info(2, 2.0, None), info(3, 1.5, 0.5)])
+    # gara 1: finita e con xG → campione · gara 2: finita senza xG → fuori
+    # gara 3: xG completo ma non finita nel calendario → fuori (caso issue #99)
+    assert allineamento_fonti(st) == {"finite_cal": 2, "in_campione": 1,
+                                      "senza_xg": 1, "info_avanti": 1}
+    # allineamento perfetto: nessuna coda, nessun allarme in pagina
+    st.upsert("fixtures", [fx(1, "finished"), fx(2, "finished"), fx(3, "finished")])
+    st.upsert("match_info", [info(1, 1.0, 0.5), info(2, 2.0, 1.0), info(3, 1.5, 0.5)])
+    assert allineamento_fonti(st) == {"finite_cal": 3, "in_campione": 3,
+                                      "senza_xg": 0, "info_avanti": 0}
+    # store vuoto o senza le colonne: zeri, mai un crash in pagina
+    assert allineamento_fonti(Store(tmp_path / "vuoto")) == {
+        "finite_cal": 0, "in_campione": 0, "senza_xg": 0, "info_avanti": 0}
     st.close()
 
 
@@ -1219,11 +1259,16 @@ def test_stato_senza_scarti_non_pubblica_none(tmp_path):
         "status.html", "stato.html", sources=[], tables=[], probe=[], audit=[],
         audit_counts={"presente": 0, "atteso": 0, "mancante": 0},
         insight_stats={"tradotti": 3, "scartati": 0, "forma_ricalcolata": 2,
-                       "record_rifiutati": 0, "n_shapes": 0, "top_shape": "", "top_n": 0})
+                       "record_rifiutati": 0, "n_shapes": 0, "top_shape": "", "top_n": 0},
+        # docs/75 §5: la card di allineamento entra nello stesso controllo — con le due
+        # fonti concordi pubblica zeri, mai un «None»
+        align=allineamento_fonti(st))
     h = (out / "stato.html").read_text(encoding="utf-8")
     assert "None" not in h
     assert "2 della famiglia «forma recente»" in h   # i ricalcolati si vedono nel conteggio
     assert "Nessuno scarto registrato" in h
+    assert "Allineamento calendario / dettaglio gare" in h
+    assert "Le due fonti concordano" in h
     assert "Scarto più frequente" not in h
     vs = _verify_site()
     fails, _ = vs.check_pages(out)

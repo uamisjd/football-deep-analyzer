@@ -20,7 +20,7 @@ from ..config import CALENDAR_DAYS, DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..models.season_sim import mc_percent, mc_se
 from ..store import Store
-from .analysis import MatchAnalysis, insight_drop_stats, prediction_meta
+from .analysis import MatchAnalysis, allineamento_fonti, insight_drop_stats, prediction_meta
 from .audit import audit_match
 from .fmt import (
     ITALIAN_DAYS,
@@ -1233,7 +1233,8 @@ class SiteBuilder:
         # il 34% dei fatti in silenzio. Se FotMob cambia un template, qui si vede subito.
         self._render("status.html", "stato.html", sources=rows, tables=tables, probe=probe,
                      audit=self.audit_rows, audit_counts=by_state,
-                     insight_stats=insight_drop_stats())
+                     insight_stats=insight_drop_stats(),
+                     align=allineamento_fonti(self.store))
 
     def _write_seo_files(self, built_match_ids: set[int] | None = None) -> None:
         """robots.txt aperto + sitemap.xml per indicizzazione organica (SEO).
