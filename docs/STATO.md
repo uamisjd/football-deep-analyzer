@@ -1,3 +1,26 @@
+## 2026-10-10 — Voce G: tilt dichiarati, commento falso corretto, campione assenze misurato, protocollo preregistrato
+
+Voce G della [coda](docs/69) §1, documentata in [docs/71](71_tilt_commento_falso_campione_assenze_e_protocollo_preregistrato_2026-10-10.md).
+**a)** Corretto il commento falso `predict.py:41` («k calibrato su 5.7k gare»: il dato esiste
+per **341** gare; k=0,12 non distinguibile da zero, solo k=0,03 sì) — nessuna λ cambia:
+`test_tilt_commento_veritiero_e_lambda_immutati` pinnna costanti e uscite numeriche dei tre
+tilt e blocca il ritorno del falso. **b)** Misurato (matrice 2×2 codice×dati, non
+ipotizzato) perché il campione assenze è sceso 137 → 98: −3 per il cambio di codice
+(docs/64 §8: totale = somma dei valori pubblicati), −37 per i dati — tra i run del 21–24
+settembre 110 partite sono state riscaricate e le tabelle per-partita
+(`replace_by="match_id"`) non portavano più la lista pre-partita degli indisponibili
+(`lineup` `unavailable` 612 → 214; agosto intatto, mai riscaricato dopo il 12/09) — +1 gara
+nuova nel backtest. Campione instabile per costruzione. **c)** Protocollo preregistrato:
+griglia dichiarata (k_mercato {0; 0,03; 0,06; 0,09}, k_assenze {0; 0,1; 0,2} senza
+preservazione, riposo escluso), copertura minima **≥300 gare e ≥5 leghe su 7** (sotto:
+«non testabile»), walk-forward fuori campione, nessuna calibrazione a posteriori, IC
+appaiato vs ricetta attuale e vs mercato; se un candidato entra: MODEL_VERSION nuova,
+calibrazione ristimata, backtest con il fattore, card con i passi veri. **d)** Decisione
+**A/B/C in attesa dell'utente** — le misure sostengono C o B, non A. Gate: **570 test**,
+Ruff pulito. Ricetta di produzione intatta.
+
+---
+
 ## 2026-10-10 — Hotfix P0: daily rosso post-merge #98 (campione «Le due squadre» gonfiato da `match_info`)
 
 Il `daily` `38005701599` (push del merge) è fallito a `verify_site` con 2 problemi «campione»
