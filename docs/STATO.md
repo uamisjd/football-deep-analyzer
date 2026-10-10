@@ -1,3 +1,27 @@
+## 2026-10-10 — Revisione richiesta: card «laboratorio» nell'area previsione della scheda (docs/73)
+
+L'utente ha proposto una sezione «previsione» sulla scheda per ospitare in futuro i tre tilt
+e «le altre idee e calcoli», «fatta molto bene», chiedendo una revisione di fattibilità.
+Revisione in [docs/73](73_revisione_sezione_laboratorio_previsione_2026-10-10.md): la sezione
+«previsione» **esiste già** («Previsione del modello» + «Risultati esatti più probabili» +
+«Come nasce questa probabilità») — la proposta è un card «laboratorio» in quell'area, sotto
+la previsione salvata. Misurato: input per partita coperti (riposo 65/65 prossime,
+infermeria pesata 7/7 leghe, valore titolari pieno nelle 5 grandi leghe e scarso in
+NED1/POR1 → «dato non disponibile»); what-if sulle 65 prossime: mercato mediana Δλ 0,098
+(p90 0,24), assenze 0,054, riposo 0,000 (non sposta nulla questa settimana); le colonne tilt
+esistono nello schema di `predictions.parquet` ma sono **vuote** — il what-if si calcola al
+build; peso pagina ~135 KB contro tetto 900 KB. Effetti aggregati già registrati
+(docs/48/69/71): tutti «misurati, non promossi». **Verdetto: fattibile, consigliata con 8
+condizioni** (posizione sotto la previsione salvata, etichetta «idee misurate, non usate»,
+what-if + effetto misurato + verdetto per idea, invariante [46] con ricalcolo indipendente
+delle formule, previsione salvata byte-identica, parità 7 leghe, design generico per le
+prossime idee). Collegata alla decisione A/B/C: il card dà ai tilt una casa visibile (quindi
+C o B; A resta non sostenuta). Nota sandbox: `.venv` (escluso dalle snapshot) e i commit
+locali sono svaniti al cambio turno — venv ricreato e branch riallineato al remote (i 4
+commit erano già pushati). Nessuna modifica al codice in questa voce.
+
+---
+
 ## 2026-10-10 — Voce B2: «forza avv.» storica nella tabella «Come arrivano» (anacronismo docs/60 §5 chiuso)
 
 La colonna «forza avv.» mostrava la classifica a punti di **oggi** su gare passate
