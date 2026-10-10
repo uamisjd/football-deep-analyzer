@@ -1485,3 +1485,54 @@ success, `daily` schedulato `37996976659` success. `docs/_audit_modelli.json` in
 snapshot del 2026-10-09 — la calibrazione λ×1,039385 è quella di **produzione**
 (`calibration.parquet`, fitted 2026-10-09 22:03:50, n_fit 4.770, backtest 5.895 righe),
 verificata.
+
+### §9.25 — PR #100: hotfix daily rosso, voce G tilt, voce B2 «forza avv.» storica, revisioni (2026-10-10, merge dell'agente su ordine esplicito dell'utente — deroga)
+
+**Deroga esplicita alla policy merge:** la regola «il merge lo esegue l'utente» è stata
+disapplicata una volta, su ordine esplicito e inequivocabile dell'utente («ok fai merge»,
+2026-10-10): l'agente ha eseguito il merge di PR #100 (`gh pr merge 100 --merge`, merge
+commit, 2 genitori: `98e087b` su `main` e il capo del ramo
+`arena/4e5bb7f8-football-deep-analyzer`). Per tutte le altre PR la policy resta: merge
+dell'utente, l'agente avvisa con la frase fissa e aspetta.
+
+**Contenuto (6 commit):** (1) registrazione del merge #98 (`docs/13` §9.24 + STATO) con
+verifica post-merge (`tests` su main success `38005701607`; `daily` del push del merge
+`38005701599` rosso a `verify_site`, issue #99; `docs/_audit_modelli.json` invariato dal
+2026-09-20, λ×1,040063 — la λ×1,039385 è la calibrazione di produzione, verificata in
+`calibration.parquet`); (2) **hotfix P0** (`docs/70`): il daily rosso era un
+disallineamento reale — il generatore contava il campione da `match_info`, l'oracolo [44]
+`gare_prima` dal calendario; nuovo `_finite_nel_calendario()` applicato a `season_xg`,
+`_season_xg_split`, `cards_season`, `_with_league_ref`, e in `season_xg` campione ristretto
+a xG completo di entrambe — **no-op dimostrato** (build prima/dopo: 4.250 file, contenuto
+identico normalizzando i timestamp); (3) **voce G** (`docs/71`): commento falso
+`predict.py:41` corretto (i valori esistono per **341** gare, non 5.7k; k=0,12 non
+distinguibile da zero, solo k=0,03 sì) con test che pinnna costanti e uscite dei tilt;
+misura del campione assenze 137→98 (matrice 2×2 codice×dati: −3 codice `docs/64` §8, −37
+dati — 110 partite riscaricate tra il 21 e il 24 settembre senza più la lista pre-partita
+degli indisponibili, `lineup` `unavailable` 612 → 214 — +1 gara nuova); protocollo
+preregistrato (griglia, copertura minima ≥300 gare e ≥5 leghe su 7, walk-forward, nessuna
+calibrazione a posteriori, IC appaiato contro ricetta attuale e contro mercato); (4)
+**voce B2** (`docs/72`): la colonna «forza avv.» della tabella «Come arrivano» passa dalla
+classifica di oggi al **rango nella graduatoria Elo del campionato alla data della gara**
++ Elo storico nel tooltip (macchina `docs/66`); [43] esteso e nuovo **[45] oracolo**
+(`check_forza_avversari_storica`: 923 righe verificate con `elo_reference_at_dates`, senza
+i lettori del generatore); (5) **revisione** (`docs/73`): card «laboratorio» nell'area
+previsione della scheda — fattibile con 8 condizioni; (6) handoff per la nuova sessione
+(`docs/BRIEFING_NUOVA_SESSIONE.md`, nuova sezione in cima).
+
+**Gate alla fusione:** **571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**
+([43] esteso + [45] 923 righe oracolo), parità **89 schede · nessuna differenza** (7 leghe),
+`resa_375` **27.255 · 0**. CI della PR verde (run `38039373225` e successivi success).
+
+**Effetti in produzione:** il push del merge attiva `tests` e `daily` su `main`. Il
+`daily` era **rosso** dal push del merge #98 (sito fermo all'ultimo deploy; issue di
+guasto **#99**): l'hotfix rende il generatore conforme all'oracolo del calendario **per
+costruzione**, quindi il primo daily post-merge deve tornare verde e l'issue #99 si chiude
+in automatico. **Ricetta di produzione e calibrazione intatte** (λ×1,039385, fitted
+2026-10-09 22:03:50, n_fit 4.770); nessuna fonte nuova; `predict.py` toccato solo nel
+commento.
+
+**Decisione A/B/C (voce G): risolta con il merge — C.** I tre tilt restano in
+`predict.py` come candidati di laboratorio dichiarati (commento onesto + protocollo
+preregistrato); non sono cablati. Il card «laboratorio» della prossima voce li renderà
+visibili sul sito senza toccare la ricetta.

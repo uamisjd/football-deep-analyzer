@@ -2,12 +2,78 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-09 (vedi l'handoff qui sotto; prima del 9/10 l'ultimo era il 7/10) (notte fonda — **PR #91 fusa su ordine esplicito dell'utente**, le due coppie della revisione delle schede sono in produzione) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha deciso in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
+> **Ultimo aggiornamento:** 2026-10-10 (notte — **PR #100 fusa dall'agente su ordine esplicito dell'utente (deroga una tantum)**, hotfix daily rosso + voce G tilt + voce B2 «forza avv.» storica in produzione; handoff aggiornato in cima) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha decisa in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
 > Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
 
 ---
 
-## Handoff operativo corrente — 2026-10-09 (il più recente: leggere questo per primo)
+## Handoff operativo corrente — 2026-10-10 notte (il più recente: leggere questo per primo)
+
+**Sessione `arena/4e5bb7f8` chiusa con la PR #100 fusa** (merge commit; l'agente ha eseguito
+il merge **su ordine esplicito dell'utente** — deroga una tantum alla policy merge,
+registrata in `docs/13` §9.25). 6 commit: registrazione merge #98 + verifica post-merge;
+**hotfix P0** del daily rosso (`docs/70`); **voce G** tilt (`docs/71`); **voce B2**
+«forza avv.» storica (`docs/72`); **revisione** card «laboratorio» (`docs/73`); handoff.
+
+- **Gate alla fusione:** **571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**,
+  parità **89 schede · pulita** (7 leghe), `resa_375` **27.255 · 0**, CI PR verde.
+  Build: 464 schede / 2.364 partite / 7.510 giocatori; 89 pagine pre-partita.
+- **Produzione (verificare appena entri):** il daily su `main` era **rosso** dal merge #98
+  (sito fermo all'ultimo deploy; issue di guasto **#99** aperta in automatico). L'hotfix
+  rende il generatore conforme all'oracolo del calendario **per costruzione**: il primo
+  daily post-merge deve essere **success** e l'issue #99 si chiude da sola. Comando:
+  `gh run list --branch main --limit 3`. Se ancora rosso: la diagnosi del meccanismo è
+  in `docs/70` §2 (disallineamento `match_info`/calendario), la classe è coperta — un
+  nuovo rosso sarebbe un'altra istanza da diagnosticare, non da ipotizzare.
+- **A/B/C (voce G): risolta = C.** I tre tilt (`absences_tilt`, `rest_tilt`,
+  `market_value_tilt` in `src/fda/models/predict.py`) restano **dichiarati candidati di
+  laboratorio**: commento onesto (341 gare, non 5.7k; k=0,12 non distinguibile da zero),
+  protocollo preregistrato in `docs/71` §3, mai cablati in `predict_matches()`. Il merge
+  di #100 vale la scelta. Se l'utente cambia idea (B: modulo di laboratorio), è uno
+  spostamento piccolo con proof di previsioni byte-identiche.
+- **Prossima voce (design pronto, da aprire quando l'utente vuole): il card
+  «laboratorio»** nell'area previsione della scheda partita (`docs/73`): un card a tutta
+  larghezza dopo `id="scomposizione"`, **sotto** la previsione salvata, etichettato «idee
+  misurate, **non usate**»: per ogni idea, what-if su questa partita (λ tiltata + 1X2
+  ricalcolata con la stessa griglia dell'audit) + effetto misurato in aggregato con IC +
+  verdetto + «dato non disponibile» dove manca l'input. Nuovo invariante **[46]** in
+  `scripts/verify_site.py`: ricalcolo **indipendente** delle tre formule (non importa le
+  funzioni di `predict.py`). Misure pronte (`docs/73` §2-§3): input coperti sulle 65
+  prossime (riposo 65/65, infermeria pesata 7/7 leghe, valore titolari pieno nelle 5
+  grandi leghe e scarso in NED1/POR1, 3-4 su 7-9); what-if: mercato mediana Δλ 0,098
+  (p90 0,24), assenze 0,054, **riposo 0,000** (questa settimana non sposta nulla — la
+  riga va mostrata con «non sposta nulla», onesta). Le colonne tilt esistono nello schema
+  di `predictions.parquet` ma sono **vuote**: il what-if si calcola al build. Peso pagina
+  ~135 KB contro tetto 900 KB. Stima: una voce intera (card + calcolo in `analysis.py` +
+  [46] + test + gate pieni). La previsione salvata resta byte-identica (il card legge, non
+  scrive).
+- **Numeri di riferimento:** calibrazione produzione λ×**1,039385** (fitted 2026-10-09
+  22:03:50, n_fit 4.770, backtest 5.895 righe); `docs/_audit_modelli.json` è lo snapshot
+  del **2026-09-20** (λ×1,040063) — invariato, **non** uno snapshot del 2026-10-09;
+  375 gare finite (fixtures = match_info, stessi match_id, zero xG parziali).
+- **Quirk del sandbox (scoperti in quest'ultima sessione):** `.venv` è escluso dalle
+  snapshot e **non sopravvive ai cambi turno** — ricrearlo: `python3 -m venv .venv &&
+  .venv/bin/pip install -e ".[dev]"` (~1 min). I commit locali possono sparire al cambio
+  turno (il branch locale torna alla base, il working tree resta): riallineare con
+  `git fetch origin <ramo> && git reset --hard origin/<ramo>` — i commit pushati sono al
+  sicuro sul remote. Clone shallow (depth 1): per la storia usare `gh api` oppure
+  `git fetch --depth=1 --filter=blob:none origin <sha>` + `git show <sha>:<percorso>`
+  (blob lazy). Non fidarsi di `git log --diff-filter=A` (avverte `docs/69`).
+- **Checklist all'entrata:** 1) `gh run list --branch main --limit 3` — primo daily
+  post-merge verde? issue #99 chiusa? 2) `git fetch` e allineare il branch al remote se il
+  log locale è corto. 3) Se l'utente chiede il card «laboratorio»: nuova voce da `docs/73`.
+  4) Se il daily è ancora rosso: diagnosticare (non ipotizzare); la classe del campione è
+  coperta da `docs/70`.
+- **Regole persistenti:** merge dell'utente salvo deroga esplicita (questa sessione l'ha
+  avuta per #100); italiano per chat, documenti, titoli di PR e commit; commit piccoli con
+  push immediato; `docs/STATO.md` aggiornato a ogni turno; nessuna fonte nuova senza
+  revisione; ogni cambiamento deve essere un miglioramento dimostrabile (B.10); output a
+  schermo entro ~30 righe, log lunghi su file; **bloccati nel sandbox**: `api.clubelo.com`,
+  benchmark live con le quote (football-data.co.uk), sonda sul valore dei titolari;
+  **raggiungibili**: github.com, codeload.github.com, api.github.com, registry.npmjs.org,
+  pypi.org, files.pythonhosted.org.
+
+## Handoff operativo corrente — 2026-10-09 (leggere prima delle note storiche)
 
 - **Coda del 10/10, dopo la PR #98:**
   [docs/69](69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md). Decisioni dell'utente:

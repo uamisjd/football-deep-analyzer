@@ -1,3 +1,24 @@
+## 2026-10-10 — PR #100 fusa (agente, su ordine esplicito dell'utente — deroga) + handoff nuova sessione
+
+L'utente ha ordinato esplicitamente il merge («ok fai merge») — deroga una tantum alla
+policy «il merge lo faccio io». PR #100 fusa (merge commit, 2 genitori: `98e087b` su main e
+il capo del ramo), 6 commit: registrazione merge #98 + verifica post-merge; **hotfix P0**
+del daily rosso (`docs/70`); **voce G** tilt — commento falso corretto, misura 137→98,
+protocollo preregistrato (`docs/71`); **voce B2** «forza avv.» storica con [45] oracolo
+(`docs/72`); **revisione** card «laboratorio» (`docs/73`); questo handoff. Gate alla
+fusione: **571 test**, Ruff pulito, `verify_site` **206.667 · 0 problemi**, parità
+**89 schede · pulita** (7 leghe), `resa_375` **27.255 · 0**, CI PR verde. Registrato in
+`docs/13` §9.25. **Produzione:** il daily su main era rosso dal merge #98 (sito fermo,
+issue #99) — l'hotfix lo rende verde **per costruzione**: da verificare all'entrata della
+nuova sessione (`gh run list --branch main --limit 3`; issue #99 si chiude da sola).
+**A/B/C risolta: C** (i tilt restano dichiarati in `predict.py`, non cablati; il merge vale
+la scelta). **Prossima voce:** il card «laboratorio» nell'area previsione della scheda
+(design e misure pronte in `docs/73`, 8 condizioni). Handoff completo in
+`docs/BRIEFING_NUOVA_SESSIONE.md` (nuova sezione in cima). Ricetta di produzione e
+calibrazione intatte (λ×1,039385); nessuna fonte nuova.
+
+---
+
 ## 2026-10-10 — Revisione richiesta: card «laboratorio» nell'area previsione della scheda (docs/73)
 
 L'utente ha proposto una sezione «previsione» sulla scheda per ospitare in futuro i tre tilt
