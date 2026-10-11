@@ -12,6 +12,7 @@ import itertools
 import math
 import re
 from bisect import bisect_left
+from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -30,9 +31,12 @@ from ..sources.news import (
     TOPIC_LABELS,
     TOPIC_WEIGHTS,
     classify_news,
+    club_nel_titolo,
+    fatto_grave,
     is_italian_news,
     is_low_reputation,
     news_value,
+    soggetto_tokens,
 )
 from ..store import Store
 from ..teams import canonical, soft_key
@@ -368,6 +372,16 @@ _RETURN_PART_IT = {"early": "inizio", "mid": "metà", "late": "fine"}
 _UNAVAIL_IT = {"injury": "infortunio", "suspension": "squalifica", "suspended": "squalificato",
                "doubtful": "dubbio", "illness": "malattia", "national duty": "in nazionale",
                "not in squad": "fuori rosa", "rest": "riposo"}
+
+
+def news_title_key(title: str) -> str:
+    """Chiave di confronto di un titolo: minuscole, solo lettere e cifre (docs/24 §3).
+
+    È **la stessa** usata da ``team_news`` per il dedup e da «Clima del club» per contare le
+    voci una volta sola: dall'11/10/2026 la card clima pubblica anche l'elenco delle voci
+    contate, quindi il numero e l'elenco devono nascere dalla stessa definizione di «voce».
+    """
+    return re.sub(r"[^a-z0-9]+", " ", (title or "").lower()).strip()
 
 
 def _no_news() -> dict[str, Any]:
@@ -2216,6 +2230,16 @@ class MatchAnalysis:
     MOOD_NOWIN = 4              # gare senza vittoria → «non vince da»
     MOOD_UNBEATEN = 5           # gare senza sconfitte → clima sereno
     MOOD_DRY = 3                # gare consecutive senza segnare
+    # Le strisce si contano sull'**intera stagione** di campionato, non sulla finestra di
+    # cinque gare di `form()`: con `tail(5)` ogni striscia più lunga usciva come «5», un
+    # pavimento travestito da numero (misurato il 2026-10-11: 14 celle su 82 schede —
+    # Inter «imbattuta da 5» contro 6 vere, Barcelona «5» contro 8; docs/81 §1).
+    MOOD_STREAK_N = 60          # abbastanza per una stagione intera (max 38 gare di lega)
+    # «Panchina nuova» solo se l'allenatore è in carica da poche gare: la stessa soglia della
+    # voce «Panchina nuova» in «Da sapere» (`news_sapere`, ≤3) e del conteggio stampato in
+    # «Panchina e posta in gioco». Senza soglia la riga restava accesa per tutta la stagione
+    # (misurato il 2026-10-11: Estrela da Amadora, 7ª gara dal subentro; docs/81 §3).
+    MOOD_COACH_NEW = 3
     # lo scarto punti−xPTS non ha più una soglia propria: usa la banda di rumore misurata
     # (`XPTS_NOISE_SD`, `xpts_reading`), la stessa della card «Le due squadre» e della
     # narrativa pre-partita — docs/64 §2.2
@@ -2226,6 +2250,93 @@ class MatchAnalysis:
     MOOD_REST_VERY_SHORT = 2    # ≤2 → bad, 3 → warn
     MOOD_CONGEST_DAYS = 10      # finestra di congestione
     MOOD_CONGEST_N = 3          # gare giocate nella finestra → congestione
+    MOOD_HEAVY_DEFEAT = 3       # scarto di una sconfitta → «sconfitta pesante»
+
+    # ---- clima del club, secondo blocco (docs/82 §5, opzione A): la settimana secondo la
+    # stampa e la pressione da aspettative. La card «Stato della squadra» (ex «Clima del club»,
+    # rinominata l'11/10/2026) tiene forma, disponibilità e calendario; qui entrano l'ambiente
+    # e le aspettative, che sono un'altra cosa e avevano un nome sbagliato.
+    CLIMA_SETTIMANA = 7         # giorni di finestra prima del fischio d'inizio
+    CLIMA_CALDA_N = 3           # voci di pressione in 7 giorni → «settimana calda»
+    CLIMA_VALORE_MIN = 3        # gare minime con valore dei titolari per entrare nel rango
+    CLIMA_VALORE_MIN_LEGA = 8   # squadre minime nel rango di lega, altrimenti niente riga
+    CLIMA_VALORE_DELTA = 5      # |classifica − rango per valore| → riga di aspettative
+    # temi di clima: quelli di ambiente. Infortuni, squalifiche e mercato hanno le loro card e
+    # non si contano qui (docs/30: un dato in un posto); squadra/dichiarazioni/club sono troppo
+    # generici (misurato il 2026-10-11: 156+91+38 voci su 14 giorni, senza potere di clima).
+    CLIMA_TEMI = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
+    # sottoinsieme che misura **pressione**: panchina, spogliatoio, società, tifoseria. Stadio e
+    # fuori dal campo sono ambiente, non tensione (misura: con questa soglia si accendono 22
+    # celle su 154, `docs/82` §4a).
+    CLIMA_PRESSIONE = ("allenatore", "spogliatoio", "societa", "tifo")
+    # Le voci **elencate** (l'elenco è la prova dei conteggi, richiesta dall'utente l'11/10/2026):
+    # si pubblicano le più recenti fino a questo tetto per squadra; oltre, il resto è dichiarato
+    # col numero (`elencate`/`oltre`). Oggi il massimo osservato è 19 su un lato, quindi il tetto
+    # non taglia nulla: è una guardia, non una regola di pubblicazione.
+    CLIMA_VOCI_MAX = 24
+    #: Il «fatto della settimana»: fra le voci contate, quella che pesa di più. Il peso è
+    #: quello dichiarato dei temi (`TOPIC_WEIGHTS`: 5 panchina/spogliatoio/società, 4 fuori
+    #: dal campo, 3 tifoseria/stadio) più 3 se il titolo dice un **fatto grave** — scontri,
+    #: daspo, sciopero, esonero, inchiesta, debiti… —, non un'opinione: a +2 lo sciopero
+    #: della curva pareggiava con una voce di società qualunque e decideva l'ora, non il fatto.
+    #: A parità di peso, la più recente. Il riconoscitore è
+    #: :func:`fda.sources.news.fatto_grave` — una sola copia della lista, e **senza** le
+    #: citazioni fra virgolette: «Esonero Inter? Ho vacillato» è la frase di un altro club,
+    #: non un fatto di questo (`docs/83` §4). Verificata dall'oracolo [49].
+    #: Peso minimo per pubblicare un «fatto della settimana»: 4 = fuori dal campo, 5 = panchina,
+    #: spogliatoio, società, oppure 3 + fatto grave. Il solo tema di tifoseria o di stadio
+    #: (peso 3) non basta: misurato l'11/10/2026 sugli 8 lati che pubblicavano un fatto di peso
+    #: 3, erano tutti cose che non spostano nulla — una petizione dei tifosi per una maglia
+    #: ritirata, un listicle «le 10 migliori vittorie», «polemiche dei tifosi sui social», un
+    #: incontro politico sullo stadio — e nessuno di quei lati aveva un fatto più pesante da
+    #: mettere al posto loro: la riga esce solo quando c'è davvero qualcosa, altrimenti tace
+    #: (`docs/83` §4).
+    CLIMA_FATTO_MIN = 4
+
+    def ultima_gara_campionato(self, team_id: int, kickoff: datetime) -> dict[str, Any] | None:
+        """L'ultima gara di **campionato** prima di ``kickoff``: punteggio, sconfitta, espulsioni.
+
+        Serve ai due segnali di «Clima del club» introdotti il 2026-10-11 (`docs/81` §9): una
+        sconfitta per 3+ gol è uno shock di morale che la forma («P») non racconta, e
+        un'espulsione spiega perché la squadra ha chiuso in inferiorità numerica (e chi è
+        squalificato per questa gara). I cartellini vengono da ``events`` (FotMob, la stessa
+        fonte della cronaca della scheda); il match_id non esce dal calendario di lega, quindi
+        il perimetro è il campionato — lo stesso delle strisce. Con la tabella eventi assente,
+        o senza quella partita, il solo segnale delle espulsioni manca (mai inventato).
+        """
+        fx = self.fixtures
+        if fx.empty or "utc_kickoff" not in fx.columns:
+            return None
+        d = fx.assign(_ko=pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce"))
+        d = d[(d.status == "finished") & (d._ko < pd.Timestamp(kickoff))
+              & ((d.home_id == team_id) | (d.away_id == team_id))]
+        if d.empty:
+            return None
+        r = d.loc[d._ko.idxmax()]
+        casa = int(r.home_id) == int(team_id)
+        gf, ga = (r.home_goals, r.away_goals) if casa else (r.away_goals, r.home_goals)
+        if pd.isna(gf) or pd.isna(ga):
+            return None
+        out: dict[str, Any] = {"gf": int(gf), "ga": int(ga),
+                               "pesante": int(ga) - int(gf) >= self.MOOD_HEAVY_DEFEAT,
+                               "espulsione": None}
+        if self.events.empty or not {"match_id", "card", "is_home"} <= set(self.events.columns):
+            return out
+        ev = self.events[(self.events.match_id == int(r.match_id))
+                         & self.events.card.astype(str).str.lower().isin(("red", "yellowred"))
+                         & self.events.is_home.notna()
+                         & (self.events.is_home.astype(bool) == casa)]
+        if ev.empty:
+            return out
+        ev = ev.sort_values(["minute", "minute_added"], kind="stable")
+        m = ev.iloc[0]
+        minuto = None
+        if pd.notna(m.get("minute")):
+            extra = m.get("minute_added")
+            coda = f"+{int(extra)}" if pd.notna(extra) and float(extra) > 0 else ""
+            minuto = f"{int(m.minute)}{coda}'"
+        out["espulsione"] = minuto or ""
+        return out
 
     def club_mood(self, match_id: int, team_id: int, team_name: str,
                   kickoff: datetime) -> list[dict[str, Any]]:
@@ -2234,12 +2345,20 @@ class MatchAnalysis:
         Segnali derivati solo da dati già raccolti (forma, xPTS, panchina, infermeria,
         riposo e congestione anche coppe), ognuno con la propria soglia dichiarata nella
         nota della card; toni: ``bad`` (allarme), ``warn`` (attenzione), ``good`` (sereno).
-        Soglia riposo allineata a ricerca PubMed RR 1,32 per ≤4 vs ≥6 giorni.
+        **Perimetro dichiarato** (`docs/81` §2): le strisce contano le sole gare di
+        campionato — la stessa base della riga «Forma» — mentre riposo e congestione
+        includono le coppe; le righe lo dicono («in campionato») perché con le coppe dentro
+        la stessa squadra avrebbe un altro verdetto su 22 celle su 154 (misurato).
+        Soglia riposo: corto da ≤3 giorni (``MOOD_REST_SHORT``); la ricerca PubMed indica un
+        aumento del rischio di infortunio già da ≤4 giorni (RR 1,32 vs ≥6), quindi la soglia
+        pubblicata è la fascia più corta e conservativa — l'ambiguità sta nella nota, non in
+        un numero.
         Se nessun segnale supera le soglie la squadra resta senza righe: la card lo dice
         («nessun segnale anomalo») invece di inventare un clima neutro a parole.
         """
         out: list[dict[str, Any]] = []
-        f = self.form(team_id, kickoff)
+        # stagione intera, non `tail(5)`: vedi `MOOD_STREAK_N`
+        f = self.form(team_id, kickoff, n=self.MOOD_STREAK_N)
         seq = [r["res"] for r in f]
         lose = nowin = unbeaten = dry = 0
         for r in reversed(seq):
@@ -2261,16 +2380,32 @@ class MatchAnalysis:
             else:
                 break
         if lose >= self.MOOD_LOSS_STREAK:
-            out.append({"tone": "bad", "text": f"crisi di risultati: {lose} sconfitte consecutive"})
+            out.append({"tone": "bad",
+                        "text": f"crisi di risultati: {lose} sconfitte consecutive in campionato"})
         elif nowin >= self.MOOD_NOWIN:
             nd = sum(1 for r in seq[-nowin:] if r == "N")
             out.append({"tone": "warn",
-                        "text": f"non vince da {nowin} gare ({nd} N, {nowin - nd} P)"})
+                        "text": f"non vince da {nowin} gare in campionato ({nd} N, {nowin - nd} P)"})
         elif unbeaten >= self.MOOD_UNBEATEN:
             out.append({"tone": "good",
-                        "text": f"imbattuta da {unbeaten} gare: clima di fiducia"})
+                        "text": f"imbattuta da {unbeaten} gare in campionato: clima di fiducia"})
         if dry >= self.MOOD_DRY:
-            out.append({"tone": "bad", "text": f"attacco a secco: {dry} gare senza segnare"})
+            out.append({"tone": "bad",
+                        "text": f"attacco a secco: {dry} gare senza segnare in campionato"})
+        # Ultima gara di campionato (`docs/81` §9): la forma mostra l'esito («P»), non la sua
+        # gravità né cosa è successo in campo. Due fatti misurati e non pubblicati altrove:
+        # una sconfitta per 3+ gol (shock di morale) e un'espulsione (inferiorità numerica,
+        # e il giocatore salta questa partita). Soglie e perimetro nella nota della card.
+        ult = self.ultima_gara_campionato(team_id, kickoff)
+        if ult:
+            if ult["pesante"]:
+                out.append({"tone": "warn",
+                            "text": f"sconfitta pesante nell'ultima gara di campionato: "
+                                    f"{ult['gf']}-{ult['ga']}"})
+            if ult["espulsione"]:
+                al = f" al {ult['espulsione']}" if ult["espulsione"] else ""
+                out.append({"tone": "warn",
+                            "text": f"espulsione nell'ultima gara di campionato{al}"})
         xg = self.season_xg(team_name, team_id, kickoff)
         if xg and (lettura := xg.get("xpts_read")) and lettura.get("verdict") in ("sopra", "sotto"):
             # M2 (`docs/55` §6, regola di `docs/30`): il numero sta **solo** nella card della
@@ -2287,7 +2422,7 @@ class MatchAnalysis:
                                     "qualità del gioco, regressione possibile — i numeri in "
                                     "«Le due squadre»"})
         coach = self.coach(team_id, kickoff)
-        if coach and coach.get("prev_name"):
+        if coach and coach.get("prev_name") and (coach.get("matches") or 0) <= self.MOOD_COACH_NEW:
             # Il numero (quale gara dal subentro, e da chi) è un dato della card «Panchina e
             # posta in gioco»: qui resta il segnale, col rimando — stesso schema del segnale
             # xPTS due righe sopra (docs/30, e docs/78 §4 per la misura: 11 schede
@@ -2304,7 +2439,13 @@ class MatchAnalysis:
             # indisponibile la frase stampava «infermeria pesante: 1 assenti» — il gate
             # verify_site del 19/09/2026 l'ha fermata su partite/5749682.html. È lo stesso
             # helper usato due righe sotto per «di cui 1 titolare abituale».
-            bits = ["infermeria pesante: " + it_plural(ab["n"], "assente")]
+            # «Infermeria» solo quando fra gli indisponibili ci sono **soli infortuni**:
+            # con uno squalificato la parola sarebbe sbagliata (`docs/81` §10, 10 celle
+            # dell'archivio al 2026-10-11 contavano almeno una squalifica fra gli assenti).
+            tipi = {str(u.get("type") or "").strip().lower()
+                    for u in self.unavailable(match_id, team_id)}
+            etichetta = "infermeria pesante" if tipi <= {"infortunio"} else "assenze pesanti"
+            bits = [etichetta + ": " + it_plural(ab["n"], "assente")]
             if ab["starters_out"]:
                 # concordanza: con un solo titolare «di cui 1 titolari abituali» non è italiano
                 # (25 occorrenze su 22 schede, audit 18/09). it_plural è lo stesso helper che
@@ -2339,6 +2480,237 @@ class MatchAnalysis:
                             "text": f"congestione: {len(rec)} gare giocate negli ultimi "
                                     f"{self.MOOD_CONGEST_DAYS} giorni"})
         return out
+
+    # ---- clima del club (`docs/82` §5): la settimana della stampa e le aspettative ----------
+    def club_week(self, team_id: int, team_name: str, kickoff: datetime,
+                  visti: set[str] | None = None) -> dict[str, Any]:
+        """La settimana del club secondo la stampa raccolta: i conteggi **e le voci contate**.
+
+        Fino alla mattina dell'11/10/2026 pubblicava solo i conteggi; su richiesta dell'utente
+        («rendi in grado il sito di fornirmi queste voci con esattezza cosa dicono») pubblica
+        anche **l'elenco delle voci**, che è la prova del numero: titolo, testata, data e link,
+        raggruppate per tema, dentro una tendina. Un «15 voci di pressione» che non si può
+        aprire non è verificabile dal lettore.
+
+        Regole (misurate e dichiarate nella nota della card):
+
+        - perimetro `kickoff − 7 giorni ≤ data ≤ kickoff`, **lingua italiana** e
+          :func:`fda.sources.news.classify_news` negli stessi temi di prima (`CLIMA_TEMI`);
+        - **tre gate di pertinenza**, gli stessi tre della card «Vita del club» (`docs/83` §3):
+          fonte non a bassa reputazione (``fuori_fonte``), tema **nel titolo** (``fuori_titolo``,
+          che è il testo che la card pubblica) e **club nel titolo** (``fuori_soggetto``) —
+          quest'ultimo riconosce anche i nomi d'edicola (`fda.sources.news.soggetto_tokens`:
+          «Juve», «Colonia», «Gladbach»). Senza, il 2026-10-11 contavano come clima della Lazio
+          due titoli sul Latina e come «fatto» della Juventus un'intervista a un direttore
+          sportivo che non nominava la Juventus (misure in `docs/83` §3);
+        - **una voce per titolo** (``news_title_key``, la stessa chiave del dedup di
+          `team_news`): il 2026-10-11 undici righe dell'archivio erano lo stesso titolo
+          ripetuto e gonfiavano i conteggi di 5 lati (97 righe → 86 voci);
+        - le voci in ``visti`` (i titoli pubblicati in «Vita del club» sulla stessa pagina)
+          escono **marcate**: l'elenco resta completo, ma il lettore sa quali sono già
+          raccontate sopra (`docs/30`: qui si contano, lì si raccontano);
+        - elenco ordinato dal più recente, con tetto ``CLIMA_VOCI_MAX`` per squadra: oltre il
+          tetto il resto è **dichiarato col numero** (``elencate``/``oltre``), mai perso in
+          silenzio.
+
+        Soglie (invariate): «settimana calda» da 3 voci di pressione in 7 giorni
+        (``CLIMA_CALDA_N``), «pressione in settimana» da 1, «settimana tranquilla» con voci ma
+        nessuna di pressione. Zero voci → nessuna riga, e la card lo dice con una frase.
+        """
+        out: dict[str, Any] = {"righe": [], "voci": 0, "pressione": 0, "temi": [],
+                               "vuota": True, "finestra": self.CLIMA_SETTIMANA,
+                               "elencate": 0, "oltre": 0, "in_vita": 0,
+                               "fuori_fonte": 0, "fuori_titolo": 0, "fuori_soggetto": 0,
+                               "fatto": None}
+        if self.news_df.empty or "title" not in self.news_df.columns:
+            return out
+        ko = pd.Timestamp(kickoff)
+        pa = pd.to_datetime(self.news_df.published_at, utc=True, errors="coerce")
+        df = self.news_df[(self.news_df.team_id == team_id)
+                          & (pa >= ko - pd.Timedelta(days=self.CLIMA_SETTIMANA))
+                          & (pa <= ko)].assign(pubblicata=pa)
+        df = df.dropna(subset=["pubblicata"]).sort_values("pubblicata", ascending=False,
+                                                          kind="stable")
+        voci: list[dict[str, Any]] = []
+        viste: set[str] = set()
+        fuori_fonte = 0        # scartate: fonte a bassa reputazione
+        fuori_titolo = 0       # scartate: il tema non è nel titolo
+        fuori_soggetto = 0     # scartate: il club non è nel titolo
+        soggetto = soggetto_tokens(team_name)
+        for r in df.itertuples(index=False):
+            title = str(getattr(r, "title", "") or "").strip()
+            if not title:
+                continue
+            desc = getattr(r, "description", None)
+            desc = "" if desc is None or pd.isna(desc) else str(desc)
+            if not is_italian_news(title, desc):
+                continue
+            fonte = str(getattr(r, "source", "") or "")
+            # due gate di pertinenza, gli stessi di «Vita del club» (`docs/83` §2):
+            # la fonte a bassa reputazione (fan site, fantacalcio, aggregatori) e il tema
+            # **nel titolo** — che è il testo che la card pubblica: una citazione di un
+            # altro club o una lista TV non fa «clima» solo perché il brano la contiene.
+            if is_low_reputation(fonte):
+                fuori_fonte += 1
+                continue
+            chiave, _prova = classify_news(title, "", fonte)
+            if chiave not in self.CLIMA_TEMI:
+                fuori_titolo += 1
+                continue
+            # il club nel titolo e non come oggetto altrui: una notizia della stessa città
+            # o dello stesso giro (il Latina per la Lazio, un'altra panchina per il Torino,
+            # il Real Madrid «a pochi giorni dalla Roma») non è la settimana di questa
+            # squadra. Con l'insieme vuoto il nome non identifica nessuno (nomi finti delle
+            # prove) e il gate non giudica: lasciar passare è l'errore minore.
+            if not club_nel_titolo(title, soggetto):
+                fuori_soggetto += 1
+                continue
+            tk = news_title_key(title)
+            if not tk or tk in viste:
+                continue          # lo stesso titolo due volte non è una voce in più
+            viste.add(tk)
+            url = str(getattr(r, "url", "") or "")
+            voci.append({"key": chiave, "title": title, "url": url, "source": fonte,
+                         "published_at": getattr(r, "pubblicata", None),
+                         "in_vita": bool(visti) and tk in visti})
+        conta: Counter[str] = Counter(v["key"] for v in voci)
+        pressione = sum(conta[k] for k in self.CLIMA_PRESSIONE)
+        ordine = {k: i for i, k in enumerate(self.CLIMA_TEMI)}
+        temi = sorted(conta, key=lambda k: (-conta[k], ordine[k]))
+        elencate = voci[: self.CLIMA_VOCI_MAX]
+        per_tema: dict[str, list[dict[str, Any]]] = {}
+        for v in elencate:
+            per_tema.setdefault(v["key"], []).append(v)
+
+        def dettaglio(chiavi: list[str]) -> str:
+            return " · ".join(f"{TOPIC_LABELS.get(k, k).lower()} {conta[k]}" for k in chiavi)
+
+        righe: list[dict[str, Any]] = []
+        if pressione >= self.CLIMA_CALDA_N:
+            righe.append({"tone": "bad",
+                          "text": f"settimana calda: {pressione} voci di pressione in "
+                                  f"{self.CLIMA_SETTIMANA} giorni "
+                                  f"({dettaglio([k for k in temi if k in self.CLIMA_PRESSIONE])})"})
+        elif pressione:
+            righe.append({"tone": "warn",
+                          "text": f"pressione in settimana: {it_plural(pressione, 'voce')} "
+                                  f"({dettaglio([k for k in temi if k in self.CLIMA_PRESSIONE])})"})
+        elif len(voci):
+            righe.append({"tone": "good",
+                          "text": f"settimana tranquilla: {it_plural(len(voci), 'voce')}, "
+                                  f"nessuna di pressione ({dettaglio(temi)})"})
+        temi_out = [{"key": k, "label": TOPIC_LABELS.get(k, k), "n": int(conta[k]),
+                     "voci": per_tema.get(k, [])} for k in temi]
+        # il fatto della settimana: peso del tema + 2 se il titolo dice un fatto grave,
+        # a parità la voce più recente (l'elenco è già ordinato per data decrescente)
+        fatto = None
+        if voci:
+            def _peso(v: dict[str, Any]) -> int:
+                return (TOPIC_WEIGHTS.get(v["key"], 1)
+                        + (3 if fatto_grave(v["title"]) else 0))
+            # solo se pesa abbastanza: tifoseria o stadio da soli non sono «il fatto»
+            # (`CLIMA_FATTO_MIN`). A parità vince la più recente: `max` tiene il primo e
+            # l'elenco è già ordinato per data decrescente.
+            pesante = max((v for v in voci if _peso(v) >= self.CLIMA_FATTO_MIN),
+                          key=_peso, default=None)
+            if pesante is not None:
+                fatto = {k: pesante[k] for k in ("title", "url", "source", "published_at",
+                                                 "key") if k in pesante}
+        out.update({"righe": righe, "voci": len(voci), "pressione": pressione,
+                    "temi": temi_out, "vuota": not voci,
+                    "elencate": sum(len(t["voci"]) for t in temi_out),
+                    "oltre": len(voci) - sum(len(t["voci"]) for t in temi_out),
+                    "in_vita": sum(1 for v in elencate if v["in_vita"]),
+                    "fuori_fonte": fuori_fonte, "fuori_titolo": fuori_titolo,
+                    "fuori_soggetto": fuori_soggetto, "fatto": fatto})
+        return out
+
+    def expectation_gap(self, team_id: int, team_name: str,
+                        kickoff: datetime) -> dict[str, Any] | None:
+        """Pressione da aspettative: rango della rosa per **valore dei titolari** vs classifica.
+
+        La definizione operativa di pressione che non dipende dalla stampa (parità piena fra
+        le 7 leghe, `docs/82` §4b): il valore dei titolari di ogni gara è già in
+        ``match_info`` (mediana sulle gare finite **prima** di questa partita, la stessa
+        regola «fermi alla vigilia» del resto della scheda), la classifica viene dallo stesso
+        snapshot usato da «Panchina e posta in gioco». Si pubblica solo se lo scarto fra
+        posizione in classifica e rango per valore è di almeno ``CLIMA_VALORE_DELTA``
+        posizioni — sotto quella soglia è rumore (misurato: con la soglia a 5 si accendono
+        58 celle su 154, 27 sotto le attese e 31 sopra; scarto mediano |Δ| = 3).
+
+        Servono almeno ``CLIMA_VALORE_MIN`` gare misurate per entrare nel rango e
+        ``CLIMA_VALORE_MIN_LEGA`` squadre classificate nella lega: con meno, il rango è un
+        caso e la riga non esce (la card dichiara la soglia, non l'assenza).
+        """
+        if self.info.empty or self.fm_standings.empty:
+            return None
+        cols = ("home_starters_value_eur", "away_starters_value_eur")
+        if any(c not in self.info.columns for c in cols):
+            return None
+        st = self.standing(team_name)
+        if not st or st.get("league_code") is None or st.get("rank") is None:
+            return None
+        code = str(st["league_code"])
+        fin = self._gare_finite(kickoff)
+        if fin.empty or "match_id" not in fin.columns:
+            return None
+        info = self.info[self.info.match_id.isin({int(x) for x in fin.match_id})]
+        if info.empty:
+            return None
+        valori: dict[int, list[float]] = {}
+        for r in info.itertuples(index=False):
+            for tid, col in ((int(r.home_id), cols[0]), (int(r.away_id), cols[1])):
+                v = getattr(r, col, None)
+                if v is None or pd.isna(v):
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if fv > 0:
+                    valori.setdefault(tid, []).append(fv)
+        medie = {t: float(pd.Series(v).median()) for t, v in valori.items()
+                 if len(v) >= self.CLIMA_VALORE_MIN}
+        lega = self.fm_standings[self.fm_standings.league_code == code].drop_duplicates("team_id")
+        in_lega = sorted({int(t) for t in lega.team_id} & set(medie))
+        if team_id not in medie or len(in_lega) < self.CLIMA_VALORE_MIN_LEGA:
+            return None
+        ordinati = sorted(in_lega, key=lambda t: (-medie[t], t))
+        rango = ordinati.index(team_id) + 1
+        posizione = int(st["rank"])
+        delta = posizione - rango
+        if abs(delta) < self.CLIMA_VALORE_DELTA:
+            return None
+        return {"rango": rango, "posizione": posizione, "delta": delta, "n": len(ordinati),
+                "soglia": self.CLIMA_VALORE_DELTA, "gare": len(valori[team_id])}
+
+    def club_climate(self, team_id: int, team_name: str, kickoff: datetime,
+                     visti: set[str] | None = None) -> dict[str, Any]:
+        """La card «Clima del club» per una squadra: settimana della stampa + aspettative.
+
+        Le due parti rispondono alle stesse domande per tutte e 7 le leghe nel modo possibile:
+        la stampa dove c'è (col vuoto dichiarato dove non c'è), le aspettative sempre, perché
+        i numeri sono nostri. Le righe escono nell'ordine di lettura: prima la settimana
+        (l'ambiente vissuto), poi la pressione da aspettative (la distanza dalle risorse).
+        """
+        sett = self.club_week(team_id, team_name, kickoff, visti=visti)
+        righe = list(sett["righe"])
+        gap = self.expectation_gap(team_id, team_name, kickoff)
+        if gap:
+            if gap["delta"] > 0:
+                righe.append({"tone": "warn",
+                              "text": f"pressione da aspettative: rosa da {gap['rango']}ª per "
+                                      f"valore dei titolari, in classifica {gap['posizione']}ª"})
+            else:
+                righe.append({"tone": "good",
+                              "text": f"sopra le attese: in classifica {gap['posizione']}ª con una "
+                                      f"rosa da {gap['rango']}ª per valore dei titolari"})
+        return {"righe": righe, "vuota": sett["vuota"], "voci": sett["voci"],
+                "pressione": sett["pressione"], "temi": sett["temi"], "gap": gap,
+                "finestra": sett["finestra"], "elencate": sett["elencate"],
+                "oltre": sett["oltre"], "in_vita": sett["in_vita"], "fatto": sett["fatto"],
+                "fuori_fonte": sett["fuori_fonte"], "fuori_titolo": sett["fuori_titolo"],
+                "fuori_soggetto": sett["fuori_soggetto"]}
 
     # ---- tre misure per la card «Fattori» (docs/58 §3-§4): sede, cartellini, arbitro ----------
 
@@ -3200,7 +3572,7 @@ class MatchAnalysis:
         scelte: list[dict[str, Any]] = []
         for r in rows:
             title = str(r.get("title") or "").strip()
-            key = re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
+            key = news_title_key(title)
             # La lingua viene **prima** di tutto (docs/25 §5): se il titolo non è
             # italiano, dire «servizio o cronaca» è falso — su Málaga-Villarreal la card
             # diceva «132 titoli esaminati · 131 servizio o cronaca» quando 116 di
@@ -3390,72 +3762,16 @@ class MatchAnalysis:
                             "testo": (f"{nome} ha cambiato allenatore da poco: "
                                       f"{co.get('name')} è la nuova guida — i dettagli in "
                                       f"«Panchina e posta in gioco».")})
-        # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati)
-        if not self.fixtures.empty:
-            fin = self.fixtures[self.fixtures.status == "finished"]
-            for tid, nome in ((home_id, home_name), (away_id, away_name)):
-                matches = fin[(fin.utc_kickoff < kickoff) & ((fin.home_id == tid) | (fin.away_id == tid))]
-                if len(matches) < 3:
-                    continue
-                recent = matches.sort_values("utc_kickoff").tail(8)
-                res = []
-                for _, r in recent.iterrows():
-                    is_h = (r.home_id == tid)
-                    hg, ag = r.home_goals, r.away_goals
-                    if hg is None or ag is None:
-                        continue
-                    w = (hg > ag) if is_h else (ag > hg)
-                    l = (hg < ag) if is_h else (ag < hg)
-                    res.append("W" if w else "L" if l else "D")
-                loss_streak = 0
-                for ch in reversed(res):
-                    if ch == "L":
-                        loss_streak += 1
-                    else:
-                        break
-                if loss_streak >= 3:
-                    out.append({
-                        "titolo": "Momento delicato",
-                        "testo": f"{nome} è reduce da {it_plural(loss_streak, 'sconfitta')} consecutiv{'a' if loss_streak == 1 else 'e'} in campionato.",
-                    })
-                    continue
-                winless = 0
-                d_in = l_in = 0
-                for ch in reversed(res):
-                    if ch in ("L", "D"):
-                        winless += 1
-                        if ch == "L":
-                            l_in += 1
-                        else:
-                            d_in += 1
-                    else:
-                        break
-                if winless >= 5:
-                    p_text = f"{it_plural(d_in, 'pareggio')}"
-                    s_text = f"{it_plural(l_in, 'sconfitta')}"
-                    out.append({
-                        "titolo": "Digiuno di vittorie",
-                        "testo": f"{nome} non vince da {it_plural(winless, 'gara')} di campionato ({p_text}, {s_text}).",
-                    })
-                    continue
-                unbeaten = 0
-                w_un = d_un = 0
-                for ch in reversed(res):
-                    if ch in ("W", "D"):
-                        unbeaten += 1
-                        if ch == "W":
-                            w_un += 1
-                        else:
-                            d_un += 1
-                    else:
-                        break
-                if unbeaten >= 5:
-                    v_text = f"{it_plural(w_un, 'vittoria', 'vittorie')}"
-                    p_text = f"{it_plural(d_un, 'pareggio')}"
-                    out.append({
-                        "titolo": "Striscia positiva",
-                        "testo": f"{nome} è imbattuto da {it_plural(unbeaten, 'partita')} consecutiv{'a' if unbeaten == 1 else 'e'} ({v_text}, {p_text}).",
-                    })
+        # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati) NON stanno
+        # più qui: dal 2026-10-11 (`docs/81` §8) le strisce vivono solo nella card «Clima del
+        # club», che le pubblica col tono, il numero intero e il perimetro dichiarato. Prima
+        # erano in due card della stessa pagina su 45 celle su 154 (misurato: «Momento
+        # delicato»/«Digiuno di vittorie»/«Striscia positiva» contro «crisi di risultati»/
+        # «non vince da»/«imbattuta da»), con due soglie diverse (5 contro 4 gare). Regola
+        # `docs/30`: un dato in un posto. Le altre voci di «Da sapere» (bilancio in casa e
+        # fuori, uomo gol, porta inviolata, finale da brividi) restano: misurato che tutte le
+        # 77 schede pre-partita hanno almeno una di queste anche senza le strisce.
+
         # Fatti di rendimento dentro le proprie mura (docs/25 §4): servono quando la
         # rassegna stampa in italiano non copre la squadra. Senza queste due righe, con
         # il filtro lingua del 17/09/2026 la card restava vuota nel 78% delle partite di
@@ -4278,6 +4594,13 @@ class MatchAnalysis:
             # numero stampato è quello ricontato dal calendario. Un disallineamento
             # match_info/calendario (daily 38005701599, issue #99) non gonfia il campione.
             fin = self._finite_nel_calendario()
+            # Schema incompleto (FotMob cambia payload, o una fase del collect degrada):
+            # meglio restare senza xG che rompere l'intero build — la card mostra i suoi
+            # numeri, il clima/xPTS tace. Senza questa guardia un `match_info` non vuoto
+            # ma senza colonne xG alzava un AttributeError (trovato dal test del 2026-10-11).
+            if not {"home_id", "away_id", "home_xg", "away_xg"} <= set(fin.columns):
+                fin = pd.DataFrame(columns=["match_id", "home_id", "away_id",
+                                            "home_xg", "away_xg"])
             if cut is not None:
                 fin = fin[fin.match_id.astype(int).map(self._match_kickoffs()) < cut]
             if {"home_xg", "away_xg"} <= set(fin.columns):
@@ -6259,6 +6582,19 @@ class MatchAnalysis:
         # allenatori in panchina (servono alla rilevanza delle notizie e al blocco «Da sapere»)
         home_coach = (self.coach(home_id, kickoff) or {}).get("name")
         away_coach = (self.coach(away_id, kickoff) or {}).get("name")
+        # Bollettini stampa calcolati **qui** e non dentro il contesto: servono anche alla card
+        # «Clima del club» per marcare le voci che «Vita del club» racconta già (docs/82` §9).
+        # L'ordine conta: `news_seen` deduplica la stessa notizia fra le due squadre.
+        home_news = (self.team_news(home_id, f["home_name"], kickoff,
+                                    squad=self.match_squad(match_id, home_id),
+                                    seen=news_seen, opponent=f["away_name"],
+                                    coach=home_coach) if status != "finished" else _no_news())
+        away_news = (self.team_news(away_id, f["away_name"], kickoff,
+                                    squad=self.match_squad(match_id, away_id),
+                                    seen=news_seen, opponent=f["home_name"],
+                                    coach=away_coach) if status != "finished" else _no_news())
+        visti_home = {news_title_key(str(n.get("title") or "")) for n in home_news["notizie"]}
+        visti_away = {news_title_key(str(n.get("title") or "")) for n in away_news["notizie"]}
         # P2.5 (`docs/28` §3): la forma sale in testa alla scheda — serie e punti in un micro-badge
         # sotto il nome di ogni squadra, con le stesse classi della pagina «Oggi» (`_matchlist.html`).
         # Calcolata una volta sola: la riusa anche la narrativa, che non ripete più la serie per
@@ -6326,20 +6662,22 @@ class MatchAnalysis:
                           if status != "finished" else [],
             "away_mood": self.club_mood(match_id, away_id, f["away_name"], kickoff)
                           if status != "finished" else [],
+            # clima del club, secondo blocco (`docs/82` §5): la settimana secondo la stampa
+            # (conteggi, mai titoli) e la pressione da aspettative dai nostri dati
+            "home_clima": self.club_climate(home_id, f["home_name"], kickoff,
+                                             visti=visti_home)
+                          if status != "finished" else None,
+            "away_clima": self.club_climate(away_id, f["away_name"], kickoff,
+                                            visti=visti_away)
+                          if status != "finished" else None,
             # mercato (docs/21 P2-7, rifatto in docs/24 §4): finestra ricavata dai dati,
             # arrivi collegati alla distinta di questa partita
             "home_market": self.transfer_window(home_id, match_id) if status != "finished" else None,
             "away_market": self.transfer_window(away_id, match_id) if status != "finished" else None,
             # bollettino stampa (docs/24 §3): filtrato, categorizzato e deduplicato; l'insieme
             # `visti` è condiviso dalle due squadre, così lo stesso articolo non compare due volte
-            "home_news": self.team_news(home_id, f["home_name"], kickoff,
-                                        squad=self.match_squad(match_id, home_id),
-                                        seen=news_seen, opponent=f["away_name"],
-                                        coach=home_coach) if status != "finished" else _no_news(),
-            "away_news": self.team_news(away_id, f["away_name"], kickoff,
-                                        squad=self.match_squad(match_id, away_id),
-                                        seen=news_seen, opponent=f["home_name"],
-                                        coach=away_coach) if status != "finished" else _no_news(),
+            "home_news": home_news,
+            "away_news": away_news,
             # blocco «Da sapere» della card (docs/24 §3.5): derivato dai nostri dati
             "news_sapere": (self.news_sapere(match_id, home_id, f["home_name"], away_id,
                                              f["away_name"], kickoff)

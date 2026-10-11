@@ -57,7 +57,9 @@
   {% if c.status != 'finished' and (c.home_key_deep or c.away_key_deep or c.home_key_players or c.away_key_players) %}<a href="#giocatori">I giocatori</a>{% endif %}
   <a href="#squadre">Le due squadre</a>
   {% if c.home_bench or c.away_bench %}<a href="#panchina">Panchina</a>{% endif %}
+  {% if c.status != 'finished' %}<a href="#stato-squadra">Stato della squadra</a>{% endif %}
   {% if (c.home_market or c.away_market) and c.status != 'finished' %}<a href="#mercato">Mercato</a>{% endif %}
+  {% if c.status != 'finished' %}<a href="#clima">Clima del club</a>{% endif %}
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}<a href="#notizie">Vita del club</a>{% endif %}
   {% if c.status != 'finished' and c.insights %}<a href="#fatti">Fatti rilevanti</a>{% endif %}
   {% if c.referee and c.referee.name or c.weather.desc or c.status != 'finished' %}<a href="#arbitro-meteo">Arbitro e meteo</a>{% endif %}
@@ -466,13 +468,16 @@
   </div>
   {% endif %}
   {#- P2.2 (`docs/28` §3): due squadre senza segnali non devono far sparire la sezione — il
-      lettore non distinguerebbe «clima tranquillo» da «dato non raccolto». La riga per squadra
+      lettore non distinguerebbe «nessun segnale» da «dato non raccolto». La riga per squadra
       dice già «Nessun segnale anomalo nei dati raccolti: clima normale». Prima su una scheda
       su 60 (Alverca–Rio Ave) la card spariva: era l'unica differenza di struttura fra le 60
-      schede pre-partita, misurata il 2026-09-19 (ora la sorveglia `scripts/parita_schede.py`). -#}
+      schede pre-partita, misurata il 2026-09-19 (ora la sorveglia `scripts/parita_schede.py`).
+      L'11/10/2026 (`docs/82` §5, opzione A) questa card ha ceduto il **nome** «Clima del club»
+      alla nuova card dell'ambiente e delle aspettative: qui restano forma, disponibilità e
+      calendario, che è quello che il blocco ha sempre misurato (era un digest, non un clima). -#}
   {% if c.status != 'finished' %}
-  <div class="card" id="clima">
-    <h2>Clima del club</h2>
+  <div class="card" id="stato-squadra">
+    <h2>Stato della squadra</h2>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
     {% for side in ('home','away') %}
       <div>
@@ -483,7 +488,7 @@
       </div>
     {% endfor %}
     </div>
-    <p class="small mut">Segnali misurati, non aggettivi: crisi da 3 sconfitte consecutive, «non vince da» da 4 gare senza vittoria, clima sereno da 5 imbattute, attacco a secco da 3 gare senza gol, scarto punti‑xPTS oltre la banda di rumore misurata (1σ = 1,13 × radice delle gare: ±2,5 punti dopo 5 gare, ±3,0 dopo 7 — la stessa soglia della card «Le due squadre» e dell'analisi pre-partita), infermeria pesante da 4 assenti o 2 titolari abituali o 0,5 xG+xA/gara in meno, riposo corto ≤3 giorni, congestione da 3 gare in 10 giorni (coppe incluse). Nessun punteggio sintetico: ogni riga è un fatto col suo criterio; se nessuna soglia è superata, la squadra resta «clima normale».</p>
+    <p class="small mut">Fatti misurati che pesano su questa partita — forma, disponibilità, calendario — ognuno col suo criterio; l'ambiente, la stampa e le aspettative del club sono nella card «Clima del club» qui sotto. Il bordo colorato dà la lettura: rosso = allarme, ambra = attenzione, verde = fiducia. Le strisce contano le gare di <b>campionato</b> (la stessa base della riga «Forma»): crisi da 3 sconfitte consecutive, «non vince da» da 4 gare senza vittoria, clima sereno da 5 imbattute, attacco a secco da 3 gare senza gol — il numero è la striscia intera, non la finestra delle ultime cinque. Dall'ultima gara di campionato: <b>sconfitta pesante</b> con 3 o più gol di scarto e <b>espulsione</b> (col minuto, quando la fonte lo pubblica). Scarto punti‑xPTS oltre la banda di rumore misurata (1σ = 1,13 × radice delle gare: ±2,5 punti dopo 5 gare, ±3,0 dopo 7 — la stessa soglia della card «Le due squadre» e dell'analisi pre-partita), <b>infermeria pesante</b> da 4 assenti o 2 titolari abituali o 0,5 xG+xA/gara in meno — diventa «<b>assenze pesanti</b>» quando fra gli indisponibili c'è uno squalificato, perché «infermeria» vale solo per gli infortuni — panchina nuova se l'allenatore è in carica da 3 gare al massimo (lo stesso criterio della voce «Panchina nuova» in «Da sapere»), riposo corto ≤3 giorni e congestione da 3 gare in 10 giorni (riposo e congestione contano anche le coppe). Nessun punteggio sintetico: ogni riga è un fatto col suo criterio; se nessuna soglia è superata, la squadra resta «clima normale».</p>
   </div>
   {% endif %}
   {% if (c.home_market or c.away_market) and c.status != 'finished' %}
@@ -517,6 +522,52 @@
   </div>
   {% endif %}
   {% if (c.home_news.notizie or c.away_news.notizie or c.home_news.esaminate or c.away_news.esaminate or c.news_sapere) and c.status != 'finished' %}
+  {#- `docs/82` §5 (opzione A, decisione dell'utente dell'11/10/2026): la card «Clima del
+      club» cambia mestiere. Prima era il digest dello stato della squadra (strisce, infermeria,
+      xPTS, riposo — righe tutte derivate da dati mostrati altrove nella stessa pagina: misurato
+      in `docs/82` §1); ora pubblica le due cose che il nome promette e che nella scheda non
+      esistevano: la settimana del club secondo la stampa (conteggi per tema, mai titoli: quelli
+      restano in «Vita del club», `docs/30`) e la pressione da aspettative dai nostri dati, con
+      parità piena fra le 7 leghe. Lo stato della squadra resta nella card che ora si chiama
+      «Stato della squadra». Entrambe le card sono incondizionate pre-partita: `parita_schede` e
+      `verify_site` [49] sorvegliano che nessuna pagina le perda. -#}
+  {% if c.status != 'finished' %}
+  <div class="card" id="clima">
+    <h2>Clima del club</h2>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:14px">
+    {% for side in ('home','away') %}
+      <div>
+        <p style="margin:0 0 6px"><b>{{ c[side ~ '_name'] }}</b></p>
+        {% set cl = c[side ~ '_clima'] %}
+        {% if cl and cl.righe %}<ul class="news-list">{% for r in cl.righe %}<li class="mood-{{ r.tone }}"><span class="small">{{ r.text }}</span></li>{% endfor %}</ul>{% endif %}
+        {% if cl and cl.vuota %}<p class="small mut">Nessuna voce di clima raccolta dalla stampa italiana nella settimana della partita.</p>{% endif %}
+        {% if cl and cl.temi %}
+        {#- L'elenco è la prova dei conteggi (richiesta utente dell'11/10/2026: «fornirmi queste
+            voci con esattezza cosa dicono»): titolo, testata, data e link di ogni voce contata.
+            Chiuso per default — non occupa il primo schermo — e marcato «anche in «Vita del
+            club»» per le voci già raccontate più sotto (`docs/82` §9). -#}
+        {% if cl.fatto %}
+        {#- Il fatto della settimana: la voce che pesa di più (peso del tema + fatti gravi).
+            Risponde alla richiesta dell'11/10/2026: «cose più importanti». -#}
+        <p class="small" style="margin:6px 0 0"><b>Il fatto della settimana:</b>
+          <a href="{{ cl.fatto.url }}" class="voce" rel="noopener noreferrer nofollow">{{ cl.fatto.title }}</a>
+          <span class="mut">{{ cl.fatto.source }} · {{ cl.fatto.published_at|it_dt }}</span></p>
+        {% endif %}
+        <details class="news-more">
+          <summary>{% if cl.oltre %}Le {{ cl.elencate }} voci più recenti di {{ cl.voci }} contate{% elif cl.voci == 1 %}Una voce contata{% else %}Le {{ cl.voci }} voci contate{% endif %}{% if cl.in_vita %} · {% if cl.voci == 1 %}già raccontata{% elif cl.in_vita == 1 %}una già raccontata{% else %}{{ cl.in_vita }} già raccontate{% endif %} in «Vita del club»{% endif %}</summary>
+          {% for t in cl.temi %}{% if t.voci %}
+          <p class="small" style="margin:8px 0 4px"><b>{{ t.label }} ({{ t.n }})</b></p>
+          <ul class="news-list">{% for v in t.voci %}<li><span class="small"><a href="{{ v.url }}" class="voce" rel="noopener noreferrer nofollow">{{ v.title }}</a> <span class="mut">{{ v.source }} · {{ v.published_at|it_dt }}{% if v.in_vita %} · anche in «Vita del club»{% endif %}</span></span></li>{% endfor %}</ul>
+          {% endif %}{% endfor %}
+          {% if cl.oltre %}<p class="small mut" style="margin:6px 0 0">{% if cl.oltre == 1 %}E un'altra voce della settimana, non elencata.{% else %}E altre {{ cl.oltre }} voci della settimana, non elencate.{% endif %}</p>{% endif %}
+        </details>
+        {% endif %}
+      </div>
+    {% endfor %}
+    </div>
+    <p class="small mut">La <b>settimana del club</b> secondo la stampa in lingua italiana raccolta (Google News edizione italiana, per squadra): conteggi per tema e, in ogni colonna, <b>l'elenco delle voci contate</b> — titolo, testata, data e link: è la prova del numero, apribile. Una <b>voce per titolo</b> (i doppioni della raccolta non gonfiano il conteggio) e non più di 24 voci elencate per squadra (le più recenti; il resto è dichiarato). Le voci contano solo se <b>il tema si vede nel titolo</b> pubblicato (una citazione di un altro club o una lista TV non fanno clima solo perché il brano le contiene), se <b>il club si vede nel titolo</b> — con il nome che la stampa usa davvero: «Juve», «Toro», «Colonia», «Gladbach», «Barcellona» (la stessa mappa delle ricerche) — e non solo come avversario di passaggio («a pochi giorni dalla Roma» è la notizia di chi la scrive), e se la fonte non è a <b>bassa reputazione</b> (fan site, fantacalcio, aggregatori): gli stessi criteri della card «Vita del club». <b>Il fatto della settimana</b> è la voce col tema più pesante — panchina, spogliatoio e società sopra tifoseria e stadio — e con un fatto grave nel titolo (scontri, daspo, sciopero, esonero, inchiesta, debiti; fra virgolette è la frase di qualcun altro e non conta): esce solo se il tema pesa almeno 4 o il titolo dice un fatto grave (tifoseria o stadio da soli non bastano), ed è evidenziata, non estratta dall'elenco. Le voci che la card «Vita del club» qui sotto racconta già sono <b>marcate</b>: qui si contano, lì si raccontano. «Settimana calda» da <b>3 voci di pressione</b> in 7 giorni fra panchina, spogliatoio, società e tifoseria; una o due → «pressione in settimana»; voci senza pressione → «settimana tranquilla». Infortuni, squalifiche e mercato non si contano qui: hanno le loro card. La copertura della stampa italiana non è uniforme fra le leghe (misurato l'11/10/2026: 20 squadre su 20 in Serie A con voci di clima in 14 giorni, 0 su 18 in Eredivisie): dove il conteggio è zero la card lo dichiara — è vuoto di raccolta, non una quiete dimostrata, e per le partite ancora lontane la settimana è incompleta perché le voci arrivano man mano che la stampa scrive. <b>Pressione da aspettative</b>: rango della squadra per <b>valore dei titolari</b> (mediana delle gare finite prima di questa partita) contro la posizione in classifica (quella raccolta oggi); si pubblica solo con uno scarto di <b>almeno 5 posizioni</b> e almeno 3 gare misurate. Sotto le attese = rosa più costosa della classifica; sopra le attese = classifica migliore della rosa.</p>
+  </div>
+  {% endif %}
   <div class="card" id="notizie">
     <h2>Vita del club</h2>
     {# P1.1 (docs/28 §2, 2026-09-18): quando NESSUNA delle due squadre ha un titolo pubblicabile la

@@ -335,10 +335,18 @@ class Text(HTMLParser):
     e pubblicavano «2 i titoli più vecchi guardati» in 17 schede senza che il gate li
     leggesse. I titoli veri della stampa (``ul.news-list`` e le righe «in riserva»)
     restano esclusi: sono citazioni verbatim.
+
+    **Eccezione ``class="voce"`` (11/10/2026, `docs/82` §9).** L'elenco delle voci della card
+    «Clima del club» cita i titoli della stampa verbatim: fuori dai controlli anti-falso, come
+    le notizie della card «Vita del club». Misurato l'11/10/2026: «TORNELLI APERTI DALLE
+    18.15» faceva fallire il gate dei decimali su 5749709. Solo le ancore ``a.voce`` sono
+    escluse — sommario, etichette dei gruppi, testata, data e marcatore restano testo nostro.
     """
 
     #: Classi riammesse nei controlli anche dentro la card delle notizie: solo testo nostro.
     CLASSI_NOSTRE = ("sapere", "imbuto")
+    #: Ancore dei titoli citati verbatim (`a.voce`): fuori dai controlli anti-falso.
+    CLASSI_CITATE = ("voce",)
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -350,6 +358,8 @@ class Text(HTMLParser):
         self.news_depth = 0
         self.nostro_tag: str | None = None
         self.nostro_depth = 0
+        self.citato_tag: str | None = None
+        self.citato_depth = 0
         self.readable_attrs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
@@ -366,6 +376,13 @@ class Text(HTMLParser):
             self.nostro_tag, self.nostro_depth = tag, 1
         elif self.nostro_tag == tag:
             self.nostro_depth += 1
+        # titoli citati verbatim (`a.voce`): esclusi dai controlli, come le notizie della card
+        if self.citato_depth == 0 and any(
+                k == "class" and v and any(c in str(v).split() for c in self.CLASSI_CITATE)
+                for k, v in attrs):
+            self.citato_tag, self.citato_depth = tag, 1
+        elif self.citato_tag == tag:
+            self.citato_depth += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
         for k, v in attrs:
@@ -373,7 +390,8 @@ class Text(HTMLParser):
                 self.ids.add(v)
             if tag == "a" and k == "href" and v:
                 self.hrefs.append(v)
-            if k in ATTR_LEGGIBILI and v and (self.news_depth == 0 or self.nostro_depth > 0):
+            if k in ATTR_LEGGIBILI and v and self.citato_depth == 0 \
+                    and (self.news_depth == 0 or self.nostro_depth > 0):
                 self.readable_attrs.append(str(v))
 
     def handle_endtag(self, tag: str) -> None:
@@ -387,9 +405,14 @@ class Text(HTMLParser):
             self.nostro_depth -= 1
             if self.nostro_depth <= 0:
                 self.nostro_tag, self.nostro_depth = None, 0
+        if self.citato_tag == tag:
+            self.citato_depth -= 1
+            if self.citato_depth <= 0:
+                self.citato_tag, self.citato_depth = None, 0
 
     def handle_data(self, data: str) -> None:
-        if not self.skip and (self.news_depth == 0 or self.nostro_depth > 0):
+        if not self.skip and self.citato_depth == 0 \
+                and (self.news_depth == 0 or self.nostro_depth > 0):
             self.parts.append(data)
 
 
@@ -775,7 +798,9 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "19": ("M", ("classifica e posizione virtuale ricalcolate; posta in gioco dal Parquet "
                  "con la formattazione del generatore, confrontata con Proiezioni")),
     "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
-    "21": ("M", "righe del clima dal Parquet delle notizie"),
+    "21": ("I", ("stato della squadra (ex «Clima del club»): strisce di campionato, xPTS "
+                 "(Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, "
+                 "infermeria dai Parquet")),
     "22": ("I", "radar e scontri ricalcolati da team_stats e Understat"),
     "23": ("I", "badge «giocherà?» ↔ distinta"),
     "24": ("I", "«Il prossimo impegno» ↔ calendario"),
@@ -806,6 +831,10 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "47": ("I", "terne 1/X/2 pubblicate: somma esatta, quattro grafie"),
     "48": ("M", ("percentuali intere di Accuratezza: regola dichiarata, hit e "
                  "eventi osservati ricalcolati dai gol")),
+    "49": ("M", ("clima del club (`docs/82` §5-§9): conteggi **e voci elencate** della "
+                 "settimana, marcatori «anche in «Vita del club»» e rango per valore ricalcolati "
+                 "dai Parquet; la classificazione dei temi e i gate di pertinenza (tema, club, "
+                 "fonte, fatto grave) sono quelli dichiarati dalla fonte (`docs/83` §3-§4)")),
 }
 
 
@@ -3202,36 +3231,603 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
     print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
-    # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
-    # con le stesse soglie; se una squadra ha segnali la card deve esserci. Da P2.2 (`docs/28`
-    # §3) la card c'è **sempre** sulle schede pre-partita: due squadre senza segnali non devono
-    # farla sparire (il lettore non distinguerebbe «clima tranquillo» da «dato non raccolto»),
-    # e in quel caso la pagina lo dice riga per riga. Il controllo verifica le due direzioni.
+    # 21) stato della squadra (docs/21 P2-6, «Clima del club» fino all'11/10/2026): **oracolo
+    # indipendente** dal 2026-10-11 (`docs/81` §5). Il nome è cambiato con `docs/82` §5 — il
+    # contenuto (forma, disponibilità, calendario) è quello che la card ha sempre misurato.
+    # Fino a ieri il controllo chiamava `club_mood` e si limitava a ritrovare nella pagina
+    # le righe che il generatore aveva appena prodotto — uno specchio (`docs/79` §1): non
+    # poteva vedere gli errori *dentro* la funzione. Ora ogni riga è ricalcolata dai Parquet
+    # con strade diverse: strisce sulla stagione intera di campionato, riposo e congestione da
+    # calendario ∪ coppe, xPTS da Understat o dal Poisson sui soli xG FotMob, panchina dalle
+    # distinte, infermeria da distinta e statistiche di stagione. Le soglie sono la
+    # **specifica dichiarata** nella nota della card: se il generatore le cambia senza
+    # aggiornare qui (o viceversa) il gate si accende.
     n_mood = 0
     vuota = ("Nessun segnale anomalo nei dati raccolti: clima normale.")
+    mood_fx = fx19.copy()
+    if not mood_fx.empty:
+        mood_fx["ko"] = pd.to_datetime(mood_fx.utc_kickoff, utc=True, errors="coerce")
+        for _c in ("home_goals", "away_goals"):
+            mood_fx[_c] = pd.to_numeric(mood_fx.get(_c), errors="coerce")
+    mood_cup = st.read("cup_fixtures")
+    if not mood_cup.empty:
+        mood_cup["ko"] = pd.to_datetime(mood_cup.utc_kickoff, utc=True, errors="coerce")
+        for _c in ("home_goals", "away_goals"):
+            mood_cup[_c] = pd.to_numeric(mood_cup.get(_c), errors="coerce")
+    mood_ev = st.read("events")
+    mood_us = st.read("understat_team_matches")
+    if not mood_us.empty:
+        mood_us["_nome"] = mood_us.team_name.map(_canon)
+        mood_us["_data"] = pd.to_datetime(mood_us.date, utc=True, errors="coerce")
+    mood_agg = pd.DataFrame()
+    if not ps19.empty and "value" in ps19.columns:
+        _mps = ps19.assign(num=pd.to_numeric(ps19.value, errors="coerce")).dropna(subset=["num"])
+        if not _mps.empty:
+            mood_agg = (_mps.groupby(["team_id", "player_name", "key"]).num.sum()
+                        .unstack("key").reset_index())
+
+    # la specifica della card, scritta qui come la nota la dichiara al lettore
+    _S_LOSS, _S_NOWIN, _S_UNB, _S_DRY = 3, 4, 5, 3
+    _S_ASS, _S_START, _S_CONTRIB = 4, 2, 0.5
+    _S_REST, _S_CN, _S_CD, _S_SD = 3, 3, 10, 1.133
+    _S_PESANTE = 3   # scarto di una sconfitta → «sconfitta pesante»
+
+    def _striscia_uguale(ris: list[str], val: str) -> int:
+        n = 0
+        for r in reversed(ris):
+            if r == val:
+                n += 1
+            else:
+                break
+        return n
+
+    def _striscia_fino_a(ris: list[str], diverso: str) -> int:
+        n = 0
+        for r in reversed(ris):
+            if r != diverso:
+                n += 1
+            else:
+                break
+        return n
+
+    def _poisson_xpts_indip(lh: float, la: float) -> tuple[float, float]:
+        """xPTS attesi dai soli xG (Poisson indipendente, scritto qui dalla definizione)."""
+        import math as _math
+        def pmf(k: int, lam: float) -> float:
+            return _math.exp(-lam) * lam ** k / _math.factorial(k)
+        g = range(16)
+        p_draw = sum(pmf(k, lh) * pmf(k, la) for k in g)
+        p_home = sum(pmf(i, lh) * sum(pmf(j, la) for j in range(i)) for i in g)
+        p_away = sum(pmf(j, la) * sum(pmf(i, lh) for i in range(j)) for j in g)
+        return 3 * p_home + p_draw, 3 * p_away + p_draw
+
+    def _risultati(righe: Any, tid: int) -> tuple[list[str], list[int]]:
+        """Esiti e gol fatti della squadra, in ordine cronologico (dai Parquet grezzi)."""
+        ris, gf = [], []
+        for r in righe:
+            a, b = (r.home_goals, r.away_goals) if int(r.home_id) == tid else (r.away_goals, r.home_goals)
+            if pd.isna(a) or pd.isna(b):
+                continue
+            ris.append("V" if a > b else ("N" if a == b else "P"))
+            gf.append(int(a))
+        return ris, gf
+
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
-        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+        if "Analisi pre-partita" not in html or mood_fx.empty or int(pg.stem) not in ko19.index:
             continue
         txt = html_unescape(html)
-        fr = fx19[fx19.match_id == int(pg.stem)].iloc[0]
-        kickoff = pd.Timestamp(fr.utc_kickoff)
-        rows_h = ma19.club_mood(int(pg.stem), int(fr.home_id), str(fr.home_name), kickoff)
-        rows_a = ma19.club_mood(int(pg.stem), int(fr.away_id), str(fr.away_name), kickoff)
+        fr = mood_fx[mood_fx.match_id == int(pg.stem)].iloc[0]
+        kickoff = pd.Timestamp(fr.ko)
         n_mood += 1
-        if 'id="clima"' not in html:
-            fails.append(f"{pg.name}: card clima assente (deve esserci su ogni scheda pre-partita)")
+        if 'id="stato-squadra"' not in html:
+            fails.append(f"{pg.name}: card «Stato della squadra» assente (deve esserci su ogni "
+                         f"scheda pre-partita)")
             continue
-        for r in rows_h + rows_a:
+        checks += 1
+        _blocco = re.search(r'<div class="card" id="stato-squadra">(.*?)(?=<div class="card"|<footer)',
+                            html, re.DOTALL)
+        parti = re.split(r'<p style="margin:0 0 6px"><b>', _blocco.group(1)) if _blocco else []
+        if len(parti) != 3:
+            fails.append(f"{pg.name}: struttura della card «Stato della squadra» inattesa "
+                         f"({len(parti)} blocchi)")
+            continue
+        note = html_unescape(parti[2])
+        checks += 1
+        # la nota dichiara il perimetro delle strisce e il significato dei tre colori (docs/81 §2-§4)
+        if "campionato" not in note:
+            fails.append(f"{pg.name}: la nota dello stato della squadra non dichiara il "
+                         f"perimetro di campionato")
+        if not all(x in note for x in ("rosso", "ambra", "verde")):
+            fails.append(f"{pg.name}: la nota dello stato della squadra non spiega i toni "
+                         f"dei colori")
+        senza = 0
+        for lato, (tid, tname) in enumerate(((int(fr.home_id), str(fr.home_name)),
+                                             (int(fr.away_id), str(fr.away_name)))):
+            tid = int(tid)
+            righe = [html_unescape(x) for x in
+                     re.findall(r'<li class="mood-(?:bad|warn|good)"><span class="small">(.*?)</span></li>',
+                                parti[lato + 1], re.DOTALL)]
+            if not righe:
+                senza += 1
+            attese: list[str] = []
+            prefissi: list[str] = []
+            # --- strisce: stagione intera di campionato ---
+            gare = mood_fx[(mood_fx.status == "finished") & (mood_fx.ko < kickoff)
+                           & ((mood_fx.home_id == tid) | (mood_fx.away_id == tid))].sort_values("ko")
+            ris, gf = _risultati(gare.itertuples(index=False), tid)
+            lose, nowin, unbeaten = (_striscia_uguale(ris, "P"), _striscia_fino_a(ris, "V"),
+                                     _striscia_fino_a(ris, "P"))
+            secco = _striscia_uguale(["1" if x else "0" for x in gf], "0")
+            if lose >= _S_LOSS:
+                attese.append(f"crisi di risultati: {lose} sconfitte consecutive in campionato")
+            elif nowin >= _S_NOWIN:
+                nd = sum(1 for r in ris[len(ris) - nowin:] if r == "N")
+                attese.append(f"non vince da {nowin} gare in campionato ({nd} N, {nowin - nd} P)")
+            elif unbeaten >= _S_UNB:
+                attese.append(f"imbattuta da {unbeaten} gare in campionato: clima di fiducia")
+            if secco >= _S_DRY:
+                attese.append(f"attacco a secco: {secco} gare senza segnare in campionato")
+            # --- ultima gara di campionato: sconfitta pesante e espulsione (`docs/81` §9) ---
+            _gare = mood_fx[(mood_fx.status == "finished") & (mood_fx.ko < kickoff)
+                            & ((mood_fx.home_id == tid) | (mood_fx.away_id == tid))]
+            if not _gare.empty:
+                _u = _gare.loc[_gare.ko.idxmax()]
+                _casa = int(_u.home_id) == tid
+                _gf, _ga = ((_u.home_goals, _u.away_goals) if _casa
+                            else (_u.away_goals, _u.home_goals))
+                if pd.notna(_gf) and pd.notna(_ga) and int(_ga) - int(_gf) >= _S_PESANTE:
+                    attese.append(f"sconfitta pesante nell'ultima gara di campionato: "
+                                  f"{int(_gf)}-{int(_ga)}")
+                    prefissi.append("sconfitta pesante nell'ultima gara di campionato")
+                if not mood_ev.empty and {"match_id", "card", "is_home"} <= set(mood_ev.columns):
+                    _rossi = mood_ev[(mood_ev.match_id == int(_u.match_id))
+                                     & mood_ev.card.astype(str).str.lower().isin(("red", "yellowred"))
+                                     & mood_ev.is_home.notna()
+                                     & (mood_ev.is_home.astype(bool) == _casa)]
+                    if not _rossi.empty:
+                        attese.append("espulsione nell'ultima gara di campionato")
+                        prefissi.append("espulsione nell'ultima gara di campionato")
+            # --- xPTS: Understat alla vigilia; senza Understat il Poisson sui soli xG FotMob ---
+            diff = banda = None
+            ur = (mood_us[(mood_us._nome == _canon(tname)) & (mood_us._data < kickoff)]
+                  if not mood_us.empty else mood_us)
+            if not ur.empty and len(ur) >= 3 and {"xpts", "pts"} <= set(ur.columns):
+                diff, banda = float(ur.pts.sum()) - float(ur.xpts.sum()), _S_SD * len(ur) ** 0.5
+            else:
+                fin = mood_fx[(mood_fx.status == "finished") & (mood_fx.ko < kickoff)
+                              & ((mood_fx.home_id == tid) | (mood_fx.away_id == tid))]
+                info = mi19[mi19.match_id.isin(fin.match_id)] if not mi19.empty else pd.DataFrame()
+                _col = {"home_xg", "away_xg", "home_goals", "away_goals"}
+                if not info.empty and _col <= set(info.columns):
+                    info = info.assign(**{c: pd.to_numeric(info[c], errors="coerce")
+                                          for c in _col}).dropna(subset=sorted(_col))
+                else:
+                    info = pd.DataFrame()
+                if len(info) >= 3:
+                    totx = totp = 0.0
+                    for r in info.itertuples(index=False):
+                        casa = int(r.home_id) == tid
+                        xp, xpa = _poisson_xpts_indip(float(r.home_xg), float(r.away_xg))
+                        totx += xp if casa else xpa
+                        hg, ag = int(r.home_goals), int(r.away_goals)
+                        signed = hg - ag if casa else ag - hg
+                        totp += 3 if signed > 0 else 1 if signed == 0 else 0
+                    diff, banda = totp - totx, _S_SD * len(info) ** 0.5
+            if diff is not None and banda is not None:
+                if diff >= banda:
+                    attese.append("rende più di quanto crea (xPTS)")
+                elif diff <= -banda:
+                    attese.append("raccoglie meno punti di quanto crea (xPTS)")
+            # --- panchina nuova: cambio rilevato **e** allenatore in carica da ≤3 gare ---
+            co = lu19[(lu19.team_id == tid) & (lu19.role == "coach")] if not lu19.empty else lu19
+            if not co.empty:
+                # la permanenza è la sequenza **consecutiva** con lo stesso id allenatore
+                # (come ``coach()``): il totale delle righe conterebbe anche un ritorno
+                co = co[co.match_id.isin(mood_fx.match_id)].copy()
+                if not co.empty:
+                    co["ko"] = pd.to_datetime(co.match_id.map(
+                        mood_fx.drop_duplicates("match_id").set_index("match_id")["ko"]), utc=True)
+                    co = co[co.ko <= kickoff].sort_values("ko", kind="stable")
+                if not co.empty:
+                    cur = co.iloc[-1].player_id
+                    subentro = 0
+                    for _pid in co.player_id.iloc[::-1]:
+                        if _pid == cur:
+                            subentro += 1
+                        else:
+                            break
+                    if (co.player_id != cur).any() and subentro <= 3:
+                        attese.append("panchina nuova: il cambio di allenatore")
+            # --- infermeria: presenza e numero dagli stessi dati; il contributo è quello stampato ---
+            unav = (lu19[(lu19.match_id == int(pg.stem)) & (lu19.team_id == tid)
+                         & (lu19.role == "unavailable") & lu19.player_id.notna()]
+                    if not lu19.empty else lu19)
+            n_un = len(unav)
+            titolari, contrib_certo = 0, 0.0
+            if n_un and not mood_agg.empty:
+                st_t = mood_agg[mood_agg.team_id == tid].drop_duplicates("player_name") \
+                    .set_index("player_name")
+                per_g = float(st_t["minutes_played"].sum()) / 11 if "minutes_played" in st_t else 0.0
+                for r in unav.itertuples(index=False):
+                    nm = str(r.player_name)
+                    if nm not in st_t.index or "minutes_played" not in st_t:
+                        continue
+                    _mv = st_t.loc[nm, "minutes_played"]
+                    mins = 0.0 if pd.isna(_mv) else float(_mv)
+                    if per_g and mins >= 0.5 * per_g:
+                        titolari += 1
+                    if mins >= 90.0:
+                        # sopra i 90′ il generatore pubblica il valore grezzo: la somma è
+                        # ricalcolabile qui senza la stima stabilizzata (`docs/19` §1.10)
+                        _c = 0.0
+                        for _k in ("expected_goals", "expected_assists"):
+                            if _k in st_t.columns:
+                                _v = st_t.loc[nm, _k]
+                                _c += 0.0 if pd.isna(_v) else float(_v)
+                        contrib_certo += round(_c / (mins / 90.0), 2) if _c else 0.0
+            riga_inf = next((x for x in righe if x.startswith(("infermeria pesante", "assenze pesanti"))), None)
+            if riga_inf:
+                prefissi.append("infermeria pesante" if riga_inf.startswith("infermeria")
+                                else "assenze pesanti")
+                # «infermeria» solo con i soli infortuni; con uno squalificato «assenze pesanti»
+                checks += 1
+                _soli_inf = all(str(t).strip().lower() == "injury"
+                                for t in unav.unavailability_type.dropna()) if not unav.empty else True
+                if _soli_inf and not riga_inf.startswith("infermeria pesante"):
+                    fails.append(f"{pg.name}: {tname} assenze etichettate «assenze pesanti» "
+                                 f"con soli infortuni")
+                if not _soli_inf and riga_inf.startswith("infermeria pesante"):
+                    fails.append(f"{pg.name}: {tname} «infermeria pesante» con una squalifica "
+                                 f"fra gli indisponibili")
+                checks += 1
+                mm = re.search(r"≈ ([0-9]+,[0-9]+) xG\+xA a partita in meno", riga_inf)
+                pub = float(mm.group(1).replace(",", ".")) if mm else 0.0
+                if not (n_un >= _S_ASS or titolari >= _S_START or pub >= _S_CONTRIB):
+                    fails.append(f"{pg.name}: {tname} infermeria pubblicata senza soglia "
+                                 f"({n_un} assenti, {titolari} titolari, {pub} xG+xA)")
+                _nm = re.match(r"(?:infermeria pesante|assenze pesanti): ([0-9]+) assent",
+                                 riga_inf)
+                if _nm and int(_nm.group(1)) != n_un:
+                    fails.append(f"{pg.name}: {tname} infermeria «{riga_inf[:40]}» con {n_un} assenti")
+            else:
+                checks += 1
+                if n_un >= _S_ASS or titolari >= _S_START or contrib_certo >= _S_CONTRIB:
+                    fails.append(f"{pg.name}: {tname} infermeria assente con {n_un} assenti, "
+                                 f"{titolari} titolari e {contrib_certo} xG+xA pubblicabili")
+            # --- riposo e congestione: campionato + coppe ---
+            src = (pd.concat([mood_fx, mood_cup], ignore_index=True, sort=False)
+                   if not mood_cup.empty else mood_fx)
+            prec = src[(src.status == "finished") & (src.ko < kickoff)
+                       & ((src.home_id == tid) | (src.away_id == tid))]
+            riga_rest = next((x for x in righe if x.startswith("riposo corto")), None)
+            riga_cong = next((x for x in righe if x.startswith("congestione")), None)
+            if not prec.empty:
+                rest = int((kickoff - prec.ko.max()).total_seconds() // 86400)
+                checks += 1
+                if rest <= _S_REST and riga_rest is None:
+                    fails.append(f"{pg.name}: {tname} riposo {rest} giorni senza riga")
+                if rest > _S_REST and riga_rest:
+                    fails.append(f"{pg.name}: {tname} riga «{riga_rest[:40]}» con riposo {rest} giorni")
+            if riga_rest:
+                prefissi.append("riposo corto")
+            finestra = src[(src.status == "finished") & (src.ko >= kickoff - pd.Timedelta(days=_S_CD))
+                           & (src.ko < kickoff) & ((src.home_id == tid) | (src.away_id == tid))]
             checks += 1
-            if r["text"] not in txt:
-                fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
-        senza = (0 if rows_h else 1) + (0 if rows_a else 1)
+            if len(finestra) >= _S_CN and riga_cong is None:
+                fails.append(f"{pg.name}: {tname} {len(finestra)} gare in {_S_CD} giorni senza congestione")
+            if len(finestra) < _S_CN and riga_cong:
+                fails.append(f"{pg.name}: {tname} «{riga_cong[:40]}» con {len(finestra)} gare in {_S_CD} giorni")
+            if riga_cong:
+                prefissi.append("congestione")
+            # --- le due direzioni: nessuna riga inventata, nessuna riga attesa mancante ---
+            for atteso in attese:
+                checks += 1
+                if not any(x.startswith(atteso[:24]) for x in righe):
+                    fails.append(f"{pg.name}: {tname} riga clima attesa assente «{atteso[:50]}»")
+            for riga in righe:
+                checks += 1
+                if not any(riga.startswith(a[:24]) for a in attese) and \
+                        not any(riga.startswith(p) for p in prefissi):
+                    fails.append(f"{pg.name}: {tname} riga clima non giustificata «{riga[:50]}»")
         checks += 1
         if txt.count(vuota) != senza:
             fails.append(f"{pg.name}: {senza} squadre senza segnali ma la riga «clima normale» "
                          f"compare {txt.count(vuota)} volte")
-    print(f"[21] pagine con clima del club riconciliate: {n_mood}")
+    print(f"[21] pagine con stato della squadra riconciliate: {n_mood} (oracolo indipendente)")
+
+    # 49) clima del club (`docs/82` §5 e §9, opzione A): la card dell'ambiente e delle aspettative
+    # e — dall'11/10/2026 — **l'elenco delle voci contate** (richiesta dell'utente: «fornirmi
+    # queste voci con esattezza cosa dicono»). Conteggi e voci ricalcolati dai Parquet con la
+    # classificazione della fonte (`classify_news`, la stessa di «Vita del club» — il limite
+    # dichiarato in `ORACOLI`); rango per valore dei titolari e scarto dalla classifica
+    # ricalcolati in modo indipendente (mediane sulle gare finite prima del fischio, soglie
+    # 3 gare / |Δ| ≥ 5: la specifica dichiarata nella nota). Una voce per titolo — la stessa
+    # chiave di `team_news`: i doppioni della raccolta non gonfiano i conteggi — le più recenti
+    # fino al tetto dichiarato, e i marcatori «anche in «Vita del club»» verificati contro i
+    # titoli pubblicati **dalla stessa pagina**. Le righe di testo devono corrispondere una a
+    # una (in entrambe le direzioni) e il vuoto di raccolta ha una frase fissa che deve
+    # comparire **se e solo se** il conteggio è zero.
+    n_clima = 0
+    if not nd19.empty and not fx19.empty and "title" in nd19.columns:
+        from fda.sources.news import (
+            TOPIC_LABELS,
+            TOPIC_WEIGHTS,
+            classify_news,
+            club_nel_titolo,
+            fatto_grave,
+            is_italian_news,
+            is_low_reputation,
+            soggetto_tokens,
+        )
+        _temi49 = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
+        _press49 = ("allenatore", "spogliatoio", "societa", "tifo")
+        _ord49 = {k: i for i, k in enumerate(_temi49)}
+        _max49 = 24              # CLIMA_VOCI_MAX dichiarato nella nota del codice
+        _nd49 = nd19.assign(_pa=pd.to_datetime(nd19.published_at, utc=True, errors="coerce"))
+        _mi49 = mi19.copy()
+        for _c49 in ("home_starters_value_eur", "away_starters_value_eur"):
+            if _c49 in _mi49.columns:
+                _mi49[_c49] = pd.to_numeric(_mi49[_c49], errors="coerce")
+        _vuoto49 = "Nessuna voce di clima raccolta dalla stampa italiana"
+        _tl49 = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+
+        def _attesi49(tid: int, tname: str, ko: Any, pubblicate: set[str],
+                      ) -> tuple[list[tuple[str, str]], int, list[dict], dict | None]:
+            """Righe attese (testo, tono), voci contate e gruppi elencati, dai Parquet grezzi."""
+            att: list[tuple[str, str]] = []
+            ko = pd.Timestamp(ko)
+            _sogg49 = soggetto_tokens(tname)
+            sub = _nd49[(_nd49.team_id == tid) & (_nd49._pa >= ko - pd.Timedelta(days=7))
+                        & (_nd49._pa <= ko)].dropna(subset=["_pa"])
+            voci_righe: list[dict] = []
+            viste: set[str] = set()
+            for r in sub.sort_values("_pa", ascending=False, kind="stable").itertuples(index=False):
+                titolo = str(getattr(r, "title", "") or "").strip()
+                if not titolo:
+                    continue
+                desc = getattr(r, "description", None)
+                desc = "" if desc is None or pd.isna(desc) else str(desc)
+                if not is_italian_news(titolo, desc):
+                    continue
+                if is_low_reputation(getattr(r, "source", None)):
+                    continue
+                chiave, _prova = classify_news(titolo, "", getattr(r, "source", None))
+                if chiave not in _temi49:
+                    continue
+                # gate di soggetto: il club deve essere **nel titolo** (anche col nome
+                # d'edicola: «Juve», «Colonia»); con l'insieme vuoto il gate non giudica
+                if not club_nel_titolo(titolo, _sogg49):
+                    continue
+                tk = _tl49(titolo)
+                if not tk or tk in viste:
+                    continue
+                viste.add(tk)
+                voci_righe.append({"key": chiave, "title": titolo,
+                                   "url": str(getattr(r, "url", "") or ""),
+                                   "in_vita": tk in pubblicate})
+            conta: Counter[str] = Counter(v["key"] for v in voci_righe)
+            voci = len(voci_righe)
+            pressione = sum(conta[k] for k in _press49)
+            temi = sorted(conta, key=lambda k: (-conta[k], _ord49[k]))
+
+            def det(chiavi: list[str]) -> str:
+                return " · ".join(f"{TOPIC_LABELS.get(k, k).lower()} {conta[k]}" for k in chiavi)
+
+            det_press = det([k for k in temi if k in _press49])
+            if pressione >= 3:
+                _t49 = (f"settimana calda: {pressione} voci di pressione in 7 giorni "
+                        f"({det_press})")
+                att.append((_t49, "bad"))
+            elif pressione:
+                _t49 = (f"pressione in settimana: {pressione} "
+                        f"{'voce' if pressione == 1 else 'voci'} ({det_press})")
+                att.append((_t49, "warn"))
+            elif voci:
+                _t49 = (f"settimana tranquilla: {voci} "
+                        f"{'voce' if voci == 1 else 'voci'}, nessuna di pressione ({det(temi)})")
+                att.append((_t49, "good"))
+            # pressione da aspettative: rango per valore dei titolari (mediana, minimo 3 gare)
+            # contro la posizione in classifica dello snapshot raccolto
+            st49 = None
+            if not fm19.empty and "team_name" in fm19.columns:
+                righe_st = fm19[fm19.team_name.map(_canon) == _canon(tname)]
+                st49 = righe_st.iloc[0] if not righe_st.empty else None
+            if st49 is not None and not _mi49.empty and pd.notna(st49.get("rank")):
+                fin49 = fx19[(fx19.status == "finished") & (fx19.utc_kickoff < ko)]
+                info49 = _mi49[_mi49.match_id.isin({int(x) for x in fin49.match_id})]
+                valori: dict[int, list[float]] = {}
+                for r in info49.itertuples(index=False):
+                    for _tid, _col in ((int(r.home_id), "home_starters_value_eur"),
+                                       (int(r.away_id), "away_starters_value_eur")):
+                        v = getattr(r, _col, None)
+                        if v is None or pd.isna(v) or float(v) <= 0:
+                            continue
+                        valori.setdefault(_tid, []).append(float(v))
+                medie = {t: float(pd.Series(v).median()) for t, v in valori.items() if len(v) >= 3}
+                lega = fm19[fm19.league_code == st49["league_code"]].drop_duplicates("team_id")
+                in_lega = sorted({int(t) for t in lega.team_id} & set(medie))
+                if tid in medie and len(in_lega) >= 8:
+                    rango = sorted(in_lega, key=lambda t: (-medie[t], t)).index(tid) + 1
+                    pos = int(st49["rank"])
+                    if pos - rango >= 5:
+                        _t49 = (f"pressione da aspettative: rosa da {rango}ª per valore "
+                                f"dei titolari, in classifica {pos}ª")
+                        att.append((_t49, "warn"))
+                    elif rango - pos >= 5:
+                        _t49 = (f"sopra le attese: in classifica {pos}ª con una rosa da "
+                                f"{rango}ª per valore dei titolari")
+                        att.append((_t49, "good"))
+            elencate49 = voci_righe[:_max49]
+            per_tema49: dict[str, list[dict]] = {}
+            for v in elencate49:
+                per_tema49.setdefault(v["key"], []).append(v)
+            gruppi = [{"key": k, "label": TOPIC_LABELS.get(k, k), "n": int(conta[k]),
+                       "voci": per_tema49.get(k, [])} for k in temi]
+            fatto49 = None
+            if voci_righe:
+                def _peso49(v: dict) -> int:
+                    return (TOPIC_WEIGHTS.get(v["key"], 1)
+                            + (3 if fatto_grave(v["title"]) else 0))
+                # solo se pesa almeno 4 (CLIMA_FATTO_MIN): tifoseria o stadio da soli no
+                pesanti49 = [v for v in voci_righe if _peso49(v) >= 4]
+                fatto49 = max(pesanti49, key=_peso49) if pesanti49 else None
+            return att, voci, gruppi, fatto49
+
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Analisi pre-partita" not in html or int(pg.stem) not in ko19.index:
+                continue
+            if 'id="clima"' not in html:
+                fails.append(f"{pg.name}: card «Clima del club» assente "
+                             f"(deve esserci su ogni scheda pre-partita)")
+                continue
+            n_clima += 1
+            blocco49 = re.search(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)',
+                                 html, re.DOTALL)
+            parti49 = (re.split(r'<p style="margin:0 0 6px"><b>', blocco49.group(1))
+                       if blocco49 else [])
+            checks += 1
+            if len(parti49) != 3:
+                fails.append(f"{pg.name}: struttura della card «Clima del club» inattesa "
+                             f"({len(parti49)} blocchi)")
+                continue
+            nota49 = html_unescape(blocco49.group(1))
+            for frammento in ("7 giorni", "5 posizioni", "valore dei titolari", "stampa",
+                              "l'elenco delle voci contate", "24 voci elencate",
+                              "il tema si vede nel titolo", "il club si vede nel titolo",
+                              "avversario di passaggio", "bassa reputazione",
+                              "fatto della settimana", "esce solo se il tema pesa",
+                              "fra virgolette è la frase di qualcun altro"):
+                checks += 1
+                if frammento not in nota49:
+                    fails.append(f"{pg.name}: la nota del clima non dichiara «{frammento}»")
+            # i titoli pubblicati in «Vita del club» sulla stessa pagina (per i marcatori)
+            _in49 = html.find('id="notizie"')
+            _fine49 = html.find('<div class="card"', _in49 + 10) if _in49 != -1 else -1
+            blocco_not49 = html[_in49:_fine49 if _fine49 != -1 else len(html)]
+            pubblicate49 = {html_unescape(x) for x in re.findall(
+                r'<li><span class="topic">.*?<br><a href="[^"]*"[^>]*>(.*?)</a>',
+                blocco_not49, re.DOTALL)}
+            pubblicate49 = {_tl49(x) for x in pubblicate49 if x}
+            fr49 = fx19[fx19.match_id == int(pg.stem)].iloc[0]
+            ko49 = pd.Timestamp(fr49.utc_kickoff)
+            for parte in parti49[1:]:
+                tname49 = html_unescape(parte.split("</b>", 1)[0]).strip()
+                tid49 = int(fr49.home_id) if tname49 == str(fr49.home_name) else int(fr49.away_id)
+                attesi49, voci49, gruppi, fatto49 = _attesi49(tid49, tname49, ko49,
+                                                              pubblicate49)
+                # righe pubblicate: devono corrispondere una a una ai segnali attesi
+                righe49 = [(html_unescape(t), tone) for tone, t in
+                           re.findall(r'<li class="mood-(bad|warn|good)"><span class="small">'
+                                      r'(.*?)</span></li>', parte, re.DOTALL)]
+                for testo49, tone49 in attesi49:
+                    checks += 1
+                    if (testo49, tone49) not in righe49:
+                        fails.append(f"{pg.name}: {tname49} riga clima attesa assente "
+                                     f"«{testo49[:60]}»")
+                for testo49, tone49 in righe49:
+                    checks += 1
+                    if (testo49, tone49) not in attesi49:
+                        fails.append(f"{pg.name}: {tname49} riga clima non giustificata "
+                                     f"«{testo49[:60]}»")
+                checks += 1
+                if (voci49 == 0) != (_vuoto49 in parte):
+                    fails.append(f"{pg.name}: {tname49} vuoto dichiarato della stampa "
+                                 f"{'assente' if voci49 == 0 else 'presente'} con {voci49} voci")
+                # l'elenco delle voci contate: numeri del sommario, gruppi, item, marcatori
+                elencate49 = sum(len(g["voci"]) for g in gruppi)
+                in_vita49 = sum(1 for g in gruppi for v in g["voci"] if v["in_vita"])
+                somm49 = re.search(r'<summary>(.*?)</summary>', parte, re.DOTALL)
+                testo_somm49 = html_unescape(somm49.group(1)) if somm49 else ""
+                checks += 1
+                if (elencate49 > 0) != bool(somm49):
+                    fails.append(f"{pg.name}: {tname49} tendina delle voci "
+                                 f"{'assente' if elencate49 > 0 else 'presente'} con "
+                                 f"{elencate49} voci elencate")
+                if somm49:
+                    checks += 1
+                    atteso_somm49 = (
+                        f"Le {elencate49} voci più recenti di {voci49} contate"
+                        if voci49 > elencate49
+                        else "Una voce contata" if voci49 == 1
+                        else f"Le {voci49} voci contate")
+                    if atteso_somm49 not in testo_somm49:
+                        fails.append(f"{pg.name}: {tname49} sommario delle voci «"
+                                     f"{testo_somm49[:60]}» invece di «{atteso_somm49}»")
+                    checks += 1
+                    if in_vita49:
+                        atteso_marc49 = ("già raccontata in «Vita del club»" if voci49 == 1
+                                         else "una già raccontata in «Vita del club»"
+                                         if in_vita49 == 1
+                                         else f"{in_vita49} già raccontate in «Vita del club»")
+                        if atteso_marc49 not in testo_somm49:
+                            fails.append(f"{pg.name}: {tname49} sommario senza il conteggio dei "
+                                         f"marcatori ({in_vita49})")
+                gruppi_pagina49 = re.findall(
+                    r'<p class="small" style="margin:8px 0 4px"><b>(.*?) \((\d+)\)</b></p>\s*'
+                    r'<ul class="news-list">(.*?)</ul>', parte, re.DOTALL)
+                checks += 1
+                if len(gruppi_pagina49) != len(gruppi):
+                    fails.append(f"{pg.name}: {tname49} gruppi di voci {len(gruppi_pagina49)} "
+                                 f"in pagina contro {len(gruppi)} attesi")
+                else:
+                    for (lab49, n49, ul49), att_g49 in zip(gruppi_pagina49, gruppi):
+                        checks += 1
+                        if html_unescape(lab49) != att_g49["label"] or int(n49) != att_g49["n"]:
+                            fails.append(f"{pg.name}: {tname49} gruppo «{lab49} ({n49})» "
+                                         f"invece di «{att_g49['label']} ({att_g49['n']})»")
+                        items49 = re.findall(
+                            r'<li><span class="small"><a href="([^"]+)"[^>]*>(.*?)</a> '
+                            r'<span class="mut">(.*?)</span></span></li>', ul49, re.DOTALL)
+                        checks += 1
+                        if [html_unescape(t) for _u, t, _r in items49] \
+                                != [v["title"] for v in att_g49["voci"]]:
+                            fails.append(f"{pg.name}: {tname49} voci elencate di "
+                                         f"«{att_g49['label']}» non corrispondenti "
+                                         f"({len(items49)} in pagina)")
+                        for (url49, _t49, meta49), v49 in zip(items49, att_g49["voci"]):
+                            checks += 1
+                            if url49 != v49["url"]:
+                                fails.append(f"{pg.name}: {tname49} link della voce "
+                                             f"«{v49['title'][:40]}» diverso")
+                            checks += 1
+                            marcata49 = "anche in «Vita del club»" in html_unescape(meta49)
+                            if marcata49 != v49["in_vita"]:
+                                fails.append(f"{pg.name}: {tname49} voce "
+                                             f"«{v49['title'][:40]}» "
+                                             f"{'marcata' if marcata49 else 'non marcata'} "
+                                             f"contro l'atteso ({v49['in_vita']})")
+                # il fatto della settimana: titolo e link devono essere quelli della voce
+                # più pesante (tema + fatto grave), o assente se non c'è nessuna voce
+                fatto_pag = re.search(
+                    r'<p class="small" style="margin:6px 0 0"><b>Il fatto della settimana:</b>\s*'
+                    r'<a href="([^"]+)"[^>]*>(.*?)</a>', parte, re.DOTALL)
+                checks += 1
+                if (fatto49 is None) != (fatto_pag is None):
+                    atteso49 = "c'è" if fatto49 else "non c'è"
+                    fails.append(f"{pg.name}: {tname49} fatto della settimana "
+                                 f"{'assente' if fatto49 else 'presente'} contro "
+                                 f"l'atteso ({atteso49})")
+                elif fatto_pag is not None:
+                    checks += 1
+                    if (fatto_pag.group(1) != fatto49["url"]
+                            or html_unescape(fatto_pag.group(2)) != fatto49["title"]):
+                        fails.append(f"{pg.name}: {tname49} fatto della settimana "
+                                     f"«{html_unescape(fatto_pag.group(2))[:50]}» "
+                                     f"invece di «{fatto49['title'][:50]}»")
+                if voci49 > elencate49:
+                    checks += 1
+                    atteso_coda49 = ("E un'altra voce della settimana, non elencata."
+                                     if voci49 - elencate49 == 1
+                                     else f"E altre {voci49 - elencate49} voci della settimana, "
+                                          f"non elencate.")
+                    if atteso_coda49 not in html_unescape(parte):
+                        fails.append(f"{pg.name}: {tname49} resto non dichiarato "
+                                     f"({voci49 - elencate49} voci oltre il tetto)")
+    print(f"[49] pagine con clima del club riconciliate: {n_clima} (oracolo misto)")
+
+
 
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
     # classifica FotMob (fonte unica) e confrontati col testo stampato.

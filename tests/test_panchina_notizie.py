@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from fda.site.analysis import MatchAnalysis, news_quiet_line, news_subjects
+from fda.site.analysis import MatchAnalysis, news_quiet_line, news_subjects, news_title_key
 from fda.sources.news import classify_news, clean_text, keyword_score, news_value, parse_rss
 from fda.store import Store
 
@@ -199,6 +199,46 @@ def test_classifica_le_notizie_in_lingua_locale():
     assert classify_news("La directiva del Betis rechaza el recurso de los ecologistas")[0] == "societa"
     assert classify_news("Los ultras del Betis preparan una protesta")[0] == "tifo"
     assert classify_news("Getafe, lesión de Femenía: se pierde el partido")[0] == "infortuni"
+
+
+def test_alias_stampa_normalizzati_sui_nomi_veri():
+    """La query italiana si aggancia anche quando il nome FotMob è abbreviato o accentato.
+
+    Misurato l'11/10/2026 (`docs/83` §1): «Köln», «Atlético Madrid» e «Nottm Forest» non
+    incontravano nessuna chiave della mappa e la ricerca partiva col nome secco — le due
+    squadre peggio coperte della stagione (2 notizie in 14 giorni) erano proprio due nomi
+    abbreviati nei dati, «Nottm Forest» e «M'gladbach».
+    """
+    from fda.sources.news import google_news_params, italian_search_name
+    assert "Colonia" in google_news_params("Köln")["q"]
+    assert "Atletico Madrid" in google_news_params("Atlético Madrid")["q"]
+    assert "Nottingham Forest" in google_news_params("Nottm Forest")["q"]
+    assert "Gladbach" in google_news_params("M'gladbach")["q"]
+    assert italian_search_name("Nacional") == '"Nacional Madeira"'
+    assert italian_search_name("Squadra Sconosciuta") is None
+
+
+def test_classifica_niente_collisioni_di_sottostringa():
+    """Le parole chiave non pescano dentro altre parole (misura dell'11/10/2026, docs/83 §2).
+
+    Sono i quattro casi trovati contando le voci di «Clima del club»: «Élite» dentro
+    spogliatoio (calcio a 5), «fischierà» dentro tifoseria (designazione arbitrale), «Futuro
+    del…» dentro la regola spagnola «futuro de», «rifatto» dentro «rifa», e il nome proprio
+    «Berlusconi» che da solo faceva categoria su un titolo di opinione.
+    """
+    assert classify_news("Calcio a 5 Serie A2 Élite. Lazio, avvio positivo")[0] != "spogliatoio"
+    assert classify_news("Perugia-Vado, fischierà Vincenzi di Bologna")[0] != "tifo"
+    assert classify_news("Futuro del Dall'Ara, il sindaco Lepore dà il via al confronto")[0] \
+        != "allenatore"
+    assert classify_news("Il murale di Franco Baresi vandalizzato a Casa Milan sarà rifatto"
+                         )[0] != "spogliatoio"
+    assert classify_news('Brocchi: "Non è più il Milan di Berlusconi e Galliani"'
+                         )[0] != "spogliatoio"
+    # i casi veri restano: i fischi della tifoseria sono tifoseria, il futuro del tecnico è
+    # panchina, la protesta nei confronti della società resta un fatto di società
+    assert classify_news("Fischi e striscioni dei tifosi: protesta allo stadio")[0] == "tifo"
+    assert classify_news("Il futuro del tecnico è in bilico: contatto con un nuovo allenatore"
+                         )[0] == "allenatore"
 
 
 def test_bollettino_limite_per_categoria(tmp_path):
@@ -709,10 +749,16 @@ def mood_analysis(tmp_path):
 
 
 def test_clima_crisi_infermeria_congestione(mood_analysis):
+    """Con una squalifica fra gli assenti la riga dice «assenze pesanti» (docs/81 §10).
+
+    Nel fixture ci sono 3 infortuni e 1 squalifica: «infermeria» sarebbe la parola
+    sbagliata, perché vale solo quando fra gli indisponibili non c'è nessuno squalificato.
+    """
     rows = mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))
     texts = [r["text"] for r in rows]
     assert any(t.startswith("crisi di risultati: 3 sconfitte consecutive") for t in texts)
-    assert any(t.startswith("infermeria pesante: 4 assenti") for t in texts)
+    assert any(t.startswith("assenze pesanti: 4 assenti") for t in texts)
+    assert not any(t.startswith("infermeria pesante") for t in texts)
     assert any("35 M€ di mercato ai box" in t for t in texts)   # 12+9+8+6 = 35
     assert any(t.startswith("riposo corto: 2 giorni") for t in texts)
     assert any(t.startswith("congestione: 5 gare giocate negli ultimi 10 giorni") for t in texts)
@@ -727,6 +773,104 @@ def test_clima_squadra_serenissima_senza_segnali(mood_analysis):
     # Roma invece ha giocato il 13/09: il riposo corto È un segnale, e va pubblicato
     roma = mood_analysis.club_mood(8, 1, "Roma", KO("2026-09-16 18:00"))
     assert [r["text"] for r in roma] == ["riposo corto: 3 giorni"]
+
+
+def test_clima_striscia_intera_non_finestra_di_cinque(tmp_path):
+    """`docs/81` §1: «imbattuta da N» conta la striscia intera, non le ultime cinque gare.
+
+    Con la finestra di ``form()`` (5 gare) una squadra imbattuta da sette pubblicava «da 5»:
+    un pavimento travestito da numero, misurato il 2026-10-11 su 14 celle su 154 (Inter 5
+    contro 6, Barcelona 5 contro 8). Qui la striscia è di 7 gare e la finestra ne conterebbe 5.
+    """
+    st = Store(tmp_path / "striscia")
+    st.write("fixtures", _fixtures([
+        (200 + i, 55, "2026", str(i), KO(f"2026-08-{10 + i:02d} 18:00"), 4, "Lazio", 9, "Ospiti",
+         2, 0, "finished", "fotmob")
+        for i in range(7)          # sette vittorie consecutive, dal 10 al 16 agosto
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 200, "team_id": 4, "player_id": 1, "player_name": "Coach",
+         "role": "coach", "market_value_eur": None, "unavailability_type": None,
+         "expected_return": None},
+    ]))
+    testi = [r["text"] for r in MatchAnalysis(st).club_mood(207, 4, "Lazio", KO("2026-09-20 18:00"))]
+    # il perimetro è dichiarato nella riga (docs/81 §2): le strisce sono di campionato
+    assert any(t == "imbattuta da 7 gare in campionato: clima di fiducia" for t in testi), testi
+    assert not any("imbattuta da 5" in t for t in testi), testi
+
+
+def test_clima_ultima_gara_sconfitta_pesante_ed_espulsione(tmp_path):
+    """`docs/81` §9: dall'ultima gara di campionato escono la sconfitta pesante e il rosso.
+
+    Misurato il 2026-10-11 su 154 celle: 13 con una sconfitta per 3+ gol (12 non già in
+    crisi), 11 con un'espulsione nell'ultima gara. La soglia della sconfitta è 3 gol di
+    scarto; il minuto dell'espulsione esce solo se la fonte lo pubblica.
+    """
+    st = Store(tmp_path / "ultimagara")
+    st.write("fixtures", _fixtures([
+        # Prova: ultima gara persa 0-3 (pesante) con un'espulsione al 53'
+        (400, 55, "2026", "1", KO("2026-09-01 18:00"), 7, "Prova", 9, "Ospiti", 2, 0, "finished", "fotmob"),
+        (401, 55, "2026", "2", KO("2026-09-08 18:00"), 7, "Prova", 9, "Ospiti", 0, 3, "finished", "fotmob"),
+        (402, 55, "2026", "3", KO("2026-09-20 18:00"), 7, "Prova", 9, "Ospiti", None, None, "scheduled", "fotmob"),
+        # Sereni: ultima gara persa 1-2 (non pesante), nessun rosso
+        (500, 55, "2026", "1", KO("2026-09-01 18:00"), 8, "Sereni", 9, "Ospiti", 2, 0, "finished", "fotmob"),
+        (501, 55, "2026", "2", KO("2026-09-08 18:00"), 8, "Sereni", 9, "Ospiti", 1, 2, "finished", "fotmob"),
+        (502, 55, "2026", "3", KO("2026-09-20 18:00"), 8, "Sereni", 9, "Ospiti", None, None, "scheduled", "fotmob"),
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 400, "team_id": 7, "player_id": 1, "player_name": "Coach", "role": "coach",
+         "market_value_eur": None, "unavailability_type": None, "expected_return": None},
+        {"match_id": 500, "team_id": 8, "player_id": 2, "player_name": "Coach", "role": "coach",
+         "market_value_eur": None, "unavailability_type": None, "expected_return": None},
+    ]))
+    st.write("events", pd.DataFrame([
+        # il rosso è della squadra di casa (Prova); is_home distingue le due squadre
+        {"match_id": 401, "type": "Card", "minute": 53, "minute_added": None, "is_home": True,
+         "player_id": 77, "player_name": "Espulso", "card": "Red"},
+        {"match_id": 401, "type": "Card", "minute": 70, "minute_added": None, "is_home": False,
+         "player_id": 78, "player_name": "Avversario", "card": "Yellow"},
+    ]))
+    an = MatchAnalysis(st)
+    prova = [r["text"] for r in an.club_mood(402, 7, "Prova", KO("2026-09-20 18:00"))]
+    assert "sconfitta pesante nell'ultima gara di campionato: 0-3" in prova, prova
+    assert "espulsione nell'ultima gara di campionato al 53'" in prova, prova
+    sereni = [r["text"] for r in an.club_mood(502, 8, "Sereni", KO("2026-09-20 18:00"))]
+    assert not any(t.startswith(("sconfitta pesante", "espulsione")) for t in sereni), sereni
+
+
+def test_clima_panchina_nuova_solo_se_recente(tmp_path):
+    """`docs/81` §3: «panchina nuova» vale solo con l'allenatore in carica da ≤3 gare.
+
+    Senza soglia la riga restava accesa per tutta la stagione (misurato: Estrela da Amadora
+    alla 7ª gara dal subentro dichiarava ancora uno «shock»), mentre la voce «Panchina nuova»
+    di «Da sapere» usa ≤3 (``news_sapere``). La soglia è una sola, condivisa.
+    """
+    def store(cartella, prima_del_nuovo):
+        """Dieci gare vinte (nessuna striscia da segnalare); il nuovo coach entra alla gara
+        ``prima_del_nuovo``, quindi le sue gare in carica prima del 20/09 sono ``10 − i``."""
+        st = Store(cartella)
+        st.write("fixtures", _fixtures([
+            (mid, 55, "2026", str(i), KO(f"2026-08-{10 + i:02d} 18:00"),
+             7, "Prova", 9, "Ospiti", 2, 0, "finished", "fotmob")
+            for i, mid in enumerate(range(300, 310))
+        ]))
+        st.write("lineup", pd.DataFrame([
+            {"match_id": mid, "team_id": 7, "player_id": 1 if i < prima_del_nuovo else 2,
+             "player_name": "Coach Vecchio" if i < prima_del_nuovo else "Coach Nuovo",
+             "role": "coach", "market_value_eur": None, "unavailability_type": None,
+             "expected_return": None}
+            for i, mid in enumerate(range(300, 310))
+        ]))
+        return MatchAnalysis(st)
+
+    # nuovo dalla 7ª gara (indice 6): 4 gare in carica → la riga non si pubblica
+    testi = [r["text"] for r in store(tmp_path / "vecchia", 6)
+             .club_mood(310, 7, "Prova", KO("2026-09-20 18:00"))]
+    assert not any(t.startswith("panchina nuova") for t in testi), testi
+    # nuovo dalla 9ª gara (indice 8): 2 gare in carica → il segnale c'è
+    testi = [r["text"] for r in store(tmp_path / "nuova", 8)
+             .club_mood(310, 7, "Prova", KO("2026-09-20 18:00"))]
+    assert any(t.startswith("panchina nuova: il cambio di allenatore") for t in testi), testi
 
 
 def test_clima_infermeria_concordanza_titolari(mood_analysis, monkeypatch):
@@ -769,8 +913,8 @@ def test_concordanza_uno_assente_giorno_gara(mood_analysis, monkeypatch):
         return _f
 
     testi: list[str] = []
-    for n, titolari, attesa in ((1, 1, "infermeria pesante: 1 assente,"),
-                                (4, 2, "infermeria pesante: 4 assenti,")):
+    for n, titolari, attesa in ((1, 1, "assenze pesanti: 1 assente,"),
+                                (4, 2, "assenze pesanti: 4 assenti,")):
         monkeypatch.setattr(MatchAnalysis, "absences_weight", peso(n, titolari))
         testi = [r["text"] for r in mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))]
         assert any(attesa in t for t in testi), (n, testi)
@@ -925,8 +1069,14 @@ def test_parse_direct_sports_rss():
     assert diag.get("direct_feed_attribuiti") == 3
 
 
-def test_da_sapere_strisce_e_digiuni(tmp_path):
-    """«Da sapere» rileva strisce di imbattibilità, serie di sconfitte e digiuni dai dati."""
+def test_da_sapere_senza_strisce_che_vivono_nel_clima(tmp_path):
+    """`docs/81` §8: le strisce non stanno più in «Da sapere» — vivono solo nel «Clima».
+
+    Erano in due card della stessa pagina su 45 celle su 154, con due soglie diverse
+    («Digiuno di vittorie» da 5 gare contro «non vince da» da 4). Regola `docs/30`: un dato
+    in un posto. Il test fissa la rimozione: le tre voci spariscono, i fatti di rendimento
+    (bilancio in casa/fuori) restano.
+    """
     st = Store(tmp_path / "strisce")
     # Squadra 1 (Roma): 5 vittorie consecutive
     # Squadra 2 (Inter): 3 sconfitte consecutive
@@ -949,8 +1099,13 @@ def test_da_sapere_strisce_e_digiuni(tmp_path):
     an = MatchAnalysis(st)
     sapere = an.news_sapere(9, 1, "Roma", 2, "Inter", KO("2026-09-17 18:00"))
 
-    assert any(s["titolo"] == "Striscia positiva" and "Roma" in s["testo"] and "5 partite consecutive" in s["testo"] for s in sapere)
-    assert any(s["titolo"] == "Momento delicato" and "Inter" in s["testo"] and "3 sconfitte consecutive" in s["testo"] for s in sapere)
+    titoli = {s["titolo"] for s in sapere}
+    assert not {"Striscia positiva", "Momento delicato", "Digiuno di vittorie"} & titoli, titoli
+    # i fatti che restano tengono in piedi la card (misurato: 77 schede su 77 ne hanno almeno uno)
+    assert "Dentro le mura" in titoli or "Lontano da casa" in titoli, titoli
+    # e la stessa striscia è pubblicata dal clima, col tono e col perimetro dichiarato
+    clima = [r["text"] for r in an.club_mood(9, 1, "Roma", KO("2026-09-17 18:00"))]
+    assert any(t == "imbattuta da 5 gare in campionato: clima di fiducia" for t in clima), clima
     st.close()
 
 
@@ -1374,3 +1529,333 @@ def test_incroci_in_panchina_anche_dallo_storico(analysis):
     # assorbe le gare storiche (`docs/80`: lo storico serve **solo** agli incroci)
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
     assert b["coach_vs_opp_line"] == "da allenatore contro Roma: 1 gara nel nostro archivio (1V 0N 0P)"
+
+
+# ---- card «Clima del club» (`docs/82` §5): la settimana della stampa e le aspettative --------
+
+
+def _clima_store(tmp_path, news: pd.DataFrame | None = None):
+    """Store minimo con 8 squadre di lega: 3 gare misurate a testa e la gara della scheda."""
+    st = Store(tmp_path / "clima")
+    valori = {i: (9 - i) * 10 for i in range(1, 9)}          # S1 rosa più costosa, S8 la meno
+    righe_fx, righe_mi, mid = [], [], 300
+    for i in range(1, 9):
+        avversario = i % 8 + 1
+        for k in range(3):                                    # tre gare finite prima del fischio
+            mid += 1
+            righe_fx.append((mid, 55, "2026", str(k), KO(f"2026-08-{10 + k:02d} 18:00"),
+                             i, f"S{i}", avversario, f"S{avversario}", 1, 0, "finished", "fotmob"))
+            righe_mi.append({"match_id": mid, "home_id": i, "away_id": avversario,
+                             "home_starters_value_eur": valori[i] * 1_000_000,
+                             "away_starters_value_eur": valori[avversario] * 1_000_000})
+    righe_fx.append((400, 55, "2026", "9", KO("2026-09-16 18:00"), 2, "S2", 1, "S1",
+                     None, None, "scheduled", "fotmob"))
+    st.write("fixtures", _fixtures(righe_fx))
+    st.write("match_info", pd.DataFrame(righe_mi))
+    st.write("fotmob_standings", pd.DataFrame([
+        {"league_code": "ITA1", "team_id": i, "team_name": f"S{i}",
+         # S2 è ultima in classifica con la seconda rosa più costosa; S8 prima con la più economica
+         "rank": {2: 8, 8: 1}.get(i, i), "played": 3, "wins": 0, "draws": 0, "losses": 3,
+         "goals_for": 0, "goals_against": 3, "goal_diff": -3, "points": 0}
+        for i in range(1, 9)
+    ]))
+    if news is not None:
+        st.write("news", news)
+    return MatchAnalysis(st)
+
+
+def test_clima_settimana_dalla_stampa_contata_per_tema(tmp_path):
+    """La settimana del club è un conteggio per tema, mai un titolo (`docs/82` §5)."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, esonero sempre più vicino per il tecnico", "url": "https://e.it/1",
+         "source": "Gazzetta", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "S1, spogliatoio spaccato dopo il ko", "url": "https://e.it/2",
+         "source": "Corriere", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "S1, gli ultras disertano la trasferta", "url": "https://e.it/3",
+         "source": "ANSA", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"),
+         "title": "S1, indagine della procura sul bilancio", "url": "https://e.it/4",
+         "source": "ANSA", "description": ""},
+        # fuori dai temi di clima: infortuni e mercato hanno le loro card
+        {"team_id": 1, "published_at": KO("2026-09-14 13:00"),
+         "title": "S1, infortunio per il capitano: out un mese", "url": "https://e.it/5",
+         "source": "Gazzetta", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 14:00"),
+         "title": "S1, ufficiale l'arrivo del difensore", "url": "https://e.it/6",
+         "source": "Gazzetta", "description": ""},
+        # fuori finestra: non conta
+        {"team_id": 1, "published_at": KO("2026-08-30 09:00"),
+         "title": "S1, protesta dei tifosi in curva", "url": "https://e.it/7",
+         "source": "ANSA", "description": ""},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    testi = [r["text"] for r in cl["righe"]]
+    assert cl["voci"] == 4 and cl["pressione"] == 4 and cl["vuota"] is False
+    assert ("settimana calda: 4 voci di pressione in 7 giorni (panchina 1 · spogliatoio 1 · "
+            "società 1 · tifoseria 1)") in testi, testi
+    assert cl["righe"][0]["tone"] == "bad"
+    # i temi contati sono quelli di ambiente, col conteggio: nessun titolo di giornale
+    assert [(t["key"], t["n"]) for t in cl["temi"]] == [
+        ("allenatore", 1), ("spogliatoio", 1), ("societa", 1), ("tifo", 1)]
+    assert all("https://" not in r["text"] for r in cl["righe"])
+
+
+def test_clima_settimana_tranquilla_e_vuoto_dichiarato(tmp_path):
+    """Voci senza pressione → «tranquilla»; zero voci → nessuna riga e vuoto dichiarato."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, il nuovo stadio: lavori al via", "url": "https://e.it/1",
+         "source": "ANSA", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-13 09:00"),
+         "title": "S1, il centro sportivo apre le porte ai bambini", "url": "https://e.it/2",
+         "source": "ANSA", "description": ""},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    testi = [r["text"] for r in cl["righe"]]
+    assert any(t.startswith("settimana tranquilla: 2 voci, nessuna di pressione") for t in testi), testi
+    assert all(r["tone"] in ("bad", "warn", "good") for r in cl["righe"])
+    # la squadra senza notizie: vuota, e la card lo può dichiarare
+    vuoto = a.club_climate(3, "S3", KO("2026-09-16 18:00"))
+    assert vuoto["vuota"] is True and vuoto["voci"] == 0
+    assert [r["text"] for r in vuoto["righe"]] == [] or all(
+        "settimana" not in r["text"] for r in vuoto["righe"])
+
+
+def test_clima_aspettative_sotto_sopra_e_soglia(tmp_path):
+    """Pressione da aspettative: rosa costosa ultima in classifica, e viceversa (`docs/82` §5)."""
+    a = _clima_store(tmp_path)
+    ko = KO("2026-09-16 18:00")
+    sotto = a.expectation_gap(2, "S2", ko)
+    assert sotto is not None and (sotto["rango"], sotto["posizione"], sotto["delta"]) == (2, 8, 6)
+    sopra = a.expectation_gap(8, "S8", ko)
+    assert sopra is not None and (sopra["rango"], sopra["posizione"], sopra["delta"]) == (8, 1, -7)
+    # in linea con le attese (S4: rango 4, classifica 4ª) → nessuna riga
+    assert a.expectation_gap(4, "S4", ko) is None
+    # con meno di 3 gare misurate il rango è un caso: nessuna riga
+    assert a.expectation_gap(3, "S3", KO("2026-08-11 18:00")) is None
+    cl = a.club_climate(2, "S2", ko)
+    testi = [r["text"] for r in cl["righe"]]
+    assert ("pressione da aspettative: rosa da 2ª per valore dei titolari, in classifica 8ª"
+            in testi), testi
+    assert [r["tone"] for r in cl["righe"] if r["text"].startswith("pressione da")] == ["warn"]
+    cl8 = a.club_climate(8, "S8", ko)
+    testi8 = [r["text"] for r in cl8["righe"]]
+    assert ("sopra le attese: in classifica 1ª con una rosa da 8ª per valore dei titolari"
+            in testi8), testi8
+
+def test_clima_elenco_una_voce_per_titolo_con_testata_data_e_link(tmp_path):
+    """L'elenco è la prova dei conteggi (`docs/82` §9): una voce per titolo, con link e marcature.
+
+    Lo stesso titolo ripreso da due testate è **una** voce (la più recente), e le voci che
+    «Vita del club» racconta sulla stessa pagina escono marcate (`visti`), non tolte.
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, esonero sempre più vicino per il tecnico", "url": "https://e.it/1",
+         "source": "Gazzetta", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"),
+         "title": "S1, esonero sempre più vicino per il tecnico", "url": "https://e.it/dup",
+         "source": "Corriere", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "S1, gli ultras disertano la trasferta", "url": "https://e.it/3",
+         "source": "ANSA", "description": ""},
+    ])
+    a = _clima_store(tmp_path, news)
+    visti = {news_title_key("S1, gli ultras disertano la trasferta")}
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"), visti=visti)
+    assert cl["voci"] == 2 and cl["pressione"] == 2 and cl["vuota"] is False
+    assert cl["elencate"] == 2 and cl["oltre"] == 0 and cl["in_vita"] == 1
+    voci = [v for t in cl["temi"] for v in t["voci"]]
+    assert [v["title"] for v in voci] == [
+        "S1, esonero sempre più vicino per il tecnico", "S1, gli ultras disertano la trasferta"]
+    # del titolo ripetuto resta la pubblicazione più recente (Corriere, 12:00)
+    assert voci[0]["url"] == "https://e.it/dup" and voci[0]["source"] == "Corriere"
+    assert voci[0]["published_at"] == KO("2026-09-14 12:00")
+    assert voci[0]["in_vita"] is False and voci[1]["in_vita"] is True
+
+
+def test_clima_elenco_tetto_dichiarato_oltre_il_limite(tmp_path):
+    """Oltre il tetto di 24 voci elencate il resto è dichiarato col numero, mai tagliato in silenzio."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00") + pd.Timedelta(minutes=k),
+         "title": f"S1, gli ultras preparano lo striscione numero {k}", "url": f"https://e.it/{k}",
+         "source": "ANSA", "description": ""}
+        for k in range(1, 27)
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    assert cl["voci"] == 26 and cl["elencate"] == 24 and cl["oltre"] == 2
+    voci = [v for t in cl["temi"] for v in t["voci"]]
+    assert len(voci) == 24
+    # le più recenti restano in elenco (26ª → 3ª); le due più vecchie sono dichiarate col numero
+    assert voci[0]["title"].endswith("numero 26") and voci[-1]["title"].endswith("numero 3")
+    assert cl["temi"][0]["n"] == 26                          # il conteggio resta quello completo
+
+def test_clima_voci_pertinenti_e_fatto_della_settimana(tmp_path):
+    """I gate di pertinenza del clima e la voce in evidenza (richiesta dell'11/10/2026).
+
+    Le stesse regole di «Vita del club» applicate al conteggio del clima (`docs/83` §2-§3):
+    fuori le fonti a bassa reputazione e i temi che non si vedono nel titolo pubblicato;
+    fra le voci rimaste, «il fatto della settimana» è quella che pesa di più.
+    """
+    news = pd.DataFrame([
+        # fonte a bassa reputazione: esclusa dal conteggio (9 voci «Toro News» misurate)
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, l'allenatore a rischio esonero", "url": "https://e.it/1",
+         "source": "Toro News",
+         "description": "Il futuro del tecnico è sempre più incerto dopo l'ultima sconfitta."},
+        # tema nel brano ma non nel titolo: una citazione non fa clima
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "Calcio: Pisacane, la nostra fame per vincere", "url": "https://e.it/2",
+         "source": "ANSA", "description": "Il tecnico ha parlato dell'esonero vicino del collega."},
+        # voci vere: il tema si vede nel titolo
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "S1, gli ultras disertano la trasferta", "url": "https://e.it/3",
+         "source": "ANSA",
+         "description": "La curva ha annunciato che non sarà presente allo stadio."},
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"),
+         "title": "S1, il nuovo stadio: lavori al via", "url": "https://e.it/4",
+         "source": "ANSA",
+         "description": "Il cantiere apre la prossima settimana, pronti i primi interventi."},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    assert cl["voci"] == 2 and cl["fuori_fonte"] == 1 and cl["fuori_titolo"] == 1
+    assert cl["fatto"] is not None and cl["fatto"]["url"] == "https://e.it/3"
+    # tifoseria 3 + 3 (fatto grave: la trasferta disertata) batte stadio 3
+    assert cl["fatto"]["title"] == "S1, gli ultras disertano la trasferta"
+
+
+def test_clima_fatto_grave_batte_il_tema_piu_pesante(tmp_path):
+    """Un fatto grave nel titolo (sciopero, scontri) batte anche il tema più pesante:
+    società vale 5, tifoseria 3, ma lo sciopero porta la tifoseria a 6 (`docs/83` §3)."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, il direttore sportivo lascia il club", "url": "https://e.it/1",
+         "source": "ANSA",
+         "description": "La decisione è arrivata questa mattina, il club cerca un sostituto."},
+        {"team_id": 1, "published_at": KO("2026-09-14 08:00"),
+         "title": "S1, la curva annuncia lo sciopero del tifo", "url": "https://e.it/2",
+         "source": "ANSA",
+         "description": "Gli ultras non entreranno allo stadio per la prossima partita."},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    assert cl["fatto"]["url"] == "https://e.it/2", cl["fatto"]
+
+def test_clima_il_club_deve_essere_nel_titolo(tmp_path):
+    """Gate di soggetto (`docs/83` §3): il club si vede nel titolo, non solo nel brano.
+
+    Il test riproduce il caso misurato l'11/10/2026: due titoli sul **Latina** contavano
+    come settimana della **Lazio** perché il brano citava la Lazio e il tema c'era.
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "Lazio, spogliatoio spaccato dopo il ko", "url": "https://e.it/1",
+         "source": "Gazzetta",
+         "description": "Il confronto è avvenuto a Formello dopo la partita."},
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "Latina, Pino D'Apuzzo diventa il nuovo presidente", "url": "https://e.it/2",
+         "source": "Gazzetta",
+         "description": "Il club pontino ha annunciato il cambio al vertice societario."},
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "Toro, contestazione dei tifosi dopo il ko", "url": "https://e.it/3",
+         "source": "ANSA",
+         "description": "Gli ultras hanno esposto uno striscione fuori dallo stadio."},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "Lazio", KO("2026-09-16 18:00"))
+    assert cl["voci"] == 1 and cl["fuori_soggetto"] == 2, cl
+    assert [v["title"] for t in cl["temi"] for v in t["voci"]] == [
+        "Lazio, spogliatoio spaccato dopo il ko"]
+    # e il titolo resta **fuori** dall'elenco, non solo dai conteggi
+    assert all("Latina" not in v["title"] for t in cl["temi"] for v in t["voci"])
+
+
+def test_clima_i_nomi_d_edicola_valgono_come_il_club(tmp_path):
+    """«Juve» è la Juventus e «Colonia» è il Köln: il gate usa i nomi della stampa (`docs/83` §3).
+
+    Senza, due voci vere della settimana (lo sciopero della Curva Sud, il bilancio del club
+    tedesco) sparivano perché il titolo non scriveva il nome dei dati.
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "Juve-Lazio senza Curva Sud: gli ultras disertano lo Stadium",
+         "url": "https://e.it/1", "source": "Gazzetta",
+         "description": "La protesta dei tifosi organizzati è stata annunciata ieri sera."},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"),
+         "title": "Colonia, il bilancio chiude in perdita: i tifosi protestano",
+         "url": "https://e.it/2", "source": "Gazzetta",
+         "description": "Il club tedesco ha presentato i conti della scorsa stagione."},
+    ])
+    a = _clima_store(tmp_path, news)
+    juve = a.club_climate(1, "Juventus", KO("2026-09-16 18:00"))
+    assert juve["voci"] == 1 and juve["fuori_soggetto"] == 0, juve
+    assert juve["fatto"] is not None and juve["fatto"]["url"] == "https://e.it/1"
+    colonia = a.club_climate(2, "Köln", KO("2026-09-16 18:00"))
+    assert colonia["voci"] == 1 and colonia["fuori_soggetto"] == 0, colonia
+
+
+def test_clima_fatto_solo_se_il_tema_pesa(tmp_path):
+    """Il fatto della settimana esce solo se pesa: tifoseria o stadio da soli non bastano.
+
+    Misurato l'11/10/2026 sugli 8 lati che pubblicavano un fatto di peso 3: erano una
+    petizione per una maglia, un elenco di vittorie, «polemiche sui social» (`docs/83` §4).
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "Lazio, la Curva prepara la coreografia per la prima in casa",
+         "url": "https://e.it/1", "source": "Gazzetta",
+         "description": "Il gruppo organizzato ha annunciato la scenografia per domenica."},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"),
+         "title": "Juventus, sciopero della Curva Sud: gli ultras disertano lo Stadium",
+         "url": "https://e.it/2", "source": "Gazzetta",
+         "description": "La protesta è stata decisa dopo i provvedimenti della questura."},
+        {"team_id": 3, "published_at": KO("2026-09-14 09:00"),
+         "title": "Lazio, spogliatoio spaccato dopo il ko", "url": "https://e.it/3",
+         "source": "Gazzetta",
+         "description": "Il confronto è avvenuto a Formello dopo la partita."},
+    ])
+    a = _clima_store(tmp_path, news)
+    ko = KO("2026-09-16 18:00")
+    solo_tifo = a.club_climate(1, "Lazio", ko)
+    assert solo_tifo["voci"] == 1 and solo_tifo["fatto"] is None, solo_tifo
+    grave = a.club_climate(2, "Juventus", ko)          # tifoseria 3 + 3 (sciopero) = 6
+    assert grave["fatto"] is not None and grave["fatto"]["url"] == "https://e.it/2"
+    peso5 = a.club_climate(3, "Lazio", ko)             # spogliatoio 5, nessun fatto grave
+    assert peso5["fatto"] is not None and peso5["fatto"]["url"] == "https://e.it/3"
+
+
+def test_soggetto_edicola_e_fatto_grave_in_proprio():
+    """Le due regole di pertinenza in una riga di codice, senza dati (`docs/83` §3-§4).
+
+    `soggetto_tokens` riconosce i nomi d'edicola e le sigle societarie non identificano
+    nessuno; `club_nel_titolo` pretende il club come soggetto, non come oggetto; `fatto_grave`
+    non conta le citazioni e non conta le plusvalenze delle colonne di fantacalcio.
+    """
+    from fda.sources.news import club_nel_titolo, fatto_grave, soggetto_tokens
+
+    assert soggetto_tokens("Juventus") == {"juve", "juventus"}
+    assert soggetto_tokens("Köln") == {"colonia", "koln"}
+    assert soggetto_tokens("M'gladbach") == {"borussia", "gladbach", "monchengladbach"}
+    assert soggetto_tokens("Man City") == {"city", "man", "manchester"}
+    assert soggetto_tokens("Barcelona") == {"barca", "barcellona", "barcelona"}
+    assert soggetto_tokens("S1") == set()          # nome finto: il gate non giudica
+
+    roma = soggetto_tokens("Roma")
+    assert club_nel_titolo("Roma, l'analisi dei conti del club", roma) is True
+    assert club_nel_titolo("Scontri prima del derby Roma-Lazio", roma) is True
+    assert club_nel_titolo("Real Madrid, alta tensione a pochi giorni dalla Roma", roma) is False
+    assert club_nel_titolo("Protesta dei tifosi contro la Roma", roma) is False
+    assert club_nel_titolo("Romanzo di una stagione", roma) is False   # parole intere
+    assert club_nel_titolo("qualsiasi titolo", set()) is True         # niente da giudicare
+
+    assert fatto_grave("Scontri durante Torino-Juventus: emessi 22 Daspo") is True
+    assert fatto_grave('Gasperini: "Esonero Inter? Ho vacillato"') is False
+    assert fatto_grave("Statistiche Fantacampionato: le tre plusvalenze maggiori") is False
+    assert fatto_grave("Lazio, l'analisi dei conti del club: debiti record") is True
