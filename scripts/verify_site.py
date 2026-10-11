@@ -117,6 +117,17 @@ def somma_stampata_indip(a: float, b: float, nd: int = 2) -> float:
     """La somma come la fa il lettore: prima arrotonda le due cifre, poi le addiziona."""
     return round(round(float(a), nd) + round(float(b), nd), nd)
 
+
+def pct_dichiarata(x: float) -> int:
+    """Percentuale intera come la dichiara il sito: **mezzo in su** (docs/78 §15).
+
+    Non è `round()`: ``round(0.625 * 100)`` fa 62, cioè il pari più vicino, e la cifra
+    pubblicata non deve dipendere dalla parità dell'intero. Il verifier ricalcola con
+    questa regola scritta qui a mano: se il generatore tornasse al banker's, i mezzi
+    esatti — l'unico punto in cui le due convenzioni divergono — lo farebbero vedere.
+    """
+    return math.floor(float(x) * 100.0 + 0.5)
+
 # Card «Panchina e posta in gioco»: l'oracolo di [19] legge le celle della tabella (non chiama
 # ``bench_deep``, altrimenti verificherebbe il generatore con se stesso — docs/78 §1).
 PANCHINA_CARD = re.compile(r'<div class="card" id="panchina">(.*?)(?=<div class="card"|<footer)',
@@ -741,6 +752,7 @@ DC_ROW = re.compile(r"Doppia chance 1X / 12 / X2</th><td[^>]*>(\d+)% / (\d+)% / 
 # dichiararsi qui, così il debito non cresce in silenzio.
 ORACOLI: dict[str, tuple[str, str]] = {
     "1": ("S", "matrice dei punteggi dalle funzioni del modello (identità: celle+coda = 100%)"),
+    "1b": ("I", "ripartizione DC/Elo pubblicata: somma 100 e valori legittimi di w_dc"),
     "2": ("I", "andamento: somma esatta delle tre celle e ultima riga = risultato"),
     "3": ("M", "RPS ricalcolato dal verificatore; il campione è selezionato dai Parquet"),
     "3b": ("I", "Δ = RPS − naive sui numeri stampati e somma delle leghe = riga «Tutti»"),
@@ -792,6 +804,8 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "45": ("M", "cronologia del verificatore (`elo_reference_at_dates`); valori Elo del modello"),
     "46": ("M", "λ e confronti ricalcolati; la griglia Dixon-Coles è quella del modello"),
     "47": ("I", "terne 1/X/2 pubblicate: somma esatta, quattro grafie"),
+    "48": ("M", ("percentuali intere di Accuratezza: regola dichiarata, hit e "
+                 "eventi osservati ricalcolati dai gol")),
 }
 
 
@@ -1525,6 +1539,31 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: 1X2 griglia ({ph:.3f}/{pdw:.3f}) != previsione "
                          f"({r.p_home:.3f}/{r.p_draw:.3f})")
     print(f"[1] matrici punteggi verificate: {n_matrix}")
+
+    # 1b) coppia «Stime Dixon-Coles pesato + Elo (A/B)»: due cifre affiancate che il lettore
+    #     legge come una ripartizione, quindi devono chiudere 100. Fino al 2026-10-11 erano due
+    #     arrotondamenti indipendenti: un w_dc di 62,5% pubblicava «62/38» con `round()` e
+    #     «63/38» = 101 col mezzo in su (`docs/78` §15). Ora il generatore usa il metodo del
+    #     resto massimo (`pct3`) e qui si verifica la **specifica**, non l'identità con la
+    #     funzione: somma 100 e valori che sono pavimento o tetto di w_dc·100 — i casi di
+    #     parità in cui due implementazioni corrette scelgono diversamente sono ammessi.
+    n_dcelo = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        mj = re.search(r"Stime Dixon-Coles pesato \+ Elo \((\d{1,3})/(\d{1,3})\)", html)
+        if not mj:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index or "w_dc" not in preds.columns:
+            fails.append(f"{pg.name}: riga Dixon-Coles/Elo senza previsione con w_dc")
+            continue
+        n_dcelo += 1
+        checks += 1
+        w = float(preds.loc[mid, "w_dc"])
+        if not terna_valida((w, 1 - w), 0, (int(mj.group(1)), int(mj.group(2)))):
+            fails.append(f"{pg.name}: ripartizione DC/Elo {mj.group(1)}/{mj.group(2)} non è un "
+                         f"arrotondamento legittimo di w_dc = {w:.4f}")
+    print(f"[1b] ripartizioni Dixon-Coles/Elo verificate: {n_dcelo}")
 
     # 2) probabilità in-play: ogni riga somma **esattamente** 100 e l'ultima coincide col
     #    risultato. Fino al 2026-10-11 la tolleranza era «>3» perché il generatore arrotondava
@@ -2262,7 +2301,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: gol attesi {here_t} vs somma delle λ stampate "
                              f"{_stamp_it(lam_here)}")
             below = float((dist < lam_here).mean())
-            if int(pct_t) != round(below * 100):
+            if int(pct_t) != pct_dichiarata(below):
                 fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
             if int(n_t) != n_exp:
                 fails.append(f"{pg.name}: partite di lega {n_t} vs {n_exp} in predictions")
@@ -2310,7 +2349,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     ("tacca mediana", float(mv.group(10)),
                      _pos_pct(float(dist.median()), lo_q, hi_q)),
                     ("tacca media", float(mv.group(11)), _pos_pct(float(dist.mean()), lo_q, hi_q)),
-                    ("percentile in aria-label", float(mv.group(2)), round(below * 100))):
+                    ("percentile in aria-label", float(mv.group(2)), pct_dichiarata(below))):
                 checks += 1
                 if abs(letto - atteso) > 0.2:
                     fails.append(f"{pg.name}: barra posizione, {cosa} {letto}% vs ricalcolato {atteso}%")
@@ -3056,7 +3095,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     if gt:
                         tardi, totale = gt
                         riga = (f"{tname} ha subito {tardi} dei {totale} gol dopo il 75' "
-                                f"(il {round(100 * tardi / totale)}% di quelli presi fin qui).")
+                                f"(il {pct_dichiarata(tardi / totale)}% di quelli presi fin qui).")
                         if riga not in testo_card:
                             fails.append(f"{pg.name}: gol nel finale di {tname[:20]} "
                                          f"assenti o diversi ({tardi}/{totale})")
@@ -3571,6 +3610,156 @@ def check_terne_1x2(site: Path) -> tuple[list[str], int]:
                     fails.append(f"{pg.name}: terna 1X2 in {dove} somma {somma} "
                                  f"({m.group(0)[:44]})")
     print(f"[47] terne 1/X/2 pubblicate: {n_terne} · tutte sommano 100")
+    return fails, checks
+
+
+# Mercati binari della pagina Accuratezza: etichetta in pagina → colonna della previsione.
+# Scritta a mano (non presa da SiteBuilder.MARKETS): se il generatore cambia una colonna o una
+# soglia, questo controllo deve continuare a misurare la pagina, non seguire il generatore.
+PCT_MERCATI = (
+    ("Over 1,5 gol", "p_over15"),
+    ("Over 2,5 gol", "p_over25"),
+    ("Over 3,5 gol", "p_over35"),
+    ("Gol · entrambe a segno", "p_btts"),
+    ("Doppia chance 1X", "p_1x"),
+    ("Doppia chance 12", "p_12"),
+    ("Doppia chance X2", "p_x2"),
+    ("Porta inviolata casa", "p_home_clean_sheet"),
+    ("Porta inviolata trasferta", "p_away_clean_sheet"),
+)
+
+
+def check_pct_accuratezza(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[48] Le percentuali intere della pagina Accuratezza, ricalcolate dai Parquet.
+
+    Sono le cifre con cui il lettore giudica il modello: l'esito più probabile azzeccato per
+    campionato, le «scelte indovinate» dei nove mercati e la probabilità dell'esito poi
+    verificatosi nella tabella delle ultime partite. Il ricalcolo è scritto qui: la regola
+    dichiarata per le cifre intere (**mezzo in su**, `docs/78` §15, non `round()`), la soglia
+    del mercato binario (probabilità ≥ 0,5), e gli eventi osservati dai gol (over = totale
+    oltre la soglia, btts, doppie chance, porta inviolata). L'hit per campionato è l'identità
+    che il lettore può rifare a mano: esito più probabile = esito vero, contato sulle stesse
+    gare valutate della pagina. Il campione (ultima previsione prima del fischio) viene dai
+    Parquet, quindi il controllo è misto; la cifra no.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from fda.config import leagues
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    pag = site / "accuratezza.html"
+    if not pag.is_file():
+        return fails, checks
+    h = pag.read_text(encoding="utf-8")
+    st = Store(data) if data else Store()
+    preds, fx = st.read("predictions"), st.read("fixtures")
+    if preds.empty or fx.empty or "status" not in fx.columns:
+        return fails, checks
+    fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff",
+                                        "league_id"]]
+    p = preds.merge(fin, on="match_id", suffixes=("", "_fx"))
+    inizio = "utc_kickoff_fx" if "utc_kickoff_fx" in p.columns else "utc_kickoff"
+    p = p[p.made_at < p[inizio]]
+    p = p.sort_values("made_at").groupby("match_id").tail(1)
+    if p.empty:
+        return fails, checks
+    p["outcome"] = [0 if int(hg) > int(ag) else (1 if int(hg) == int(ag) else 2)
+                    for hg, ag in zip(p.home_goals, p.away_goals)]
+    probs = p[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+    p["hit"] = probs.argmax(axis=1) == p["outcome"].to_numpy()
+    p["p_real"] = probs[np.arange(len(p)), p["outcome"].to_numpy()]
+    nomi = {lg.fotmob_id: lg.name for lg in leagues()}
+    p["lega"] = p.league_id.map(nomi)
+
+    # A) righe per campionato: «Partite valutate» e «Esito più probabile azzeccato»
+    riga_re = re.compile(r'<tr[^>]*><td>([^<]+)</td><td class="r">(\d+)</td><td class="r">[\d.,]+</td>'
+                         r'<td class="r">[\d,]+</td><td class="r">[\d,]+</td><td class="r">(\d+)%</td>')
+    n_camp = 0
+    for m in riga_re.finditer(h):
+        nome, n_st, hit_st = m.group(1), int(m.group(2)), int(m.group(3))
+        gruppo = p if nome == "Tutti" else p[p.lega == nome]
+        if gruppo.empty:
+            fails.append(f"accuratezza.html: riga «{nome}» senza gare nel ricalcolo")
+            continue
+        n_camp += 1
+        checks += 2
+        if n_st != len(gruppo):
+            fails.append(f"accuratezza.html: {nome} «{n_st} partite valutate» vs {len(gruppo)} "
+                         "dai Parquet (ultima previsione prima del fischio)")
+        atteso = pct_dichiarata(float(gruppo["hit"].mean()))
+        if hit_st != atteso:
+            fails.append(f"accuratezza.html: {nome} esito azzeccato {hit_st}% vs ricalcolato "
+                         f"{atteso}% ({int(gruppo['hit'].sum())}/{len(gruppo)})")
+
+    # B) nove mercati: «gare», «(k/n)» e «scelte indovinate»
+    blocco = re.search(r"Accuratezza per mercato(.*?)</table>", h, re.DOTALL)
+    totale = (p.home_goals.astype(float) + p.away_goals.astype(float)).to_numpy()
+    soli_home, soli_away = p.home_goals.astype(float).to_numpy(), p.away_goals.astype(float).to_numpy()
+    osservati = {
+        "p_over15": totale > 1.5, "p_over25": totale > 2.5, "p_over35": totale > 3.5,
+        "p_btts": (soli_home > 0) & (soli_away > 0),
+        "p_1x": soli_home >= soli_away, "p_12": soli_home != soli_away, "p_x2": soli_home <= soli_away,
+        "p_home_clean_sheet": soli_away == 0, "p_away_clean_sheet": soli_home == 0}
+    n_merc = 0
+    if blocco:
+        righe = {lab.strip(): corpo for lab, corpo in
+                 re.findall(r"<tr><td>([^<]+)</td>(.*?)</tr>", blocco.group(1), re.DOTALL)}
+        for lab, col in PCT_MERCATI:
+            corpo = righe.get(lab)
+            if corpo is None:
+                fails.append(f"accuratezza.html: riga di mercato «{lab}» assente")
+                continue
+            celle = [re.sub(r"<[^>]+>", "", c) for c in re.findall(r"<td[^>]*>(.*?)</td>", corpo, re.DOTALL)]
+            if len(celle) < 9 or col not in p.columns:
+                fails.append(f"accuratezza.html: riga di mercato «{lab}» inattesa")
+                continue
+            n_merc += 1
+            pr = pd.to_numeric(p[col], errors="coerce").to_numpy(dtype=float)
+            ok = ~np.isnan(pr)
+            y = osservati[col][ok]
+            # la riga dopo lo <td> dell'etichetta: gare, previsto, osservato (k/n), intervallo,
+            # Brier, Brier base, Δ, scelte indovinate, segnale
+            n_st, mkn = int(celle[0]), re.search(r"\((\d+)/(\d+)\)", celle[2])
+            hit_st = int(celle[7].strip().rstrip("%"))
+            checks += 3
+            if n_st != int(ok.sum()):
+                fails.append(f"accuratezza.html: {lab} «{n_st} gare» vs {int(ok.sum())} con "
+                             "probabilità pubblicata")
+            if mkn:
+                k_st, n_kn = int(mkn.group(1)), int(mkn.group(2))
+                if k_st != int(y.sum()) or n_kn != int(ok.sum()):
+                    fails.append(f"accuratezza.html: {lab} «({k_st}/{n_kn})» vs "
+                                 f"{int(y.sum())}/{int(ok.sum())} osservati dai gol")
+            atteso = pct_dichiarata(float(((pr[ok] >= 0.5) == y).mean()))
+            if hit_st != atteso:
+                fails.append(f"accuratezza.html: {lab} scelte indovinate {hit_st}% vs ricalcolato "
+                             f"{atteso}%")
+
+    # C) tabella «Ultime partite valutate»: la probabilità dell'esito poi verificatosi
+    rec_re = re.compile(r'<tr><td class="mut">[\d/]+</td>'
+                        r'<td><a href="[^"]*?partite/(\d+)\.html">[^<]*</a></td>'
+                        r'<td class="c">(\d+)-(\d+)</td>\s*'
+                        r'<td class="r">\d+ / \d+ / \d+</td>\s*<td class="c">.*?</td>\s*'
+                        r'<td class="r">[\d,]+</td>\s*<td class="r">(\d+)%</td></tr>')
+    per_id = p.set_index("match_id")
+    n_rec = 0
+    for m in rec_re.finditer(h):
+        mid, hit_st = int(m.group(1)), int(m.group(4))
+        if mid not in per_id.index:
+            fails.append(f"accuratezza.html: partita {mid} nella tabella ma non fra le valutate")
+            continue
+        n_rec += 1
+        checks += 1
+        atteso = pct_dichiarata(float(per_id.loc[mid, "p_real"]))
+        if hit_st != atteso:
+            fails.append(f"accuratezza.html: {mid} p_real {hit_st}% vs ricalcolato {atteso}% "
+                         f"({float(per_id.loc[mid, 'p_real']) * 100:.4f}%)")
+
+    print(f"[48] percentuali intere di Accuratezza ricalcolate: {n_camp} campionati · "
+          f"{n_merc} mercati · {n_rec} partite")
     return fails, checks
 
 
@@ -5249,6 +5438,9 @@ def main() -> int:
         terne, terne_checks = check_terne_1x2(site)
         fails += terne
         checks += terne_checks
+        pctacc, pctacc_checks = check_pct_accuratezza(site, Path(args.data) if args.data else None)
+        fails += pctacc
+        checks += pctacc_checks
 
     # riepilogo per tipo: il prefisso è ciò che segue «<pagina>: ». Un messaggio senza «: »
     # (ne è arrivato uno il 2026-10-08) faceva cadere il gate **dopo** i controlli, nascondendo

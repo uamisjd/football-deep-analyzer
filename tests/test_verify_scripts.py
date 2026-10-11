@@ -835,5 +835,142 @@ def test_ogni_controllo_dichiara_il_suo_oracolo():
     conta = _Counter(categoria for categoria, _ in mod.ORACOLI.values())
     assert conta["S"] <= 4, ("gli specchi possono solo diminuire: per aggiungerne uno serve una "
                              "ragione scritta in docs/79 e aggiornare il ratchet")
-    assert conta["M"] <= 18, "come sopra: un misto in più è debito in più (docs/79)"
-    assert conta["I"] >= 28, "gli oracoli indipendenti possono solo crescere (docs/79)"
+    assert conta["M"] <= 19, ("il 19º misto è [48], le percentuali intere di Accuratezza — cifre "
+                              "che nessun oracolo copriva (docs/78 §15): da qui in poi vale il "
+                              "limite di prima (docs/79)")
+    assert conta["I"] >= 29, ("gli oracoli indipendenti possono solo crescere (docs/79): "
+                              "[1b] è la ripartizione DC/Elo, la coppia affiancata che deve "
+                              "chiudere 100")
+
+
+def test_pct_dichiarata_mezzo_in_su():
+    """La regola delle cifre intere: 62,5% si pubblica «63%», non il pari più vicino.
+
+    `round(0.625 * 100)` fa 62: è il comportamento predefinito di Python e della formattazione
+    Jinja, ed è l'unico punto in cui due convenzioni corrette divergono. Il sito ha una regola
+    sola (`docs/78` §15) e questo test la fissa: se qualcuno tornasse a `round()`, la cella
+    della lega con 5 successi su 8 gare cambierebbe da sola.
+    """
+    vs = _site_module()
+    assert round(0.625 * 100) == 62, "premessa del test: il banker's porterebbe a 62"
+    assert vs.pct_dichiarata(0.625) == 63
+    assert vs.pct_dichiarata(0.5) == 50 and vs.pct_dichiarata(0.005) == 1
+    assert vs.pct_dichiarata(0.0) == 0 and vs.pct_dichiarata(1.0) == 100
+
+
+def _accuratezza_finta(tmp_path, celle_mercati=None):
+    """Otto gare di Serie A: 5 in casa (2-1) e 3 in trasferta (0-1), con hit 5/8 = 62,5%.
+
+    Le cifre dell'HTML sono scritte qui a mano (non calcolate dal generatore): il controllo
+    [48] deve leggerle e ricalcolarle dai Parquet. `celle_mercati` permette di mutarne una.
+    """
+    import pandas as pd
+
+    righe_pred, fixture = [], []
+    for i in range(8):
+        casa = i < 5
+        righe_pred.append({
+            "match_id": 1000 + i, "made_at": pd.Timestamp("2026-09-01 10:00", tz="UTC"),
+            "p_home": 0.5, "p_draw": 0.3, "p_away": 0.2,
+            "p_over15": 0.6, "p_over25": 0.4, "p_over35": 0.3, "p_btts": 0.5,
+            "p_1x": 0.5, "p_12": 0.5, "p_x2": 0.5,
+            "p_home_clean_sheet": 0.2, "p_away_clean_sheet": 0.2})
+        fixture.append({
+            "match_id": 1000 + i, "status": "finished", "home_goals": 2 if casa else 0,
+            "away_goals": 1, "league_id": 55,           # 55 = Serie A
+            "utc_kickoff": pd.Timestamp("2026-09-02 18:00", tz="UTC")})
+    pd.DataFrame(righe_pred).to_parquet(tmp_path / "predictions.parquet")
+    pd.DataFrame(fixture).to_parquet(tmp_path / "fixtures.parquet")
+
+    def cella_m(lab, n, prev, k, obs, hit):
+        return (f'<tr><td>{lab}</td><td class="r">{n}</td>\n'
+                f'    <td class="r">{prev}</td><td class="r">{obs} <span class="mut">({k}/{n})</span></td>\n'
+                f'    <td class="r mut">0,0 – 0,0%</td>\n'
+                f'    <td class="r">0,2000</td><td class="r">0,2000</td>\n'
+                f'    <td class="r good">-0,0000</td>\n'
+                f'    <td class="r">{hit}</td>\n'
+                f'    <td class="r mut">compatibile</td></tr>')
+
+    mercati = [
+        ("Over 1,5 gol", 8, "60,0%", 5, "62,5%", "63%"),
+        ("Over 2,5 gol", 8, "40,0%", 5, "62,5%", "38%"),
+        ("Over 3,5 gol", 8, "30,0%", 0, "0,0%", "100%"),
+        ("Gol · entrambe a segno", 8, "50,0%", 5, "62,5%", "63%"),
+        ("Doppia chance 1X", 8, "50,0%", 5, "62,5%", "63%"),
+        ("Doppia chance 12", 8, "50,0%", 8, "100,0%", "100%"),
+        ("Doppia chance X2", 8, "50,0%", 3, "37,5%", "38%"),
+        ("Porta inviolata casa", 8, "20,0%", 0, "0,0%", "100%"),
+        ("Porta inviolata trasferta", 8, "20,0%", 3, "37,5%", "63%"),
+    ]
+    if celle_mercati:
+        mercati = celle_mercati(mercati)
+    corpo = "".join(cella_m(*r) for r in mercati)
+    html = (
+        '<div class="tablewrap"><table><tr><th scope="col">Campionato</th>'
+        '<th scope="col" class="r">Partite valutate</th></tr>\n'
+        '<tr><td>Serie A</td><td class="r">8</td><td class="r">8</td><td class="r">0,2000</td>'
+        '<td class="r">0,5000</td><td class="r">63%</td><td class="r">0,2000</td>'
+        '<td class="r">100</td><td class="r good">-0,05</td></tr>'
+        '<tr style="font-weight:600"><td>Tutti</td><td class="r">8</td><td class="r">8</td>'
+        '<td class="r">0,2000</td><td class="r">0,5000</td><td class="r">63%</td>'
+        '<td class="r">0,2000</td><td class="r">100</td><td class="r good">-0,05</td></tr>'
+        "</table></div>\n"
+        "<h2>Accuratezza per mercato</h2>\n"
+        '<div class="tablewrap"><table><tr><th scope="col">mercato</th>'
+        '<th scope="col" class="r">gare</th></tr>\n' + corpo + "</table></div>\n"
+        '<div class="card"><h2>Ultime partite valutate</h2>\n<div class="tablewrap"><table>\n'
+        '<tr><td class="mut">02/09</td><td><a href="partite/1000.html">A - B</a></td>'
+        '<td class="c">2-1</td>\n<td class="r">50 / 30 / 20</td>'
+        '<td class="c">1 <span class="good">✓</span></td>\n'
+        '<td class="r">0,199</td><td class="r">50%</td></tr>'
+        '<tr><td class="mut">02/09</td><td><a href="partite/1007.html">C - D</a></td>'
+        '<td class="c">0-1</td>\n<td class="r">50 / 30 / 20</td>'
+        '<td class="c">2 <span class="good">✓</span></td>\n'
+        '<td class="r">0,199</td><td class="r">20%</td></tr>'
+        "</table></div></div>\n")
+    (tmp_path / "accuratezza.html").write_text(html, encoding="utf-8")
+
+
+def test_verify_site_percentuali_accuratezza(tmp_path):
+    """[48] Le cifre intere di Accuratezza si ricalcolano dai Parquet, con la regola unica.
+
+    8 gare, 5 centrate: 62,5% → la pagina deve dire «63%» (mezzo in su). Una cifra cambiata
+    di uno deve far fallire il controllo: è la garanzia che il ricalcolo non sia decorativo.
+    """
+    vs = _site_module()
+    _accuratezza_finta(tmp_path)
+    fails, checks = vs.check_pct_accuratezza(tmp_path, tmp_path)
+    # 2 righe di campionato × 2 cifre + 9 mercati × 3 + 2 partite della tabella
+    assert fails == [] and checks == 2 * 2 + 9 * 3 + 2, (fails, checks)
+
+    def muta(indice, valore):
+        def f(mercati):
+            righe = list(mercati)
+            righe[indice] = righe[indice][:-1] + (valore,)
+            return righe
+        return f
+
+    _accuratezza_finta(tmp_path, celle_mercati=muta(0, "62%"))     # mezzo in giù: 62,5 → 62?
+    fails, _ = vs.check_pct_accuratezza(tmp_path, tmp_path)
+    assert any("Over 1,5" in f and "62%" in f for f in fails), fails
+
+    _accuratezza_finta(tmp_path, celle_mercati=muta(3, "64%"))     # conteggio sbagliato
+    fails, _ = vs.check_pct_accuratezza(tmp_path, tmp_path)
+    assert any("Gol · entrambe a segno" in f for f in fails), fails
+
+    # la riga del campionato: 5/8 = 63%, il banker's avrebbe scritto 62
+    _accuratezza_finta(tmp_path)
+    pag = tmp_path / "accuratezza.html"
+    pagina = pag.read_text(encoding="utf-8").replace(
+        '<td class="r">0,5000</td><td class="r">63%</td>', '<td class="r">0,5000</td><td class="r">62%</td>')
+    pag.write_text(pagina, encoding="utf-8")
+    fails, _ = vs.check_pct_accuratezza(tmp_path, tmp_path)
+    assert sum("esito azzeccato" in f for f in fails) == 2, fails
+
+    # una partita della tabella con la sua probabilità sbagliata
+    _accuratezza_finta(tmp_path)
+    pag.write_text(pagina.replace('<td class="r">0,199</td><td class="r">20%</td>',
+                                  '<td class="r">0,199</td><td class="r">21%</td>'),
+                   encoding="utf-8")
+    fails, _ = vs.check_pct_accuratezza(tmp_path, tmp_path)
+    assert any("p_real 21%" in f for f in fails), fails

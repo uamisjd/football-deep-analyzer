@@ -45,7 +45,7 @@ from .advanced import (
     wp_path,
     xg_race,
 )
-from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_triple
+from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_int, pct_triple
 from .laboratorio import laboratorio as whatif_laboratorio
 from .rates import (
     MIN_DEN_FOR_RATE,
@@ -1280,7 +1280,7 @@ class MatchAnalysis:
                          "med_oltre": q[1][1] is None},
                 "fmt": {0.25: "25°", 0.50: "50°", 0.75: "75°"},
                 "first_scorer": {"home": p_h_first, "away": p_a_first, "none": p_no,
-                                 "home_pct": round(p_h_first*100), "away_pct": round(p_a_first*100), "none_pct": round(p_no*100)}}
+                                 "home_pct": pct_int(p_h_first), "away_pct": pct_int(p_a_first), "none_pct": pct_int(p_no)}}
 
     # ---- quanto valgono i gol attesi nel suo campionato -------------------------------------
     def league_goals_percentile(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -3518,7 +3518,7 @@ class MatchAnalysis:
             return None
         return {"titolo": "Finale da brividi",
                 "testo": (f"{nome} ha subito {tardi} dei {totale} gol dopo il 75' "
-                          f"(il {round(100 * tardi / totale)}% di quelli presi fin qui).")}
+                          f"(il {pct_int(tardi / totale)}% di quelli presi fin qui).")}
 
     def _gare_finite(self, kickoff: datetime) -> Any:
         """Gare di campionato già giocate prima del calcio d'inizio (stagione corrente)."""
@@ -5985,7 +5985,7 @@ class MatchAnalysis:
                 # sulla comunicazione del rischio indica come meglio compreso delle percentuali
                 # ed è già la filosofia del dotplot dei gol.
                 s.append(f"Il modello indica {top_name} come esito più probabile ({_pct(pf)}): "
-                         f"su 100 partite così, {round(pf * 100)} finiscono in quel modo.")
+                         f"su 100 partite così, {pct_int(pf)} finiscono in quel modo.")
             elif pf >= 0.45:
                 s.append(f"Il modello indica {top_name} ({_pct(pf)}), "
                          f"con margine contenuto sul secondo esito.")

@@ -598,22 +598,22 @@
     <div class="tablewrap"><table style="margin-top:10px">
       <tr><th scope="col"></th><th scope="col" class="r">{{ c.home_name }}</th><th scope="col" class="r">{{ c.away_name }}</th></tr>
       <tr><th scope="row">Gol attesi</th><td class="r">{{ p.lambda_home|dec }}</td><td class="r">{{ p.lambda_away|dec }}</td></tr>
-      <tr><th scope="row">Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ (p.p_over15*100)|round|int }}% / {{ (p.p_over25*100)|round|int }}% / {{ (p.p_over35*100)|round|int }}%
+      <tr><th scope="row">Over 1,5 / 2,5 / 3,5</th><td colspan="2" class="r">{{ p.p_over15|pct_i }}% / {{ p.p_over25|pct_i }}% / {{ p.p_over35|pct_i }}%
         <div style="display:flex;gap:4px;margin-top:4px;justify-content:flex-end">
           <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over15*100)|round }}%;background:var(--accent)"></i></span>
           <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over25*100)|round }}%;background:var(--accent)"></i></span>
           <span style="flex:0 0 42px;height:4px;background:var(--line2);border-radius:999px;overflow:hidden"><i style="display:block;height:100%;width:{{ (p.p_over35*100)|round }}%;background:var(--accent)"></i></span>
         </div>
-        {% if c.league_over %}<br><span class="small mut">vs media {{ c.league_over.league }} Over 2,5 {{ (c.league_over.mean*100)|round|int }}% — {{ c.league_over.label }} (Δ {{ (c.league_over.diff*100)|dec(1, true) }}pp, su {{ c.league_over.n }} partite)</span>{% endif %}
+        {% if c.league_over %}<br><span class="small mut">vs media {{ c.league_over.league }} Over 2,5 {{ c.league_over.mean|pct_i }}% — {{ c.league_over.label }} (Δ {{ (c.league_over.diff*100)|dec(1, true) }}pp, su {{ c.league_over.n }} partite)</span>{% endif %}
       </td></tr>
-      <tr><th scope="row">Entrambe a segno</th><td colspan="2" class="r">{{ (p.p_btts*100)|round|int }}%</td></tr>
+      <tr><th scope="row">Entrambe a segno</th><td colspan="2" class="r">{{ p.p_btts|pct_i }}%</td></tr>
       {# doppia chance = somma di due dei tre numeri stampati nella barra qui sopra: il lettore
          può verificarla a mente, e i tre valori restano 200 in tutto. Prima ogni valore era
          arrotondato da solo e nel 29% delle schede contraddiceva l'1X2 pubblicato (docs/22). #}
       <tr style="opacity:.82"><th scope="row">Doppia chance 1X / 12 / X2</th><td colspan="2" class="r" style="font-size:13px">{{ b1x2[0] + b1x2[1] }}% / {{ b1x2[0] + b1x2[2] }}% / {{ b1x2[1] + b1x2[2] }}%</td></tr>
-      <tr style="opacity:.78"><th scope="row">Porta inviolata casa / trasferta</th><td colspan="2" class="r" style="font-size:12px">{{ (p.p_home_clean_sheet*100)|round|int }}% / {{ (p.p_away_clean_sheet*100)|round|int }}%</td></tr>
+      <tr style="opacity:.78"><th scope="row">Porta inviolata casa / trasferta</th><td colspan="2" class="r" style="font-size:12px">{{ p.p_home_clean_sheet|pct_i }}% / {{ p.p_away_clean_sheet|pct_i }}%</td></tr>
     </table></div>
-    <p class="small mut" style="margin-top:8px;line-height:1.45">Stime Dixon-Coles pesato + Elo ({{ (p.w_dc*100)|round|int }}/{{ (100-p.w_dc*100)|round|int }}) · {{ p.n_train|it_num }} {{ 'partita' if p.n_train == 1 else 'partite' }} · {{ p.made_at|it_utc }} (ora ITA)<br><span style="color:var(--mut2)">λ pesate nel tempo su {{ p.n_train|it_num }} {{ 'gara' if p.n_train == 1 else 'gare' }}, non media delle ultime 3 → vedi “Come arrivano”</span>{% if p.lambda_limitata %} <span class="warn" style="font-weight:700">· λ limitate (tetto)</span>{% endif %}{% if p.prior_di_lega %} <span class="warn" style="font-weight:700">· prior di lega</span>{% endif %}</p>
+    <p class="small mut" style="margin-top:8px;line-height:1.45">Stime Dixon-Coles pesato + Elo ({{ (p.w_dc, 1 - p.w_dc)|pct3|join('/') }}) · {{ p.n_train|it_num }} {{ 'partita' if p.n_train == 1 else 'partite' }} · {{ p.made_at|it_utc }} (ora ITA)<br><span style="color:var(--mut2)">λ pesate nel tempo su {{ p.n_train|it_num }} {{ 'gara' if p.n_train == 1 else 'gare' }}, non media delle ultime 3 → vedi “Come arrivano”</span>{% if p.lambda_limitata %} <span class="warn" style="font-weight:700">· λ limitate (tetto)</span>{% endif %}{% if p.prior_di_lega %} <span class="warn" style="font-weight:700">· prior di lega</span>{% endif %}</p>
   </div>
   <div class="card">
     <h2>Risultati esatti più probabili</h2>
@@ -721,7 +721,7 @@
 
 {% if c.league_pos %}
 {% set lp = c.league_pos %}
-{% set lp_pct = ((lp.below*100)|round|int) %}
+{% set lp_pct = lp.below|pct_i %}
 <div class="card detail-card" id="posizione-lega">
   <h2>Dove si colloca questa partita</h2>
   <p class="small mut">I {{ lp.here|dec(2) }} gol attesi totali in testa alla scheda vanno letti sulla scala del campionato:
@@ -1026,8 +1026,8 @@
     {% for e in c.timeline %}{% if e.type == 'Goal' %}{% set x = 6 + ((e.minute + (e.added or 0)) if (e.minute + (e.added or 0)) < 90 else 90) / 90 * 408 %}<circle cx="{{ x }}" cy="{{ 12 if e.home else 116 }}" r="4" fill="{{ '#28c893' if e.home else '#e0605a' }}" stroke="#101a24" stroke-width="1"><title>⚽ {{ e.player }} {{ e.minute }}{% if e.added %}+{{ e.added }}{% endif %}' ({{ c.home_name if e.home else c.away_name }})</title></circle>{% endif %}{% endfor %}
   </svg>
   <p class="small mut" style="margin:8px 0 0">Sopra la linea: pressione di <b>{{ c.home_name }}</b>; sotto: <b>{{ c.away_name }}</b> (momentum FotMob, ±100). I pallini segnano i gol.</p>
-  {% if c.momentum.pos_share >= 0.60 %}<p class="small">Momentum a favore di <b>{{ c.home_name }}</b> nel {{ (c.momentum.pos_share*100)|round|int }}% dei minuti.</p>
-  {% elif c.momentum.pos_share <= 0.40 %}<p class="small">Momentum a favore di <b>{{ c.away_name }}</b> nel {{ ((1 - c.momentum.pos_share)*100)|round|int }}% dei minuti.</p>{% endif %}
+  {% if c.momentum.pos_share >= 0.60 %}<p class="small">Momentum a favore di <b>{{ c.home_name }}</b> nel {{ c.momentum.pos_share|pct_i }}% dei minuti.</p>
+  {% elif c.momentum.pos_share <= 0.40 %}<p class="small">Momentum a favore di <b>{{ c.away_name }}</b> nel {{ (1 - c.momentum.pos_share)|pct_i }}% dei minuti.</p>{% endif %}
 </div>
 {% endif %}
 

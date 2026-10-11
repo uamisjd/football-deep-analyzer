@@ -1,3 +1,25 @@
+## 2026-10-11 — Una regola sola per le cifre intere (docs/78 §15)
+
+Coda della caccia B: nel sito convivevano **due convenzioni di arrotondamento a intero** —
+`mc_percent` (mezzo in su) nella card panchina e nelle simulazioni, `{{ v|round|int }}` (pari più
+vicino) in Accuratezza e nelle schede. Divergono solo sui mezzi esatti e la misura dice che oggi
+**nessuna cifra pubblicata cambia**: 6.458 minuti dei quartili, 2.153 previsioni (over, btts,
+porta inviolata, w_dc, Elo), 189 `p_real` e ogni hit rate pubblicato: zero pareggi a ,5. Il
+difetto era latente, non visibile; la correzione è di regola — una cifra letta non deve dipendere
+dalla parità dell'intero, e il primo 62,5 % futuro avrebbe cambiato una cella senza che nessuno
+lo decidesse. `pct_int()` in `fmt.py` (+ filtro `pct_i`), 15 punti nei template e 8 in Python; la
+coppia affiancata «Dixon-Coles/Elo (A/B)» passa dal metodo del resto massimo (`pct3`), perché con
+due arrotondamenti indipendenti un w_dc di 62,5 % pubblicherebbe «63/38» = 101.
+
+Oracoli nuovi (`docs/79`): **[1b]** indipendente — 282 ripartizioni DC/Elo con somma 100 e valori
+legittimi di w_dc; **[48]** misto — le percentuali intere di Accuratezza (8 campionati, 9 mercati,
+40 `p_real`) ricalcolate dai Parquet, che prima non aveva **nessun** oracolo. Ratchet: `S ≤ 4`,
+`M ≤ 19`, `I ≥ 29`. 5 mutazioni iniettate, tutte intercettate.
+
+Gate (build #11): **615 test**, `ruff` pulito, `verify_site` **236.169 · 0 problemi** (52
+controlli: 29 indipendenti · 19 misti · 4 specchi), `audit_panchina` **0 scostamenti · 0 silenzi**,
+`parita_schede` **82 · nessuna differenza**, `resa_375` **28.467 · 0**.
+
 ## 2026-10-11 — Gli oracoli di `verify_site`: 28 indipendenti · 18 misti · 4 specchi (docs/79)
 
 Richiesta dell'utente (opzione A): classificare i ~46 controlli del verificatore in «oracolo
@@ -16,7 +38,8 @@ all'innesto su 4.000/40.000/20.000 casi, zero divergenze): RPS ([3], [8]), inter
 tolleranza «>3» all'uguaglianza esatta.
 
 **Registro `ORACOLI`** con 50 voci e nota per ognuna, stampato dal gate a ogni esecuzione, e un
-test con ratchet: ogni etichetta deve essere dichiarata, `S ≤ 4`, `M ≤ 18`, `I ≥ 28`. Gli
+test con ratchet: ogni etichetta deve essere dichiarata, `S ≤ 4`, `M ≤ 18`, `I ≥ 28`
+(limiti portati a `M ≤ 19`, `I ≥ 29` con gli oracoli della sezione qui sopra). Gli
 specchi residui ([1] matrice, [9] distribuzione dei gol, [10] scomposizione, [20] notizie) restano
 dichiarati perché il loro oracolo sono i test dei modelli.
 

@@ -455,3 +455,63 @@ dell'andamento→tre `round()` ✓ · K6 [47] senza la grafia dell'andamento ✓
 0 problemi** (era 234.162: +1.642 terne) · `audit_panchina` **0 scostamenti · 0 silenzi**
 (`valori_sotto_1` 90 · `valori_sopra_99` 2 · `tooltip` 164 · `stima` 164 · `gol` 158 ·
 `card` 82) · `parita_schede` 82 nessuna differenza · `resa_375` 28.467 · 0.
+
+## §15 — Una regola sola per le cifre intere: la pista degli arrotondamenti (2026-10-11)
+
+Seguito della caccia B (§14): l'ultima classe di difetto rimasta era **due convenzioni di
+arrotondamento a intero** che convivevano nel sito. La card panchina e le simulazioni usano
+`mc_percent` (mezzo in su: 62,5 % → «63 %»); le pagine Accuratezza e le schede usavano
+`{{ (v*100)|round|int }}`, che in Python e in Jinja è il **pari più vicino**: `round(62.5)` = 62.
+
+**Misura, prima di toccare il codice** (sul sito e sui Parquet):
+
+| grandezza pubblicata come intero | valori misurati | pareggi esatti (…,5) |
+|---|---|---|
+| minuti dei quartili del primo gol (schede) | 6.458 | 0 |
+| probabilità (over 1,5/2,5/3,5, btts, porta inviolata, w_dc, Elo) | 2.153 previsioni | 0 (minimo reale 1,84 %, porta inviolata trasferta) |
+| `p_real` delle gare valutate | 189 | 0 (minimo 8,23 %) |
+| hit rate per campionato e per mercato (pagina Accuratezza) | 8 campionati · 9 mercati | 0 |
+
+Il caso «62,5 %» visto in una prima misura (Ligue 1, 24 gare) non era un difetto pubblicato: con
+il raggruppamento della pagina la Ligue 1 ha 26 gare e 61,54 % → «62 %» in entrambe le
+convenzioni. **Nessuna cifra pubblicata cambia, oggi, con questa patch**: la divergenza c'è solo
+sui mezzi esatti, e oggi non ce ne sono. Il difetto era quindi *latente*, non visibile — ma la
+regola pubblicata non può dipendere dalla parità dell'intero, e il primo 62,5 % futuro avrebbe
+cambiato una cifra senza che nessuno lo decidesse.
+
+**Fix.** `pct_int()` in `fmt.py` (stessa formula di `mc_percent`: **una sola** implementazione del
+mezzo in su), esposto come filtro Jinja `pct_i`, e sostituiti 15 punti nei template
+(5 `accuracy.html`, 8 `match.html`, 2 `_matchlist.html`) e 8 punti Python (5 `build.py`,
+3 `analysis.py`: gol nel finale, «su 100 partite così», percentuali del primo marcatore). Restano
+`round()` — di proposito, e sono dichiarati qui — i **minuti** dei quartili, le **cifre Elo**, le
+**larghezze** delle barre e del radar (disegno, non cifre da leggere) e le percentuali **a un
+decimale**, verificate con tolleranza 0,06.
+
+**Coppia affiancata.** «Stime Dixon-Coles pesato + Elo (A/B)» (282 schede) è una ripartizione che
+il lettore legge come complementare: con due arrotondamenti indipendenti e `pct_i` un w_dc di
+62,5 % pubblicherebbe «63/38» = 101. Passa dal metodo del resto massimo (`pct3`): 282 coppie,
+tutte a 100.
+
+**Difesa alla radice** (oracoli nuovi, `docs/79`):
+
+- **[1b]** (I, indipendente) — ripartizione DC/Elo pubblicata: somma 100 e valori che sono
+  pavimento o tetto di `w_dc·100`, con la specifica `terna_valida` (accetta le parità): 282
+  pagine;
+- **[48]** (M) — percentuali intere di Accuratezza ricalcolate dai Parquet: 8 campionati
+  (n gare e «esito azzeccato»), 9 mercati (gare, `k/n`, «scelte indovinate»), 40 righe `p_real`.
+  Le cifre prima non avevano **nessun** oracolo: sono quelle con cui il lettore giudica il
+  modello. La regola dichiarata (mezzo in su) è scritta a mano nel verificatore (`pct_dichiarata`),
+  così un ritorno al banker's si vede;
+- ratchet aggiornato: `S ≤ 4`, `M ≤ 19` (il 19º è [48]), `I ≥ 29` ([1b]).
+
+**Kill-test — 5 mutazioni, tutte intercettate.** K8 pagina con «62 %» dove il ricalcolo dice 63 %
+(il banker's) → [48]; K9 cifra di un mercato mutata (62 % e 64 %) → [48]; K10 `p_real` 20 → 21 %
+→ [48]; K11 coppia DC/Elo 70/30 → 71/30 → [1b]; K12 `pct_dichiarata(0.625) == 63` con la premessa
+`round(0.625*100) == 62` → test unitario.
+
+**Gate finali (build #11, 2026-10-11 14:10)**
+
+`pytest` **615 passed** (613 + 2) · `ruff` pulito · `verify_site` **236.169 controlli · 0 problemi**
+(era 235.804: +83 di [48], +282 di [1b]) — riga degli oracoli: `52 controlli: 29 indipendenti ·
+19 misti · 4 specchi` · `audit_panchina` **0 scostamenti · 0 silenzi** · `parita_schede` **82 ·
+nessuna differenza** · `resa_375` **28.467 · 0**.

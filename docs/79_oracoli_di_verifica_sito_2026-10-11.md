@@ -38,12 +38,19 @@ generatore chiude esattamente (`pct_triple`).
 
 ## §3 — Il registro: 50 controlli, 28 indipendenti · 18 misti · 4 specchi
 
+*(Il 2026-10-11, durante la caccia C alle cifre intere — `docs/78` §15 — si sono aggiunti
+**[1b]** indipendente (ripartizione DC/Elo pubblicata, somma 100) e **[48]** misto (percentuali
+intere di Accuratezza): il registro passa a **52 controlli: 29 indipendenti · 19 misti · 4
+specchi**, con ratchet aggiornato a `M ≤ 19`, `I ≥ 29`.)*
+
 `ORACOLI` in `verify_site.py` dichiara per ogni controllo da dove viene il valore atteso
 («I» indipendente, «M» misto, «S» specchio) con una nota, e il gate lo stampa a ogni esecuzione:
 
 ```
 oracoli (50 controlli dichiarati): 28 indipendenti · 18 misti · 4 specchi
 ```
+
+(oggi: 52 · 29 · 19 · 4 — vedi la nota in testa alla sezione)
 
 Un test lo tiene onesto, con **ratchet**: ogni etichetta stampata deve essere dichiarata
 (`test_ogni_controllo_dichiara_il_suo_oracolo`), gli specchi possono solo diminuire (`S ≤ 4`),
@@ -108,3 +115,6 @@ oracoli (50 controlli dichiarati): 28 indipendenti · 18 misti · 4 specchi — 
 sono i loro test (tests/test_models.py, test_season_sim.py, test_advanced.py)
 nessun problema · 235.804 controlli numerici superati
 ```
+
+Gate successivo (caccia C, `docs/78` §15): `236.169 · 0 problemi`, riga degli oracoli
+`52 controlli dichiarati: 29 indipendenti · 19 misti · 4 specchi`.
