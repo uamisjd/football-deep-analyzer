@@ -5160,7 +5160,8 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
         r"Gioco recente — xG <b>creati ([^<]+)</b> \(([\d,]+) → ([\d,]+) a gara, "
         r"ultime 3 contro le (\d+) precedenti\)"
         r"(?:, xG <b>concessi ([^<]+)</b> \(([\d,]+) → ([\d,]+)\))?"
-        r"; soglia ±([\d,]+) xG\.")
+        r"; differenza significativa solo oltre ±([\d,]+) xG "
+        r"\(2 errori standard: con poche gare il caso produce «tendenze» da solo\)\.")
     voti_re = re.compile(r"Per media voto di stagione</b>: (.*?)</p>", re.DOTALL)
     n_arr, n_righe, n_voti, n_voci = 0, 0, 0, 0
 
@@ -5275,17 +5276,20 @@ def check_terza_coppia(site: Path, data: Path | None) -> tuple[list[str], int]:
                         nb = len(xv) - 3
                         rec, prima = sum(xv[-3:]) / 3, sum(xv[:-3]) / nb
                         soglia = num(m.group(8))
-                        want = ("in crescita" if rec - prima > soglia
-                                else ("in calo" if rec - prima < -soglia else "stabile"))
+                        # margine ricalcolato: 2 errori standard, σ 0,83 misurato (analysis.XG_SD)
+                        margine = 2.0 * 0.83 * math.sqrt(1 / 3 + 1 / nb)
+                        want = ("in crescita" if rec - prima > margine
+                                else ("in calo" if rec - prima < -margine else "nessuna tendenza chiara"))
                         ok = (m.group(1) == want and atteso["trend"] == want
                               and int(m.group(4)) == nb
                               and abs(num(m.group(2)) - round(prima, 2)) <= 0.005
                               and abs(num(m.group(3)) - round(rec, 2)) <= 0.005
-                              and abs(soglia - 0.15) <= 1e-9)
+                              and abs(soglia - round(margine, 2)) <= 0.005)
                         if m.group(5):                    # lato concesso, se la pagina lo stampa
                             arec, aprima = sum(xav[-3:]) / 3, sum(xav[:-3]) / nb
-                            want_a = ("in crescita" if arec - aprima > soglia
-                                      else ("in calo" if arec - aprima < -soglia else "stabile"))
+                            want_a = ("in crescita" if arec - aprima > margine
+                                      else ("in calo" if arec - aprima < -margine
+                                            else "nessuna tendenza chiara"))
                             ok = ok and (m.group(5) == want_a
                                          and abs(num(m.group(6)) - round(aprima, 2)) <= 0.005
                                          and abs(num(m.group(7)) - round(arec, 2)) <= 0.005)

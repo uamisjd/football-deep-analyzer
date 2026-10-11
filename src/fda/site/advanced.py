@@ -89,11 +89,31 @@ def heat_opacity(p: float, max_p: float) -> float:
     return round(0.12 + 0.88 * min(max(p / max_p, 0.0), 1.0), 3)
 
 
-GOALS_CAP = 6          # barre 0–6 gol; il resto è dichiarato come «7+»
+# Barre dei gol totali: la scala non è più un numero fisso. Si mostrano barre finché la coda
+# residua scende sotto ``GOALS_TAIL_TARGET``; il minimo evita di vuotare le partite sobrie, il
+# massimo è la griglia ragionevole per il totale (λ totale 5 → 11 gol). Misura (Poisson sul
+# totale): con cap fisso 6 la barra «7+» conteneva il 6,5% della massa a λ 3,5 e il 16,9% a
+# λ 4,5 — troppa per una barra di coda.
+GOALS_TAIL_TARGET = 0.01
+GOALS_CAP_MIN = 6
+GOALS_CAP_MAX = 11
 GOAL_DOTS = 20         # quantile dotplot: 1 punto = 5 partite su 100
 
 
-def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
+def adaptive_goals_cap(total_mass: np.ndarray) -> int:
+    """Primo totale ``k`` (in [GOALS_CAP_MIN, GOALS_CAP_MAX]) con coda oltre k sotto l'1%.
+
+    ``total_mass[t]`` è la probabilità che il totale sia esattamente ``t``. Se nemmeno
+    ``GOALS_CAP_MAX`` basta, si ferma al massimo: la coda resta dichiarata come «N+».
+    """
+    cum = np.cumsum(total_mass)
+    for k in range(GOALS_CAP_MIN, GOALS_CAP_MAX + 1):
+        if 1.0 - float(cum[k]) < GOALS_TAIL_TARGET:
+            return k
+    return GOALS_CAP_MAX
+
+
+def goals_view(lh: float, la: float, rho: float = 0.0, cap: int | None = None,
                dots: int = GOAL_DOTS) -> dict[str, Any]:
     """Distribuzione dei gol totali e quantile dotplot, dalla stessa griglia dei mercati.
 
@@ -102,15 +122,19 @@ def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
     discrete — «1 punto = 5 partite su 100» — si leggono meglio di una densità continua
     e non invitano a cercare un valore «vero» dove c'è solo una distribuzione.
 
-    ``cap`` è l'ultimo totale mostrato come barra; la massa oltre finisce in «7+».
+    ``cap`` è l'ultimo totale mostrato come barra; la massa oltre finisce nella coda «N+».
+    Se ``cap`` è omesso la scala è adattiva (vedi :func:`adaptive_goals_cap`).
 
     ``copertura`` è la massa che cade davvero fra ``q10`` e ``q90``: sempre > 80% per costruzione,
     ma non esattamente 80% né 90%, quindi è quella che va scritta in didascalia.
     """
-    g = dixon_coles_grid(lh, la, rho, max_goals=max(cap + 9, 15))
+    g = dixon_coles_grid(lh, la, rho, max_goals=GOALS_CAP_MAX + 9)
     ii, jj = np.indices(g.shape)
     tot = ii + jj
-    p = np.array([float(g[tot == t].sum()) for t in range(cap + 1)])
+    total_mass = np.array([float(g[tot == t].sum()) for t in range(int(tot.max()) + 1)])
+    if cap is None:
+        cap = adaptive_goals_cap(total_mass)
+    p = total_mass[:cap + 1]
     tail = max(0.0, 1.0 - float(p.sum()))
     coda = f"{cap + 1}+"
     # La scala dell'istogramma deve essere il massimo DELLE barre che si disegnano, coda compresa.

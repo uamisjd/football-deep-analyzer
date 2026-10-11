@@ -1182,6 +1182,17 @@ def fattori_soglie_testo() -> str:
             f"di lega su ≥{m.FACTOR_REF_MIN} gare")
 
 
+def _wilson(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Intervallo di Wilson al 95% per una proporzione ``k/n`` (affidabile anche con n piccolo)."""
+    if n <= 0:
+        return (0.0, 0.0)
+    p = k / n
+    den = 1 + z * z / n
+    centro = (p + z * z / (2 * n)) / den
+    semi = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / den
+    return (max(0.0, centro - semi), min(1.0, centro + semi))
+
+
 class MatchAnalysis:
     def __init__(self, store: Store) -> None:
         self.store = store
@@ -3002,10 +3013,8 @@ class MatchAnalysis:
                       f"Valore di mercato dei titolari (FotMob): {home_name} {self.fee_it(home_val)} "
                       f"contro {away_name} {self.fee_it(away_val)} — rapporto {_f(ratio, 2)}×. "
                       f"Soglia {_f(self.FACTOR_MARKET_RATIO, 2)}× (o 1/{_f(self.FACTOR_MARKET_RATIO, 2)}×). "
-                      "Misurato sulle 363 gare in archivio con i valori di entrambe le formazioni: "
-                      "con un rapporto ≥1,5× la squadra più ricca fa 1,87 punti a gara e vince il "
-                      "54% delle volte, sotto la soglia 1,43 punti e il 38%, e il rapporto cresce "
-                      "in modo monotono (36,6% di vittorie fra 1,5× e 2×, 75,3% oltre 5×). È un "
+                      + self.market_sentence()
+                      + "È un "
                       "prior verificato anche fuori dal nostro archivio (world-cup-predictor: "
                       "Brier 0,612 → 0,591) e non cambia la previsione salvata "
                       "(scripts/audit_fattori.py).")
@@ -5085,6 +5094,121 @@ class MatchAnalysis:
         out.sort(key=lambda x: (x["num"] is None, x["num"] if x["num"] is not None else 999, x["name"]))
         return out[:8]
 
+    def _unavailable_next_match(self, team_id: int) -> set[int]:
+        """Giocatori indisponibili nella **prossima gara** della squadra (distinta FotMob).
+
+        Le card pre-partita non devono mettere fra i decisivi chi non giocherà la gara in
+        programma: esempio misurato su 2026-10-12, Locatelli è «unavailable» (infortunio, rientro
+        «Late March 2027») nella distinta di Juventus–Lazio. La prossima gara è la prima con
+        calcio d'inizio non passato da più di 3 ore: lo stato dei fixture resta «scheduled» anche
+        dopo il fischio (Cagliari–Juventus dell'11/10 risulta ancora da giocare), quindi non si
+        usa lo stato. Se la distinta della prossima gara non c'è, nessuno viene escluso.
+        """
+        fx, lu = self.fixtures, self.lineup
+        if fx is None or fx.empty or lu is None or lu.empty:
+            return set()
+        if not {"match_id", "utc_kickoff", "home_id", "away_id"} <= set(fx.columns):
+            return set()
+        if not {"match_id", "team_id", "player_id", "role"} <= set(lu.columns):
+            return set()
+        k = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+        soglia = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
+        mine = fx[((fx.home_id == team_id) | (fx.away_id == team_id)) & (k >= soglia)]
+        if mine.empty:
+            return set()
+        prossima = int(mine.assign(_k=k[mine.index]).sort_values("_k").match_id.iloc[0])
+        righe = lu[(lu.match_id == prossima) & (lu.team_id == team_id) & (lu.role == "unavailable")]
+        return {int(x) for x in righe.player_id.dropna()}
+
+    #: Jolly dalla panchina. Misure del 2026-10-12 su 3.789 presenze da subentrato con minuti reali:
+    #: media 20,1′ a presenza, 98 giocatori con almeno 5 subentri (1.829 con almeno una). Con soglia
+    #: sul minutaggio di squadra il subentrante non passa mai (un jolly da 20′ a gara ne fa circa
+    #: 500 a stagione contro i 2.500 del titolare): per questo la sezione ha una soglia propria.
+    JOLLY_MIN_SUBS: ClassVar[int] = 5
+    JOLLY_MIN_AVG_MIN: ClassVar[float] = 10.0   # sotto i 10′ medi la rata per 90 è solo rumore
+    JOLLY_K_MIN: ClassVar[float] = 270.0        # minuti equivalenti dello shrinkage (3 gare intere)
+
+    def _sub_pool_rate(self) -> float | None:
+        """xG+xA per 90 di tutti i subentrati in archivio: il valore a cui si stabilizza un jolly."""
+        cached = getattr(self, "_sub_pool_cache", "missing")
+        if cached != "missing":
+            return cached
+        rate = None
+        try:
+            lu, ps = self.lineup, self.player_stats
+            subs = lu[lu.role == "sub"][["match_id", "player_id"]]
+            w = self._match_player_minutes_xg(subs)
+            mins = float(w["min"].sum())
+            if mins > 0:
+                rate = float((w["xg"].fillna(0) + w["xa"].fillna(0)).sum() / (mins / 90.0))
+        except Exception:                                  # archivio incompleto: nessun pool
+            rate = None
+        self._sub_pool_cache = rate
+        return rate
+
+    def _match_player_minutes_xg(self, keys: "pd.DataFrame") -> "pd.DataFrame":
+        """Per (partita, giocatore) di ``keys``: minuti, xG, xA dalle statistiche partita FotMob."""
+        ps = self.player_stats
+        cols = ["match_id", "player_id", "min", "xg", "xa"]
+        if ps is None or ps.empty or keys.empty:
+            return pd.DataFrame(columns=cols)
+        k = ps[ps.key.isin(["minutes_played", "expected_goals", "expected_assists"])
+               & ps.match_id.isin(keys.match_id)]
+        if k.empty:
+            return pd.DataFrame(columns=cols)
+        wide = (k.groupby(["match_id", "player_id", "key"]).value.first().unstack("key")
+                .reindex(columns=["minutes_played", "expected_goals", "expected_assists"]).reset_index())
+        wide = wide.rename(columns={"minutes_played": "min", "expected_goals": "xg",
+                                    "expected_assists": "xa"})
+        out = keys.merge(wide, on=["match_id", "player_id"], how="inner")
+        return out[cols]
+
+    def bench_jolly(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:
+        """Jolly dalla panchina: subentrati ripetuti, con rata xG+xA/90 stabilizzata.
+
+        Entrano solo i giocatori con almeno ``JOLLY_MIN_SUBS`` subentri **con minuti** e una media
+        di ``JOLLY_MIN_AVG_MIN`` minuti; esclusi gli indisponibili della prossima gara. La rata è
+        stabilizzata verso il pool dei subentrati (``JOLLY_K_MIN`` minuti equivalenti), non verso i
+        titolari: un subentrante ha un ritmo diverso e il pool dei titolari lo gonfierebbe a torto.
+        """
+        try:
+            if self.lineup is None or self.lineup.empty:
+                return []
+            subs = self.lineup[(self.lineup.team_id == team_id) & (self.lineup.role == "sub")]
+            subs = subs[["match_id", "player_id", "player_name"]].drop_duplicates(["match_id", "player_id"])
+            if subs.empty:
+                return []
+            w = self._match_player_minutes_xg(subs)
+            w = w[w["min"].fillna(0) > 0]
+            if w.empty:
+                return []
+            names = subs.drop_duplicates("player_id").set_index("player_id").player_name
+            g = w.groupby("player_id").agg(n_sub=("match_id", "nunique"), avg_min=("min", "mean"),
+                                           mins=("min", "sum"), xg=("xg", "sum"), xa=("xa", "sum"))
+            g = g[(g.n_sub >= self.JOLLY_MIN_SUBS) & (g.avg_min >= self.JOLLY_MIN_AVG_MIN)]
+            g = g[~g.index.isin(self._unavailable_next_match(team_id))]
+            if g.empty:
+                return []
+            pool = self._sub_pool_rate()
+            raw = (g.xg.fillna(0) + g.xa.fillna(0)) / (g.mins / 90.0)
+            if pool is None:
+                return []                                  # senza pool la stima non si calcola
+            shr = (g.mins * raw + self.JOLLY_K_MIN * pool) / (g.mins + self.JOLLY_K_MIN)
+            # «jolly» solo sopra la media dei subentrati: sotto, la parola sarebbe falsa
+            shr = shr[shr >= pool]
+            if shr.empty:
+                return []
+            out = []
+            for pid in shr.sort_values(ascending=False).head(n).index:
+                row = g.loc[pid]
+                out.append({"id": int(pid), "name": str(names.get(pid, "")),
+                            "n_sub": int(row.n_sub), "avg_min": round(float(row.avg_min), 1),
+                            "minutes": int(row.mins), "raw90": round(float(raw.loc[pid]), 2),
+                            "shrunk90": round(float(shr.loc[pid]), 2)})
+            return out
+        except Exception:                                  # la sezione è accessoria: mai bloccare la scheda
+            return []
+
     def team_key_players(self, team_id: int, n: int = 3) -> list[dict[str, Any]]:
         """Classifica per media voto di stagione (card «I giocatori che decidono»).
 
@@ -5096,6 +5220,8 @@ class MatchAnalysis:
         promessa in testata usciva su 4 schede su 66 (docs/58 D5).
         """
         agg = self._season_player_stats(team_id)
+        if not agg.empty and "player_id" in agg.columns:
+            agg = agg[~agg.player_id.isin(self._unavailable_next_match(team_id))]
         if agg.empty or "minutes_played" not in agg.columns:
             return []
         mins = agg.minutes_played.fillna(0.0)
@@ -5178,6 +5304,108 @@ class MatchAnalysis:
         except (TypeError, ValueError):
             return 0.0
         return 0.0 if pd.isna(f) else f
+
+    #: Scaglioni del rapporto di valore dei titolari (sempre ≥1: il lato più ricco).
+    MARKET_EDGES: ClassVar[tuple[float, ...]] = (1.0, 1.5, 2.0, 3.0, 5.0, float("inf"))
+
+    def _market_table(self) -> "pd.DataFrame":
+        """Gare finite con il valore dei titolari di entrambe le squadre: rapporto e vittoria del più ricco.
+
+        Calcolato dall'archivio ad ogni build (mai una cifra scritta a mano nel testo). Cache per oggetto.
+        """
+        cached = getattr(self, "_market_cache", None)
+        if cached is not None:
+            return cached
+        cols = ["rr", "rich_win"]
+        try:
+            m = self.info
+            need = {"status", "home_goals", "away_goals", "home_starters_value_eur", "away_starters_value_eur"}
+            if m is None or m.empty or not need <= set(m.columns):
+                out = pd.DataFrame(columns=cols)
+            else:
+                m = m[(m.status == "finished") & m.home_goals.notna() & m.away_goals.notna()]
+                hv = pd.to_numeric(m.home_starters_value_eur, errors="coerce")
+                av = pd.to_numeric(m.away_starters_value_eur, errors="coerce")
+                m = m[(hv > 0) & (av > 0)]
+                ratio = hv[m.index] / av[m.index]
+                rr = ratio.where(ratio >= 1, 1 / ratio)
+                casa_ricca = ratio >= 1
+                win = ((casa_ricca & (m.home_goals > m.away_goals))
+                       | (~casa_ricca & (m.away_goals > m.home_goals)))
+                out = pd.DataFrame({"rr": rr.astype(float), "rich_win": win.astype(bool)})
+        except Exception:                                  # archivio incompleto: nessuna misura
+            out = pd.DataFrame(columns=cols)
+        self._market_cache = out
+        return out
+
+    @staticmethod
+    def _market_label(lo: float, hi: float) -> str:
+        if hi == float("inf"):
+            return f"oltre {_f(lo, 0)}×"
+        return f"{_f(lo, 1)}–{_f(hi, 1)}×"
+
+    def market_bucket(self, ratio: float) -> dict[str, Any] | None:
+        """Quante volte vince la squadra più ricca nello scaglione del rapporto dato (archivio)."""
+        t = self._market_table()
+        if t.empty or not ratio or ratio <= 0:
+            return None
+        rr = max(float(ratio), 1 / float(ratio))
+        edges = self.MARKET_EDGES
+        i = max(j for j in range(len(edges) - 1) if edges[j] <= rr)
+        lo, hi = edges[i], edges[i + 1]
+        sel = t[(t.rr >= lo) & (t.rr < hi)]
+        n = int(len(sel))
+        if n == 0:
+            return None
+        k = int(sel.rich_win.sum())
+        a, b = _wilson(k, n)
+        return {"lo": lo, "hi": hi, "label": self._market_label(lo, hi), "n": n,
+                "p": k / n, "ci": (a, b)}
+
+    def market_sentence(self) -> str:
+        """Frase per la card dei fattori: la misura sull'archivio, con n e intervallo, senza «monotono»."""
+        t = self._market_table()
+        if t.empty:
+            return "Misura sull'archivio non disponibile. "
+        n = int(len(t))
+        sopra = t[t.rr >= 1.5]
+        sotto = t[t.rr < 1.5]
+
+        def _pct(df: "pd.DataFrame") -> tuple[int, float, float, float]:
+            k, m_ = int(df.rich_win.sum()), int(len(df))
+            a, b = _wilson(k, m_)
+            return m_, (k / m_ if m_ else 0.0), a, b
+
+        n1, p1, a1, b1 = _pct(sopra)
+        n0, p0, _a0, _b0 = _pct(sotto)
+        scaglioni = []
+        for j in range(len(self.MARKET_EDGES) - 1):
+            lo, hi = self.MARKET_EDGES[j], self.MARKET_EDGES[j + 1]
+            sel = t[(t.rr >= lo) & (t.rr < hi)]
+            if len(sel):
+                scaglioni.append(f"{self._market_label(lo, hi)} {int(sel.rich_win.mean() * 100)}% ({len(sel)})")
+        return (f"Misurato sulle {n} gare in archivio con i valori di entrambe le formazioni: "
+                f"con rapporto ≥1,5× la squadra più ricca vince il {p1 * 100:.0f}% delle volte "
+                f"(IC 95% {a1 * 100:.0f}–{b1 * 100:.0f}%, {n1} gare), sotto 1,5× il {p0 * 100:.0f}% "
+                f"({n0} gare). Per scaglione: {'; '.join(scaglioni)}. "
+                "Il rapporto non cresce in modo regolare: gli scaglioni hanno campioni piccoli. ")
+
+    #: Rumore dell'xG per gara dentro una squadra: deviazione standard misurata su 554 gare-squadra
+    #: Understat (stagioni con almeno 5 gare, 2026-10-12): 0,83. Serve a dire quando una differenza
+    #: fra due medie è più grande del caso. Con 3 gare contro 2 la soglia è circa 1,4 xG/gara.
+    #: Prima la soglia era ±0,15 fissa: con l'ordine delle gare mescolato a caso (nessun trend
+    #: vero) la regola dava comunque «in crescita» o «in calo» nell'84% dei casi.
+    XG_SD: ClassVar[float] = 0.83
+    TREND_Z: ClassVar[float] = 2.0            # due errori standard della differenza di medie
+
+    @staticmethod
+    def _trend_label(diff: float, margin: float) -> str:
+        """Direzione solo oltre il margine di significatività; dentro, nessuna direzione dichiarata."""
+        if diff > margin:
+            return "in crescita"
+        if diff < -margin:
+            return "in calo"
+        return "nessuna tendenza chiara"
 
     def arrival_trend(self, team_name: str, team_id: int, n: int = 6) -> dict[str, Any] | None:
         """Come arriva la squadra: xG/xGA per gara, punti contro xPTS, PPDA, split casa/trasferta.
@@ -5267,17 +5495,18 @@ class MatchAnalysis:
         # da 38 schede su 66; con 5 (ultime 3 contro le 2 precedenti) la hanno 57 schede, e il
         # campione è dichiarato in pagina. Si legge su **entrambi** i lati — quanto crea e quanto
         # concede — perché una squadra può arrivare in crisi solo in difesa (docs/59).
+        trend_margin = None
         if len(rows) >= 5:
             nb = len(xg) - 3
             trend_recent, trend_before = sum(xg[-3:]) / 3, sum(xg[:-3]) / nb
             trend_xga_recent, trend_xga_before = sum(xga[-3:]) / 3, sum(xga[:-3]) / nb
             trend_n_before = nb
+            # margine di significatività: TREND_Z errori standard della differenza di medie
+            trend_margin = self.TREND_Z * self.XG_SD * math.sqrt(1 / 3 + 1 / nb)
             if trend_before > 0:
-                d = trend_recent - trend_before
-                trend = "in crescita" if d > 0.15 else "in calo" if d < -0.15 else "stabile"
+                trend = self._trend_label(trend_recent - trend_before, trend_margin)
             if trend_xga_before > 0:
-                d = trend_xga_recent - trend_xga_before
-                trend_xga = "in crescita" if d > 0.15 else "in calo" if d < -0.15 else "stabile"
+                trend_xga = self._trend_label(trend_xga_recent - trend_xga_before, trend_margin)
         # sparkline xG + strength avversario (P1 audit)
         spark_xg = [round(float(r["xg"]),2) for r in rows]
         spark_xga = [round(float(r["xga"]),2) for r in rows]
@@ -5302,7 +5531,7 @@ class MatchAnalysis:
                 "trend": trend, "trend_recent": trend_recent, "trend_before": trend_before,
                 "trend_xga": trend_xga, "trend_xga_recent": trend_xga_recent,
                 "trend_xga_before": trend_xga_before, "trend_n_before": trend_n_before,
-                "trend_threshold": 0.15,
+                "trend_threshold": None if trend_margin is None else round(trend_margin, 2),
                 "spark_xg": spark_xg, "spark_xga": spark_xga}
 
     def h2h_pattern(self, match_id: int, home_id: int, away_id: int,
@@ -5430,6 +5659,8 @@ class MatchAnalysis:
         Sotto queste condizioni nessun giocatore → None, e la card non compare.
         """
         agg = self._season_player_stats(team_id)
+        if not agg.empty and "player_id" in agg.columns:
+            agg = agg[~agg.player_id.isin(self._unavailable_next_match(team_id))]
         if agg.empty or "minutes_played" not in agg.columns:
             return None
         mins = agg.minutes_played.fillna(0.0)
@@ -6645,6 +6876,8 @@ class MatchAnalysis:
             "h2h_pattern": (self.h2h_pattern(match_id, home_id, away_id, kickoff)
                             if status != "finished" else None),
             "home_key_deep": self.key_players_deep(home_id) if status != "finished" else None,
+            "home_jolly": self.bench_jolly(home_id) if status != "finished" else [],
+            "away_jolly": self.bench_jolly(away_id) if status != "finished" else [],
             "away_key_deep": self.key_players_deep(away_id) if status != "finished" else None,
             "clash_ranks": self.clash_ranks(f["home_name"], f["away_name"])
                            if status != "finished" else None,
@@ -6734,6 +6967,14 @@ class MatchAnalysis:
                         market_chip = {"text": f"💰 {_f(1/ratio,1)}× valore titolari", "ratio": 1/ratio,
                                        "detail": f"{f['away_name']} {self.fee_it(av)} vs {f['home_name']} {self.fee_it(hv)}",
                                        "side": "away"}
+            if market_chip is not None:
+                b = self.market_bucket(market_chip["ratio"])
+                if b is not None:
+                    a_, b_ = b["ci"]
+                    market_chip["effect"] = (
+                        f"Con un rapporto {b['label']} la squadra più ricca ha vinto il "
+                        f"{b['p'] * 100:.0f}% delle {b['n']} gare in archivio "
+                        f"(IC 95% {a_ * 100:.0f}–{b_ * 100:.0f}%)")
             ctx["market_chip"] = market_chip
         except Exception:
             ctx["market_chip"] = None

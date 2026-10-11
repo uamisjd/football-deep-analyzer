@@ -321,14 +321,49 @@ def test_goals_view_coda_non_supera_il_contenitore():
     massa di qualunque singolo totale. La scala ora include la coda, quindi nessuna barra straborda
     e le altezze restano proporzionali alle probabilità (nessun clamp che falserebbe il grafico).
     """
-    gv = goals_view(1.84, 3.66)                    # la gara peggiore misurata: 5781741 (NED1)
-    coda = gv["bars"][-1]
-    assert coda["tail"] and coda["p"] > max(b["p"] for b in gv["bars"][:-1]), "caso non significativo"
+    # precondizione del bug: con il vecchio limite fisso 6 la coda supera ogni singolo totale
+    gv_fisso = goals_view(1.84, 3.66, cap=6)        # la gara peggiore misurata: 5781741 (NED1)
+    coda = gv_fisso["bars"][-1]
+    assert coda["tail"] and coda["p"] > max(b["p"] for b in gv_fisso["bars"][:-1]), "caso non significativo"
     assert coda["h"] == 1.0 and round(coda["h"] * 100) == 100
+    # con il limite adattivo la coda è sotto l'1% e nessuna barra trabocca
+    gv = goals_view(1.84, 3.66)
+    # a λ totale 5,5 il massimo (11 gol) non basta a scendere sotto 1%: la coda resta dichiarata
+    assert gv["p_coda"] < 0.01 or gv["cap"] == 11
+    coda = gv["bars"][-1]
     assert all(0.0 <= b["h"] <= 1.0 for b in gv["bars"])
-    # con la coda come estremità superiore, l'intervallo è aperto e va scritto «7+», non «7»
-    assert gv["q90_label"] == gv["coda_label"] == "7+" and gv["q10"] == 3 and gv["mediana"] == 5
-    assert gv["copertura"] > 90.0
+    # con la coda come estremità superiore, l'intervallo è aperto e va scritto «N+», non «N»
+    # (dal 2026-10-12 il limite è adattivo: con λ totale 5,5 la scala arriva a 11 gol)
+    atteso = gv["coda_label"] if gv["q90"] == gv["cap"] + 1 else str(gv["q90"])
+    assert gv["q90_label"] == atteso and gv["coda_label"] == f"{gv['cap'] + 1}+"
+    assert gv["q10"] == 3 and gv["mediana"] == 5
+    assert 80.0 < gv["copertura"] <= 100.0      # copertura reale, mai un tondo dichiarato
+
+
+def test_goals_cap_adattivo_tiene_la_coda_sotto_l_uno_per_cento():
+    """Il limite delle barre non è più 6 fisso: la coda oltre il cap deve restare sotto l'1%.
+
+    Regola misurata (Poisson sul totale): a λ 3,5 la coda oltre 6 gol pesa 14%, oltre 7 gol
+    6,5%: una barra «7+» così grande non è una coda. La scala si allarga finché la coda scende
+    sotto 1%, con minimo 6 e massimo 11 (oltre, la coda resta dichiarata «N+»).
+    """
+    from fda.site.advanced import GOALS_CAP_MAX, GOALS_CAP_MIN, adaptive_goals_cap, goals_view
+
+    casi = {(1.0, 1.0): 6, (1.2, 1.1): 6, (1.4, 1.2): 7, (1.8, 1.7): 8, (2.5, 2.5): 9}
+    for (lh, la), atteso_min in casi.items():
+        gv = goals_view(lh, la)
+        assert GOALS_CAP_MIN <= gv["cap"] <= GOALS_CAP_MAX
+        assert gv["p_coda"] < 0.01 or gv["cap"] == GOALS_CAP_MAX, f"{lh}+{la}: coda {gv['p_coda']}"
+        assert gv["cap"] >= atteso_min, f"{lh}+{la}: cap {gv['cap']} < {atteso_min}"
+    # una partita a 2 gol di media non deve più mostrare barre vuote fino a 6 mentre il grosso
+    # è altrove, e la coda per λ 3,5 non può tornare a «7+» come nel vecchio limite fisso
+    gv = goals_view(2.0, 1.5)
+    assert gv["p_coda"] < 0.01
+    assert goals_view(2.0, 1.5, cap=6)["p_coda"] > 0.01   # il limite fisso lasciava una coda grossa
+    # la funzione di regola è esplicita e testabile senza la griglia
+    massa = np.zeros(20)
+    massa[:20] = 1.0 / 20
+    assert adaptive_goals_cap(massa) == GOALS_CAP_MAX      # coda piatta: si ferma al massimo
 
 
 def test_goals_view_agrees_with_the_published_markets():
