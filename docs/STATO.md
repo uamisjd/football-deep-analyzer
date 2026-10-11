@@ -47,6 +47,19 @@ misura va misurata. Gate (build 2026-10-11): **`pytest` 624**, `ruff` pulito, **
 nessuna differenza**, `resa_375` **28.466 · 0**, `audit_clima` 0 difetti, duplicazione 0.
 Nessuna richiesta alle fonti esterne.
 
+**Studio nuovo (docs/82): cosa dovrebbe dare «Clima del club».** Richiesta utente: la sezione
+deve dare altri tipi di informazione. Diagnosi misurata: le 252 righe sono tutte derivate da
+dati che la scheda mostra già altrove (forma, infermeria, riposo, xPTS, panchina) — la card è
+un **digest**, non un clima. Inventario di ciò che raccogliamo e non pubblichiamo: 12 categorie
+di notizie già classificate (5.105 voci, 329 testate), `attendance` (387/495 gare, mai
+pre-partita), valore dei titolari (132/132 squadre, mai aggregato). Candidati misurati:
+*settimana del club dalla stampa* (26 schede su 77, 22 celle con ≥3 voci di pressione in 7
+giorni; parità dichiarata: ITA1 20/20 contro NED1 0/18) e *pressione da aspettative* (rango per
+valore della rosa vs classifica: 60 celle su 154 con |Δ| ≥ 5, tutte le 7 leghe). Scartato
+l'ambiente come segnale (riempimento = tratto stabile, sd per squadra 0,024). Tre opzioni in
+`docs/82` §5, raccomandata la **A** (split: «Stato della squadra» + nuova «Clima del club»).
+**In attesa della decisione dell'utente**: nessuna modifica fatta (regola B.10).
+
 **Prossimo passo:** PR di sessione per il branch `arena/9912b625` (merge all'utente); coda
 revisione sezione per sezione — Mercato, Vita del club, Previsione del modello ensemble,
 Verifica approfondita, Confronto di stagione.
