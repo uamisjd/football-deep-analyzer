@@ -1489,3 +1489,121 @@ def test_incroci_in_panchina_anche_dallo_storico(analysis):
     # assorbe le gare storiche (`docs/80`: lo storico serve **solo** agli incroci)
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
     assert b["coach_vs_opp_line"] == "da allenatore contro Roma: 1 gara nel nostro archivio (1V 0N 0P)"
+
+
+# ---- card «Clima del club» (`docs/82` §5): la settimana della stampa e le aspettative --------
+
+
+def _clima_store(tmp_path, news: pd.DataFrame | None = None):
+    """Store minimo con 8 squadre di lega: 3 gare misurate a testa e la gara della scheda."""
+    st = Store(tmp_path / "clima")
+    valori = {i: (9 - i) * 10 for i in range(1, 9)}          # S1 rosa più costosa, S8 la meno
+    righe_fx, righe_mi, mid = [], [], 300
+    for i in range(1, 9):
+        avversario = i % 8 + 1
+        for k in range(3):                                    # tre gare finite prima del fischio
+            mid += 1
+            righe_fx.append((mid, 55, "2026", str(k), KO(f"2026-08-{10 + k:02d} 18:00"),
+                             i, f"S{i}", avversario, f"S{avversario}", 1, 0, "finished", "fotmob"))
+            righe_mi.append({"match_id": mid, "home_id": i, "away_id": avversario,
+                             "home_starters_value_eur": valori[i] * 1_000_000,
+                             "away_starters_value_eur": valori[avversario] * 1_000_000})
+    righe_fx.append((400, 55, "2026", "9", KO("2026-09-16 18:00"), 2, "S2", 1, "S1",
+                     None, None, "scheduled", "fotmob"))
+    st.write("fixtures", _fixtures(righe_fx))
+    st.write("match_info", pd.DataFrame(righe_mi))
+    st.write("fotmob_standings", pd.DataFrame([
+        {"league_code": "ITA1", "team_id": i, "team_name": f"S{i}",
+         # S2 è ultima in classifica con la seconda rosa più costosa; S8 prima con la più economica
+         "rank": {2: 8, 8: 1}.get(i, i), "played": 3, "wins": 0, "draws": 0, "losses": 3,
+         "goals_for": 0, "goals_against": 3, "goal_diff": -3, "points": 0}
+        for i in range(1, 9)
+    ]))
+    if news is not None:
+        st.write("news", news)
+    return MatchAnalysis(st)
+
+
+def test_clima_settimana_dalla_stampa_contata_per_tema(tmp_path):
+    """La settimana del club è un conteggio per tema, mai un titolo (`docs/82` §5)."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, esonero sempre più vicino per il tecnico", "url": "https://e.it/1",
+         "source": "Gazzetta", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "S1, spogliatoio spaccato dopo il ko", "url": "https://e.it/2",
+         "source": "Corriere", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "S1, gli ultras disertano la trasferta", "url": "https://e.it/3",
+         "source": "ANSA", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"),
+         "title": "S1, indagine della procura sul bilancio", "url": "https://e.it/4",
+         "source": "ANSA", "description": ""},
+        # fuori dai temi di clima: infortuni e mercato hanno le loro card
+        {"team_id": 1, "published_at": KO("2026-09-14 13:00"),
+         "title": "S1, infortunio per il capitano: out un mese", "url": "https://e.it/5",
+         "source": "Gazzetta", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 14:00"),
+         "title": "S1, ufficiale l'arrivo del difensore", "url": "https://e.it/6",
+         "source": "Gazzetta", "description": ""},
+        # fuori finestra: non conta
+        {"team_id": 1, "published_at": KO("2026-08-30 09:00"),
+         "title": "S1, protesta dei tifosi in curva", "url": "https://e.it/7",
+         "source": "ANSA", "description": ""},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    testi = [r["text"] for r in cl["righe"]]
+    assert cl["voci"] == 4 and cl["pressione"] == 4 and cl["vuota"] is False
+    assert ("settimana calda: 4 voci di pressione in 7 giorni (panchina 1 · spogliatoio 1 · "
+            "società 1 · tifoseria 1)") in testi, testi
+    assert cl["righe"][0]["tone"] == "bad"
+    # i temi contati sono quelli di ambiente, col conteggio: nessun titolo di giornale
+    assert [(t["key"], t["n"]) for t in cl["temi"]] == [
+        ("allenatore", 1), ("spogliatoio", 1), ("societa", 1), ("tifo", 1)]
+    assert all("https://" not in r["text"] for r in cl["righe"])
+
+
+def test_clima_settimana_tranquilla_e_vuoto_dichiarato(tmp_path):
+    """Voci senza pressione → «tranquilla»; zero voci → nessuna riga e vuoto dichiarato."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, il nuovo stadio: lavori al via", "url": "https://e.it/1",
+         "source": "ANSA", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-13 09:00"),
+         "title": "S1, il centro sportivo apre le porte ai bambini", "url": "https://e.it/2",
+         "source": "ANSA", "description": ""},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    testi = [r["text"] for r in cl["righe"]]
+    assert any(t.startswith("settimana tranquilla: 2 voci, nessuna di pressione") for t in testi), testi
+    assert all(r["tone"] in ("bad", "warn", "good") for r in cl["righe"])
+    # la squadra senza notizie: vuota, e la card lo può dichiarare
+    vuoto = a.club_climate(3, "S3", KO("2026-09-16 18:00"))
+    assert vuoto["vuota"] is True and vuoto["voci"] == 0
+    assert [r["text"] for r in vuoto["righe"]] == [] or all(
+        "settimana" not in r["text"] for r in vuoto["righe"])
+
+
+def test_clima_aspettative_sotto_sopra_e_soglia(tmp_path):
+    """Pressione da aspettative: rosa costosa ultima in classifica, e viceversa (`docs/82` §5)."""
+    a = _clima_store(tmp_path)
+    ko = KO("2026-09-16 18:00")
+    sotto = a.expectation_gap(2, "S2", ko)
+    assert sotto is not None and (sotto["rango"], sotto["posizione"], sotto["delta"]) == (2, 8, 6)
+    sopra = a.expectation_gap(8, "S8", ko)
+    assert sopra is not None and (sopra["rango"], sopra["posizione"], sopra["delta"]) == (8, 1, -7)
+    # in linea con le attese (S4: rango 4, classifica 4ª) → nessuna riga
+    assert a.expectation_gap(4, "S4", ko) is None
+    # con meno di 3 gare misurate il rango è un caso: nessuna riga
+    assert a.expectation_gap(3, "S3", KO("2026-08-11 18:00")) is None
+    cl = a.club_climate(2, "S2", ko)
+    testi = [r["text"] for r in cl["righe"]]
+    assert ("pressione da aspettative: rosa da 2ª per valore dei titolari, in classifica 8ª"
+            in testi), testi
+    assert [r["tone"] for r in cl["righe"] if r["text"].startswith("pressione da")] == ["warn"]
+    cl8 = a.club_climate(8, "S8", ko)
+    testi8 = [r["text"] for r in cl8["righe"]]
+    assert ("sopra le attese: in classifica 1ª con una rosa da 8ª per valore dei titolari"
+            in testi8), testi8

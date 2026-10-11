@@ -46,7 +46,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/68_revisione_forma_mercato_2026-10-10.md`](docs/68_revisione_forma_mercato_2026-10-10.md) — revisione indipendente della PR #98: numeri confermati, conteggi a data fissata e tre lacune dei controlli corrette.
 - [`docs/69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md`](docs/69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md) — coda verificata dopo la PR #98: decisione sui tre tilt con misure rigenerate, «forza avv.» storica già misurata, riconciliazione dei due ΔRPS col mercato.
 
-> L'**indice completo** dei 91 file `.md` di `docs/` (82 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
+> L'**indice completo** dei 92 file `.md` di `docs/` (83 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
 
 ## Avvio rapido (sviluppo)
 

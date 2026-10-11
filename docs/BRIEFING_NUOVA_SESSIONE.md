@@ -257,7 +257,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (91 file `.md` + `_audit_modelli.json` all'11/10/2026: **82** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
+| **`docs/` — indice completo** (92 file `.md` + `_audit_modelli.json` all'11/10/2026: **83** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |

@@ -20,7 +20,10 @@ ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "partite"
 DATA = ROOT / "data" / "processed"
 
-CARD_CLIMA = re.compile(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)', re.DOTALL)
+# l'11/10/2026 la card misurata qui (strisce, xPTS, infermeria, riposo) si chiama «Stato
+# della squadra»: l'id è cambiato con `docs/82` §5, il contenuto no (`docs/81`).
+CARD_CLIMA = re.compile(r'<div class="card" id="stato-squadra">(.*?)(?=<div class="card"|<footer)',
+                        re.DOTALL)
 CARD_NEWS = re.compile(r'<div class="card" id="notizie">(.*?)(?=<div class="card"|<footer)', re.DOTALL)
 BLOCCO = re.compile(r'<p style="margin:0 0 6px"><b>')
 

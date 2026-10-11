@@ -83,7 +83,7 @@ lega sono **ITA1 20/20**, ENG1 5/20, ESP1 5/20, FRA1 3/18, GER1 2/18, **NED1 0/1
 
 **(b) Pressione da aspettative (dai dati, parità piena).** Rango della rosa per **valore dei
 titolari** contro la posizione in classifica: «rosa da 5ª per valore, in classifica 18ª».
-*Copertura*: 132/132 squadre; scarto mediano |Δ| **3 posizioni**, con **60 celle su 154** (39%)
+*Copertura*: 132/132 squadre; scarto mediano |Δ| **3 posizioni**, con **56 celle su 154** (36%)
 a |Δ| ≥ 5 — Atalanta 11ª con rosa 6ª, Bologna 19ª con rosa 10ª, Cagliari 4ª con rosa 15ª.
 Dato **mai pubblicato** e sensato come «clima»: è la misura della distanza fra risorse e
 risultato, cioè la pressione.
@@ -129,8 +129,9 @@ clima**: è contesto. Perderebbe i punti 1-4 del §2, cioè quello che l'utente 
 ## §6 — Raccomandazione
 
 **Opzione A.** Motivi misurati: (i) l'informazione nuova esiste già in casa — 12 categorie
-classificate su 5.105 voci e il valore della rosa mai pubblicato — e copre **60 celle su 154**
-(pressione) più **22 celle** (settimana calda); (ii) la parità è gestita dichiarando la
+classificate su 5.105 voci e il valore della rosa mai pubblicato — e copre **56 celle su 154**
+(pressione: 25 «sotto le attese» e 31 «sopra», misurate sul build del giorno) più **21 lati**
+con la settimana (7 «calde» e 14 «sotto pressione»); (ii) la parità è gestita dichiarando la
 copertura invece di fingere che la stampa italiana copra Rotterdam come Roma (misurato: 0/18
 in NED1); (iii) il nome torna a significare quello che dice, e la sezione «Stato della
 squadra» resta utilissima senza dover difendere un nome che non le appartiene.
@@ -140,9 +141,74 @@ nuova cambia l'indice, i test e tutte le 77 schede — è una scelta editoriale,
 correzione. E resta valida la regola B.10: se l'opzione scelta peggiora un aspetto (es. una
 card in più = più scroll), non si fa.
 
-## §7 — Prossimo passo
+## §7 — Attuazione dell'opzione A (decisa dall'utente l'11/10/2026)
 
-L'utente sceglie l'opzione (A / B / C) e, se A, risponde a due sotto-domande: (1) la card-
-stampa pubblica solo conteggi e lettura, o anche **il titolo più significativo** (con link,
-come fa «Vita del club»)? (2) si allargano le **query della stampa** (esonero/tifosi per
-squadra) con il budget conseguente, o si aspetta di vedere l'effetto sulle voci già raccolte?
+L'utente ha scelto **A** e ha chiesto di «fornire al sito tutti gli strumenti per farlo
+funzionare in modo corretto». Attuato così, con le due sotto-domande risolte da un default
+motivato (riapribili in ogni momento, sono scelte editoriali reversibili):
+
+1. **La card-stampa pubblica conteggi e lettura, non titoli.** I titoli sono già nella card
+   «Vita del club» due card più sotto: ripeterne uno qui violerebbe `docs/30` (un dato in un
+   posto) proprio nella pagina in cui la regola è appena stata applicata (le strisce, `docs/81`
+   §8). Se un titolo merita di stare in «Clima del club», il posto giusto è «Vita del club»,
+   che ha la selezione e la deduplicazione collaudate.
+2. **Nessuna query nuova alla stampa, per ora.** La copertura è misurata e dichiarata (§4a):
+   il perimetro della raccolta è la stampa in lingua italiana, e allargare le query di
+   *collection* non cambierebbe il filtro di pubblicazione (una scheda in italiano pubblica
+   solo testi italiani). Riaprire il tema significa decidere una politica linguistica nuova
+   (`docs/24` dice «solo in italiano»), non aggiungere una query: resta in coda, con la misura
+   già fatta.
+
+**Cosa è stato costruito** (branch `arena/9912b625-football-deep-analyzer`):
+
+| pezzo | dove | cosa fa |
+|---|---|---|
+| `club_week` | `src/fda/site/analysis.py` | conteggi per tema della stampa nella finestra `kickoff − 7 giorni`, filtro lingua e `classify_news` **gli stessi di «Vita del club»**; soglie: «settimana calda» da 3 voci di pressione (panchina/spogliatoio/società/tifoseria), «pressione in settimana» da 1, «settimana tranquilla» altrimenti; zero voci → `vuota=True` |
+| `expectation_gap` | idem | rango della squadra per **mediana del valore dei titolari** sulle gare finite prima del fischio (minimo 3) contro la posizione in classifica dello snapshot raccolto; pubblica con \|Δ\| ≥ 5 e almeno 8 squadre nel rango di lega |
+| `club_climate` | idem | unisce le due parti nell'ordine di lettura: settimana → aspettative |
+| card «Clima del club» | `templates/match.html` | due colonne (casa/trasferta), righe col tono, frase fissa del **vuoto dichiarato**, nota con tutte le soglie e il perimetro della raccolta |
+| card «Stato della squadra» | idem | l'ex «Clima del club» rinominata (id `stato-squadra`), nota che rimanda alla card nuova; indice aggiornato con le due voci |
+| oracolo **[49]** | `scripts/verify_site.py` | su ogni scheda pre-partita ricalcola dai Parquet i conteggi della settimana (stessa classificazione della fonte) e il rango per valore **in modo indipendente**; verifica testo per testo e la frase del vuoto «se e solo se» zero voci; registrato in `ORACOLI` come misto, col limite dichiarato |
+| audit | `scripts/audit_clima.py` | misura le **due** card: la vecchia (ora «Stato della squadra») come prima, la nuova con conteggi per tipo, toni, lati con vuoto dichiarato e ogni dislivello pagina↔ricalcolo (`clima_dislivello`, `clima_nota_disallineata`) |
+| test | `tests/test_panchina_notizie.py` | 3 test nuovi: conteggi per tema (4 voci di pressione → «settimana calda», infortuni e mercato **non** contati), tranquilla + vuoto dichiarato, aspettative sotto/sopra/soglia/minimo gare; `tests/test_site.py` verifica le due card e le due voci d'indice su una scheda vera |
+
+**Efficacia dichiarata in pagina**: la copertura misurata è scritta nella nota (20/20 in
+Serie A, 0/18 in Eredivisie): dove la stampa italiana non scrive, la card **dichiara il vuoto
+di raccolta** e la pressione resta affidata ai dati nostrani, che valgono per tutte e 7 le
+leghe. È il compromesso che tiene insieme onestà e parità (`docs/00` sez. F).
+
+## §8 — Misure «dopo» e gate (build dell'11/10/2026)
+
+**La card in pagina.** Su tutte le **77 schede pre-partita** la card «Clima del club» c'è,
+con due colonne (casa/trasferta) e la nota con le soglie:
+
+- settimana: **21 lati** con una riga — 7 «settimana calda» (es. Juventus, 15 voci di
+  pressione: tifoseria 10 · società 4 · panchina 1), 14 «pressione in settimana», 0
+  «tranquilla» (oggi ogni lato con voci ha almeno una voce di pressione); **133 lati** con il
+  **vuoto dichiarato** («nessuna voce di clima raccolta…» — la parola è «raccolta», non
+  «pubblicata»: per le partite ancora lontane la settimana è incompleta, e la card lo dice);
+- aspettative: **56 lati** pubblicano (25 «sotto le attese», 31 «sopra le attese»), con
+  almeno 3 gare misurate e almeno 8 squadre nel rango di lega; 98 lati in linea con le attese
+  non stampano nulla (il silenzio non è un verdetto).
+
+**Una correzione prima di chiudere.** La stima preliminare della pressione (60 celle) e la
+prima misura con lo script di sondaggio (58) usavano un perimetro di gare diverse
+(`match_info.status`); la definizione della scheda è **le gare finite dal calendario prima del
+fischio** (`_gare_finite`, la stessa di forma, xG e strisce) e con quella le celle sono **56**:
+la differenza è di due celle Liverpool, dove il rango cambia di una posizione. Nel dubbio ha
+vinto la definizione usata da tutta la pagina — e l'oracolo [49] ricalcola proprio quella.
+
+**Gate** (build 2026-10-11, `arena/9912b625`):
+
+| gate | esito |
+|---|---|
+| `pytest -q` | **627 passed** (+3 test nuovi: settimana, tranquilla/vuoto, aspettative) |
+| `ruff` | pulito su `analysis.py`, `match.html` (Jinja), `verify_site.py`, i due audit, i test |
+| `fda build` | **493 partite · 2.364 gare · 7.578 giocatori** (exit 0) |
+| `verify_site` | **0 problemi · 236.749 controlli**; [21] rinominata (77 pagine), **[49] nuova** (77 pagine); registro **53 controlli: 30 I · 19 M · 4 S** |
+| `parita_schede` | **nessuna differenza**: stesse sezioni, stesso indice, stessa quantità di testo (minimo 90% della mediana, 27.411 su 30.352) |
+| `resa_375` | **28.466 misure · 0 problemi** a 375 px |
+| `audit_clima` | difetti nuovi **0** (`clima_dislivello` 0, `clima_nota_disallineata` 0); i difetti noti restano quelli dichiarati (perimetro coppe 30, infermeria 3) |
+| `audit_clima_candidati` | invariato (sonda dei candidati scartati) |
+
+**Nessuna richiesta alle fonti esterne** in nessun passaggio; nessun file di dati toccato.

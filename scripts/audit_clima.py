@@ -1,10 +1,19 @@
-"""Audit 360° della card «Clima del club» (revisione del 2026-10-11, `docs/81`).
+"""Audit 360° delle card dell'area clima (revisione del 2026-10-11, `docs/81`; `docs/82`).
 
-Misura su **tutte** le schede pre-partita di ``site/partite`` che cosa la card propone e
-come: i segnali pubblicati per tipo e per tono, quelli che il ricalcolo dai Parquet non
-conferma, i segnali mancanti, la fedeltà della nota alle soglie del codice, e tre difetti
-strutturali cercati apposta — contatori troncati dalla finestra di forma, ambiguità di
-perimetro (campionato vs coppe) e «panchina nuova» senza scadenza.
+Dall'11/10/2026 (`docs/82` §5, opzione A) l'area è divisa in due card: **«Stato della
+squadra»** (ex «Clima del club»: forma, disponibilità, calendario) e **«Clima del club»**
+(la settimana secondo la stampa e la pressione da aspettative). Questo script le misura
+entrambe.
+
+Sulla card «Stato della squadra»: i segnali pubblicati per tipo e per tono, quelli che il
+ricalcolo dai Parquet non conferma, i segnali mancanti, la fedeltà della nota alle soglie del
+codice, e tre difetti strutturali cercati apposta — contatori troncati dalla finestra di
+forma, ambiguità di perimetro (campionato vs coppe) e «panchina nuova» senza scadenza.
+
+Sulla card «Clima del club»: le righe della settimana (calda / in tensione / tranquilla /
+vuoto dichiarato), quelle delle aspettative (sotto e sopra), e ogni dislivello fra pagina e
+ricalcolo — conteggi per tema, soglia delle 3 voci, rango per valore dei titolari contro
+classifica, frase del vuoto presente se e solo se il conteggio è zero.
 
 L'HTML si legge **com'è** e ogni segnale si ricostruisce con strade diverse da quelle del
 generatore (mai ``club_mood``): calendario+coppe per riposo/congestione, forma di stagione
@@ -30,7 +39,10 @@ SITE = ROOT / "site" / "partite"
 DATA = ROOT / "data" / "processed"
 SRC = ROOT / "src" / "fda" / "site" / "analysis.py"
 
-CARD = re.compile(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)', re.DOTALL)
+CARD = re.compile(r'<div class="card" id="stato-squadra">(.*?)(?=<div class="card"|<footer)',
+                  re.DOTALL)
+CARD_CLIMA = re.compile(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)',
+                        re.DOTALL)
 BLOCCO = re.compile(r'<p style="margin:0 0 6px"><b>')
 LI = re.compile(r'<li class="mood-(bad|warn|good)"><span class="small">(.*?)</span></li>', re.DOTALL)
 
@@ -128,6 +140,8 @@ def main() -> int:
     fx = fx.dropna(subset=["ko"])
     cup = cup.dropna(subset=["ko"])
     ev = pd.read_parquet(DATA / "events.parquet")
+    ndf = pd.read_parquet(DATA / "news.parquet")
+    fm = pd.read_parquet(DATA / "fotmob_standings.parquet")
     us["_nome"] = us.team_name.map(canon)
     us["_data"] = pd.to_datetime(us.date, utc=True, errors="coerce")
 
@@ -145,6 +159,7 @@ def main() -> int:
     difetti: dict[str, list[str]] = {
         "troppo_corta": [], "perimetro_coppe_verdetto": [], "panchina_vecchia": [],
         "nota_disallineata": [], "tono_non_dichiarato": [],
+        "clima_nota_disallineata": [], "clima_dislivello": [],
     }
     agg_tipi: Counter[str] = Counter()
     agg_toni: Counter[str] = Counter()
@@ -471,6 +486,148 @@ def main() -> int:
             elif r_coach is not None:
                 esiti["panchina"].append(f"{pg.stem}|{tname}| «panchina nuova» senza cambio rilevato")
 
+    # ---- card «Clima del club» (`docs/82` §5): settimana della stampa + aspettative ----------
+    from fda.sources.news import TOPIC_LABELS as _TL
+    from fda.sources.news import classify_news as _cl
+    from fda.sources.news import is_italian_news as _it
+    _temi = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
+    _press = ("allenatore", "spogliatoio", "societa", "tifo")
+    _ord = {k: i for i, k in enumerate(_temi)}
+    _pa = pd.to_datetime(ndf.published_at, utc=True, errors="coerce") if not ndf.empty else None
+    for _c in ("home_starters_value_eur", "away_starters_value_eur"):
+        if _c in mi.columns:
+            mi[_c] = pd.to_numeric(mi[_c], errors="coerce")
+
+    def _attesi_clima(tid: int, tname: str, ko: pd.Timestamp) -> tuple[list[tuple[str, str]], int]:
+        """Righe attese (testo, tono) e voci di stampa: la specifica della card, dai Parquet."""
+        att: list[tuple[str, str]] = []
+        if ndf.empty:
+            return att, 0
+        sub = ndf[(ndf.team_id == tid) & (_pa >= ko - pd.Timedelta(days=7)) & (_pa <= ko)]
+        conta: Counter[str] = Counter()
+        for r in sub.itertuples(index=False):
+            titolo = str(getattr(r, "title", "") or "").strip()
+            if not titolo:
+                continue
+            desc = getattr(r, "description", None)
+            desc = "" if desc is None or pd.isna(desc) else str(desc)
+            if not _it(titolo, desc):
+                continue
+            chiave, _p = _cl(titolo, desc, getattr(r, "source", None))
+            if chiave in _temi:
+                conta[chiave] += 1
+        voci = sum(conta.values())
+        pressione = sum(conta[k] for k in _press)
+        temi = sorted(conta, key=lambda k: (-conta[k], _ord[k]))
+
+        def det(chiavi: list[str]) -> str:
+            return " · ".join(f"{_TL.get(k, k).lower()} {conta[k]}" for k in chiavi)
+
+        det_press = det([k for k in temi if k in _press])
+        if pressione >= 3:
+            testo_atteso = (f"settimana calda: {pressione} voci di pressione in 7 giorni "
+                            f"({det_press})")
+            att.append((testo_atteso, "bad"))
+        elif pressione:
+            testo_atteso = (f"pressione in settimana: {pressione} "
+                            f"{'voce' if pressione == 1 else 'voci'} ({det_press})")
+            att.append((testo_atteso, "warn"))
+        elif voci:
+            testo_atteso = (f"settimana tranquilla: {voci} {'voce' if voci == 1 else 'voci'}, "
+                            f"nessuna di pressione ({det(temi)})")
+            att.append((testo_atteso, "good"))
+        riga = fm[fm.team_name.map(canon) == canon(tname)] if not fm.empty else fm
+        if not riga.empty and pd.notna(riga.iloc[0].get("rank")) and not mi.empty:
+            fin = fx[(fx.status == "finished") & (fx.ko < ko)]
+            info = mi[mi.match_id.isin({int(x) for x in fin.match_id})]
+            valori: dict[int, list[float]] = {}
+            for r in info.itertuples(index=False):
+                for t, col in ((int(r.home_id), "home_starters_value_eur"),
+                               (int(r.away_id), "away_starters_value_eur")):
+                    v = getattr(r, col, None)
+                    if v is None or pd.isna(v) or float(v) <= 0:
+                        continue
+                    valori.setdefault(t, []).append(float(v))
+            medie = {t: float(pd.Series(v).median()) for t, v in valori.items() if len(v) >= 3}
+            lega = fm[fm.league_code == riga.iloc[0]["league_code"]].drop_duplicates("team_id")
+            in_lega = sorted({int(t) for t in lega.team_id} & set(medie))
+            if tid in medie and len(in_lega) >= 8:
+                rango = sorted(in_lega, key=lambda t: (-medie[t], t)).index(tid) + 1
+                pos = int(riga.iloc[0]["rank"])
+                if pos - rango >= 5:
+                    testo_atteso = (f"pressione da aspettative: rosa da {rango}ª per valore dei "
+                                    f"titolari, in classifica {pos}ª")
+                    att.append((testo_atteso, "warn"))
+                elif rango - pos >= 5:
+                    testo_atteso = (f"sopra le attese: in classifica {pos}ª con una rosa da "
+                                    f"{rango}ª per valore dei titolari")
+                    att.append((testo_atteso, "good"))
+        return att, voci
+
+    clima_toni: Counter[str] = Counter()
+    clima_tipi: Counter[str] = Counter()
+    clima_pagine = 0
+    clima_vuoto = 0
+    clima_lati = 0
+    clima_scarti = 0
+    for pg in sorted(SITE.glob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        if "Analisi pre-partita" not in html:
+            continue
+        m2 = CARD_CLIMA.search(html)
+        if not m2:
+            difetti["clima_dislivello"].append(f"{pg.stem}: card «Clima del club» assente")
+            continue
+        clima_pagine += 1
+        nota2 = testo(m2.group(1))
+        for frase, chiave in (("7 giorni", "CLIMA_SETTIMANA"),
+                              ("3 voci di pressione", "CLIMA_CALDA_N"),
+                              ("almeno 5 posizioni", "CLIMA_VALORE_DELTA"),
+                              ("valore dei titolari", "CLIMA_VALORE_MIN"),
+                              ("stampa", "lingua")):
+            if frase not in nota2:
+                difetti["clima_nota_disallineata"].append(f"{pg.stem}: nota senza «{frase}» ({chiave})")
+        fr = fx[fx.match_id == int(pg.stem)]
+        if fr.empty:
+            continue
+        fr = fr.iloc[0]
+        blocchi2 = BLOCCO.split(m2.group(1))
+        if len(blocchi2) != 3:
+            difetti["clima_dislivello"].append(f"{pg.stem}: struttura inattesa ({len(blocchi2)})")
+            continue
+        for parte in blocchi2[1:]:
+            tname = testo(parte.split("</b>", 1)[0])
+            tid = int(fr.home_id) if tname == str(fr.home_name) else int(fr.away_id)
+            attesi, voci = _attesi_clima(tid, tname, pd.Timestamp(fr.ko))
+            righe = [(unescape(t), tone) for tone, t in LI.findall(parte)]
+            clima_lati += 1
+            for testo_atteso, tono in attesi:
+                clima_toni[tono] += 1
+                if testo_atteso.startswith("settimana calda"):
+                    clima_tipi["settimana calda"] += 1
+                elif testo_atteso.startswith("pressione in settimana"):
+                    clima_tipi["pressione in settimana"] += 1
+                elif testo_atteso.startswith("settimana tranquilla"):
+                    clima_tipi["settimana tranquilla"] += 1
+                elif testo_atteso.startswith("pressione da aspettative"):
+                    clima_tipi["aspettative sotto"] += 1
+                elif testo_atteso.startswith("sopra le attese"):
+                    clima_tipi["aspettative sopra"] += 1
+                if (testo_atteso, tono) not in righe:
+                    difetti["clima_dislivello"].append(
+                        f"{pg.stem}|{tname}| attesa assente «{testo_atteso[:60]}»")
+                    clima_scarti += 1
+            for testo_pagina, tono in righe:
+                if (testo_pagina, tono) not in attesi:
+                    difetti["clima_dislivello"].append(
+                        f"{pg.stem}|{tname}| riga non giustificata «{testo_pagina[:60]}»")
+                    clima_scarti += 1
+            if (voci == 0) != ("Nessuna voce di clima raccolta dalla stampa italiana" in parte):
+                difetti["clima_dislivello"].append(
+                    f"{pg.stem}|{tname}| vuoto dichiarato incoerente ({voci} voci)")
+            if voci == 0:
+                clima_vuoto += 1
+
     print("=== censimento ===")
     print(f"pagine pre-partita con card: {sum(per_lega.values())}")
     print(f"righe totali pubblicate: {sum(agg_toni.values())}")
@@ -492,6 +649,12 @@ def main() -> int:
             print(f"{k}: {len(v)} pagine" + (f" — es. {v[:1]}" if v else ""))
         else:
             print(f"{k}: {len(v)}" + (f" — es. {v[:3]}" if v else ""))
+    print("\n=== clima del club (docs/82 §5): settimana e aspettative ===")
+    print(f"pagine con la card: {clima_pagine} · lati-squadra misurati: {clima_lati}")
+    print(f"righe pubblicate: {sum(clima_toni.values())} · toni: {dict(clima_toni)}")
+    print("tipo:", dict(clima_tipi))
+    print(f"lati con vuoto dichiarato della stampa: {clima_vuoto} · scostamenti: {clima_scarti}")
+
     print("\n=== pagine per lega ===")
     print(dict(per_lega.most_common()))
     print(f"\nnota letta su {nota_osservata} pagine")

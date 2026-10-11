@@ -1198,9 +1198,22 @@ def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
     # e a gara finita i nomi restano nella frase (la tabella non c'è)
     if "deve rinunciare a" in post:
         assert 'href="#infermeria-' not in post
-    # «Clima del club» c'è anche senza segnali: la riga per squadra lo dice
-    assert '<div class="card" id="clima">' in pre
+    # le due card dell'area clima ci sono sempre a partita da giocare (docs/82 §5):
+    # «Stato della squadra» (ex «Clima del club») e «Clima del club» (settimana + aspettative).
+    # La prima c'è anche senza segnali: la riga per squadra lo dice
+    assert '<div class="card" id="stato-squadra">' in pre
+    assert "<h2>Stato della squadra</h2>" in pre
     assert "Nessun segnale anomalo nei dati raccolti: clima normale." in pre
+    assert '<div class="card" id="clima">' in pre
+    assert "<h2>Clima del club</h2>" in pre
+    # l'indice le nomina entrambe, con i titoli veri delle sezioni
+    assert 'href="#stato-squadra">Stato della squadra</a>' in pre
+    assert 'href="#clima">Clima del club</a>' in pre
+    # la card nuova non pubblica titoli di giornale (quelli stanno in «Vita del club»):
+    # o righe di conteggio, o la frase del vuoto dichiarato
+    clima = pre.split('<div class="card" id="clima">', 1)[1].split('<div class="card"', 1)[0]
+    assert ("Nessuna voce di clima raccolta dalla stampa italiana" in clima
+            or '<li class="mood-' in clima)
 
     # l'avviso dentro «I giocatori che decidono»: motivo e rientro non si ripetono, si linkano
     gioc = pre.split('<div class="card" id="giocatori">', 1)[1]

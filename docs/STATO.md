@@ -47,7 +47,30 @@ misura va misurata. Gate (build 2026-10-11): **`pytest` 624**, `ruff` pulito, **
 nessuna differenza**, `resa_375` **28.466 · 0**, `audit_clima` 0 difetti, duplicazione 0.
 Nessuna richiesta alle fonti esterne.
 
-**Studio nuovo (docs/82): cosa dovrebbe dare «Clima del club».** Richiesta utente: la sezione
+**Card «Clima del club» ripensata e attuata (docs/82, decisione dell'utente: opzione A —
+split).** La diagnosi misurata: le 252 righe della card erano tutte derivate da dati mostrati
+altrove nella stessa pagina (forma, infermeria, riposo, xPTS, panchina) — un **digest**, non un
+clima. Attuato lo split: la vecchia card diventa **«Stato della squadra»** (id
+`stato-squadra`, contenuti invariati) e nasce una **card nuova** «Clima del club» (id `clima`)
+con due blocchi: (1) la **settimana del club** secondo la stampa in lingua italiana — conteggi
+per tema, mai titoli (quelli restano in «Vita del club», regola `docs/30`), «settimana calda»
+da 3 voci di pressione (panchina/spogliatoio/società/tifoseria), vuoto **dichiarato** dove la
+raccolta non ha voci (misurato: 20/20 in Serie A, 0/18 in Eredivisie — la copertura è scritta
+nella nota); (2) la **pressione da aspettative** dai nostri dati — rango per mediana del valore
+dei titolari sulle gare finite prima del fischio contro la posizione in classifica, con soglia
+|Δ| ≥ 5, minimo 3 gare misurate e 8 squadre nel rango di lega (56 lati pubblicano: 25 sotto,
+31 sopra). Strumenti forniti al sito: `club_week`, `expectation_gap`, `club_climate` in
+`analysis.py`; la card in `match.html` con indice aggiornato (due voci nuove); **oracolo [49]**
+in `verify_site.py` che ricalcola conteggi e ranghi dai Parquet e verifica testo per testo e la
+frase del vuoto «se e solo se» zero voci; `audit_clima.py` esteso alle due card; 3 test nuovi.
+Gate: **`pytest` 627**, `ruff` pulito, `fda build` 493/2.364/7.578, **`verify_site` 0 problemi ·
+236.749 controlli** (registro 53: 30 I · 19 M · 4 S), `parita_schede` nessuna differenza
+(minimo 90%), `resa_375` 28.466 · 0, `audit_clima` 0 difetti nuovi. Una correzione in corsa: la
+stima preliminare «60 celle» e il sondaggio «58» usavano un perimetro di gare diverso da quello
+della scheda (`match_info.status`); la definizione giusta è quella del calendario
+(`_gare_finite`, la stessa di forma e xG) → 56. `docs/82` §7-§8.
+
+**Il resto dello studio (docs/82).** Richiesta utente: la sezione
 deve dare altri tipi di informazione. Diagnosi misurata: le 252 righe sono tutte derivate da
 dati che la scheda mostra già altrove (forma, infermeria, riposo, xPTS, panchina) — la card è
 un **digest**, non un clima. Inventario di ciò che raccogliamo e non pubblichiamo: 12 categorie
@@ -57,8 +80,8 @@ pre-partita), valore dei titolari (132/132 squadre, mai aggregato). Candidati mi
 giorni; parità dichiarata: ITA1 20/20 contro NED1 0/18) e *pressione da aspettative* (rango per
 valore della rosa vs classifica: 60 celle su 154 con |Δ| ≥ 5, tutte le 7 leghe). Scartato
 l'ambiente come segnale (riempimento = tratto stabile, sd per squadra 0,024). Tre opzioni in
-`docs/82` §5, raccomandata la **A** (split: «Stato della squadra» + nuova «Clima del club»).
-**In attesa della decisione dell'utente**: nessuna modifica fatta (regola B.10).
+`docs/82` §5, raccomandata la **A** (split: «Stato della squadra» + nuova «Clima del club»),
+**scelta dall'utente e attuata** (vedi sopra).
 
 **Prossimo passo:** PR di sessione per il branch `arena/9912b625` (merge all'utente); coda
 revisione sezione per sezione — Mercato, Vita del club, Previsione del modello ensemble,

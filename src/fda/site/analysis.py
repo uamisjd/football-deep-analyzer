@@ -12,6 +12,7 @@ import itertools
 import math
 import re
 from bisect import bisect_left
+from collections import Counter
 from collections.abc import Callable
 from datetime import UTC, datetime
 from itertools import pairwise
@@ -2238,6 +2239,24 @@ class MatchAnalysis:
     MOOD_CONGEST_N = 3          # gare giocate nella finestra → congestione
     MOOD_HEAVY_DEFEAT = 3       # scarto di una sconfitta → «sconfitta pesante»
 
+    # ---- clima del club, secondo blocco (docs/82 §5, opzione A): la settimana secondo la
+    # stampa e la pressione da aspettative. La card «Stato della squadra» (ex «Clima del club»,
+    # rinominata l'11/10/2026) tiene forma, disponibilità e calendario; qui entrano l'ambiente
+    # e le aspettative, che sono un'altra cosa e avevano un nome sbagliato.
+    CLIMA_SETTIMANA = 7         # giorni di finestra prima del fischio d'inizio
+    CLIMA_CALDA_N = 3           # voci di pressione in 7 giorni → «settimana calda»
+    CLIMA_VALORE_MIN = 3        # gare minime con valore dei titolari per entrare nel rango
+    CLIMA_VALORE_MIN_LEGA = 8   # squadre minime nel rango di lega, altrimenti niente riga
+    CLIMA_VALORE_DELTA = 5      # |classifica − rango per valore| → riga di aspettative
+    # temi di clima: quelli di ambiente. Infortuni, squalifiche e mercato hanno le loro card e
+    # non si contano qui (docs/30: un dato in un posto); squadra/dichiarazioni/club sono troppo
+    # generici (misurato il 2026-10-11: 156+91+38 voci su 14 giorni, senza potere di clima).
+    CLIMA_TEMI = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
+    # sottoinsieme che misura **pressione**: panchina, spogliatoio, società, tifoseria. Stadio e
+    # fuori dal campo sono ambiente, non tensione (misura: con questa soglia si accendono 22
+    # celle su 154, `docs/82` §4a).
+    CLIMA_PRESSIONE = ("allenatore", "spogliatoio", "societa", "tifo")
+
     def ultima_gara_campionato(self, team_id: int, kickoff: datetime) -> dict[str, Any] | None:
         """L'ultima gara di **campionato** prima di ``kickoff``: punteggio, sconfitta, espulsioni.
 
@@ -2425,6 +2444,159 @@ class MatchAnalysis:
                             "text": f"congestione: {len(rec)} gare giocate negli ultimi "
                                     f"{self.MOOD_CONGEST_DAYS} giorni"})
         return out
+
+    # ---- clima del club (`docs/82` §5): la settimana secondo la stampa e la pressione --------
+    def club_week(self, team_id: int, kickoff: datetime) -> dict[str, Any]:
+        """La settimana del club secondo la stampa raccolta: conteggi per tema, mai titoli.
+
+        Il blocco «Vita del club» della stessa pagina pubblica i **titoli** (fino a tre per
+        squadra); qui si pubblica la **forma della settimana**: quante voci, su quali temi di
+        ambiente, e se fra queste ce n'è qualcuna di pressione. I titoli non si ripetono
+        (`docs/30`: un dato in un posto) e la card lo dichiara nella nota.
+
+        Perimetro misurato e dichiarato (`docs/82` §4a): notizie della squadra nella finestra
+        ``kickoff − 7 giorni ≤ data ≤ kickoff`` — la stessa della card «Vita del club» — in
+        **lingua italiana** (le edizioni straniere non sono pubblicabili in una scheda in
+        italiano) e classificate da :func:`fda.sources.news.classify_news` in uno dei
+        ``CLIMA_TEMI``. La copertura della stampa italiana non è uniforme fra le leghe
+        (misurato: 20/20 squadre in Serie A, 0/18 in Eredivisie su 14 giorni): dove non c'è,
+        la card lo **dichiara** invece di far sembrare tranquillo ciò che è solo non raccolto.
+
+        Soglie (dichiarate in pagina): «settimana calda» da 3 voci di pressione in 7 giorni
+        (``CLIMA_CALDA_N``), «pressione in settimana» da 1, «settimana tranquilla» con voci ma
+        nessuna di pressione. Zero voci → nessuna riga, e la card lo dice con una frase.
+        """
+        out: dict[str, Any] = {"righe": [], "voci": 0, "pressione": 0, "temi": [],
+                               "vuota": True, "finestra": self.CLIMA_SETTIMANA}
+        if self.news_df.empty or "title" not in self.news_df.columns:
+            return out
+        ko = pd.Timestamp(kickoff)
+        pa = pd.to_datetime(self.news_df.published_at, utc=True, errors="coerce")
+        df = self.news_df[(self.news_df.team_id == team_id)
+                          & (pa >= ko - pd.Timedelta(days=self.CLIMA_SETTIMANA))
+                          & (pa <= ko)]
+        conta: Counter[str] = Counter()
+        for r in df.itertuples(index=False):
+            title = str(getattr(r, "title", "") or "").strip()
+            if not title:
+                continue
+            desc = getattr(r, "description", None)
+            desc = "" if desc is None or pd.isna(desc) else str(desc)
+            if not is_italian_news(title, desc):
+                continue
+            chiave, _prova = classify_news(title, desc, getattr(r, "source", None))
+            if chiave in self.CLIMA_TEMI:
+                conta[chiave] += 1
+        voci = sum(conta.values())
+        pressione = sum(conta[k] for k in self.CLIMA_PRESSIONE)
+        ordine = {k: i for i, k in enumerate(self.CLIMA_TEMI)}
+        temi = sorted(conta, key=lambda k: (-conta[k], ordine[k]))
+
+        def dettaglio(chiavi: list[str]) -> str:
+            return " · ".join(f"{TOPIC_LABELS.get(k, k).lower()} {conta[k]}" for k in chiavi)
+
+        righe: list[dict[str, Any]] = []
+        if pressione >= self.CLIMA_CALDA_N:
+            righe.append({"tone": "bad",
+                          "text": f"settimana calda: {pressione} voci di pressione in "
+                                  f"{self.CLIMA_SETTIMANA} giorni "
+                                  f"({dettaglio([k for k in temi if k in self.CLIMA_PRESSIONE])})"})
+        elif pressione:
+            righe.append({"tone": "warn",
+                          "text": f"pressione in settimana: {it_plural(pressione, 'voce')} "
+                                  f"({dettaglio([k for k in temi if k in self.CLIMA_PRESSIONE])})"})
+        elif voci:
+            righe.append({"tone": "good",
+                          "text": f"settimana tranquilla: {it_plural(voci, 'voce')}, nessuna di "
+                                  f"pressione ({dettaglio(temi)})"})
+        out.update({"righe": righe, "voci": voci, "pressione": pressione,
+                    "temi": [{"key": k, "label": TOPIC_LABELS.get(k, k), "n": int(conta[k])}
+                             for k in temi],
+                    "vuota": voci == 0})
+        return out
+
+    def expectation_gap(self, team_id: int, team_name: str,
+                        kickoff: datetime) -> dict[str, Any] | None:
+        """Pressione da aspettative: rango della rosa per **valore dei titolari** vs classifica.
+
+        La definizione operativa di pressione che non dipende dalla stampa (parità piena fra
+        le 7 leghe, `docs/82` §4b): il valore dei titolari di ogni gara è già in
+        ``match_info`` (mediana sulle gare finite **prima** di questa partita, la stessa
+        regola «fermi alla vigilia» del resto della scheda), la classifica viene dallo stesso
+        snapshot usato da «Panchina e posta in gioco». Si pubblica solo se lo scarto fra
+        posizione in classifica e rango per valore è di almeno ``CLIMA_VALORE_DELTA``
+        posizioni — sotto quella soglia è rumore (misurato: con la soglia a 5 si accendono
+        58 celle su 154, 27 sotto le attese e 31 sopra; scarto mediano |Δ| = 3).
+
+        Servono almeno ``CLIMA_VALORE_MIN`` gare misurate per entrare nel rango e
+        ``CLIMA_VALORE_MIN_LEGA`` squadre classificate nella lega: con meno, il rango è un
+        caso e la riga non esce (la card dichiara la soglia, non l'assenza).
+        """
+        if self.info.empty or self.fm_standings.empty:
+            return None
+        cols = ("home_starters_value_eur", "away_starters_value_eur")
+        if any(c not in self.info.columns for c in cols):
+            return None
+        st = self.standing(team_name)
+        if not st or st.get("league_code") is None or st.get("rank") is None:
+            return None
+        code = str(st["league_code"])
+        fin = self._gare_finite(kickoff)
+        if fin.empty or "match_id" not in fin.columns:
+            return None
+        info = self.info[self.info.match_id.isin({int(x) for x in fin.match_id})]
+        if info.empty:
+            return None
+        valori: dict[int, list[float]] = {}
+        for r in info.itertuples(index=False):
+            for tid, col in ((int(r.home_id), cols[0]), (int(r.away_id), cols[1])):
+                v = getattr(r, col, None)
+                if v is None or pd.isna(v):
+                    continue
+                try:
+                    fv = float(v)
+                except (TypeError, ValueError):
+                    continue
+                if fv > 0:
+                    valori.setdefault(tid, []).append(fv)
+        medie = {t: float(pd.Series(v).median()) for t, v in valori.items()
+                 if len(v) >= self.CLIMA_VALORE_MIN}
+        lega = self.fm_standings[self.fm_standings.league_code == code].drop_duplicates("team_id")
+        in_lega = sorted({int(t) for t in lega.team_id} & set(medie))
+        if team_id not in medie or len(in_lega) < self.CLIMA_VALORE_MIN_LEGA:
+            return None
+        ordinati = sorted(in_lega, key=lambda t: (-medie[t], t))
+        rango = ordinati.index(team_id) + 1
+        posizione = int(st["rank"])
+        delta = posizione - rango
+        if abs(delta) < self.CLIMA_VALORE_DELTA:
+            return None
+        return {"rango": rango, "posizione": posizione, "delta": delta, "n": len(ordinati),
+                "soglia": self.CLIMA_VALORE_DELTA, "gare": len(valori[team_id])}
+
+    def club_climate(self, team_id: int, team_name: str, kickoff: datetime) -> dict[str, Any]:
+        """La card «Clima del club» per una squadra: settimana della stampa + aspettative.
+
+        Le due parti rispondono alle stesse domande per tutte e 7 le leghe nel modo possibile:
+        la stampa dove c'è (col vuoto dichiarato dove non c'è), le aspettative sempre, perché
+        i numeri sono nostri. Le righe escono nell'ordine di lettura: prima la settimana
+        (l'ambiente vissuto), poi la pressione da aspettative (la distanza dalle risorse).
+        """
+        sett = self.club_week(team_id, kickoff)
+        righe = list(sett["righe"])
+        gap = self.expectation_gap(team_id, team_name, kickoff)
+        if gap:
+            if gap["delta"] > 0:
+                righe.append({"tone": "warn",
+                              "text": f"pressione da aspettative: rosa da {gap['rango']}ª per "
+                                      f"valore dei titolari, in classifica {gap['posizione']}ª"})
+            else:
+                righe.append({"tone": "good",
+                              "text": f"sopra le attese: in classifica {gap['posizione']}ª con una "
+                                      f"rosa da {gap['rango']}ª per valore dei titolari"})
+        return {"righe": righe, "vuota": sett["vuota"], "voci": sett["voci"],
+                "pressione": sett["pressione"], "temi": sett["temi"], "gap": gap,
+                "finestra": sett["finestra"]}
 
     # ---- tre misure per la card «Fattori» (docs/58 §3-§4): sede, cartellini, arbitro ----------
 
@@ -6363,6 +6535,12 @@ class MatchAnalysis:
                           if status != "finished" else [],
             "away_mood": self.club_mood(match_id, away_id, f["away_name"], kickoff)
                           if status != "finished" else [],
+            # clima del club, secondo blocco (`docs/82` §5): la settimana secondo la stampa
+            # (conteggi, mai titoli) e la pressione da aspettative dai nostri dati
+            "home_clima": self.club_climate(home_id, f["home_name"], kickoff)
+                          if status != "finished" else None,
+            "away_clima": self.club_climate(away_id, f["away_name"], kickoff)
+                          if status != "finished" else None,
             # mercato (docs/21 P2-7, rifatto in docs/24 §4): finestra ricavata dai dati,
             # arrivi collegati alla distinta di questa partita
             "home_market": self.transfer_window(home_id, match_id) if status != "finished" else None,

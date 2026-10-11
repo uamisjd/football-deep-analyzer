@@ -775,7 +775,9 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "19": ("M", ("classifica e posizione virtuale ricalcolate; posta in gioco dal Parquet "
                  "con la formattazione del generatore, confrontata con Proiezioni")),
     "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
-    "21": ("I", "clima del club: strisce di campionato, xPTS (Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, infermeria dai Parquet"),
+    "21": ("I", ("stato della squadra (ex «Clima del club»): strisce di campionato, xPTS "
+                 "(Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, "
+                 "infermeria dai Parquet")),
     "22": ("I", "radar e scontri ricalcolati da team_stats e Understat"),
     "23": ("I", "badge «giocherà?» ↔ distinta"),
     "24": ("I", "«Il prossimo impegno» ↔ calendario"),
@@ -806,6 +808,9 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "47": ("I", "terne 1/X/2 pubblicate: somma esatta, quattro grafie"),
     "48": ("M", ("percentuali intere di Accuratezza: regola dichiarata, hit e "
                  "eventi osservati ricalcolati dai gol")),
+    "49": ("M", ("clima del club (`docs/82` §5): conteggi della settimana e rango per valore "
+                 "ricalcolati dai Parquet; la classificazione dei temi è `classify_news` "
+                 "della fonte, come in «Vita del club»")),
 }
 
 
@@ -3202,8 +3207,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
     print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
-    # 21) clima del club (docs/21 P2-6): **oracolo indipendente** dal 2026-10-11 (`docs/81`
-    # §5). Fino a ieri il controllo chiamava `club_mood` e si limitava a ritrovare nella pagina
+    # 21) stato della squadra (docs/21 P2-6, «Clima del club» fino all'11/10/2026): **oracolo
+    # indipendente** dal 2026-10-11 (`docs/81` §5). Il nome è cambiato con `docs/82` §5 — il
+    # contenuto (forma, disponibilità, calendario) è quello che la card ha sempre misurato.
+    # Fino a ieri il controllo chiamava `club_mood` e si limitava a ritrovare nella pagina
     # le righe che il generatore aveva appena prodotto — uno specchio (`docs/79` §1): non
     # poteva vedere gli errori *dentro* la funzione. Ora ogni riga è ricalcolata dai Parquet
     # con strade diverse: strisce sulla stagione intera di campionato, riposo e congestione da
@@ -3289,23 +3296,27 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         fr = mood_fx[mood_fx.match_id == int(pg.stem)].iloc[0]
         kickoff = pd.Timestamp(fr.ko)
         n_mood += 1
-        if 'id="clima"' not in html:
-            fails.append(f"{pg.name}: card clima assente (deve esserci su ogni scheda pre-partita)")
+        if 'id="stato-squadra"' not in html:
+            fails.append(f"{pg.name}: card «Stato della squadra» assente (deve esserci su ogni "
+                         f"scheda pre-partita)")
             continue
         checks += 1
-        _blocco = re.search(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)',
+        _blocco = re.search(r'<div class="card" id="stato-squadra">(.*?)(?=<div class="card"|<footer)',
                             html, re.DOTALL)
         parti = re.split(r'<p style="margin:0 0 6px"><b>', _blocco.group(1)) if _blocco else []
         if len(parti) != 3:
-            fails.append(f"{pg.name}: struttura della card clima inattesa ({len(parti)} blocchi)")
+            fails.append(f"{pg.name}: struttura della card «Stato della squadra» inattesa "
+                         f"({len(parti)} blocchi)")
             continue
         note = html_unescape(parti[2])
         checks += 1
         # la nota dichiara il perimetro delle strisce e il significato dei tre colori (docs/81 §2-§4)
         if "campionato" not in note:
-            fails.append(f"{pg.name}: la nota del clima non dichiara il perimetro di campionato")
+            fails.append(f"{pg.name}: la nota dello stato della squadra non dichiara il "
+                         f"perimetro di campionato")
         if not all(x in note for x in ("rosso", "ambra", "verde")):
-            fails.append(f"{pg.name}: la nota del clima non spiega i toni dei colori")
+            fails.append(f"{pg.name}: la nota dello stato della squadra non spiega i toni "
+                         f"dei colori")
         senza = 0
         for lato, (tid, tname) in enumerate(((int(fr.home_id), str(fr.home_name)),
                                              (int(fr.away_id), str(fr.away_name)))):
@@ -3499,7 +3510,147 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if txt.count(vuota) != senza:
             fails.append(f"{pg.name}: {senza} squadre senza segnali ma la riga «clima normale» "
                          f"compare {txt.count(vuota)} volte")
-    print(f"[21] pagine con clima del club riconciliate: {n_mood} (oracolo indipendente)")
+    print(f"[21] pagine con stato della squadra riconciliate: {n_mood} (oracolo indipendente)")
+
+    # 49) clima del club (`docs/82` §5, opzione A): la card dell'ambiente e delle aspettative.
+    # Conteggi della settimana ricalcolati dai Parquet con la classificazione della fonte
+    # (`classify_news`, la stessa di «Vita del club» — il limite dichiarato in `ORACOLI`); rango
+    # per valore dei titolari e scarto dalla classifica ricalcolati in modo indipendente
+    # (mediane sulle gare finite prima del fischio, soglie 3 gare / |Δ| ≥ 5: la specifica
+    # dichiarata nella nota). Titoli mai pubblicati qui: le righe sono conteggi, e il vuoto di
+    # raccolta ha una frase fissa che deve comparire **se e solo se** il conteggio è zero.
+    n_clima = 0
+    if not nd19.empty and not fx19.empty and "title" in nd19.columns:
+        from fda.sources.news import TOPIC_LABELS, classify_news, is_italian_news
+        _temi49 = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
+        _press49 = ("allenatore", "spogliatoio", "societa", "tifo")
+        _ord49 = {k: i for i, k in enumerate(_temi49)}
+        _nd49 = nd19.assign(_pa=pd.to_datetime(nd19.published_at, utc=True, errors="coerce"))
+        _mi49 = mi19.copy()
+        for _c49 in ("home_starters_value_eur", "away_starters_value_eur"):
+            if _c49 in _mi49.columns:
+                _mi49[_c49] = pd.to_numeric(_mi49[_c49], errors="coerce")
+        _vuoto49 = "Nessuna voce di clima raccolta dalla stampa italiana"
+
+        def _righe_clima49(tid: int, tname: str, ko: Any) -> tuple[list[tuple[str, str]], int]:
+            """Righe attese (testo, tono) e voci di stampa per un lato, dai Parquet grezzi."""
+            att: list[tuple[str, str]] = []
+            ko = pd.Timestamp(ko)
+            sub = _nd49[(_nd49.team_id == tid) & (_nd49._pa >= ko - pd.Timedelta(days=7))
+                        & (_nd49._pa <= ko)]
+            conta: Counter[str] = Counter()
+            for r in sub.itertuples(index=False):
+                titolo = str(getattr(r, "title", "") or "").strip()
+                if not titolo:
+                    continue
+                desc = getattr(r, "description", None)
+                desc = "" if desc is None or pd.isna(desc) else str(desc)
+                if not is_italian_news(titolo, desc):
+                    continue
+                chiave, _prova = classify_news(titolo, desc, getattr(r, "source", None))
+                if chiave in _temi49:
+                    conta[chiave] += 1
+            voci = sum(conta.values())
+            pressione = sum(conta[k] for k in _press49)
+            temi = sorted(conta, key=lambda k: (-conta[k], _ord49[k]))
+
+            def det(chiavi: list[str]) -> str:
+                return " · ".join(f"{TOPIC_LABELS.get(k, k).lower()} {conta[k]}" for k in chiavi)
+
+            det_press = det([k for k in temi if k in _press49])
+            if pressione >= 3:
+                testo = (f"settimana calda: {pressione} voci di pressione in 7 giorni "
+                         f"({det_press})")
+                att.append((testo, "bad"))
+            elif pressione:
+                testo = (f"pressione in settimana: {pressione} "
+                         f"{'voce' if pressione == 1 else 'voci'} ({det_press})")
+                att.append((testo, "warn"))
+            elif voci:
+                testo = (f"settimana tranquilla: {voci} "
+                         f"{'voce' if voci == 1 else 'voci'}, nessuna di pressione ({det(temi)})")
+                att.append((testo, "good"))
+            # pressione da aspettative: rango per valore dei titolari (mediana, minimo 3 gare)
+            # contro la posizione in classifica dello snapshot raccolto
+            st49 = None
+            if not fm19.empty and "team_name" in fm19.columns:
+                righe_st = fm19[fm19.team_name.map(_canon) == _canon(tname)]
+                st49 = righe_st.iloc[0] if not righe_st.empty else None
+            if st49 is not None and not _mi49.empty and pd.notna(st49.get("rank")):
+                fin49 = fx19[(fx19.status == "finished") & (fx19.utc_kickoff < ko)]
+                info49 = _mi49[_mi49.match_id.isin({int(x) for x in fin49.match_id})]
+                valori: dict[int, list[float]] = {}
+                for r in info49.itertuples(index=False):
+                    for _tid, _col in ((int(r.home_id), "home_starters_value_eur"),
+                                       (int(r.away_id), "away_starters_value_eur")):
+                        v = getattr(r, _col, None)
+                        if v is None or pd.isna(v) or float(v) <= 0:
+                            continue
+                        valori.setdefault(_tid, []).append(float(v))
+                medie = {t: float(pd.Series(v).median()) for t, v in valori.items() if len(v) >= 3}
+                lega = fm19[fm19.league_code == st49["league_code"]].drop_duplicates("team_id")
+                in_lega = sorted({int(t) for t in lega.team_id} & set(medie))
+                if tid in medie and len(in_lega) >= 8:
+                    rango = sorted(in_lega, key=lambda t: (-medie[t], t)).index(tid) + 1
+                    pos = int(st49["rank"])
+                    if pos - rango >= 5:
+                        testo = (f"pressione da aspettative: rosa da {rango}ª per valore "
+                                 f"dei titolari, in classifica {pos}ª")
+                        att.append((testo, "warn"))
+                    elif rango - pos >= 5:
+                        testo = (f"sopra le attese: in classifica {pos}ª con una rosa da "
+                                 f"{rango}ª per valore dei titolari")
+                        att.append((testo, "good"))
+            return att, voci
+
+        for pg in pages:
+            html = pg.read_text(encoding="utf-8")
+            if "Analisi pre-partita" not in html or int(pg.stem) not in ko19.index:
+                continue
+            if 'id="clima"' not in html:
+                fails.append(f"{pg.name}: card «Clima del club» assente "
+                             f"(deve esserci su ogni scheda pre-partita)")
+                continue
+            n_clima += 1
+            blocco49 = re.search(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)',
+                                 html, re.DOTALL)
+            parti49 = (re.split(r'<p style="margin:0 0 6px"><b>', blocco49.group(1))
+                       if blocco49 else [])
+            checks += 1
+            if len(parti49) != 3:
+                fails.append(f"{pg.name}: struttura della card «Clima del club» inattesa "
+                             f"({len(parti49)} blocchi)")
+                continue
+            nota49 = html_unescape(blocco49.group(1))
+            for frammento in ("7 giorni", "5 posizioni", "valore dei titolari", "stampa"):
+                checks += 1
+                if frammento not in nota49:
+                    fails.append(f"{pg.name}: la nota del clima non dichiara «{frammento}»")
+            fr49 = fx19[fx19.match_id == int(pg.stem)].iloc[0]
+            ko49 = pd.Timestamp(fr49.utc_kickoff)
+            for parte in parti49[1:]:
+                tname49 = html_unescape(parte.split("</b>", 1)[0]).strip()
+                tid49 = int(fr49.home_id) if tname49 == str(fr49.home_name) else int(fr49.away_id)
+                attesi49, voci49 = _righe_clima49(tid49, tname49, ko49)
+                righe49 = [(html_unescape(t), tone) for tone, t in
+                           re.findall(r'<li class="mood-(bad|warn|good)"><span class="small">'
+                                      r'(.*?)</span></li>', parte, re.DOTALL)]
+                for testo, tone in attesi49:
+                    checks += 1
+                    if (testo, tone) not in righe49:
+                        fails.append(f"{pg.name}: {tname49} riga clima attesa assente "
+                                     f"«{testo[:60]}»")
+                for testo, tone in righe49:
+                    checks += 1
+                    if (testo, tone) not in attesi49:
+                        fails.append(f"{pg.name}: {tname49} riga clima non giustificata "
+                                     f"«{testo[:60]}»")
+                checks += 1
+                if (voci49 == 0) != (_vuoto49 in parte):
+                    fails.append(f"{pg.name}: {tname49} vuoto dichiarato della stampa "
+                                 f"{'assente' if voci49 == 0 else 'presente'} con {voci49} voci")
+    print(f"[49] pagine con clima del club riconciliate: {n_clima} (oracolo misto)")
+
 
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
     # classifica FotMob (fonte unica) e confrontati col testo stampato.
