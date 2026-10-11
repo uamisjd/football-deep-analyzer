@@ -67,14 +67,12 @@ def main() -> int:
     st = pd.read_parquet(DATA / "fotmob_standings.parquet")
     sim = pd.read_parquet(DATA / "season_sim.parquet")
     mi = pd.read_parquet(DATA / "match_info.parquet")
-    h2h = pd.read_parquet(DATA / "h2h.parquet")
-    h2h["utc"] = pd.to_datetime(h2h.utc, utc=True, errors="coerce")
-    h2h["hg"] = pd.to_numeric(h2h.home_goals, errors="coerce")
-    h2h["ag"] = pd.to_numeric(h2h.away_goals, errors="coerce")
-    h2h = h2h.dropna(subset=["utc", "hg", "ag", "home_id", "away_id"])
     chiave = {lg.fotmob_id: lg.key for lg in leagues()}
     posti = {lg.key: lg.ucl_spots for lg in leagues()}
     fx["ko"] = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+    fx["home_goals"] = pd.to_numeric(fx.home_goals, errors="coerce")
+    fx["away_goals"] = pd.to_numeric(fx.away_goals, errors="coerce")
+    fxr = fx.set_index("match_id")
     fx["lg"] = fx.league_id.map(chiave)
     ko = fx.drop_duplicates("match_id").set_index("match_id")["ko"]
     co = lu[(lu.role == "coach") & (lu.match_id.isin(ko.index))].copy()
@@ -177,12 +175,44 @@ def main() -> int:
                 agg["ppg"] += int(atteso_ppg in c_co)
                 if atteso_ppg not in c_co:
                     errori["ppg"].append(f"{pg.stem}|{tname}| atteso «{atteso_ppg}»")
-            # precedenti: bilancio con l'avversaria dall'archivio testa-a-testata di questa
-            # partita (docs/78 §7) e incroci in panchina dalle distinte — ricalcolati qui
-            hh = h2h[(h2h.match_id == mid)
-                     & (((h2h.home_id == tid) & (h2h.away_id == oid))
-                        | ((h2h.home_id == oid) & (h2h.away_id == tid)))]
-            hh = hh[hh.utc < kickoff]
+            # bilancio dell'ALLENATORE con l'avversaria (sue gare in panchina, qualunque
+            # club, prima di questa) e incroci in panchina — ricalcolati qui (docs/78 §10).
+            # Il bilancio fra i due club non deve comparire nella cella: sta in «Precedenti».
+            if f"bilancio con {oname} nel nostro archivio" in c_co \
+                    or "un solo precedente in archivio con" in c_co:
+                agg["cella_con_bilancio_club"] += 1
+            sue = co[co.player_id == cur_id]
+            n_b = w_b = d_b = l_b = 0
+            for r in sue.itertuples(index=False):
+                if r.match_id not in fxr.index:
+                    continue
+                g = fxr.loc[r.match_id]
+                if (str(g.status) != "finished" or pd.isna(g.home_goals)
+                        or pd.isna(g.away_goals) or pd.Timestamp(g.ko) >= kickoff):
+                    continue
+                casa = int(r.team_id) == int(g.home_id)
+                if (int(g.away_id) if casa else int(g.home_id)) != oid:
+                    continue
+                gf, ga = ((g.home_goals, g.away_goals) if casa else (g.away_goals, g.home_goals))
+                n_b += 1
+                if gf > ga:
+                    w_b += 1
+                elif gf == ga:
+                    d_b += 1
+                else:
+                    l_b += 1
+            if n_b:
+                atteso_all = (f"da allenatore contro {oname}: 1 gara nel nostro archivio "
+                              f"({w_b}V {d_b}N {l_b}P)" if n_b == 1 else
+                              f"da allenatore contro {oname}: {n_b} gare nel nostro archivio "
+                              f"({w_b}V {d_b}N {l_b}P)")
+                agg["bilancio_allenatore_pubblicato"] += int(atteso_all in c_co)
+                if atteso_all not in c_co:
+                    errori["precedenti"].append(f"{pg.stem}|{tname}| atteso «{atteso_all}»")
+            else:
+                agg["bilancio_allenatore_assente"] += 1
+                if f"da allenatore contro {oname}" in c_co:
+                    errori["precedenti"].append(f"{pg.stem}|{tname}| bilancio senza dati")
             oc = co[(co.team_id == oid) & (co.ko <= kickoff)]
             oid_coach = None if oc.empty else oc.iloc[-1].player_id
             # incroci = gare in cui i due allenatori si sono trovati su panchine opposte,
@@ -197,21 +227,6 @@ def main() -> int:
                     t2 = set(suoi19.loc[suoi19.match_id == m19, "team_id"])
                     if t1 and t2 and not (t1 & t2):
                         comune += 1
-            if len(hh):
-                wa = int(sum(1 for r in hh.itertuples(index=False)
-                             if (r.home_id == tid and r.hg > r.ag)
-                             or (r.away_id == tid and r.ag > r.hg)))
-                da = int(sum(1 for r in hh.itertuples(index=False) if r.hg == r.ag))
-                la = len(hh) - wa - da
-                atteso_prec = (f"un solo precedente in archivio con {oname}: {wa}V {da}N {la}P"
-                               if len(hh) == 1 else
-                               f"bilancio con {oname} nel nostro archivio: "
-                               f"{wa}V {da}N {la}P su {len(hh)} gare")
-                agg["club_bilancio_pubblicato"] += int(atteso_prec in c_co)
-                if atteso_prec not in c_co:
-                    errori["precedenti"].append(f"{pg.stem}|{tname}| atteso «{atteso_prec}»")
-            else:
-                agg["club_bilancio_assente"] += 1
             if comune:
                 lc18 = co[co.ko < kickoff]
                 miei18 = lc18[lc18.player_id == cur_id]
@@ -246,7 +261,7 @@ def main() -> int:
                     agg["incroci_panchina_senza_esito"] += 1
             else:
                 agg["incroci_panchina_assenti"] += 1
-            precedenti.append((f"{pg.stem}|{tname}", len(hh), comune))
+            precedenti.append((f"{pg.stem}|{tname}", n_b, comune))
 
             # ---- posta in gioco: percentuali dalla simulazione ----
             sm = sim[sim.team.map(canon) == canon(tname)]
@@ -354,7 +369,7 @@ def main() -> int:
         print(f"{et:28s} {v:4d} · posizione min {min(pos) if pos else '-'} "
               f"mediana {sorted(pos)[len(pos) // 2] if pos else '-'} "
               f"max {max(pos) if pos else '-'}")
-    print("\n=== precedenti (archivio h2h per coppia / incroci in panchina) ===")
+    print("\n=== precedenti (gare reali dell'allenatore vs avversaria / incroci) ===")
     if precedenti:
         d = pd.DataFrame(precedenti, columns=["cella", "vs_avv", "vs_all"])
         print(d[["vs_avv", "vs_all"]].value_counts().to_string())

@@ -44,10 +44,25 @@ store) e **il passato è rigorosamente prima** di questa partita. Effetto: sched
 104 → 82 (le altre si leggono come «Finale», con punteggio e sezioni post-partita), righe
 «incrocio» pubblicate 44 → 0.
 
+**Revisione su segnalazione (foto della scheda Atalanta–Venezia).** Nella cella dell'allenatore
+compariva «bilancio con Venezia nel nostro archivio: 4V 1N 0P su 5 gare»: è l'albo d'oro di
+**Atalanta–Venezia** (2021→2025), non le partite di Sarri contro il Venezia — l'utente l'ha
+colto («queste non sono le vere partite fatte dall'allenatore Sarri contro il Venezia»). Il
+numero era già pubblicato, correttamente, nella card «Precedenti». Corretto: il bilancio del
+club esce dalla cella dell'allenatore (0 celle, asserzione di regressione in [19], nell'audit e
+nei test) e al suo posto, solo quando esistono dati reali, va il bilancio **dell'allenatore** —
+sue gare in panchina, con qualunque club, contro questa avversaria («da allenatore contro X: N
+gare nel nostro archivio (wV dN lP)»). Misura: **0 celle su 164** hanno oggi gare reali
+dell'allenatore contro l'avversaria (archivio panchine dal 7 agosto 2026; in una stagione ogni
+allenatore incontra ogni avversaria al massimo una volta) → la riga tace, come gli incroci fra
+allenatori; si accenderà con le gare di ritorno o con un backfill delle distinte storiche.
+Verificato a mano il resto della cella di Sarri: 2-1 Sassuolo, 1-0 Bologna, 2-1 a Roma, 1-2
+Cagliari, 0-2 a Torino → 6 punti su 5 gare = **1,2 punti/gara**, corretto.
+
 Gate rifatti dopo l'ultima modifica: **598 test**, Ruff pulito, build **493 schede**,
-`verify_site` **233.508 · 0** (nuova invariante: niente card su una gara che il calendario dà
-finita), audit panchina **0 scostamenti · 0 silenzi**, `parita_schede` **82 · nessuna
-differenza**, `resa_375` **28.467 · 0**. Nessuna richiesta alle fonti. Punti aperti: backfill
+`verify_site` **233.508 · 0** (nuove invarianti: niente card su una gara che il calendario dà
+finita; il bilancio dei club mai nella cella dell'allenatore), audit panchina **0 scostamenti ·
+0 silenzi**, `parita_schede` **82 · nessuna differenza**, `resa_375` **28.467 · 0**. Nessuna richiesta alle fonti. Punti aperti: backfill
 delle distinte storiche per gli incroci fra allenatori (decisione a parte), 4 celle POR1 con
 tutte le percentuali ≤1 (dichiarate), 4 celle senza archivio h2h (2 partite, si riempiranno
 alla prossima raccolta).

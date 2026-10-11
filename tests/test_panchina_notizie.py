@@ -72,17 +72,6 @@ STANDINGS = pd.DataFrame([
      "wins": 0, "draws": 1, "losses": 2, "goals_for": 2, "goals_against": 6, "goal_diff": -4, "points": 1},
 ])
 
-# archivio testa-a-testata raccolto per la partita 4 (Inter-Roma del 13/09):
-# 3 confronti diretti giocati prima del kickoff, dal punto di vista dell'Inter 1V 1N 1P
-H2H = pd.DataFrame([
-    {"match_id": 4, "utc": KO("2025-01-15 18:00"), "league": "Serie A", "home_id": 1, "away_id": 2,
-     "home_goals": 1, "away_goals": 0},
-    {"match_id": 4, "utc": KO("2025-05-20 18:00"), "league": "Serie A", "home_id": 2, "away_id": 1,
-     "home_goals": 2, "away_goals": 0},
-    {"match_id": 4, "utc": KO("2025-09-10 18:00"), "league": "Serie A", "home_id": 2, "away_id": 1,
-     "home_goals": 1, "away_goals": 1},
-])
-
 NEWS = pd.DataFrame([
     {"team_id": 2, "published_at": KO("2026-09-14 09:00"), "title": "Inter, infermeria: torna il titolare",
      "url": "https://esempio.it/1", "source": "Gazzetta", "description": "vigilia e convocati"},
@@ -104,7 +93,6 @@ def analysis(tmp_path):
     st.write("cup_fixtures", CUPS)
     st.write("news", NEWS)
     st.write("fotmob_standings", STANDINGS)
-    st.write("h2h", H2H)
     return MatchAnalysis(st)
 
 
@@ -480,23 +468,27 @@ def test_keyword_score_e_clean_text():
 
 
 def test_bench_deep_profilo_rendimento_e_virtual(analysis):
-    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"), match_id=4)
+    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
     assert b["tenure_line"] == "panchina nuova: 2ª gara dal subentro a Coach Vecchio"
     # una sola gara finita col coach corrente (Inter-Milan 2-2): 1,0 punti/gara
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
-    # precedenti (docs/78 §7): bilancio dall'archivio testa-a-testata della partita,
-    # non più dall'archivio distinte (1 gara per coppia → la riga non si accendeva mai)
-    assert b["club_vs_opp_line"] == "bilancio con Roma nel nostro archivio: 1V 1N 1P su 3 gare"
-    # precedenti tra i due ALLENATORI: si sono incrociati su Milan–Roma dell'archivio
-    # (l'allenatore dell'Inter era su un'altra panchina), non su una gara fra i due club
+    # bilancio dell'ALLENATORE con l'avversaria (docs/78 §10): lui con qualunque club
+    # contro la Roma — la gara Milan-Roma dell'archivio, quando era sulla panchina
+    # del Milan. Mai il bilancio fra i due club (che è nella card «Precedenti»).
+    assert b["coach_vs_opp_line"] == ("da allenatore contro Roma: 1 gara nel nostro "
+                                      "archivio (1V 0N 0P)")
+    # incroci tra i due ALLENATORI: si sono trovati su panchine opposte in Milan-Roma
     assert b["coach_vs_coach_line"] == ("un solo incrocio in panchina con Coach Stabile: "
                                         "1V 0N 0P")
     # la stessa gara, letta dalla panchina della Roma: speculare
-    br = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"), match_id=4)
+    br = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
     assert br["coach_vs_coach_line"] == ("un solo incrocio in panchina con Coach Nuovo: "
                                          "0V 0N 1P")
-    # e il bilancio con l'avversaria resta quello dell'archivio testa-a-testata
-    assert "bilancio con Inter" in br["club_vs_opp_line"]
+    # l'allenatore della Roma ha affrontato l'Inter una volta: Roma-Inter 1-0
+    assert br["coach_vs_opp_line"] == ("da allenatore contro Inter: 1 gara nel nostro "
+                                       "archivio (1V 0N 0P)")
+    # e il bilancio fra i due CLUB non compare nella cella dell'allenatore
+    assert "bilancio con" not in b and "bilancio con" not in br
     assert b["table_line"] == ("2º con 7 punti · 3 punti sopra la zona retrocessione · "
                                "in zona UCL (prime 4)")
     # la riga virtuale applica i punti del risultato a entrambe le squadre e copre i tre
@@ -528,10 +520,12 @@ def test_bench_deep_non_conta_la_partita_stessa(tmp_path):
     st.write("season_sim", SIM)
     st.write("fotmob_standings", STANDINGS)
     ma = MatchAnalysis(st)
-    b = ma.bench_deep(2, "Inter", 4, "Lazio", KO("2026-09-20 18:00"), match_id=6)
+    b = ma.bench_deep(2, "Inter", 4, "Lazio", KO("2026-09-20 18:00"))
     # solo la gara del 05/09 (2-2): 1,0 punti/gara. Con il leak sarebbe 2,0 su 2 gare.
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
-    assert b["coach_vs_coach_line"] is None   # nessun incrocio reale: e la partita non conta
+    # il 7-0 con la Lazio è QUESTA partita: non è un precedente dell'allenatore
+    assert b["coach_vs_opp_line"] is None
+    assert b["coach_vs_coach_line"] is None
     st.close()
 
 

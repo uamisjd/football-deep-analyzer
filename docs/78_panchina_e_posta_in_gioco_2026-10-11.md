@@ -114,15 +114,17 @@ POR1, NED1 e FRA1), attesi allineati in [19] e nell'audit, asserzione di regress
 contro l'avversaria, ≥2 contro il suo allenatore) non si accendevano su **nessuna** delle 208
 celle — 164 celle con 0 gare in archivio, 44 con 1.
 
-**La correzione, prima parte (club).** Il bilancio con l'avversaria ora viene dall'**archivio
-dei testa-a-testata** già raccolto per ogni partita (`h2h.parquet`: 9.730 righe, 487 contesti,
-mediana 20 incontri per coppia, massimo 44): la stessa fonte della card «Testa a testa», non
-l'albo d'oro completo — e la nota lo dichiara. Copertura dopo la build: **160 celle su 164**
-(4 celle, 2 partite — Coventry–Newcastle e Le Mans–Toulouse — non hanno ancora l'archivio
-h2h). Esempio: «bilancio con Juventus nel nostro archivio: 2V 5N 23P su 30 gare».
+**La correzione, prima parte (club) — superata dal §10.** Il primo tentativo pubblicò nella
+cella il bilancio fra i due **club** dall'archivio testa-a-testata (`h2h.parquet`: 9.730 righe,
+487 contesti, mediana 20 incontri per coppia; 160 celle su 164 con dati, es. «bilancio con
+Juventus nel nostro archivio: 2V 5N 23P su 30 gare»). Era però **attribuzione falsa**: sotto
+il nome dell'allenatore quel numero si legge come suo, mentre è l'albo d'oro delle due squadre
+(che per giunta la card «Precedenti» già pubblica, con l'intervallo di archivio). Segnalato
+dall'utente con la foto della scheda di Atalanta–Venezia («queste non sono le vere partite
+fatte dall'allenatore Sarri contro il Venezia»): vedi **§10** per la correzione e la misura.
 
-**Lo sbaglio che l'utente ha colto.** Dopo la risposta «non possiamo dare un archivio al
-sito?», la riga «incroci in panchina con l'allenatore avversario» era stata implementata
+**Lo sbaglio che l'utente ha colto (incroci).** Dopo la risposta «non possiamo dare un archivio
+al sito?», la riga «incroci in panchina con l'allenatore avversario» era stata implementata
 contando le gare del **club** in cui capitava l'allenatore avversario: pubblicava cioè lo
 scontro fra le due squadre sotto un'etichetta che prometteva i precedenti fra i due
 allenatori. Segnalato dall'utente («quello che hai messo sono solo gli scontri tra le due
@@ -185,11 +187,70 @@ righe «incrocio in panchina» pubblicate **44 → 0**; card solo su gare vere d
   d'indice), nessuna differenza.
 - `scripts/resa_375.py`: **28.467 misure · 0 problemi a 375 px**.
 
-## §10 — Punti aperti
+Dopo la revisione del §10 i gate sono stati rifatti da capo (build, verify, audit, parità,
+resa): stessi esiti, con le celle del bilancio del club a 0 — vedi la coda del §10.
 
-- **Incroci fra allenatori**: riga corretta ma senza dati oggi (0 incroci reali su 164 celle);
-  si accende con l'archivio. Un bilancio di carriera richiede il backfill delle distinte
-  storiche da FotMob (rete + budget: decisione separata, non eseguibile dal sandbox).
+## §10 — Revisione su segnalazione: il «bilancio con l'avversaria» era del club, non dell'allenatore
+
+**La segnalazione (foto della scheda Atalanta–Venezia).** Nella cella dell'allenatore compariva,
+sotto «rendimento: 1,2 punti/gara su 5 gare finite con lui in panchina», la riga:
+
+> bilancio con Venezia nel nostro archivio: 4V 1N 0P su 5 gare
+
+L'utente: «queste non sono le vere partite fatte dall'allenatore Sarri contro il Venezia».
+**Vero**: quel 4V 1N 0P è l'albo d'oro di **Atalanta–Venezia** dal 30/11/2021 al 01/03/2025
+(già pubblicato, correttamente, nella card «Precedenti»: «4 vittorie Atalanta · 1 pareggio · 0
+vittorie Venezia — archivio dal 30/11/2021 al 01/03/2025»). Le sei righe di Sarri nel nostro
+archivio panchine sono tutte della stagione 2026/27 (23/08 Sassuolo, 31/08 Bologna, 05/09 Roma,
+12/09 Cagliari, 20/09 Juventus, più questa con il Venezia): **nessuna** contro il Venezia, e le
+gare del 2021–2025 non hanno distinta nel nostro archivio — non sappiamo nemmeno chi le
+allenasse.
+
+**La misura.** Sulle 164 celle-squadra: gare reali dell'allenatore corrente (con **qualunque**
+club) contro la squadra avversaria, finite e prima di questa partita → **0 celle**. È coerente:
+l'archivio copre una sola stagione a metà andata, e in una stagione ogni allenatore incontra
+ogni avversaria al massimo una volta — la riga si accenderà con le gare di ritorno (o con un
+backfill delle distinte storiche, §11).
+
+**La correzione.**
+
+1. **Fuori il bilancio del club** dalla cella dell'allenatore: era attribuzione falsa **e**
+   duplicazione (la card «Precedenti» lo pubblica già, con nomi dei club e intervallo di
+   archivio). La nota della card ora rimanda lì: «…il bilancio fra i due club è invece nella
+   card «Precedenti»».
+2. **Dentro il bilancio dell'allenatore**, con la definizione stretta: sue gare in panchina —
+   con qualunque club — contro questa avversaria, finite, **prima** di questa partita
+   («da allenatore contro X: N gare nel nostro archivio (wV dN lP)»). Oggi non si pubblica su
+   nessuna cella: meglio il silenzio di un numero vero solo per sbaglio.
+3. Il parametro `match_id` di `bench_deep`, aggiunto per leggere l'archivio h2h, sparisce: non
+   serve più.
+
+**Invarianti e test.** [19] ricalcola il bilancio dell'allenatore dalle distinte + calendario e
+**rifiuta** sia un «da allenatore contro X» senza gare reali nei Parquet sia un «bilancio con X
+nel nostro archivio» nella cella (il ritorno del difetto segnalato); `audit_panchina.py` fa lo
+stesso conto (ora `bilancio_allenatore_assente 164`, `cella_con_bilancio_club 0`);
+`test_bench_deep_profilo_rendimento_e_virtual` verifica il caso reale (allenatore che ha
+affrontato l'avversaria su un'altra panchina: «da allenatore contro Roma: 1 gara nel nostro
+archivio (1V 0N 0P)») e l'assenza del testo dei club; il test della card in `tests/test_site.py`
+semina tre confronti diretti fra i club e verifica che **non** finiscano nella cella.
+
+**Il numero di Sarri verificato a mano** (dati reali): 23/08 Atalanta 2-1 Sassuolo (V), 31/08
+Atalanta 1-0 Bologna (V), 05/09 Roma 2-1 Atalanta (P), 12/09 Atalanta 1-2 Cagliari (P), 20/09
+Juventus 2-0 Atalanta (P) → 6 punti su 5 gare finite = **1,2 punti/gara**: la parte pubblicata
+della cella era ed è corretta.
+
+**Dopo la correzione (build + gate rifatti).** Celle con il bilancio del club: **164 → 0**.
+Celle con «da allenatore contro…»: 0 (dati assenti, non pubblicato). `verify_site` **nessun
+problema · 233.508 controlli**; `audit_panchina` **0 scostamenti**; **598 test**; `ruff` pulito.
+`parita_schede` e `resa_375` rifatti dopo la build: **82 schede · nessuna differenza** e
+**28.467 · 0**.
+
+## §11 — Punti aperti
+
+- **Precedenti dell'allenatore** (gare sue contro l'avversaria) e **incroci fra allenatori**:
+  righe corrette ma senza dati oggi (0 su 164 celle ciascuna: l'archivio panchine copre dal 7
+  agosto 2026). Si accendono con l'archivio — es. le gare di ritorno, o un backfill delle
+  distinte storiche da FotMob (rete + budget: decisione separata, non eseguibile dal sandbox).
 - **Permanenza**: «panchina invariata da N gare nel nostro archivio» — il «nel nostro
   archivio» resta, perché la misura è quella (l'archivio distinte, non la carriera).
 - **4 celle POR1** con tutte le percentuali ≤1 (5887645/46/48/49): oneste dopo il §6

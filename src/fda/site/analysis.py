@@ -1858,8 +1858,7 @@ class MatchAnalysis:
         return cls._COUNTRY_IT.get(code.strip().upper())
 
     def bench_deep(self, team_id: int, team_name: str, opp_id: int, opp_name: str,
-                   kickoff: datetime, avg_age: Any = None,
-                   match_id: int | None = None) -> dict[str, Any] | None:
+                   kickoff: datetime, avg_age: Any = None) -> dict[str, Any] | None:
         """La panchina e la posta in gioco come informazioni *utili*, non anagrafica.
 
         Tutto derivato dai Parquet già raccolti (nessuna fonte nuova, nessun numero
@@ -1869,11 +1868,11 @@ class MatchAnalysis:
           (subentro rilevato dal cambio di id, mai da voci);
         - **rendimento**: punti/gara sulle partite *finite* con l'allenatore corrente
           (le future non contano);
-        - **precedenti**: bilancio con la squadra avversaria dall'**archivio dei
-          testa-a-testata** raccolto per questa partita (``h2h``, la stessa fonte della card
-          omonima) e incroci in panchina con l'allenatore avversario — le gare del nostro
-          archivio panchine in cui i due si sono trovati su panchine opposte, su qualunque
-          coppia di club, sempre **prima** di questa partita;
+        - **precedenti dell'allenatore**: le sue gare in panchina (con qualunque club)
+          contro la squadra avversaria, e gli incroci con l'allenatore avversario — gare in
+          cui i due si sono trovati su panchine opposte: entrambi dalle nostre distinte,
+          sempre **prima** di questa partita. Il bilancio fra i due **club** sta nella card
+          «Precedenti» e non viene mai attribuito all'allenatore;
         - **posta in gioco di classifica**: distacco reale dalla zona retrocessione
           (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18) e dal 4º posto
           (linea Europa minima in tutte e 7 le leghe), dalla classifica FotMob viva;
@@ -1887,7 +1886,7 @@ class MatchAnalysis:
         out: dict[str, Any] = {"coach": coach, "stakes": stakes, "avg_age": age,
                                "coach_age": None, "coach_country_it": None,
                                "coach_ppg_line": None, "coach_ppg_absent": False,
-                               "club_vs_opp_line": None,
+                               "coach_vs_opp_line": None,
                                "coach_vs_coach_line": None, "tenure_line": None,
                                "table_line": None, "virtual_line": None}
         # ---- profilo e rendimento dell'allenatore -------------------------------------------
@@ -1934,27 +1933,44 @@ class MatchAnalysis:
                         # «nessuna partita ancora diretta» (misurato il 2026-10-11 su 6 celle
                         # pre-partita, `docs/78` §3).
                         out["coach_ppg_absent"] = True
-                    # precedenti: bilancio con l'avversaria dall'**archivio dei
-                    # testa-a-testata** raccolto per questa partita (la stessa fonte della
-                    # card omonima). Fino al 2026-10-11 questa riga leggeva l'archivio
-                    # delle distinte, che per coppia di squadre copre una sola gara: con le
-                    # soglie di allora (3 gare) non si accendeva su nessuna delle 208 celle
-                    # (`docs/78` §7). L'archivio h2h copre 202 celle su 208, mediana 20 gare.
-                    if match_id is not None:
-                        past = self._h2h_core(int(match_id), team_id, opp_id,
-                                              pd.Timestamp(kickoff), n=200)
-                        if past:
-                            w = sum(1 for r in past
-                                    if (r["home_id"] == team_id and r["hg"] > r["ag"])
-                                    or (r["away_id"] == team_id and r["ag"] > r["hg"]))
-                            d = sum(1 for r in past if r["hg"] == r["ag"])
-                            l = len(past) - w - d
-                            out["club_vs_opp_line"] = (
-                                f"un solo precedente in archivio con {opp_name}: "
-                                f"{w}V {d}N {l}P"
-                                if len(past) == 1 else
-                                f"bilancio con {opp_name} nel nostro archivio: "
-                                f"{w}V {d}N {l}P su {len(past)} gare")
+                    # bilancio dell'**allenatore** con l'avversaria: le sue gare in
+                    # panchina (con qualunque club) contro questa squadra, finite, prima
+                    # di questa partita. Mai il bilancio fra i due **club** — quello è nella
+                    # card «Precedenti» e sotto il nome dell'allenatore si legge come suo:
+                    # una prima stesura (2026-10-11) pubblicò lì «bilancio con Venezia: 4V
+                    # 1N 0P su 5 gare», cioè l'albo d'oro di Atalanta–Venezia dal 2021, che
+                    # Sarri non ha mai allenato (`docs/78` §10, revisione su segnalazione).
+                    if pd.notna(cur) and not self.fixtures.empty:
+                        sue = self.lineup[(self.lineup.role == "coach")
+                                          & (self.lineup.player_id == cur)]
+                        fxi = self.fixtures.drop_duplicates("match_id").set_index("match_id")
+                        n_a = w_a = d_a = l_a = 0
+                        for r in sue.itertuples(index=False):
+                            if r.match_id not in fxi.index or pd.isna(r.team_id):
+                                continue
+                            g = fxi.loc[r.match_id]
+                            if (str(g.status) != "finished"
+                                    or pd.isna(g.home_goals) or pd.isna(g.away_goals)
+                                    or pd.Timestamp(g.utc_kickoff) >= pd.Timestamp(kickoff)):
+                                continue
+                            casa = int(r.team_id) == int(g.home_id)
+                            if (int(g.away_id) if casa else int(g.home_id)) != opp_id:
+                                continue
+                            gf, ga = ((g.home_goals, g.away_goals) if casa
+                                      else (g.away_goals, g.home_goals))
+                            n_a += 1
+                            if gf > ga:
+                                w_a += 1
+                            elif gf == ga:
+                                d_a += 1
+                            else:
+                                l_a += 1
+                        if n_a:
+                            out["coach_vs_opp_line"] = (
+                                f"da allenatore contro {opp_name}: 1 gara nel nostro "
+                                f"archivio ({w_a}V {d_a}N {l_a}P)" if n_a == 1 else
+                                f"da allenatore contro {opp_name}: {n_a} gare nel nostro "
+                                f"archivio ({w_a}V {d_a}N {l_a}P)")
                     # incroci in panchina con l'allenatore avversario: le gare del nostro
                     # archivio panchine in cui i due si sono trovati su panchine **opposte**,
                     # su qualunque coppia di club — sono i precedenti tra i due allenatori,
@@ -1963,7 +1979,7 @@ class MatchAnalysis:
                     # gare del *club* col coach avversario e, col filtro inclusivo sulla data,
                     # finiva per contare **la partita stessa** su 22 schede: il risultato
                     # della gara in corso spacciato per precedente (`docs/78` §7).
-                    if match_id is not None and pd.notna(cur):
+                    if pd.notna(cur):
                         opp_coach = self.coach(opp_id, kickoff)
                         opp_cid = (opp_coach or {}).get("id")
                         if opp_cid is not None and not pd.isna(opp_cid):
@@ -6193,12 +6209,10 @@ class MatchAnalysis:
             "home_absences": self.absences_weight(match_id, home_id) if status != "finished" else None,
             "away_absences": self.absences_weight(match_id, away_id) if status != "finished" else None,
             "home_bench": self.bench_deep(home_id, f["home_name"], away_id, f["away_name"],
-                                          kickoff, _val(info, "home_avg_starter_age"),
-                                          match_id=match_id)
+                                          kickoff, _val(info, "home_avg_starter_age"))
                           if status != "finished" else None,
             "away_bench": self.bench_deep(away_id, f["away_name"], home_id, f["home_name"],
-                                          kickoff, _val(info, "away_avg_starter_age"),
-                                          match_id=match_id)
+                                          kickoff, _val(info, "away_avg_starter_age"))
                           if status != "finished" else None,
             "home_mood": self.club_mood(match_id, home_id, f["home_name"], kickoff)
                           if status != "finished" else [],

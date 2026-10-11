@@ -2335,7 +2335,6 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     desc19 = ({str(x): str(y or "") for x, y in zip(nd19.title, nd19.description)}
               if not nd19.empty and "description" in nd19.columns else {})
     sim19 = st.read("season_sim")
-    h2h19 = st.read("h2h")
     fm19 = st.read("fotmob_standings")
     mi19 = st.read("match_info")
     from fda.site.analysis import MatchAnalysis as _MA
@@ -2445,32 +2444,58 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         atteso_ppg = "rendimento: nessuna gara finita con lui in panchina"
                     if atteso_ppg not in cella_all:
                         fails.append(f"{pg.name}: rendimento panchina ({tname}) «{atteso_ppg}» assente")
-                    # precedenti: bilancio dall'archivio testa-a-testata di questa partita
-                    # (`docs/78` §7), ricalcolato dalla tabella h2h senza passare da
-                    # ``_h2h_core``; e incroci in panchina dalle distinte
+                    # bilancio dell'**allenatore** con l'avversaria: le sue gare in panchina
+                    # (con qualunque club) contro questa squadra, finite, prima di questa
+                    # partita (`docs/78` §10). Il bilancio fra i due **club** non deve
+                    # comparire sotto il nome dell'allenatore: sta nella card «Precedenti»
+                    # (una prima stesura lo pubblicava lì, attribuendolo all'allenatore).
                     checks += 1
-                    if not h2h19.empty:
-                        hh19 = h2h19[(h2h19.match_id == mid)
-                                     & (((h2h19.home_id == tid) & (h2h19.away_id == oid))
-                                        | ((h2h19.home_id == oid) & (h2h19.away_id == tid)))]
-                        hh19 = hh19.dropna(subset=["utc", "home_goals", "away_goals",
-                                                   "home_id", "away_id"])
-                        hh19 = hh19[pd.to_datetime(hh19.utc, utc=True) < kickoff]
-                        if len(hh19):
-                            w19p = int(sum(1 for r in hh19.itertuples(index=False)
-                                           if (r.home_id == tid and r.home_goals > r.away_goals)
-                                           or (r.away_id == tid and r.away_goals > r.home_goals)))
-                            d19p = int(sum(1 for r in hh19.itertuples(index=False)
-                                           if r.home_goals == r.away_goals))
-                            l19p = len(hh19) - w19p - d19p
-                            atteso_prec = (
-                                f"un solo precedente in archivio con {oname}: "
-                                f"{w19p}V {d19p}N {l19p}P" if len(hh19) == 1 else
-                                f"bilancio con {oname} nel nostro archivio: "
-                                f"{w19p}V {d19p}N {l19p}P su {len(hh19)} gare")
-                            if atteso_prec not in cella_all:
-                                fails.append(f"{pg.name}: precedenti ({tname}) "
-                                             f"«{atteso_prec}» assenti o diversi")
+                    atteso_c19 = None
+                    if coach and not lu19.empty:
+                        cur19 = ct.iloc[-1].player_id if not ct.empty else None
+                        if cur19 is not None and not pd.isna(cur19):
+                            sue19 = lu19[(lu19.role == "coach")
+                                         & (lu19.player_id == cur19)]
+                            fxi19 = fx19.drop_duplicates("match_id").set_index("match_id") \
+                                if not fx19.empty else fx19
+                            n_a = w_a = d_a = l_a = 0
+                            for r in sue19.itertuples(index=False):
+                                if (r.match_id not in fxi19.index or pd.isna(r.team_id)
+                                        or pd.isna(r.match_id)):
+                                    continue
+                                g19 = fxi19.loc[r.match_id]
+                                if (str(g19.status) != "finished"
+                                        or pd.isna(g19.home_goals) or pd.isna(g19.away_goals)
+                                        or pd.Timestamp(g19.utc_kickoff) >= kickoff):
+                                    continue
+                                casa = int(r.team_id) == int(g19.home_id)
+                                if (int(g19.away_id) if casa else int(g19.home_id)) != oid:
+                                    continue
+                                gf, ga = ((g19.home_goals, g19.away_goals) if casa
+                                          else (g19.away_goals, g19.home_goals))
+                                n_a += 1
+                                if gf > ga:
+                                    w_a += 1
+                                elif gf == ga:
+                                    d_a += 1
+                                else:
+                                    l_a += 1
+                            if n_a:
+                                atteso_c19 = (
+                                    f"da allenatore contro {oname}: 1 gara nel nostro "
+                                    f"archivio ({w_a}V {d_a}N {l_a}P)" if n_a == 1 else
+                                    f"da allenatore contro {oname}: {n_a} gare nel nostro "
+                                    f"archivio ({w_a}V {d_a}N {l_a}P)")
+                    if atteso_c19 is None:
+                        if f"da allenatore contro {oname}" in cella_all:
+                            fails.append(f"{pg.name}: bilancio allenatore ({tname}) presente "
+                                         f"senza gare reali nei Parquet")
+                        if f"bilancio con {oname} nel nostro archivio" in cella_all:
+                            fails.append(f"{pg.name}: bilancio dei due club attribuito "
+                                         f"all'allenatore ({tname})")
+                    elif atteso_c19 not in cella_all:
+                        fails.append(f"{pg.name}: bilancio allenatore ({tname}) "
+                                     f"«{atteso_c19}» assenti o diversi")
                     # incroci in panchina: precedenti tra i due **allenatori** — gare in cui
                     # si sono trovati su panchine opposte, qualsiasi club, prima di questa
                     # (`docs/78` §7). Ricalcolo indipendente dalle distinte del Parquet.

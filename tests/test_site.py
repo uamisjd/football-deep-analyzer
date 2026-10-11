@@ -2822,8 +2822,10 @@ def test_card_panchina_tre_esiti_eta_dichiarata_e_orologio(tmp_path):
         {"league_code": "ITA1", "team_id": 6504, "team_name": "Monza", "rank": 4, "played": 3,
          "wins": 0, "draws": 1, "losses": 2, "goals_for": 2, "goals_against": 8, "goal_diff": -6, "points": 1},
     ])
-    # archivio testa-a-testata raccolto per QUESTA partita (docs/78 §7): tre confronti
-    # diretti già giocati, dal punto di vista dell'Inter 1V 1N 1P e del Monza 1V 1N 1P
+    # archivio testa-a-testata raccolto per QUESTA partita: tre confronti diretti già
+    # giocati fra i due club (1V 1N 1P dal punto di vista di entrambe). Serve a provare
+    # che il bilancio fra i **club** NON finisce nella cella dell'allenatore
+    # (`docs/78` §10): quello sta nella card «Precedenti»
     st.upsert("h2h", [
         {"match_id": 5900005, "utc": "2025-01-15T18:00:00+00:00", "league": "Serie A",
          "home_id": 8636, "away_id": 6504, "home_goals": 2, "away_goals": 1},
@@ -2836,11 +2838,14 @@ def test_card_panchina_tre_esiti_eta_dichiarata_e_orologio(tmp_path):
     SiteBuilder(store=st, out_dir=out).build_match_pages({5900005})
     html = (out / "partite" / "5900005.html").read_text(encoding="utf-8")
     card = html.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
-    # i precedenti vengono dall'archivio testa-a-testata, non dall'archivio distinte
-    # (1 gara per coppia): la riga si accende su entrambe le celle, speculare
-    assert card.count("nel nostro archivio: 1V 1N 1P su 3 gare") == 2
-    assert "bilancio con Monza nel nostro archivio" in card
-    assert "bilancio con Inter nel nostro archivio" in card
+    # i precedenti nella cella sono quelli dell'ALLENATORE (docs/78 §10): Chivu ha
+    # affrontato il Monza come allenatore dell'Inter una volta (1V), Allegri ha
+    # affrontato l'Inter una volta (0V 0N 1P). Mai il bilancio fra i due club, che nel
+    # nostro archivio testa-a-testata qui sopra conterebbe 3 gare: sta in «Precedenti».
+    assert "da allenatore contro Monza: 1 gara nel nostro archivio (1V 0N 0P)" in card
+    assert "da allenatore contro Inter: 1 gara nel nostro archivio (0V 0N 1P)" in card
+    assert "bilancio con Monza nel nostro archivio" not in card
+    assert "bilancio con Inter nel nostro archivio" not in card
     # docs/78 §6: il numero è la probabilità di retrocessione (colonna «Retro» di Proiezioni),
     # non la salvezza: fino al 2026-10-11 la coda diceva «salvezza N%» invertendo il significato
     assert re.search(r"retrocessione \d+%", card) and not re.search(r"salvezza \d+%", card)
