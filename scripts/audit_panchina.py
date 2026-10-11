@@ -18,14 +18,18 @@ import sys
 from collections import Counter
 from html import unescape
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
+from fda.config import load_leagues_config
 from fda.models.season_sim import mc_percent_str
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "partite"
 DATA = ROOT / "data" / "processed"
+
+TZ_DISPLAY = load_leagues_config().get("timezone_display", "Europe/Rome")
 
 CARD = re.compile(r'<div class="card" id="panchina">(.*?)(?=<div class="card"|<footer)', re.DOTALL)
 ROW = re.compile(r'<th scope="row">(Allenatore|Posta in gioco|Età media titolari)</th>(.*?)(?=</tr>)',
@@ -35,6 +39,21 @@ TD = re.compile(r'<td>(.*?)</td>', re.DOTALL)
 ETICHETTE = ("corsa al titolo", "corsa alla Champions", "lotta salvezza",
              "zona salvezza non lontana")
 PROIEZIONE = re.compile(r"proiezione: ([\d,]+)º posto in media")
+
+
+def ggmm_display(ts: Any, tz: str) -> str:
+    """Data breve (gg/mm) nel fuso di visualizzazione: è quello che la card stampa.
+
+    Con ``strftime`` sul timestamp UTC la data può slittare di un giorno per i calci
+    d'inizio serali (23:00 UTC = 01:00 a Roma): l'audit segnalerebbe uno scostamento che
+    non c'è, o — peggio — non vedrebbe una card che sbaglia fuso. Misurato il 2026-10-11:
+    0 date divergenti sulle 290 in archivio, ma il ricalcolo deve usare la stessa regola.
+    """
+    v = pd.Timestamp(ts)
+    if v.tzinfo is None:
+        v = v.tz_localize("UTC")
+    v = v.tz_convert(tz)
+    return f"{v.day:02d}/{v.month:02d}"
 
 
 def testo(html: str) -> str:
@@ -135,6 +154,12 @@ def main() -> int:
                 (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name)))):
             c_co, c_st, c_eta = cellulare[lato], cell_st[lato], cell_eta[lato]
             agg["celle_squadra"] += 1
+            # valori agli estremi pubblicati (`docs/78` §12): «<1%» invece di uno «0%» che
+            # si legge «impossibile», «>99%» invece di un «100%» che si legge «certo»
+            agg["valori_sotto_1"] += len(re.findall(
+                r"(?:titolo|retrocessione|UCL \(prime \d\)) <1%", c_st))
+            agg["valori_sopra_99"] += len(re.findall(
+                r"(?:titolo|retrocessione|UCL \(prime \d\)) >99%", c_st))
             # trasparenza (`docs/78` §12): il tooltip spiega i numeri, la loro precisione e
             # le soglie delle etichette; ogni cella con la riga dei numeri deve averlo
             if "titolo " in c_st:      # la riga dei numeri c'è: il tooltip deve esserci
@@ -167,11 +192,11 @@ def main() -> int:
             if prev:
                 prec = ct[ct.player_id != ultimo.player_id]
                 if not prec.empty:
-                    dal = prec.ko.max().strftime("%d/%m")
+                    dal = ggmm_display(prec.ko.max(), TZ_DISPLAY)
             else:
                 same = ct[ct.player_id == ultimo.player_id]
                 if not same.empty:
-                    dal = same.ko.min().strftime("%d/%m")
+                    dal = ggmm_display(same.ko.min(), TZ_DISPLAY)
             atteso_ten = ((f"panchina nuova: {streak}ª gara dal subentro a {prev}"
                            + (f" (dopo la gara del {dal})" if dal else ""))
                           if prev else

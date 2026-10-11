@@ -41,8 +41,13 @@ PANCHINA_TD = re.compile(r'<td>(.*?)</td>', re.DOTALL)
 
 
 def panchina_cella(html: str) -> str:
-    """Testo della cella della card panchina: via i tag, spazi normalizzati."""
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+    """Testo della cella della card panchina: via i tag, poi le entità, spazi normalizzati.
+
+    L'ordine conta: al contrario «&lt;1» diventa «<1» e la finta parentesi viene mangiata
+    dal tag successivo, facendo sparire il valore (le celle con «<1%» sono 164 su 164
+    celle-squadra il 2026-10-11: qui sparivano tutte, `docs/78` §12).
+    """
+    return re.sub(r"\s+", " ", html_unescape(re.sub(r"<[^>]+>", " ", html))).strip()
 
 
 def ggmm_cella(ts: Any, tz: Any) -> str:
@@ -2366,6 +2371,27 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not sim19.empty:
             for r in sim19.itertuples(index=False):
                 sim19map.setdefault(_canon(r.team), r)
+        # La pagina Proiezioni è il **secondo** posto dove vanno a schermo gli stessi numeri:
+        # se una delle due pagine cambia arrotondamento o formattazione le due divergono senza
+        # che nessuna delle due sbagli il conto (successo il 2026-10-11 con `round()`: 4 numeri
+        # diversi, `docs/78` §12). Qui non si ricalcola niente: si legge la pagina resa e si
+        # confronta con la cella della scheda, così l'oracolo non ripete l'espressione del
+        # generatore (che è come sono passati inosservati i 4 numeri).
+        proiez19: dict[str, dict[str, str | None]] = {}
+        pg_stag19 = site / "stagione.html"
+        if pg_stag19.is_file():
+            for nome_pg, corpo_pg in re.findall(
+                    r"<tr><td>([^<]+)(?:<span[^>]*>[^<]*</span>)?</td>(.*?)</tr>",
+                    pg_stag19.read_text(encoding="utf-8"), re.DOTALL):
+                celle_pg = [html_unescape(x).strip() for x in
+                            re.findall(r'<td class="r">(.*?)</td>', corpo_pg, re.DOTALL)]
+                # PG, Pt, Pt attesi, Media pos., 1° [, UCL (prime N)] , Retro
+                if len(celle_pg) < 6:
+                    continue
+                proiez19.setdefault(_canon(nome_pg.strip()), {
+                    "ep": celle_pg[2], "pm": celle_pg[3], "titolo": celle_pg[4],
+                    "ucl": celle_pg[5] if len(celle_pg) >= 7 else None,
+                    "retro": celle_pg[-1]})
         fin19 = fx19[fx19.status == "finished"].copy() if not fx19.empty else fx19
         if not fin19.empty:
             fin19["ko"] = pd.to_datetime(fin19.utc_kickoff, utc=True)
@@ -2388,7 +2414,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: scheda pre-partita per una gara che il calendario "
                              f"dà finita")
             atteso = False
-            card19 = PANCHINA_CARD.search(txt)
+            # dall'HTML grezzo, non da `txt`: l'unescape prima dei tag mangerebbe «&lt;1»
+            card19 = PANCHINA_CARD.search(html)
             righe19 = {}
             if card19:
                 for nome_riga, corpo in PANCHINA_ROW.findall(card19.group(1)):
@@ -2600,6 +2627,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         fails.append(f"{pg.name}: incroci in panchina ({tname}) "
                                      f"«{atteso_inc}» assenti o diversi")
                 # --- posta in gioco e classifica (ricalcolo indipendente) ---
+                cella_st = (righe19.get("Posta in gioco") or ["", ""])[lato]
                 if sr is not None:
                     checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
@@ -2612,7 +2640,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pr = mc_percent_str(float(sr.p_rel))
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
-                    if atteso not in txt or f"retrocessione {pr}%" not in txt:
+                    if atteso not in cella_st or f"retrocessione {pr}%" not in cella_st:
                         fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
                     checks += 1
                     if float(sr.p_title) >= 0.15:
@@ -2626,7 +2654,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     else:
                         lab = (f"proiezione: {str(round(float(sr.pos_mean), 1)).replace('.', ',')}"
                                f"º posto in media")
-                    if lab not in txt:
+                    if lab not in cella_st:
                         fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
                     # «stima di fine stagione»: punti attesi (e posizione media quando
                     # l'etichetta non la pubblica già), dai Parquet della simulazione
@@ -2639,9 +2667,30 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                      if lab.startswith("proiezione:") else
                                      f"stima di fine stagione: {_ep_s} punti attesi · "
                                      f"{float(_pm19):.1f}".replace(".", ",") + "º posto in media")
-                        if atteso_st not in txt:
+                        if atteso_st not in cella_st:
                             fails.append(f"{pg.name}: stima di fine stagione ({tname}) "
                                          f"«{atteso_st}» assente o diversa")
+                    # controllo incrociato con la pagina Proiezioni: la posizione media compare
+                    # sempre nella cella (nell'etichetta o nella stima), i punti attesi sempre
+                    r_pg = proiez19.get(_canon(str(tname)))
+                    if r_pg:
+                        checks += 1
+                        for nome_num, frase_pg in (
+                                ("titolo", f"titolo {r_pg['titolo']}"),
+                                ("retrocessione", f"retrocessione {r_pg['retro']}"),
+                                ("punti attesi",
+                                 f"stima di fine stagione: {r_pg['ep']} punti attesi"),
+                                ("posizione media", f"{r_pg['pm']}º posto in media")):
+                            if frase_pg not in cella_st:
+                                fails.append(
+                                    f"{pg.name}: {nome_num} di {tname} non torna fra scheda e "
+                                    f"pagina Proiezioni (Proiezioni «{frase_pg}»)")
+                        if r_pg["ucl"] is not None and "UCL (prime" in cella_st:
+                            checks += 1
+                            if f"UCL (prime {top_n}) {r_pg['ucl']}" not in cella_st:
+                                fails.append(
+                                    f"{pg.name}: UCL di {tname} non torna fra scheda e pagina "
+                                    f"Proiezioni (Proiezioni «{r_pg['ucl']}%»)")
                 code19 = _lg19.get(int(fr.league_id)) if not pd.isna(fr.league_id) else None
                 tab19 = (fm19[fm19.league_code == code19].drop_duplicates("team_id")
                          if code19 and not fm19.empty else fm19.iloc[0:0])

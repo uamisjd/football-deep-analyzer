@@ -1807,7 +1807,9 @@ class MatchAnalysis:
             # contraddire la classifica stampata accanto (metà classifica su 47 celle su
             # 101 fuori dall'intervallo 7ª–13ª, `docs/78` §2) va il numero della
             # simulazione, lo stesso «Media pos.» della pagina Proiezioni.
-            label = f"proiezione: {str(round(float(r.pos_mean), 1)).replace('.', ',')}º posto in media"
+            # `_dec1` è la stessa formattazione del filtro `dec(1)` che la pagina Proiezioni usa
+            # per «Media pos.»: un solo posto decide la cifra pubblicata (`docs/78` §12).
+            label = f"proiezione: {_dec1(r.pos_mean)}º posto in media"
         # Stessa convenzione della pagina Proiezioni (`mc_percent_str`: mezzo in su, mai il
         # banker's rounding di Python; «<1» sotto il mezzo punto invece di «0»). Con
         # `round()` 0,5% diventava «0%» e 62,5% «62%» mentre Proiezioni stampava «1%» e

@@ -2,6 +2,7 @@ import importlib.util
 import itertools
 import re
 from datetime import UTC, date, datetime, timedelta
+from html import unescape as html_unescape
 from pathlib import Path
 
 import numpy as np
@@ -2893,10 +2894,15 @@ def test_card_panchina_trasparenza_e_convenzione_degli_estremi(tmp_path):
     SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
     html = (out / "partite" / "5900010.html").read_text(encoding="utf-8")
     card = html.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
-    # tooltip con fonti, precisione, soglie e significato delle parole
-    assert "errore standard fino a 0,5 punti percentuali" in card
-    assert "posti rossi della lega" in card
-    assert "lotta salvezza da 35% di retrocessione" in card
+    # tooltip con fonti, precisione, soglie e significato delle parole: si controlla
+    # l'attributo `title` (il solo testo potrebbe stare in un altro punto della card)
+    tooltip = re.search(r'title="(10\.000 simulazioni Monte Carlo[^"]*)"', card)
+    assert tooltip, "la riga dei numeri non ha il tooltip che spiega come è calcolata"
+    assert "errore standard fino a 0,5 punti percentuali" in tooltip.group(1)
+    assert "posti rossi della lega" in tooltip.group(1)
+    assert "lotta salvezza da 35% di retrocessione" in tooltip.group(1)
+    # anche la convenzione degli estremi è dichiarata: «<1» e «>99» (docs/78 §12)
+    assert "«&lt;1»" in tooltip.group(1) and "«&gt;99»" in tooltip.group(1)
     # stima di fine stagione: i numeri della pagina Proiezioni (Inter: 84,2 punti attesi,
     # 1,4º posto in media). Sulla cella del Monza l'etichetta È già la proiezione di
     # posizione: il numero non si ripete due volte nella stessa cella.
@@ -2907,6 +2913,44 @@ def test_card_panchina_trasparenza_e_convenzione_degli_estremi(tmp_path):
     # l'estremo si dichiara: il Monza (0,4% reale) non è «0%» ma «<1»; l'Inter, che è
     # esattamente a zero, resta «0%» — lo zero vero non si maschera
     assert "retrocessione &lt;1%" in card and "retrocessione 0%" in card
+    st.close()
+
+
+def test_card_panchina_e_pagina_proiezioni_stessi_numeri(tmp_path):
+    """`docs/78` §12: gli stessi numeri in due pagine — o sono uguali, o è un difetto.
+
+    Il 2026-10-11 la scheda arrotondava col `round()` di Python e la pagina Proiezioni col
+    mezzo in su: 4 numeri diversi su 3 schede, senza che nessuna delle due sbagliasse il
+    conto. Qui la scheda si confronta con la **pagina resa**, non con l'espressione del
+    generatore: è il controllo che avrebbe visto quella divergenza.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_futura(5900010, 5, 8636, "Inter", 6504, "Monza", now)])
+    out = tmp_path / "sito"
+    b = SiteBuilder(store=st, out_dir=out)
+    b.build_match_pages({5900010})
+    b.build_stagione()
+    card = (out / "partite" / "5900010.html").read_text(encoding="utf-8")
+    card = card.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
+    riga_st = re.search(r'<tr><th scope="row">Posta in gioco</th>(.*?)</tr>',
+                        card, re.DOTALL).group(1)
+    tds = re.findall(r"<td>(.*?)</td>", riga_st, re.DOTALL)
+    assert len(tds) == 2      # una cella per squadra: i numeri si cercano nella propria
+    stagione = (out / "stagione.html").read_text(encoding="utf-8")
+    for lato, squadra in enumerate(("Inter", "Monza")):
+        riga = re.search(rf"<tr><td>{squadra}.*?</tr>", stagione, re.DOTALL).group(0)
+        celle = [html_unescape(x).strip()
+                 for x in re.findall(r'<td class="r">(.*?)</td>', riga, re.DOTALL)]
+        # PG, Pt, Pt attesi, Media pos., 1°, UCL (prime 4), Retro (le percentuali
+        # arrivano dalla pagina già con il segno: «61%»)
+        cella = html_unescape(re.sub(r"<[^>]+>", " ", tds[lato]))
+        assert f"stima di fine stagione: {celle[2]} punti attesi" in cella
+        assert f"{celle[3]}º posto in media" in cella
+        assert f"titolo {celle[4]}" in cella
+        assert f"UCL (prime 4) {celle[5]}" in cella
+        assert f"retrocessione {celle[-1]}" in cella
+        assert "simulazione non disponibile" not in cella
     st.close()
 
 

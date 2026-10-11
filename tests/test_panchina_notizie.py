@@ -550,6 +550,30 @@ def test_bench_deep_gol_a_gara_e_stima_di_stagione(analysis):
     assert r["season_line"] == "stima di fine stagione: 50,0 punti attesi"
 
 
+def test_la_partita_stessa_non_entra_in_rendimento_nei_gol_nei_precedenti(analysis):
+    """`docs/78` §8: il passato è **rigorosamente** prima di questa partita.
+
+    Su 22 schede del 2026-10-11 la gara era già finita nel calendario ma i dettagli
+    dicevano «scheduled»: col filtro inclusivo la card contava la partita stessa fra i
+    precedenti e nel rendimento («un solo incrocio in panchina: 1V 0N 0P», cioè il
+    risultato della gara in corso). Qui la partita dell'Inter è finita 2-1: con `<` il
+    rendimento resta quello della sola gara precedente (2-2 col Milan → 1,0), con `<=`
+    diventerebbe 2,0 su due gare.
+    """
+    fx = FX.copy()
+    fx.loc[fx.match_id == 4, ["home_goals", "away_goals", "status"]] = [2, 1, "finished"]
+    analysis.fixtures = fx
+    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-13 18:00"))
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+    assert b["coach_goals_line"] == "con lui 2,0 gol fatti e 2,0 subiti a gara"
+    # i precedenti reali (25/08, Milan–Roma) restano quelli: «1 gara», «un solo incrocio».
+    # Col filtro inclusivo la partita stessa (13/09, Inter–Roma, 2-1) entrerebbe in queste
+    # due righe e diventerebbero «2 gare»/«2 incroci» — il risultato della partita in corso
+    # spacciato per precedente.
+    assert b["coach_vs_opp_line"] == "da allenatore contro Roma: 1 gara nel nostro archivio (1V 0N 0P)"
+    assert b["coach_vs_coach_line"] == "un solo incrocio in panchina con Coach Stabile: 1V 0N 0P"
+
+
 def test_bench_deep_zona_retrocessione_e_nationalita(analysis):
     b = analysis.bench_deep(4, "Lazio", 1, "Roma", KO("2026-09-14 00:00"))
     assert "dalla salvezza diretta" in b["table_line"]   # ultima piazza: distanza dalla salvezza
