@@ -160,6 +160,7 @@ def main() -> int:
         "troppo_corta": [], "perimetro_coppe_verdetto": [], "panchina_vecchia": [],
         "nota_disallineata": [], "tono_non_dichiarato": [],
         "clima_nota_disallineata": [], "clima_dislivello": [],
+        "clima_elenco_disallineato": [],
     }
     agg_tipi: Counter[str] = Counter()
     agg_toni: Counter[str] = Counter()
@@ -498,13 +499,24 @@ def main() -> int:
         if _c in mi.columns:
             mi[_c] = pd.to_numeric(mi[_c], errors="coerce")
 
-    def _attesi_clima(tid: int, tname: str, ko: pd.Timestamp) -> tuple[list[tuple[str, str]], int]:
-        """Righe attese (testo, tono) e voci di stampa: la specifica della card, dai Parquet."""
+    _tl = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
+
+    def _attesi_clima(tid: int, tname: str, ko: pd.Timestamp,
+                      pubblicate: set[str]) -> tuple[list[tuple[str, str]], int, list[dict]]:
+        """Righe attese (testo, tono), numero di voci e gruppi elencati: la specifica dei Parquet.
+
+        Dal 2026-10-11 (`docs/82` §9) la card pubblica anche l'elenco: una voce per titolo
+        (chiave riscritta qui), le più recenti fino al tetto di 24, marcate quelle che
+        «Vita del club» racconta sulla stessa pagina.
+        """
         att: list[tuple[str, str]] = []
         if ndf.empty:
-            return att, 0
-        sub = ndf[(ndf.team_id == tid) & (_pa >= ko - pd.Timedelta(days=7)) & (_pa <= ko)]
-        conta: Counter[str] = Counter()
+            return att, 0, []
+        sub = ndf[(ndf.team_id == tid) & (_pa >= ko - pd.Timedelta(days=7)) & (_pa <= ko)].copy()
+        sub["_pa"] = _pa.loc[sub.index]
+        sub = sub.dropna(subset=["_pa"]).sort_values("_pa", ascending=False, kind="stable")
+        voci_righe: list[dict] = []
+        viste: set[str] = set()
         for r in sub.itertuples(index=False):
             titolo = str(getattr(r, "title", "") or "").strip()
             if not titolo:
@@ -514,11 +526,25 @@ def main() -> int:
             if not _it(titolo, desc):
                 continue
             chiave, _p = _cl(titolo, desc, getattr(r, "source", None))
-            if chiave in _temi:
-                conta[chiave] += 1
-        voci = sum(conta.values())
+            if chiave not in _temi:
+                continue
+            tk = _tl(titolo)
+            if not tk or tk in viste:
+                continue
+            viste.add(tk)
+            voci_righe.append({"key": chiave, "title": titolo,
+                               "url": str(getattr(r, "url", "") or ""),
+                               "in_vita": tk in pubblicate})
+        conta: Counter[str] = Counter(v["key"] for v in voci_righe)
+        voci = len(voci_righe)
         pressione = sum(conta[k] for k in _press)
         temi = sorted(conta, key=lambda k: (-conta[k], _ord[k]))
+        elencate = voci_righe[:24]
+        per_tema: dict[str, list[dict]] = {}
+        for v in elencate:
+            per_tema.setdefault(v["key"], []).append(v)
+        gruppi = [{"key": k, "label": _TL.get(k, k), "n": int(conta[k]),
+                   "voci": per_tema.get(k, [])} for k in temi]
 
         def det(chiavi: list[str]) -> str:
             return " · ".join(f"{_TL.get(k, k).lower()} {conta[k]}" for k in chiavi)
@@ -562,7 +588,7 @@ def main() -> int:
                     testo_atteso = (f"sopra le attese: in classifica {pos}ª con una rosa da "
                                     f"{rango}ª per valore dei titolari")
                     att.append((testo_atteso, "good"))
-        return att, voci
+        return att, voci, gruppi
 
     clima_toni: Counter[str] = Counter()
     clima_tipi: Counter[str] = Counter()
@@ -570,6 +596,8 @@ def main() -> int:
     clima_vuoto = 0
     clima_lati = 0
     clima_scarti = 0
+    clima_elencate = 0
+    clima_in_vita = 0
     for pg in sorted(SITE.glob("*.html")):
         html = pg.read_text(encoding="utf-8")
         if "Analisi pre-partita" not in html:
@@ -587,6 +615,13 @@ def main() -> int:
                               ("stampa", "lingua")):
             if frase not in nota2:
                 difetti["clima_nota_disallineata"].append(f"{pg.stem}: nota senza «{frase}» ({chiave})")
+        _in_n = html.find('id="notizie"')
+        _fine_n = html.find('<div class="card"', _in_n + 10) if _in_n != -1 else -1
+        _blocco_n = html[_in_n:_fine_n if _fine_n != -1 else len(html)]
+        pubblicate = {unescape(x) for x in re.findall(
+            r'<li><span class="topic">.*?<br><a href="[^"]*"[^>]*>(.*?)</a>',
+            _blocco_n, re.DOTALL)}
+        pubblicate = {_tl(x) for x in pubblicate if x}
         fr = fx[fx.match_id == int(pg.stem)]
         if fr.empty:
             continue
@@ -598,7 +633,7 @@ def main() -> int:
         for parte in blocchi2[1:]:
             tname = testo(parte.split("</b>", 1)[0])
             tid = int(fr.home_id) if tname == str(fr.home_name) else int(fr.away_id)
-            attesi, voci = _attesi_clima(tid, tname, pd.Timestamp(fr.ko))
+            attesi, voci, gruppi = _attesi_clima(tid, tname, pd.Timestamp(fr.ko), pubblicate)
             righe = [(unescape(t), tone) for tone, t in LI.findall(parte)]
             clima_lati += 1
             for testo_atteso, tono in attesi:
@@ -627,6 +662,69 @@ def main() -> int:
                     f"{pg.stem}|{tname}| vuoto dichiarato incoerente ({voci} voci)")
             if voci == 0:
                 clima_vuoto += 1
+            # l'elenco delle voci contate (`docs/82` §9): sommario, gruppi, item, marcatori
+            elencate = sum(len(g["voci"]) for g in gruppi)
+            in_vita = sum(1 for g in gruppi for v in g["voci"] if v["in_vita"])
+            somm = re.search(r"<summary>(.*?)</summary>", parte, re.DOTALL)
+            testo_somm = testo(somm.group(1)) if somm else ""
+            if (elencate > 0) != bool(somm):
+                difetti["clima_elenco_disallineato"].append(
+                    f"{pg.stem}|{tname}| tendina {'assente' if elencate else 'presente'} "
+                    f"({elencate} voci elencate)")
+            elif somm:
+                clima_elencate += elencate
+                clima_in_vita += in_vita
+                atteso_somm = (
+                    f"Le {elencate} voci più recenti di {voci} contate" if voci > elencate
+                    else "Una voce contata" if voci == 1
+                    else f"Le {voci} voci contate")
+                if atteso_somm not in testo_somm:
+                    difetti["clima_elenco_disallineato"].append(
+                        f"{pg.stem}|{tname}| sommario «{testo_somm[:60]}» "
+                        f"invece di «{atteso_somm}»")
+                if in_vita:
+                    atteso_marc = ("già raccontata in «Vita del club»" if voci == 1
+                                   else "una già raccontata in «Vita del club»" if in_vita == 1
+                                   else f"{in_vita} già raccontate in «Vita del club»")
+                    if atteso_marc not in testo_somm:
+                        difetti["clima_elenco_disallineato"].append(
+                            f"{pg.stem}|{tname}| sommario senza i marcatori ({in_vita})")
+                gr_pag = re.findall(
+                    r'<p class="small" style="margin:8px 0 4px"><b>(.*?) \((\d+)\)</b></p>\s*'
+                    r'<ul class="news-list">(.*?)</ul>', parte, re.DOTALL)
+                if len(gr_pag) != len(gruppi):
+                    difetti["clima_elenco_disallineato"].append(
+                        f"{pg.stem}|{tname}| gruppi {len(gr_pag)} in pagina contro "
+                        f"{len(gruppi)} attesi")
+                else:
+                    for (lab, n, ul), att_g in zip(gr_pag, gruppi):
+                        if unescape(lab) != att_g["label"] or int(n) != att_g["n"]:
+                            difetti["clima_elenco_disallineato"].append(
+                                f"{pg.stem}|{tname}| gruppo «{lab} ({n})» invece di "
+                                f"«{att_g['label']} ({att_g['n']})»")
+                        items = re.findall(
+                            r'<li><span class="small"><a href="([^"]+)"[^>]*>(.*?)</a> '
+                            r'<span class="mut">(.*?)</span></span></li>', ul, re.DOTALL)
+                        if [unescape(t) for _u, t, _r in items] \
+                                != [v["title"] for v in att_g["voci"]]:
+                            difetti["clima_elenco_disallineato"].append(
+                                f"{pg.stem}|{tname}| voci elencate di «{att_g['label']}» "
+                                f"non corrispondenti ({len(items)} in pagina)")
+                        for (u, _t, meta), v in zip(items, att_g["voci"]):
+                            if u != v["url"] or (("anche in «Vita del club»" in unescape(meta))
+                                                 != v["in_vita"]):
+                                difetti["clima_elenco_disallineato"].append(
+                                    f"{pg.stem}|{tname}| voce «{v['title'][:40]}» "
+                                    f"con link o marcatore diversi")
+                if voci > elencate:
+                    atteso_coda = ("E un'altra voce della settimana, non elencata."
+                                   if voci - elencate == 1
+                                   else f"E altre {voci - elencate} voci della settimana, "
+                                        f"non elencate.")
+                    if atteso_coda not in testo(parte):
+                        difetti["clima_elenco_disallineato"].append(
+                            f"{pg.stem}|{tname}| resto oltre il tetto non dichiarato "
+                            f"({voci - elencate} voci)")
 
     print("=== censimento ===")
     print(f"pagine pre-partita con card: {sum(per_lega.values())}")
@@ -654,6 +752,8 @@ def main() -> int:
     print(f"righe pubblicate: {sum(clima_toni.values())} · toni: {dict(clima_toni)}")
     print("tipo:", dict(clima_tipi))
     print(f"lati con vuoto dichiarato della stampa: {clima_vuoto} · scostamenti: {clima_scarti}")
+    print(f"voci elencate nelle tendine: {clima_elencate} · marcate «anche in «Vita del club»»: "
+          f"{clima_in_vita}")
 
     print("\n=== pagine per lega ===")
     print(dict(per_lega.most_common()))

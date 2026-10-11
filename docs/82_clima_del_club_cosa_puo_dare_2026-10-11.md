@@ -151,7 +151,10 @@ motivato (riapribili in ogni momento, sono scelte editoriali reversibili):
    «Vita del club» due card più sotto: ripeterne uno qui violerebbe `docs/30` (un dato in un
    posto) proprio nella pagina in cui la regola è appena stata applicata (le strisce, `docs/81`
    §8). Se un titolo merita di stare in «Clima del club», il posto giusto è «Vita del club»,
-   che ha la selezione e la deduplicazione collaudate.
+   che ha la selezione e la deduplicazione collaudate. — *Scelta dichiarata reversibile e
+   **superata la sera stessa**: su richiesta dell'utente («fornirmi queste voci con esattezza
+   cosa dicono») i titoli ora sono nell'elenco della card, **marcati** quando «Vita del club»
+   li racconta già. Attuazione e misure in §9.*
 2. **Nessuna query nuova alla stampa, per ora.** La copertura è misurata e dichiarata (§4a):
    il perimetro della raccolta è la stampa in lingua italiana, e allargare le query di
    *collection* non cambierebbe il filtro di pubblicazione (una scheda in italiano pubblica
@@ -168,9 +171,9 @@ motivato (riapribili in ogni momento, sono scelte editoriali reversibili):
 | `club_climate` | idem | unisce le due parti nell'ordine di lettura: settimana → aspettative |
 | card «Clima del club» | `templates/match.html` | due colonne (casa/trasferta), righe col tono, frase fissa del **vuoto dichiarato**, nota con tutte le soglie e il perimetro della raccolta |
 | card «Stato della squadra» | idem | l'ex «Clima del club» rinominata (id `stato-squadra`), nota che rimanda alla card nuova; indice aggiornato con le due voci |
-| oracolo **[49]** | `scripts/verify_site.py` | su ogni scheda pre-partita ricalcola dai Parquet i conteggi della settimana (stessa classificazione della fonte) e il rango per valore **in modo indipendente**; verifica testo per testo e la frase del vuoto «se e solo se» zero voci; registrato in `ORACOLI` come misto, col limite dichiarato |
-| audit | `scripts/audit_clima.py` | misura le **due** card: la vecchia (ora «Stato della squadra») come prima, la nuova con conteggi per tipo, toni, lati con vuoto dichiarato e ogni dislivello pagina↔ricalcolo (`clima_dislivello`, `clima_nota_disallineata`) |
-| test | `tests/test_panchina_notizie.py` | 3 test nuovi: conteggi per tema (4 voci di pressione → «settimana calda», infortuni e mercato **non** contati), tranquilla + vuoto dichiarato, aspettative sotto/sopra/soglia/minimo gare; `tests/test_site.py` verifica le due card e le due voci d'indice su una scheda vera |
+| oracolo **[49]** | `scripts/verify_site.py` | su ogni scheda pre-partita ricalcola dai Parquet i conteggi della settimana (stessa classificazione della fonte) e il rango per valore **in modo indipendente**; verifica testo per testo e la frase del vuoto «se e solo se» zero voci; **dall'11/10/2026 sera (§9) verifica anche l'elenco: sommario, gruppi, item, link, marcatori, coda oltre il tetto**; registrato in `ORACOLI` come misto, col limite dichiarato |
+| audit | `scripts/audit_clima.py` | misura le **due** card: la vecchia (ora «Stato della squadra») come prima, la nuova con conteggi per tipo, toni, lati con vuoto dichiarato e ogni dislivello pagina↔ricalcolo (`clima_dislivello`, `clima_nota_disallineata`, `clima_elenco_disallineato` per l'elenco) |
+| test | `tests/test_panchina_notizie.py` | 5 test nuovi: conteggi per tema (4 voci di pressione → «settimana calda», infortuni e mercato **non** contati), tranquilla + vuoto dichiarato, aspettative sotto/sopra/soglia/minimo gare, **elenco con una voce per titolo e marcature di «Vita del club»**, **tetto di 24 col resto dichiarato**; `tests/test_site.py` verifica le due card e le due voci d'indice su una scheda vera |
 
 **Efficacia dichiarata in pagina**: la copertura misurata è scritta nella nota (20/20 in
 Serie A, 0/18 in Eredivisie): dove la stampa italiana non scrive, la card **dichiara il vuoto
@@ -182,8 +185,9 @@ leghe. È il compromesso che tiene insieme onestà e parità (`docs/00` sez. F).
 **La card in pagina.** Su tutte le **77 schede pre-partita** la card «Clima del club» c'è,
 con due colonne (casa/trasferta) e la nota con le soglie:
 
-- settimana: **21 lati** con una riga — 7 «settimana calda» (es. Juventus, 15 voci di
-  pressione: tifoseria 10 · società 4 · panchina 1), 14 «pressione in settimana», 0
+- settimana: **21 lati** con una riga — 7 «settimana calda» (es. Juventus, 14 voci di
+  pressione: tifoseria 9 · società 4 · panchina 1 — numeri **rigenerati dopo la deduplica di
+  §9**, prima erano 15), 14 «pressione in settimana», 0
   «tranquilla» (oggi ogni lato con voci ha almeno una voce di pressione); **133 lati** con il
   **vuoto dichiarato** («nessuna voce di clima raccolta…» — la parola è «raccolta», non
   «pubblicata»: per le partite ancora lontane la settimana è incompleta, e la card lo dice);
@@ -212,3 +216,40 @@ vinto la definizione usata da tutta la pagina — e l'oracolo [49] ricalcola pro
 | `audit_clima_candidati` | invariato (sonda dei candidati scartati) |
 
 **Nessuna richiesta alle fonti esterne** in nessun passaggio; nessun file di dati toccato.
+
+## §9 — Le voci contate, in chiaro (richiesta dell'utente, 11/10/2026 sera)
+
+Richiesta: «rendi in grado il sito di fornirmi queste voci con esattezza cosa dicono». Prima di
+questa sera la card pubblicava **solo i conteggi**: un «15 voci di pressione» che non si può
+aprire non è verificabile dal lettore, e il numero non si può ricondurre a ciò che dice. Attuato:
+
+- **Elenco per lato**, in una tendina chiusa per default (non occupa il primo schermo):
+  raggruppato per tema, ogni voce con **titolo, testata, data e link**; il sommario dichiara
+  quante voci sono elencate — «Le X più recenti di Y contate» quando il tetto taglia — e quante
+  sono già raccontate in «Vita del club».
+- **Una voce per titolo** (`news_title_key`: la stessa chiave di normalizzazione del dedup di
+  `team_news`, un'unica definizione in `analysis.py`): la misura ha trovato **11 righe doppie**
+  (97 righe → 86 voci) che gonfiavano i conteggi pubblicati su 5 lati — Lazio 19→14, Torino
+  19→17, Juventus 16→15, Milan 6→4, Venezia 3→2. Vale contare due volte lo stesso titolo ripreso
+  da due testate: era il caso.
+- **Tetto 24 voci per lato** (`CLIMA_VOCI_MAX`), dichiarato in nota; oltre il tetto il resto è
+  dichiarato col numero («E altre N della settimana, non elencate»). Nel sito di oggi il massimo
+  per lato è **17**: la guardia non taglia nulla, serve per quando la raccolta crescerà.
+- **Marcatura, non esclusione** (supera la scelta di §7.1): le voci che «Vita del club» racconta
+  sulla stessa pagina escono marcate «anche in «Vita del club»» — qui si contano, lì si
+  raccontano (`docs/30` resta salvo: l'elenco è la prova del numero, non un secondo racconto).
+- **Citazioni verbatim**: i titoli di stampa sono esclusi dai controlli anti-falso con la classe
+  `a.voce` nel parser di `verify_site` (misurato: «TORNELLI APERTI DALLE 18.15» su 5749709 faceva
+  fallire il gate dei decimali col punto). Sommario, etichette dei gruppi, testata, data e
+  marcatore restano testo nostro e restano controllati.
+
+**Misure** (build 2026-10-11 sera, dopo la deduplica): **86 voci elencate**, **25 marcate**
+«anche in «Vita del club»», massimo **17** per lato; righe pubblicate invariate (77 in tutto:
+7 «settimana calda» · 14 «pressione in settimana» · 56 aspettative; 133 lati col vuoto
+dichiarato).
+
+**Gate**: `pytest` **629** (+2 test), `ruff` pulito, `fda build` **493/2.364/7.578**,
+`verify_site` **0 problemi · 237.513 controlli** ([49] estesa: l'elenco deve corrispondere ai
+conteggi voce per voce, sommario, gruppi, item, link, marcatori e coda), `parita_schede`
+**nessuna differenza**, `resa_375` **28.487 · 0**, `audit_clima` **0 difetti**
+(`clima_elenco_disallineato` 0). Nessuna richiesta alle fonti esterne.

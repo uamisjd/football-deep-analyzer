@@ -335,10 +335,18 @@ class Text(HTMLParser):
     e pubblicavano «2 i titoli più vecchi guardati» in 17 schede senza che il gate li
     leggesse. I titoli veri della stampa (``ul.news-list`` e le righe «in riserva»)
     restano esclusi: sono citazioni verbatim.
+
+    **Eccezione ``class="voce"`` (11/10/2026, `docs/82` §9).** L'elenco delle voci della card
+    «Clima del club» cita i titoli della stampa verbatim: fuori dai controlli anti-falso, come
+    le notizie della card «Vita del club». Misurato l'11/10/2026: «TORNELLI APERTI DALLE
+    18.15» faceva fallire il gate dei decimali su 5749709. Solo le ancore ``a.voce`` sono
+    escluse — sommario, etichette dei gruppi, testata, data e marcatore restano testo nostro.
     """
 
     #: Classi riammesse nei controlli anche dentro la card delle notizie: solo testo nostro.
     CLASSI_NOSTRE = ("sapere", "imbuto")
+    #: Ancore dei titoli citati verbatim (`a.voce`): fuori dai controlli anti-falso.
+    CLASSI_CITATE = ("voce",)
 
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -350,6 +358,8 @@ class Text(HTMLParser):
         self.news_depth = 0
         self.nostro_tag: str | None = None
         self.nostro_depth = 0
+        self.citato_tag: str | None = None
+        self.citato_depth = 0
         self.readable_attrs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, Any]]) -> None:
@@ -366,6 +376,13 @@ class Text(HTMLParser):
             self.nostro_tag, self.nostro_depth = tag, 1
         elif self.nostro_tag == tag:
             self.nostro_depth += 1
+        # titoli citati verbatim (`a.voce`): esclusi dai controlli, come le notizie della card
+        if self.citato_depth == 0 and any(
+                k == "class" and v and any(c in str(v).split() for c in self.CLASSI_CITATE)
+                for k, v in attrs):
+            self.citato_tag, self.citato_depth = tag, 1
+        elif self.citato_tag == tag:
+            self.citato_depth += 1
         if tag in ("p", "div", "li", "tr", "td", "th", "h1", "h2", "h3", "h4", "table", "section", "br"):
             self.parts.append(" ")      # separa i blocchi: «…link</a>1 gare» non deve sembrare «x1 gare»
         for k, v in attrs:
@@ -373,7 +390,8 @@ class Text(HTMLParser):
                 self.ids.add(v)
             if tag == "a" and k == "href" and v:
                 self.hrefs.append(v)
-            if k in ATTR_LEGGIBILI and v and (self.news_depth == 0 or self.nostro_depth > 0):
+            if k in ATTR_LEGGIBILI and v and self.citato_depth == 0 \
+                    and (self.news_depth == 0 or self.nostro_depth > 0):
                 self.readable_attrs.append(str(v))
 
     def handle_endtag(self, tag: str) -> None:
@@ -387,9 +405,14 @@ class Text(HTMLParser):
             self.nostro_depth -= 1
             if self.nostro_depth <= 0:
                 self.nostro_tag, self.nostro_depth = None, 0
+        if self.citato_tag == tag:
+            self.citato_depth -= 1
+            if self.citato_depth <= 0:
+                self.citato_tag, self.citato_depth = None, 0
 
     def handle_data(self, data: str) -> None:
-        if not self.skip and (self.news_depth == 0 or self.nostro_depth > 0):
+        if not self.skip and self.citato_depth == 0 \
+                and (self.news_depth == 0 or self.nostro_depth > 0):
             self.parts.append(data)
 
 
@@ -808,9 +831,9 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "47": ("I", "terne 1/X/2 pubblicate: somma esatta, quattro grafie"),
     "48": ("M", ("percentuali intere di Accuratezza: regola dichiarata, hit e "
                  "eventi osservati ricalcolati dai gol")),
-    "49": ("M", ("clima del club (`docs/82` §5): conteggi della settimana e rango per valore "
-                 "ricalcolati dai Parquet; la classificazione dei temi è `classify_news` "
-                 "della fonte, come in «Vita del club»")),
+    "49": ("M", ("clima del club (`docs/82` §5-§9): conteggi **e voci elencate** della "
+                 "settimana, marcatori «anche in «Vita del club»» e rango per valore ricalcolati "
+                 "dai Parquet; la classificazione dei temi è `classify_news` della fonte")),
 }
 
 
@@ -3512,34 +3535,43 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                          f"compare {txt.count(vuota)} volte")
     print(f"[21] pagine con stato della squadra riconciliate: {n_mood} (oracolo indipendente)")
 
-    # 49) clima del club (`docs/82` §5, opzione A): la card dell'ambiente e delle aspettative.
-    # Conteggi della settimana ricalcolati dai Parquet con la classificazione della fonte
-    # (`classify_news`, la stessa di «Vita del club» — il limite dichiarato in `ORACOLI`); rango
-    # per valore dei titolari e scarto dalla classifica ricalcolati in modo indipendente
-    # (mediane sulle gare finite prima del fischio, soglie 3 gare / |Δ| ≥ 5: la specifica
-    # dichiarata nella nota). Titoli mai pubblicati qui: le righe sono conteggi, e il vuoto di
-    # raccolta ha una frase fissa che deve comparire **se e solo se** il conteggio è zero.
+    # 49) clima del club (`docs/82` §5 e §9, opzione A): la card dell'ambiente e delle aspettative
+    # e — dall'11/10/2026 — **l'elenco delle voci contate** (richiesta dell'utente: «fornirmi
+    # queste voci con esattezza cosa dicono»). Conteggi e voci ricalcolati dai Parquet con la
+    # classificazione della fonte (`classify_news`, la stessa di «Vita del club» — il limite
+    # dichiarato in `ORACOLI`); rango per valore dei titolari e scarto dalla classifica
+    # ricalcolati in modo indipendente (mediane sulle gare finite prima del fischio, soglie
+    # 3 gare / |Δ| ≥ 5: la specifica dichiarata nella nota). Una voce per titolo — la stessa
+    # chiave di `team_news`: i doppioni della raccolta non gonfiano i conteggi — le più recenti
+    # fino al tetto dichiarato, e i marcatori «anche in «Vita del club»» verificati contro i
+    # titoli pubblicati **dalla stessa pagina**. Le righe di testo devono corrispondere una a
+    # una (in entrambe le direzioni) e il vuoto di raccolta ha una frase fissa che deve
+    # comparire **se e solo se** il conteggio è zero.
     n_clima = 0
     if not nd19.empty and not fx19.empty and "title" in nd19.columns:
         from fda.sources.news import TOPIC_LABELS, classify_news, is_italian_news
         _temi49 = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
         _press49 = ("allenatore", "spogliatoio", "societa", "tifo")
         _ord49 = {k: i for i, k in enumerate(_temi49)}
+        _max49 = 24              # CLIMA_VOCI_MAX dichiarato nella nota del codice
         _nd49 = nd19.assign(_pa=pd.to_datetime(nd19.published_at, utc=True, errors="coerce"))
         _mi49 = mi19.copy()
         for _c49 in ("home_starters_value_eur", "away_starters_value_eur"):
             if _c49 in _mi49.columns:
                 _mi49[_c49] = pd.to_numeric(_mi49[_c49], errors="coerce")
         _vuoto49 = "Nessuna voce di clima raccolta dalla stampa italiana"
+        _tl49 = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
 
-        def _righe_clima49(tid: int, tname: str, ko: Any) -> tuple[list[tuple[str, str]], int]:
-            """Righe attese (testo, tono) e voci di stampa per un lato, dai Parquet grezzi."""
+        def _attesi49(tid: int, tname: str, ko: Any, pubblicate: set[str],
+                      ) -> tuple[list[tuple[str, str]], int, list[dict]]:
+            """Righe attese (testo, tono), voci contate e gruppi elencati, dai Parquet grezzi."""
             att: list[tuple[str, str]] = []
             ko = pd.Timestamp(ko)
             sub = _nd49[(_nd49.team_id == tid) & (_nd49._pa >= ko - pd.Timedelta(days=7))
-                        & (_nd49._pa <= ko)]
-            conta: Counter[str] = Counter()
-            for r in sub.itertuples(index=False):
+                        & (_nd49._pa <= ko)].dropna(subset=["_pa"])
+            voci_righe: list[dict] = []
+            viste: set[str] = set()
+            for r in sub.sort_values("_pa", ascending=False, kind="stable").itertuples(index=False):
                 titolo = str(getattr(r, "title", "") or "").strip()
                 if not titolo:
                     continue
@@ -3548,9 +3580,17 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if not is_italian_news(titolo, desc):
                     continue
                 chiave, _prova = classify_news(titolo, desc, getattr(r, "source", None))
-                if chiave in _temi49:
-                    conta[chiave] += 1
-            voci = sum(conta.values())
+                if chiave not in _temi49:
+                    continue
+                tk = _tl49(titolo)
+                if not tk or tk in viste:
+                    continue
+                viste.add(tk)
+                voci_righe.append({"key": chiave, "title": titolo,
+                                   "url": str(getattr(r, "url", "") or ""),
+                                   "in_vita": tk in pubblicate})
+            conta: Counter[str] = Counter(v["key"] for v in voci_righe)
+            voci = len(voci_righe)
             pressione = sum(conta[k] for k in _press49)
             temi = sorted(conta, key=lambda k: (-conta[k], _ord49[k]))
 
@@ -3559,17 +3599,17 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
 
             det_press = det([k for k in temi if k in _press49])
             if pressione >= 3:
-                testo = (f"settimana calda: {pressione} voci di pressione in 7 giorni "
-                         f"({det_press})")
-                att.append((testo, "bad"))
+                _t49 = (f"settimana calda: {pressione} voci di pressione in 7 giorni "
+                        f"({det_press})")
+                att.append((_t49, "bad"))
             elif pressione:
-                testo = (f"pressione in settimana: {pressione} "
-                         f"{'voce' if pressione == 1 else 'voci'} ({det_press})")
-                att.append((testo, "warn"))
+                _t49 = (f"pressione in settimana: {pressione} "
+                        f"{'voce' if pressione == 1 else 'voci'} ({det_press})")
+                att.append((_t49, "warn"))
             elif voci:
-                testo = (f"settimana tranquilla: {voci} "
-                         f"{'voce' if voci == 1 else 'voci'}, nessuna di pressione ({det(temi)})")
-                att.append((testo, "good"))
+                _t49 = (f"settimana tranquilla: {voci} "
+                        f"{'voce' if voci == 1 else 'voci'}, nessuna di pressione ({det(temi)})")
+                att.append((_t49, "good"))
             # pressione da aspettative: rango per valore dei titolari (mediana, minimo 3 gare)
             # contro la posizione in classifica dello snapshot raccolto
             st49 = None
@@ -3594,14 +3634,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     rango = sorted(in_lega, key=lambda t: (-medie[t], t)).index(tid) + 1
                     pos = int(st49["rank"])
                     if pos - rango >= 5:
-                        testo = (f"pressione da aspettative: rosa da {rango}ª per valore "
-                                 f"dei titolari, in classifica {pos}ª")
-                        att.append((testo, "warn"))
+                        _t49 = (f"pressione da aspettative: rosa da {rango}ª per valore "
+                                f"dei titolari, in classifica {pos}ª")
+                        att.append((_t49, "warn"))
                     elif rango - pos >= 5:
-                        testo = (f"sopra le attese: in classifica {pos}ª con una rosa da "
-                                 f"{rango}ª per valore dei titolari")
-                        att.append((testo, "good"))
-            return att, voci
+                        _t49 = (f"sopra le attese: in classifica {pos}ª con una rosa da "
+                                f"{rango}ª per valore dei titolari")
+                        att.append((_t49, "good"))
+            elencate49 = voci_righe[:_max49]
+            per_tema49: dict[str, list[dict]] = {}
+            for v in elencate49:
+                per_tema49.setdefault(v["key"], []).append(v)
+            gruppi = [{"key": k, "label": TOPIC_LABELS.get(k, k), "n": int(conta[k]),
+                       "voci": per_tema49.get(k, [])} for k in temi]
+            return att, voci, gruppi
 
         for pg in pages:
             html = pg.read_text(encoding="utf-8")
@@ -3622,34 +3668,117 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                              f"({len(parti49)} blocchi)")
                 continue
             nota49 = html_unescape(blocco49.group(1))
-            for frammento in ("7 giorni", "5 posizioni", "valore dei titolari", "stampa"):
+            for frammento in ("7 giorni", "5 posizioni", "valore dei titolari", "stampa",
+                              "l'elenco delle voci contate", "24 voci elencate"):
                 checks += 1
                 if frammento not in nota49:
                     fails.append(f"{pg.name}: la nota del clima non dichiara «{frammento}»")
+            # i titoli pubblicati in «Vita del club» sulla stessa pagina (per i marcatori)
+            _in49 = html.find('id="notizie"')
+            _fine49 = html.find('<div class="card"', _in49 + 10) if _in49 != -1 else -1
+            blocco_not49 = html[_in49:_fine49 if _fine49 != -1 else len(html)]
+            pubblicate49 = {html_unescape(x) for x in re.findall(
+                r'<li><span class="topic">.*?<br><a href="[^"]*"[^>]*>(.*?)</a>',
+                blocco_not49, re.DOTALL)}
+            pubblicate49 = {_tl49(x) for x in pubblicate49 if x}
             fr49 = fx19[fx19.match_id == int(pg.stem)].iloc[0]
             ko49 = pd.Timestamp(fr49.utc_kickoff)
             for parte in parti49[1:]:
                 tname49 = html_unescape(parte.split("</b>", 1)[0]).strip()
                 tid49 = int(fr49.home_id) if tname49 == str(fr49.home_name) else int(fr49.away_id)
-                attesi49, voci49 = _righe_clima49(tid49, tname49, ko49)
+                attesi49, voci49, gruppi = _attesi49(tid49, tname49, ko49, pubblicate49)
+                # righe pubblicate: devono corrispondere una a una ai segnali attesi
                 righe49 = [(html_unescape(t), tone) for tone, t in
                            re.findall(r'<li class="mood-(bad|warn|good)"><span class="small">'
                                       r'(.*?)</span></li>', parte, re.DOTALL)]
-                for testo, tone in attesi49:
+                for testo49, tone49 in attesi49:
                     checks += 1
-                    if (testo, tone) not in righe49:
+                    if (testo49, tone49) not in righe49:
                         fails.append(f"{pg.name}: {tname49} riga clima attesa assente "
-                                     f"«{testo[:60]}»")
-                for testo, tone in righe49:
+                                     f"«{testo49[:60]}»")
+                for testo49, tone49 in righe49:
                     checks += 1
-                    if (testo, tone) not in attesi49:
+                    if (testo49, tone49) not in attesi49:
                         fails.append(f"{pg.name}: {tname49} riga clima non giustificata "
-                                     f"«{testo[:60]}»")
+                                     f"«{testo49[:60]}»")
                 checks += 1
                 if (voci49 == 0) != (_vuoto49 in parte):
                     fails.append(f"{pg.name}: {tname49} vuoto dichiarato della stampa "
                                  f"{'assente' if voci49 == 0 else 'presente'} con {voci49} voci")
+                # l'elenco delle voci contate: numeri del sommario, gruppi, item, marcatori
+                elencate49 = sum(len(g["voci"]) for g in gruppi)
+                in_vita49 = sum(1 for g in gruppi for v in g["voci"] if v["in_vita"])
+                somm49 = re.search(r'<summary>(.*?)</summary>', parte, re.DOTALL)
+                testo_somm49 = html_unescape(somm49.group(1)) if somm49 else ""
+                checks += 1
+                if (elencate49 > 0) != bool(somm49):
+                    fails.append(f"{pg.name}: {tname49} tendina delle voci "
+                                 f"{'assente' if elencate49 > 0 else 'presente'} con "
+                                 f"{elencate49} voci elencate")
+                if somm49:
+                    checks += 1
+                    atteso_somm49 = (
+                        f"Le {elencate49} voci più recenti di {voci49} contate"
+                        if voci49 > elencate49
+                        else "Una voce contata" if voci49 == 1
+                        else f"Le {voci49} voci contate")
+                    if atteso_somm49 not in testo_somm49:
+                        fails.append(f"{pg.name}: {tname49} sommario delle voci «"
+                                     f"{testo_somm49[:60]}» invece di «{atteso_somm49}»")
+                    checks += 1
+                    if in_vita49:
+                        atteso_marc49 = ("già raccontata in «Vita del club»" if voci49 == 1
+                                         else "una già raccontata in «Vita del club»"
+                                         if in_vita49 == 1
+                                         else f"{in_vita49} già raccontate in «Vita del club»")
+                        if atteso_marc49 not in testo_somm49:
+                            fails.append(f"{pg.name}: {tname49} sommario senza il conteggio dei "
+                                         f"marcatori ({in_vita49})")
+                gruppi_pagina49 = re.findall(
+                    r'<p class="small" style="margin:8px 0 4px"><b>(.*?) \((\d+)\)</b></p>\s*'
+                    r'<ul class="news-list">(.*?)</ul>', parte, re.DOTALL)
+                checks += 1
+                if len(gruppi_pagina49) != len(gruppi):
+                    fails.append(f"{pg.name}: {tname49} gruppi di voci {len(gruppi_pagina49)} "
+                                 f"in pagina contro {len(gruppi)} attesi")
+                else:
+                    for (lab49, n49, ul49), att_g49 in zip(gruppi_pagina49, gruppi):
+                        checks += 1
+                        if html_unescape(lab49) != att_g49["label"] or int(n49) != att_g49["n"]:
+                            fails.append(f"{pg.name}: {tname49} gruppo «{lab49} ({n49})» "
+                                         f"invece di «{att_g49['label']} ({att_g49['n']})»")
+                        items49 = re.findall(
+                            r'<li><span class="small"><a href="([^"]+)"[^>]*>(.*?)</a> '
+                            r'<span class="mut">(.*?)</span></span></li>', ul49, re.DOTALL)
+                        checks += 1
+                        if [html_unescape(t) for _u, t, _r in items49] \
+                                != [v["title"] for v in att_g49["voci"]]:
+                            fails.append(f"{pg.name}: {tname49} voci elencate di "
+                                         f"«{att_g49['label']}» non corrispondenti "
+                                         f"({len(items49)} in pagina)")
+                        for (url49, _t49, meta49), v49 in zip(items49, att_g49["voci"]):
+                            checks += 1
+                            if url49 != v49["url"]:
+                                fails.append(f"{pg.name}: {tname49} link della voce "
+                                             f"«{v49['title'][:40]}» diverso")
+                            checks += 1
+                            marcata49 = "anche in «Vita del club»" in html_unescape(meta49)
+                            if marcata49 != v49["in_vita"]:
+                                fails.append(f"{pg.name}: {tname49} voce "
+                                             f"«{v49['title'][:40]}» "
+                                             f"{'marcata' if marcata49 else 'non marcata'} "
+                                             f"contro l'atteso ({v49['in_vita']})")
+                if voci49 > elencate49:
+                    checks += 1
+                    atteso_coda49 = ("E un'altra voce della settimana, non elencata."
+                                     if voci49 - elencate49 == 1
+                                     else f"E altre {voci49 - elencate49} voci della settimana, "
+                                          f"non elencate.")
+                    if atteso_coda49 not in html_unescape(parte):
+                        fails.append(f"{pg.name}: {tname49} resto non dichiarato "
+                                     f"({voci49 - elencate49} voci oltre il tetto)")
     print(f"[49] pagine con clima del club riconciliate: {n_clima} (oracolo misto)")
+
 
 
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla

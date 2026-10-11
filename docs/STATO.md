@@ -83,6 +83,23 @@ l'ambiente come segnale (riempimento = tratto stabile, sd per squadra 0,024). Tr
 `docs/82` §5, raccomandata la **A** (split: «Stato della squadra» + nuova «Clima del club»),
 **scelta dall'utente e attuata** (vedi sopra).
 
+**Le voci contate, in chiaro (richiesta dell'utente, stessa sera; docs/82 §9).** «Rendi in
+grado il sito di fornirmi queste voci con esattezza cosa dicono»: la card ora pubblica, sotto
+ogni colonna, l'**elenco apribile delle voci contate** — titolo, testata, data e link, per tema,
+con le voci già raccontate in «Vita del club» **marcate** (non più nascoste: la scelta «niente
+titoli» di `docs/82` §7.1 era dichiarata reversibile). Una **voce per titolo**: la chiave di
+normalizzazione è la stessa del dedup di `team_news` (`news_title_key`), perché i doppioni della
+raccolta (97 righe → **86 voci**, 11 doppioni; Lazio 19→14, Torino 19→17, Juventus 16→15, Milan
+6→4, Venezia 3→2) gonfiavano i conteggi pubblicati; elenco dal più recente con **tetto 24
+dichiarato** in nota (massimo per lato oggi 17: non taglia nulla) e coda «E altre N…» se serve.
+86 voci elencate in tutto, **25 marcate**. I titoli di stampa sono citazioni verbatim: esclusi
+dai controlli anti-falso con la classe `a.voce` (misurato: «TORNELLI APERTI DALLE 18.15» faceva
+fallire il gate dei decimali), mentre sommario, etichette, testata, data e marcatore restano
+sotto i controlli. Gate (build 2026-10-11 sera): **`pytest` 629** (+2), `ruff` pulito,
+**`fda build` 493/2.364/7.578**, **`verify_site` 0 problemi · 237.513 controlli**, `parita_schede`
+nessuna differenza, `resa_375` **28.487 · 0**, `audit_clima` 0 difetti nuovi. Numeri di
+`docs/82` §8 rigenerati (Juventus 14 voci di pressione: tifoseria 9 · società 4 · panchina 1).
+
 **Prossimo passo:** PR di sessione per il branch `arena/9912b625` (merge all'utente); coda
 revisione sezione per sezione — Mercato, Vita del club, Previsione del modello ensemble,
 Verifica approfondita, Confronto di stagione.

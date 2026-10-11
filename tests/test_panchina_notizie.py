@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 import pandas as pd
 import pytest
 
-from fda.site.analysis import MatchAnalysis, news_quiet_line, news_subjects
+from fda.site.analysis import MatchAnalysis, news_quiet_line, news_subjects, news_title_key
 from fda.sources.news import classify_news, clean_text, keyword_score, news_value, parse_rss
 from fda.store import Store
 
@@ -1607,3 +1607,52 @@ def test_clima_aspettative_sotto_sopra_e_soglia(tmp_path):
     testi8 = [r["text"] for r in cl8["righe"]]
     assert ("sopra le attese: in classifica 1ª con una rosa da 8ª per valore dei titolari"
             in testi8), testi8
+
+def test_clima_elenco_una_voce_per_titolo_con_testata_data_e_link(tmp_path):
+    """L'elenco è la prova dei conteggi (`docs/82` §9): una voce per titolo, con link e marcature.
+
+    Lo stesso titolo ripreso da due testate è **una** voce (la più recente), e le voci che
+    «Vita del club» racconta sulla stessa pagina escono marcate (`visti`), non tolte.
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, esonero sempre più vicino per il tecnico", "url": "https://e.it/1",
+         "source": "Gazzetta", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"),
+         "title": "S1, esonero sempre più vicino per il tecnico", "url": "https://e.it/dup",
+         "source": "Corriere", "description": ""},
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "S1, gli ultras disertano la trasferta", "url": "https://e.it/3",
+         "source": "ANSA", "description": ""},
+    ])
+    a = _clima_store(tmp_path, news)
+    visti = {news_title_key("S1, gli ultras disertano la trasferta")}
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"), visti=visti)
+    assert cl["voci"] == 2 and cl["pressione"] == 2 and cl["vuota"] is False
+    assert cl["elencate"] == 2 and cl["oltre"] == 0 and cl["in_vita"] == 1
+    voci = [v for t in cl["temi"] for v in t["voci"]]
+    assert [v["title"] for v in voci] == [
+        "S1, esonero sempre più vicino per il tecnico", "S1, gli ultras disertano la trasferta"]
+    # del titolo ripetuto resta la pubblicazione più recente (Corriere, 12:00)
+    assert voci[0]["url"] == "https://e.it/dup" and voci[0]["source"] == "Corriere"
+    assert voci[0]["published_at"] == KO("2026-09-14 12:00")
+    assert voci[0]["in_vita"] is False and voci[1]["in_vita"] is True
+
+
+def test_clima_elenco_tetto_dichiarato_oltre_il_limite(tmp_path):
+    """Oltre il tetto di 24 voci elencate il resto è dichiarato col numero, mai tagliato in silenzio."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00") + pd.Timedelta(minutes=k),
+         "title": f"S1, gli ultras preparano lo striscione numero {k}", "url": f"https://e.it/{k}",
+         "source": "ANSA", "description": ""}
+        for k in range(1, 27)
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    assert cl["voci"] == 26 and cl["elencate"] == 24 and cl["oltre"] == 2
+    voci = [v for t in cl["temi"] for v in t["voci"]]
+    assert len(voci) == 24
+    # le più recenti restano in elenco (26ª → 3ª); le due più vecchie sono dichiarate col numero
+    assert voci[0]["title"].endswith("numero 26") and voci[-1]["title"].endswith("numero 3")
+    assert cl["temi"][0]["n"] == 26                          # il conteggio resta quello completo
+
