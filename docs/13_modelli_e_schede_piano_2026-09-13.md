@@ -1546,3 +1546,42 @@ commento.
 `predict.py` come candidati di laboratorio dichiarati (commento onesto + protocollo
 preregistrato); non sono cablati. Il card «laboratorio» della prossima voce li renderà
 visibili sul sito senza toccare la ricetta.
+
+### §9.26 — PR #106: «Clima del club», revisione 360° → opzione A → elenco voci → raccolta e pertinenza (2026-10-12, merge dell'agente su ordine esplicito dell'utente — deroga)
+
+**Ordine dell'utente:** *«Please merge the pull request.»* (2026-10-12 00:26 CEST; 2026-10-11
+22:26 UTC). Terza deroga esplicita alla policy «il merge lo esegue l'utente» (dopo #100 e
+#101, `docs/13` §9.25).
+
+**Pre-merge, verificato con comando:** check `test` sul commit di testa **`9212092` verde** (due
+run: `38179561262` chiusa e `38180163023` in corso al momento della verifica, poi entrambe
+success); PR `mergeable=true` / `mergeStateStatus=clean`; `git status` pulito; branch **6
+commit avanti / 3 dietro** `main` — le tre run-dati `[skip ci]`, con `data/` e `config/` **non
+toccati** dal branch (nessun conflitto possibile sui Parquet).
+
+**Merge:** `gh pr merge 106 --merge` → merge commit **`3336f34`**, `state=closed`,
+`merged=true`, `merged_by=uamisjd`, `merged_at=2026-10-11T22:26:07Z`. 17 file, **+3.971 −128**,
+6 commit (`8236af1` revisione 360° · `326687e` secondo giro · `ee29ec7` studio `docs/82` ·
+`988ed51` opzione A · `dde829d` elenco voci · `9212092` raccolta e pertinenza).
+
+**Post-merge su `main`, verificato con comando:** `test` **success**
+(`38180412194`, 22:28:37Z); `daily` **success** (`38180412184`: job `run` success 22:45:49Z in
+19m37s, job `deploy` success 22:45:59Z) → sito live ricostruito dal merge e **deployato**;
+commit dati del daily **`06b0c7f`** («data: run 2026-10-11 22:45 UTC [skip ci]») pushato su
+`main`. Il contenuto servito non è stato ispezionato dall'ambiente dell'agente (github.io è
+fuori dalle destinazioni di rete consentite) e l'artifact `run-log-253` non è scaricabile per lo
+stesso motivo: la prova del deploy è il job `deploy` verde con artifact `github-pages` sul
+commit del merge.
+
+**Cosa è entrato in produzione:** la card «Clima del club» con i tre gate di pertinenza (fonte,
+tema nel titolo, **club nel titolo** con i nomi d'edicola e la guardia sull'oggetto) e l'elenco
+apribile delle voci contate; il «fatto della settimana» con bonus +3, soglia di peso ≥ 4 e
+fatto grave **detto in proprio**; la mappa delle ricerche a **64 chiavi** con confronto
+normalizzato (vale dalle raccolte successive al merge); `scripts/audit_fonti.py`. Misure della
+build #4: 44 voci elencate · 8 fatti · `pytest` 637 · `verify_site` 0 problemi · 238.062
+controlli · `audit_clima` 0 difetti (`docs/83` §5).
+
+**Da verificare dal vivo, prossima sessione:** il primo `audit_fonti.py` dopo qualche giorno di
+raccolte post-merge deve mostrare **Nottm Forest e M'gladbach fuori** dall'elenco delle squadre
+sotto la mediana (2 notizie in 14 giorni contro mediane di 16 e 14,5): è la prova che il fix
+della mappa funziona sui dati nuovi, non solo sui fixture dei test.

@@ -138,9 +138,17 @@ corso da DS; PSG: la curva si svuota; Atlético: Gilgeous-Alexander azionista). 
 238.062 controlli**, `parita_schede` nessuna differenza, `resa_375` 28.482 · 0, `audit_clima`
 0 difetti, `audit_fonti` exit 0. `docs/83` §1-§6.
 
-**Prossimo passo:** PR di sessione per il branch `arena/9912b625` (merge all'utente); coda
-revisione sezione per sezione — Mercato, Vita del club, Previsione del modello ensemble,
-Verifica approfondita, Confronto di stagione.
+**PR #106 fusa** (ordine esplicito dell'utente, 2026-10-12 00:26 CEST — deroga registrata in
+`docs/13` §9.26): merge commit **`3336f34`**, 17 file · +3.971 −128 · 6 commit. Post-merge su
+`main` tutto verde: `test` **success** (22:28:37Z), `daily` **success** con `deploy`
+**success** (22:45:59Z) → sito live ricostruito dal merge, commit dati **`06b0c7f`**. Pre-merge:
+check `test` verde su `9212092`, PR `clean`, branch 6 avanti / 3 dietro (solo run-dati: `data/`
+non toccato). Da verificare dal vivo: il primo `audit_fonti.py` post-merge deve mostrare Nottm
+Forest e M'gladbach **fuori** dalle squadre sotto la mediana (prova del fix della mappa sui dati
+nuovi).
+
+**Prossimo passo:** coda revisione sezione per sezione — Mercato, Vita del club, Previsione del
+modello ensemble, Verifica approfondita, Confronto di stagione.
 
 ## 2026-10-11 — Incroci in panchina: piano e script di backfill (docs/80)
 
