@@ -1,3 +1,38 @@
+## 2026-10-11 — Gli oracoli di `verify_site`: 28 indipendenti · 18 misti · 4 specchi (docs/79)
+
+Richiesta dell'utente (opzione A): classificare i ~46 controlli del verificatore in «oracolo
+indipendente» e «specchio del generatore», e sistemare gli specchi.
+
+**Perché conta:** un controllo che costruisce il valore atteso chiamando il codice del generatore
+verifica la resa, non il calcolo. Due casi misurati lo dimostrano: [2] chiedeva che la terna
+dell'andamento sommasse «~100» con tolleranza 3 e **153 righe rotte** (99/101) gli sono passate
+sotto il naso in 103 schede; e [9] lo diceva di sé nel commento — «la pagina e il verificatore
+chiamano la stessa funzione».
+
+**Riscritture indipendenti** (dalla definizione, non copiate; confrontate col generatore
+all'innesto su 4.000/40.000/20.000 casi, zero divergenze): RPS ([3], [8]), intervallo di Wilson
+([7], [15]), terna con la regola del resto massimo ([9], [46]) — via `terna_valida`, che è una
+**specifica** e accetta le parità — e la somma delle cifre **stampate** ([16]). [2] passa dalla
+tolleranza «>3» all'uguaglianza esatta.
+
+**Registro `ORACOLI`** con 50 voci e nota per ognuna, stampato dal gate a ogni esecuzione, e un
+test con ratchet: ogni etichetta deve essere dichiarata, `S ≤ 4`, `M ≤ 18`, `I ≥ 28`. Gli
+specchi residui ([1] matrice, [9] distribuzione dei gol, [10] scomposizione, [20] notizie) restano
+dichiarati perché il loro oracolo sono i test dei modelli.
+
+**Controlli positivi:** sette difetti iniettati nell'HTML pubblicato (copia ridotta del sito,
+~9 s per giro) — terna dell'andamento, totale dei gol, RPS, intervallo di Wilson, terna di un
+passo, terna della tabella, 1X2 del laboratorio: **7 su 7 intercettati**. Le tre mutazioni che
+oggi fanno fallire il gate sono esattamente quelle che ieri non avrebbero fatto fallire nulla.
+
+**Lezione registrata** (`docs/79` §5): un falso difetto è nato da uno script ad-hoc che tagliava
+i tag con `re.sub(r"<[^>]+>")` — che sbaglia quando un attributo contiene un `>`: il sito scrive
+`&lt;1` corretto (12 occorrenze, verificate con un parser HTML), il testo estratto era spazzatura.
+
+Gate: **612 test**, `ruff` pulito, `verify_site` **235.804 · 0 problemi** con la riga degli
+oracoli, audit panchina **0 scostamenti · 0 silenzi**, `parita_schede` **82 · nessuna
+differenza**, `resa_375` **28.467 · 0**.
+
 ## 2026-10-11 — Card «Panchina e posta in gioco»: controllo a 360 gradi (docs/78)
 
 Richiesta dell'utente: revisione completa di cosa propone e come lo propone la card, su tutte

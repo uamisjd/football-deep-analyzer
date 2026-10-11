@@ -800,3 +800,40 @@ def test_unescape_sempre_dopo_il_taglio_dei_tag():
                 if annidato.search(riga):
                     sospetti.append(f"{f.relative_to(radice)}:{i}: {riga.strip()[:90]}")
     assert not sospetti, "unescape prima del taglio dei tag:\n" + "\n".join(sospetti)
+
+
+def test_ogni_controllo_dichiara_il_suo_oracolo():
+    """`docs/79`: ogni controllo di `verify_site` dichiara da dove viene il valore atteso.
+
+    Le etichette si leggono dal sorgente (le stesse che il gate stampa), il registro dal modulo.
+    Il conteggio ha un ratchet: gli specchi possono solo diminuire e gli indipendenti solo
+    crescere, così il debito non torna in silenzio. Un controllo nuovo non dichiarato non passa.
+    """
+    import importlib.util
+    import re as _re
+    import sys
+    from collections import Counter as _Counter
+    from pathlib import Path as _Path
+
+    radice = _Path(__file__).resolve().parents[1]
+    src = (radice / "scripts" / "verify_site.py").read_text(encoding="utf-8")
+    spec = importlib.util.spec_from_file_location("_vs_oracoli", radice / "scripts" / "verify_site.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_vs_oracoli"] = mod
+    spec.loader.exec_module(mod)
+
+    etichette = set(_re.findall(r'print\(f?"\[(\d+(?:-\d+)?[a-z]?)\]', src))
+    assert len(etichette) >= 45, f"etichette lette dal sorgente: {len(etichette)}"
+    mancanti = sorted(etichette - set(mod.ORACOLI))
+    assert not mancanti, f"controlli senza oracolo dichiarato in ORACOLI: {mancanti}"
+    orfani = sorted(set(mod.ORACOLI) - etichette - {"29"})   # [29] non ha una stampa propria
+    assert not orfani, f"oracoli dichiarati per controlli che non esistono: {orfani}"
+    for etichetta, (categoria, nota) in mod.ORACOLI.items():
+        assert categoria in {"I", "M", "S"}, (etichetta, categoria)
+        assert len(nota) >= 15, f"[{etichetta}]: la nota deve dire da dove viene il valore atteso"
+
+    conta = _Counter(categoria for categoria, _ in mod.ORACOLI.values())
+    assert conta["S"] <= 4, ("gli specchi possono solo diminuire: per aggiungerne uno serve una "
+                             "ragione scritta in docs/79 e aggiornare il ratchet")
+    assert conta["M"] <= 18, "come sopra: un misto in più è debito in più (docs/79)"
+    assert conta["I"] >= 28, "gli oracoli indipendenti possono solo crescere (docs/79)"
