@@ -1294,9 +1294,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not tail_m:
             fails.append(f"{pg.name}: etichetta della coda della matrice assente o ambigua")
         tail = float(tail_m.group(1).replace(",", ".")) if tail_m else 0.0
+        # docs/77 §5: la somma è fra valori arrotondati a 0,1: va confrontata alla stessa
+        # cifra, altrimenti 36 addendi in virgola mobile portano 100,6 a 100,60000000002 e
+        # il limite inclusivo diventa esclusivo (falso allarme su 5749708 l'11/10/2026)
+        tot_r = round(tot + tail, 1)
         if worst > 0.11:
             fails.append(f"{pg.name}: cella matrice diversa di {worst:.2f} pp")
-        if not 99.0 <= tot + tail <= 100.6:
+        if not 99.0 <= tot_r <= 100.6:
             fails.append(f"{pg.name}: matrice+coda = {tot + tail:.1f}%")
         # coerenza con le probabilità pubblicate (stessa τ del modello, vedi dc_grid)
         g = dixon_coles_grid(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
@@ -2678,8 +2682,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         # dato mancante vale «n.d.» SENZA barra né numero: l'80 celle con un 50 neutro accanto
         # a «(n.d.)» (docs/57 §8) erano valori inventati in pagina.
         n_radar += 1
+        # docs/77: stessa finestra del generatore, che passa il calcio d'inizio: su una
+        # scheda pre-partita il radar è fermo alla vigilia; senza ``before`` l'oracolo
+        # conta anche le gare giocate dopo e diverge quando il calendario è indietro
+        # (issue #104: 3 radar falsati il 10/10/2026).
         cr_radar = ma19.clash_radar(str(fr.home_name), int(fr.home_id),
-                                    str(fr.away_name), int(fr.away_id))
+                                    str(fr.away_name), int(fr.away_id),
+                                    pd.to_datetime(fr.utc_kickoff, utc=True))
         k = html.find("Radar stile")
         tab = html.find("<table", k) if k >= 0 else -1
         fine = html.find("</table>", tab) if tab >= 0 else -1

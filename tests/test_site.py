@@ -1413,6 +1413,29 @@ def test_season_compare_campionato_a_18_squadre(tmp_path):
     st.close()
 
 
+def test_hero_niente_punteggio_se_calendario_indietro(tmp_path):
+    """docs/77 / issue #104: i dettagli FotMob possono portare i gol **prima** che il
+    calendario ribalti lo stato a «finished». In quel caso l'hero non deve stampare un
+    risultato accanto a «calcio d'inizio» (combinazione che [37] vieta): resta «vs».
+
+    È il difetto che il 10/10/2026 ha fermato il daily su 12 schede: punteggio numerico con
+    didascalia «calcio d'inizio · HH:MM»."""
+    st = _seed(tmp_path)
+    # la gara futura è «scheduled» nel calendario: le infiliamo i gol come se i dettagli
+    # della fonte fossero arrivati in anticipo (il caso misurato su main)
+    mi = st.read("match_info")
+    mi.loc[mi.match_id == 5749669, ["home_goals", "away_goals"]] = [2, 1]
+    st.write("match_info", mi)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    html = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    m = re.search(r'<span class="result">(.*?)</span><span class="date">(.*?)</span>',
+                  html, re.DOTALL)
+    assert m.group(1).strip() == "vs", "niente risultato finché il calendario non dice finita"
+    assert m.group(2).strip().startswith("calcio d'inizio")
+    st.close()
+
+
 def test_top_players_per_team_with_goals(tmp_path):
     """Migliori in campo: split per squadra, gol/assist/minuti uniti, unavailable esclusi."""
     import pandas as pd

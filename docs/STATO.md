@@ -44,6 +44,17 @@ caso 13 di manomissione. Gate rifatti: **590 test**, build **470/2.364/7.530**,
 `verify_site` **228.331 · 0** (+15.980 controlli di [45]), parità nessuna differenza,
 `resa_375` **27.696 · 0**. Dettagli in `docs/76` §8.
 
+**Issue #104 — daily del 10/10 fermato da 12 hero «punteggio + calcio d'inizio» e 3 radar
+(docs/77):** la causa è l'anticipo della fonte — i dettagli FotMob pubblicano gol e
+statistiche prima che il calendario ribalti lo stato a «finished». Corretto rispettando la
+regola del calendario (PR #100) anche nell'hero: il punteggio esce solo se lo stato lo
+giustifica (`mostra_punteggio`), finché non è finita la scheda resta «vs · calcio d'inizio»
+come le liste; e l'oracolo [22b] del radar ora passa `before=kickoff`, la stessa finestra
+del generatore (la pagina era giusta, l'oracolo no). Test di regressione: alla gara futura
+del seed vengono infilate i gol e l'hero deve restare «vs». L'issue si chiude da sola al
+primo daily verde: serve il merge prima del run successivo. Gate: **591 test**,
+`verify_site` **223.338 · 0**, parità nessuna differenza, `resa_375` **27.312 · 0**.
+
 ---
 
 ## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)

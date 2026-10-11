@@ -8,16 +8,23 @@
 {% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta){% if f.n < 5 %} — campione ridotto (<5 gare), lettura provvisoria{% endif %}"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span>{% if f.n < 5 %}<span class="small mut" title="meno di 5 gare: forma provvisoria"> ⚠</span>{% endif %}</span>{% endif %}{% endmacro %}
 {% block content %}
 {% set p = c.prediction %}
+{#- docs/77: il punteggio nell'hero esce solo se lo stato lo giustifica (finale, in corso,
+    intervallo…): quando il calendario dice «da giocare» ma i dettagli della fonte hanno già
+    i gol (la raccolta dei dettagli anticipa il ribaltamento dello stato, issue #104), la
+    pagina resta coerente col calendario — «vs · calcio d'inizio» — invece di stampare un
+    risultato accanto a «calcio d'inizio» (combinazione che l'invariante [37] vieta e che il
+    10/10/2026 ha fermato il daily su 12 schede). -#}
+{% set mostra_punteggio = c.home_goals is not none and c.status|didascalia_punteggio != 'calcio d\'inizio' %}
 <p class="crumb"><a href="{{ root }}index.html">← Oggi</a><span aria-hidden="true">·</span><span>{{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %}</span></p>
 <div class="match-hero" id="sintesi">
-  <h1 class="sr-only">{{ c.home_name }} - {{ c.away_name }}{% if c.home_goals is not none %}, {{ c.home_goals }} - {{ c.away_goals }}{% endif %}</h1>
+  <h1 class="sr-only">{{ c.home_name }} - {{ c.away_name }}{% if mostra_punteggio %}, {{ c.home_goals }} - {{ c.away_goals }}{% endif %}</h1>
   <div class="match-hero-meta">
     <span class="hero-status"><span class="status-dot status-dot-{{ 'finished' if c.status == 'finished' else 'scheduled' }}" aria-hidden="true"></span>{% if c.status == 'finished' %}Finale{% else %}Analisi pre-partita{% endif %}</span>
     <span>{{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</span>
   </div>
   <div class="match-scoreline">
     <div class="match-hero-team home">{{ c.home_name }}{% if c.status != 'finished' %}{{ hero_form(c.home_form_badge, c.home_name) }}{% endif %}</div>
-    <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
+    <div class="match-hero-center"><span class="result">{% if mostra_punteggio %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
     <div class="match-hero-team away">{{ c.away_name }}{% if c.status != 'finished' %}{{ hero_form(c.away_form_badge, c.away_name) }}{% endif %}</div>
   </div>
   {% if c.status in ('postponed','suspended','cancelled','abandoned') %}<div style="margin-top:12px;padding:10px 14px;background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);border-radius:10px;color:var(--amber);font-weight:700;font-size:13px">⚠ Partita {{ 'rinviata' if c.status == 'postponed' else 'sospesa' if c.status in ('suspended','abandoned') else 'annullata' }} — orario da confermare. La previsione resta quella dell'ultimo calcolo prima del rinvio.</div>{% endif %}
