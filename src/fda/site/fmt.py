@@ -155,6 +155,17 @@ def or_dash(v) -> str:
     return s if s else "—"
 
 
+def pct_int(p: float) -> int:
+    """Percentuale intera con la regola di casa: **mezzo in su**, mai il banker's.
+
+    `round(0.625 * 100)` in Python fa 62 (il pari più vicino): la lega FRA1, 15 successi su 24
+    gare, il 2026-10-11 era pubblicata «62%» mentre ogni altra percentuale del sito usa il
+    mezzo in su (`mc_percent`, le simulazioni). Una cifra pubblicata non deve dipendere dalla
+    parità dell'intero: 62,5% si scrive «63%». Il valore è la probabilità in [0, 1].
+    """
+    return math.floor(min(max(float(p), 0.0), 1.0) * 100.0 + 0.5)
+
+
 def pct_triple(p: tuple[float, float, float], nd: int = 0) -> list[float]:
     """Vettore 1X2 continuo → 3 valori con ``nd`` decimali che sommano **esattamente** 100.
 

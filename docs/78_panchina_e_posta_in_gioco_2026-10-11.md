@@ -1,0 +1,517 @@
+# 78 — Card «Panchina e posta in gioco»: controllo a 360 gradi (2026-10-11)
+
+Richiesta dell'utente: «dobbiamo verificare e revisionare come il sito ci presenta le schede di
+ogni partita — vai alla revisione di "Panchina e posta in gioco", fai un controllo a 360 gradi
+di cosa ci propone e come lo propone, controlla cosa si deve aggiustare e aggiungere». Stesso
+metodo di `docs/76` (card «Le due squadre»): per ogni punto **misura → correzione →
+invariante o test**, e alla fine i gate. La misura vive in `scripts/audit_panchina.py`, che
+legge l'HTML come sta e ricalcola tutto dai Parquet con strade **diverse** da quelle del
+generatore (mai `bench_deep`).
+
+Ambito: la card è solo sulle schede pre-partita. Al mattino del 2026-10-11 erano **104 schede
+(208 celle-squadra)**; dopo il §8 sono **82 (164 celle)** — le altre erano gare già giocate.
+
+## §1 — Difetto: la classifica virtuale copriva due esiti e ignorava i punti dell'avversaria
+
+**La misura.** La riga verde pubblicava «con una vittoria Nº · con una sconfitta Mº»: mancava il
+pareggio, e nel computo i punti del risultato andavano solo alla squadra della cella. Nella
+sconfitta l'avversaria incassa i 3 punti, quindi può scavalcare: **36 celle su 208** avevano la
+posizione «con una sconfitta» sbagliata (Feyenoord 1º→2º, Napoli 6º→7º, Sunderland 16º→17º).
+«Con una vittoria» era già esatta perché i punti dell'avversaria restano 0.
+
+**La correzione.** `_virtual(my, opp)` conta i punti di **entrambe** le squadre di questa
+partita (vittoria 3–0, pareggio 1–1, sconfitta 0–3), tenendo ferme le altre gare in sospeso e
+la differenza reti attuale; la riga dichiara i tre esiti: «con una vittoria 10º · con un
+pareggio 11º · con una sconfitta 11º (classifica virtuale, altre gare in sospeso)».
+
+**Invarianti e test.** Il verificatore [19] ricalcola la posizione con `posizione_virtuale()`
+a livello di modulo, senza riusare la funzione del generatore — il gate che riusa la funzione
+sotto esame non può vedere gli errori che stanno *dentro* la funzione. Test:
+`test_bench_deep_profilo_rendimento_e_virtual` (i tre esiti, con la Roma che incassa i punti
+nella sconfitta), `test_card_panchina_tre_esiti_eta_dichiarata_e_orologio`.
+
+## §2 — Etichette che contraddicevano il numero stampato due righe sotto
+
+**La misura.** Su **23 celle** l'etichetta diceva «corsa all'Europa» mentre la riga sotto
+stampava `UCL (prime 4)` ≥35% — con 4 posti UCL quel traguardo è la Champions, non «l'Europa»
+( Dortmund 1º con 92% compreso). E su metà delle celle senza postura in bilico l'aggettivo di
+posizione contraddiceva la classifica stampata accanto (posizione reale fuori dall'intervallo
+7ª–13ª su 47 celle su 101).
+
+**La correzione.** Soglie dichiarate, 0,15 / 0,35: titolo ≥15% → «corsa al titolo»; altrimenti
+probabilità UCL ≥35% → «corsa alla Champions»; salvezza-in-coda (`p_rel`) ≥35% → «lotta
+salvezza»; ≥15% → «zona salvezza non lontana». Se nessuna postura è in bilico, al posto di un
+aggettivo va **il numero della simulazione**: «proiezione: 11,4º posto in media», la stessa
+«Media pos.» della pagina Proiezioni. Distribuzione dopo la correzione (164 celle): proiezione
+79 · lotta salvezza 28 · zona salvezza non lontana 25 · corsa alla Champions 20 · corsa al
+titolo 12; posizione reale mediana: titolo 2º, Champions 5º, salvezza 16º, zona 15º,
+proiezione 9º.
+
+**Invarianti e test.** [19] ricalcola l'etichetta dalla simulazione; `audit_panchina.py`
+incrocia etichetta × posizione reale; test
+`test_bench_deep_etichetta_champions_e_proiezione` (con `ucl_legacy is False` → Champions;
+fallback → proiezione; snapshot legacy senza `top_n` → «dato storico»).
+
+## §3 — Celle che tacevano senza dire perché
+
+**La misura.** **108 celle su 208** dicevano un «n.d.» muto sull'età media dei titolari: non si
+distingueva «FotMob non ha ancora pubblicato la distinta» da «dato perso». **6 celle** non
+pubblicavano il rendimento del nuovo allenatore (Valencia/Aguirre da Oscar Sanchez,
+M'gladbach/Blessin da Lichte): un subentro appena avvenuto non ha gare concluse, e la cella
+taceva.
+
+**La correzione.** Età: «distinta non ancora pubblicata» con tooltip (la distinta arriva a
+ridosso del calcio d'inizio) quando la formazione non c'è; «n.d.» solo se la formazione c'è ma
+l'età manca. Rendimento: flag `coach_ppg_absent` → «rendimento: nessuna gara finita con lui in
+panchina», con tooltip che dice quando comparirà.
+
+**Invarianti e test.** [19] verifica l'età («n.d.» / «distinta non ancora pubblicata») e il
+segnaposto del rendimento; test `test_card_panchina_rendimento_dichiarato_per_un_subentro`,
+`test_bench_deep_subentro_senza_gare_dichiarato`.
+
+## §4 — Ripetizioni fra card: chi dice cosa
+
+**La misura.** La notizia del cambio di panchina compariva in due card su 11 schede, e la voce
+«Panchina nuova» due volte su 2. Clima e «Da sapere» raccontavano lo stesso fatto della card
+panchina senza rimandarla.
+
+**La correzione.** Una sola voce per fatto; clima e «Da sapere» fanno **segnale + rimando**
+(«…è la nuova guida — i dettagli in «Panchina e posta in gioco»»). Il conteggio delle gare dal
+subentro resta in una riga sola.
+
+## §5 — Nove celle stampavano il codice nazione grezzo
+
+**La misura.** Le distinte raccolte usano **116 codici ISO** diversi; la mappa italiano→nome ne
+copriva 35. Nove celle pubblicavano «· 45 anni · ROU», «· 49 anni · BIH» (×2), «· 44 anni ·
+DEN» (×2), «· 73 anni · CHI» (×2), «· 48 anni · USA» (×2).
+
+**La correzione.** `_COUNTRY_IT` completa sui 116 codici + `country_it()`: un codice nuovo non
+mappato **non finisce a schermo** (la cella mostra la sola età, come quando la fonte la nazione
+non la pubblica). Misura dopo la build: 164/164 celle con la nazione in italiano (era 199/208).
+
+**Invarianti e test.** [19] rifiuta `anni · [A-Z]{3}` nella cella allenatore;
+`audit_panchina.py` conta i codici grezzi (deve restare 0).
+
+## §6 — «salvezza N%» era «retrocessione N%»: significato invertito su tutte le celle
+
+**La misura.** La coda della riga «Posta in gioco» stampava `p_rel` sotto la parola
+**salvezza**, ma `p_rel` è la probabilità di finire nei posti rossi della lega
+(`season_sim.py`: `pos > n − rel_count`; `REL_COUNTS` = 3 «dirette + spareggio» per POR1/NED1/
+FRA1) — la colonna **«Retro»** della pagina Proiezioni, la stessa che la CLI stampa come
+«retro». Il numero era giusto, la parola invertita: l'Estoril 18º compariva come «salvezza
+52%» (51,5% di retrocedere) e il Viseu 5º come «salvezza 0%» (0,3%).
+
+**La correzione.** «retrocessione N%» nella cella e nella nota («retrocessione» è la colonna
+«Retro» della pagina Proiezioni — i posti rossi di ogni campionato, spareggio compreso per
+POR1, NED1 e FRA1), attesi allineati in [19] e nell'audit, asserzione di regressione in
+`test_card_panchina_tre_esiti_eta_dichiarata_e_orologio` (`retrocessione \d+%` presente,
+`salvezza \d+%` assente).
+
+## §7 — Precedenti: dall'archivio vero, e gli incroci fra **allenatori** (richiesta dell'utente)
+
+**La misura.** Le due righe «precedenti» della cella allenatore leggevano l'archivio delle
+**distinte**, che per coppia di squadre copre una sola gara: con le soglie di allora (≥3 gare
+contro l'avversaria, ≥2 contro il suo allenatore) non si accendevano su **nessuna** delle 208
+celle — 164 celle con 0 gare in archivio, 44 con 1.
+
+**La correzione, prima parte (club) — superata dal §10.** Il primo tentativo pubblicò nella
+cella il bilancio fra i due **club** dall'archivio testa-a-testata (`h2h.parquet`: 9.730 righe,
+487 contesti, mediana 20 incontri per coppia; 160 celle su 164 con dati, es. «bilancio con
+Juventus nel nostro archivio: 2V 5N 23P su 30 gare»). Era però **attribuzione falsa**: sotto
+il nome dell'allenatore quel numero si legge come suo, mentre è l'albo d'oro delle due squadre
+(che per giunta la card «Precedenti» già pubblica, con l'intervallo di archivio). Segnalato
+dall'utente con la foto della scheda di Atalanta–Venezia («queste non sono le vere partite
+fatte dall'allenatore Sarri contro il Venezia»): vedi **§10** per la correzione e la misura.
+
+**Lo sbaglio che l'utente ha colto (incroci).** Dopo la risposta «non possiamo dare un archivio
+al sito?», la riga «incroci in panchina con l'allenatore avversario» era stata implementata
+contando le gare del **club** in cui capitava l'allenatore avversario: pubblicava cioè lo
+scontro fra le due squadre sotto un'etichetta che prometteva i precedenti fra i due
+allenatori. Segnalato dall'utente («quello che hai messo sono solo gli scontri tra le due
+squadre»): la definizione corretta è **gare in cui i due si sono trovati su panchine opposte,
+su qualunque coppia di club, sempre prima di questa partita**, con l'esito letto dalla panchina
+del nostro allenatore.
+
+**Cosa dice l'archivio panchine oggi.** 441 partite (7 agosto → 21 ottobre 2026), 2 allenatori
+per partita, mediana 6 gare per allenatore, un solo allenatore con due squadre nel periodo:
+**0 incroci reali** fra le coppie dei 104 anticipi (nessuna coppia si era ancora incontrata in
+questa stagione). La riga quindi **non si pubblica** — e non deve: meglio il silenzio di un
+numero finto. Il codice resta, corretto e coperto da test (`test_bench_deep_...` costruisce un
+incrocio vero: l'allenatore dell'Inter oggi incontrava quello della Roma su Milan–Roma), e si
+accenderà quando l'archivio conterrà un incrocio (es. le gare di ritorno nella seconda metà di
+stagione). Un bilancio **di carriera** fra due allenatori richiederebbe il backfill delle
+distinte delle gare h2h da FotMob: non misurabile da questo sandbox, da decidere a parte.
+
+## §8 — Difetto trovato mentre si misurava il §7: 22 schede «pre-partita» per gare già giocate
+
+**La misura.** Il 2026-10-11, **22 schede (44 celle)** erano rese come «Analisi pre-partita»
+per partite che il **calendario dava già finite**: i dettagli (`match_info`) erano
+un'istantanea vecchia (14 righe «scheduled», 8 «live» — la finestra dei dettagli vive di budget
+e resta indietro, il calendario si riaggiorna a ogni run) e la pagina si fidava dei dettagli.
+Peggio: col taglio `ko <= kickoff` la card contava **quella stessa gara** fra i «precedenti» —
+per Genoa–Fiorentina (5749693, 1-0) la cella pubblicava «un solo incrocio in panchina con
+Paolo Vanoli: 1V 0N 0P»: il risultato della partita in corso spacciato per un precedente.
+
+**La correzione.** Due regole, entrambe con nome e motivo nel codice:
+
+1. **Una partita finita lo resta**: `status = "finished"` se lo dice il **calendario**, poi si
+   guardano i dettagli. Misura dello store: nessun caso inverso (nessun `match_info` «finished»
+   con calendario non finito), quindi la regola non ha controindicazioni.
+2. **Il passato è rigorosamente prima di questa partita**: `fin.ko < kickoff` e
+   `ct.ko < kickoff` per rendimento e precedenti (con `<=` la partita stessa entrava nel
+   campione). Vale anche per `_h2h_core`, che già usava `<`.
+
+**Effetto misurato.** Schede pre-partita **104 → 82** (le 22 gare finte ora si leggono come
+«Finale», con punteggio e sezioni post-partita: 5749693 → «Genoa - Fiorentina, 1 - 0 Finale»);
+righe «incrocio in panchina» pubblicate **44 → 0**; card solo su gare vere da giocare.
+
+**Invarianti e test.** [19] fallisce se una pagina con la card ha il calendario «finished»
+(«scheda pre-partita per una gara che il calendario dà finita»);
+`audit_panchina.py` conta le pagine pre con calendario finito (deve restare 0);
+`test_scheda_di_una_gara_finita_non_resta_pre_partita` (calendario finito + dettagli
+«scheduled» → pagina «Finale», niente card); `test_bench_deep_non_conta_la_partita_stessa`
+(una goleada 7-0 della partita stessa non entra nel rendimento).
+
+## §9 — Gate (tutti rifatti dopo l'ultima modifica al sorgente)
+
+- `pytest`: **598 passed** (0 falliti).
+- `ruff check`: pulito sui file toccati.
+- `fda build`: **493 schede** · 2.364 fixture · 7.560 giocatori (build 2026-10-11, 4 min 24 s).
+- `scripts/verify_site.py`: **nessun problema · 233.508 controlli numerici** (include [19]
+  riscritto: coach, permanenza, rendimento, precedenti, incroci, etichette, distanze,
+  posizione virtuale a 3 esiti, età, nazioni, più l'invariante «niente card su gare finite»).
+- `scripts/audit_panchina.py`: **0 scostamenti** dal ricalcolo indipendente su tutte le
+  famiglie (nome_coach, tenure, ppg, precedenti, incroci, table, virtuale, etichetta, età,
+  nazioni) e **0 silenzi** (nessuna riga assente senza dichiarazione).
+- `scripts/parita_schede.py`: **82 schede pre-partita · struttura identica** (26 id, 14 voci
+  d'indice), nessuna differenza.
+- `scripts/resa_375.py`: **28.467 misure · 0 problemi a 375 px**.
+
+Dopo la revisione del §10 i gate sono stati rifatti da capo (build, verify, audit, parità,
+resa): stessi esiti, con le celle del bilancio del club a 0 — vedi la coda del §10.
+
+## §10 — Revisione su segnalazione: il «bilancio con l'avversaria» era del club, non dell'allenatore
+
+**La segnalazione (foto della scheda Atalanta–Venezia).** Nella cella dell'allenatore compariva,
+sotto «rendimento: 1,2 punti/gara su 5 gare finite con lui in panchina», la riga:
+
+> bilancio con Venezia nel nostro archivio: 4V 1N 0P su 5 gare
+
+L'utente: «queste non sono le vere partite fatte dall'allenatore Sarri contro il Venezia».
+**Vero**: quel 4V 1N 0P è l'albo d'oro di **Atalanta–Venezia** dal 30/11/2021 al 01/03/2025
+(già pubblicato, correttamente, nella card «Precedenti»: «4 vittorie Atalanta · 1 pareggio · 0
+vittorie Venezia — archivio dal 30/11/2021 al 01/03/2025»). Le sei righe di Sarri nel nostro
+archivio panchine sono tutte della stagione 2026/27 (23/08 Sassuolo, 31/08 Bologna, 05/09 Roma,
+12/09 Cagliari, 20/09 Juventus, più questa con il Venezia): **nessuna** contro il Venezia, e le
+gare del 2021–2025 non hanno distinta nel nostro archivio — non sappiamo nemmeno chi le
+allenasse.
+
+**La misura.** Sulle 164 celle-squadra: gare reali dell'allenatore corrente (con **qualunque**
+club) contro la squadra avversaria, finite e prima di questa partita → **0 celle**. È coerente:
+l'archivio copre una sola stagione a metà andata, e in una stagione ogni allenatore incontra
+ogni avversaria al massimo una volta — la riga si accenderà con le gare di ritorno (o con un
+backfill delle distinte storiche, §11).
+
+**La correzione.**
+
+1. **Fuori il bilancio del club** dalla cella dell'allenatore: era attribuzione falsa **e**
+   duplicazione (la card «Precedenti» lo pubblica già, con nomi dei club e intervallo di
+   archivio). La nota della card ora rimanda lì: «…il bilancio fra i due club è invece nella
+   card «Precedenti»».
+2. **Dentro il bilancio dell'allenatore**, con la definizione stretta: sue gare in panchina —
+   con qualunque club — contro questa avversaria, finite, **prima** di questa partita
+   («da allenatore contro X: N gare nel nostro archivio (wV dN lP)»). Oggi non si pubblica su
+   nessuna cella: meglio il silenzio di un numero vero solo per sbaglio.
+3. Il parametro `match_id` di `bench_deep`, aggiunto per leggere l'archivio h2h, sparisce: non
+   serve più.
+
+**Invarianti e test.** [19] ricalcola il bilancio dell'allenatore dalle distinte + calendario e
+**rifiuta** sia un «da allenatore contro X» senza gare reali nei Parquet sia un «bilancio con X
+nel nostro archivio» nella cella (il ritorno del difetto segnalato); `audit_panchina.py` fa lo
+stesso conto (ora `bilancio_allenatore_assente 164`, `cella_con_bilancio_club 0`);
+`test_bench_deep_profilo_rendimento_e_virtual` verifica il caso reale (allenatore che ha
+affrontato l'avversaria su un'altra panchina: «da allenatore contro Roma: 1 gara nel nostro
+archivio (1V 0N 0P)») e l'assenza del testo dei club; il test della card in `tests/test_site.py`
+semina tre confronti diretti fra i club e verifica che **non** finiscano nella cella.
+
+**Il numero di Sarri verificato a mano** (dati reali): 23/08 Atalanta 2-1 Sassuolo (V), 31/08
+Atalanta 1-0 Bologna (V), 05/09 Roma 2-1 Atalanta (P), 12/09 Atalanta 1-2 Cagliari (P), 20/09
+Juventus 2-0 Atalanta (P) → 6 punti su 5 gare finite = **1,2 punti/gara**: la parte pubblicata
+della cella era ed è corretta.
+
+**Dopo la correzione (build + gate rifatti).** Celle con il bilancio del club: **164 → 0**.
+Celle con «da allenatore contro…»: 0 (dati assenti, non pubblicato). `verify_site` **nessun
+problema · 233.508 controlli**; `audit_panchina` **0 scostamenti**; **598 test**; `ruff` pulito.
+`parita_schede` e `resa_375` rifatti dopo la build: **82 schede · nessuna differenza** e
+**28.467 · 0**.
+
+## §11 — Punti aperti
+
+- **Precedenti dell'allenatore** (gare sue contro l'avversaria) e **incroci fra allenatori**:
+  righe corrette ma senza dati oggi (0 su 164 celle ciascuna: l'archivio panchine copre dal 7
+  agosto 2026). Si accendono con l'archivio — es. le gare di ritorno, o un backfill delle
+  distinte storiche da FotMob (rete + budget: decisione separata, non eseguibile dal sandbox).
+- **Permanenza**: «panchina invariata da N gare nel nostro archivio» — il «nel nostro
+  archivio» resta, perché la misura è quella (l'archivio distinte, non la carriera).
+- **4 celle POR1** con tutte le percentuali ≤1 (5887645/46/48/49): dopo il §12 (build #8)
+  due di quelle pagine non sono più schede pre-partita (5887645/48 non hanno la card) e le
+  altre due leggono «titolo 0% · UCL (prime 1) 0% · retrocessione 1%», dove **0% è lo zero
+  vero** (p_title = 0) e **1% è uno 0,5–1,4% reale** arrotondato col mezzo in su; sotto il
+  mezzo punto il valore non nullo si dichiara «<1%».
+- **4 celle senza archivio h2h** (2 partite): il bilancio non si pubblica, il resto della
+  cella resta; si riempiranno alla prossima raccolta.
+
+## §12 — Arrotondamenti allineati e quattro potenziamenti approvati (A–D)
+
+Richiesta dell'utente dopo il §10: «c'è altro che si può migliorare o potenziare in questa
+sezione?». Revisione misurata su build #7 (82 schede); l'utente ha approvato **tutti e quattro**
+gli interventi proposti («Tutte e quattro»). Implementati insieme, con questi numeri.
+
+**Difetto trovato misurando (e corretto prima dei potenziamenti):** la card arrotondava con
+`round()` di Python (banker's: 0,5 → 0) mentre la pagina Proiezioni usa `mc_percent` (mezzo in
+su). Effetto: **4 numeri diversi fra le due pagine** su 3 schede (es. Marseille «titolo 0%» in
+card contro «1%» in Proiezioni; Troyes «retrocessione 62%» contro «63%»). Ora la card usa gli
+stessi arrotondamenti della pagina Proiezioni — un solo posto decide il numero pubblicato.
+Test di regressione: `test_stakes_arrotonda_come_proiezioni_non_col_banker`.
+
+**A) Trasparenza su «Posta in gioco» (tooltip).** I numeri della simulazione non si spiegavano:
+la riga non aveva alcun `title=`. Ora ogni riga dei numeri porta un tooltip: **10.000
+simulazioni Monte Carlo** del resto del campionato, **errore standard fino a 0,5 punti
+percentuali**, significato delle parole («retrocessione» = posti rossi della lega: retrocessioni
+dirette e spareggio dove previsto) e **soglie delle etichette** (corsa al titolo da 15%, corsa
+alla Champions da 35% nei posti UCL ordinari, lotta salvezza da 35% di retrocessione, zona
+salvezza non lontana da 15%). Misura: **164 celle su 164** con la riga dei numeri hanno il
+tooltip (contatore `tooltip_posta_in_gioco` dell'audit, con 0 celle mancanti).
+
+**B) «<1%» al posto di «0%» per i valori non nulli.** Un 0,4% reale stampato «0%» si legge
+«impossibile», e non lo è. Convenzione allineata a tutta la scheda: un valore **non nullo sotto
+il mezzo punto** si dichiara **«<1%»**; sopra **99,5%** si dichiara **«>99%»**; lo **zero vero**
+resta «0%» e il 100% resta «100%». Nella pagina Proiezioni la colonna porta la stessa
+convenzione (nota aggiornata nella revisione, §13). Misura su build #9, cella per cella:
+**90 valori «<1%» pubblicati** su 164 celle-squadra con la riga dei numeri (titolo 30 ·
+retrocessione 16 · UCL 45: prime 4 → 27, prime 2 → 10, prime 3 → 7) e **2 «>99%»**
+(UCL prime 4); nessun valore non nullo mascherato da «0%»; le celle interamente a zero
+restano oneste («titolo 0% · UCL (prime 1) 0%», §11). Il primo conteggio scritto qui diceva
+47: era un conteggio sbagliato (una cella per pagina invece di due — la regex prendeva solo
+la prima `<td>` della riga), non un numero della build; vedi §13.
+
+**C) Contesto dell'allenatore: come gioca e da quando.** La cella diceva *quanto* rende
+(punti/gara) ma non *da quando* né *come*. Ora la permanenza è datata — «panchina invariata da
+6 gare nel nostro archivio **(dal 23/08)**», «panchina nuova: 1ª gara dal subentro a X **(dopo
+la gara del 05/09)**» (date nel fuso display, le stesse della pagina) — e il rendimento è
+affiancato dal rendimento delle **sue** partite: **«con lui 1,0 gol fatti e 1,4 subiti a gara»**,
+calcolato dalle sue gare finite in panchina. Il silenzio resta dove i dati mancano. Misura:
+**152 celle** con la data di permanenza e **12 subentri** datati; **158 celle** con la riga dei
+gol (le stesse 158 che pubblicano i punti/gara: le 6 senza gare finite continuano a dichiarare
+«nessuna gara finita con lui in panchina»).
+
+**D) Stima di fine stagione.** `exp_points` e `pos_mean` della simulazione non comparivano in
+nessuna riga della card: «Pt attesi» era pubblicato **0 volte su 82 schede** e la posizione
+media solo dentro l'etichetta di 79 celle. Ora ogni cella chiude con **«stima di fine stagione:
+X,X punti attesi · Y,Yº posto in media»** — gli stessi numeri della pagina Proiezioni. Dove la
+posizione è già nell'etichetta («proiezione: 7,1º posto in media») non si ripete. Misura:
+**164 celle su 164** con la stima (85 con la posizione dentro la riga, 79 senza ripetizione);
+prima erano 0 e 79.
+
+**Verifica.** Su build #8 (10:15): audit `panchina` — scostamenti **0** su tutti i ricalcoli
+(tenure, ppg, classifica, virtuale, etichette, età, nome, nazione, precedenti, incroci, gol,
+stima, tooltip), silenzi non dichiarati **0**, «allenatore assente» 164, bilancio del club in
+cella **0**; `verify_site` **nessun problema · 233.836 controlli**; **601 test** (3 nuovi:
+gol+stima nel `bench_deep`, tooltip+«<1» sulla scheda resa, convenzione degli estremi); `ruff`
+pulito; `parita_schede` 82 schede · struttura identica · nessuna differenza; `resa_375`
+**28.467 · 0**. Un difetto dello strumento trovato qui: l'audit unescappava le entità **prima**
+di togliere i tag, quindi «&lt;1» diventava «<1» e veniva mangiato dal tag successivo (79 falsi
+scostamenti): ora i tag si tolgono prima delle entità.
+
+## §13 — Revisione indipendente dei potenziamenti (richiesta dell'utente, 2026-10-11)
+
+Richiesta: «ok revisiona e verifica che sia tutto corretto». La revisione è stata fatta a
+mano sul codice, poi provando a **romperlo**: 13 mutazioni deliberate (una per volta, su
+copia ripristinata) per vedere se i test e i gate se ne accorgevano. Quattro difetti veri e
+sei difetti dei miei stessi strumenti.
+
+**Difetti trovati e corretti (build #9 → commit `608c0b2` + questo).**
+
+1. **«>99%» pubblicato senza spiegazione.** Due celle lo stampavano già — UCL prime 4 di
+   Barcellona (p 0,9999) e Bayern (0,9993) — mentre tooltip e note spiegavano solo «<1». È
+   esattamente la classe di difetto che il §12 è nato per togliere (un simbolo a schermo che
+   nessuno spiega): ora la convenzione è nel tooltip della card, nella nota della card e
+   nell'introduzione della pagina Proiezioni, che **non la diceva nemmeno per «<1»** (il §12
+   la dava per «nota aggiornata»: non lo era, era una mia affermazione non verificata).
+2. **Due strade per la stessa cifra.** La card formattava la posizione media con `round()` di
+   Python, la pagina Proiezioni con `dec(1)`: nessuna divergenza oggi su 132 valori (misurato:
+   `round(x,1)` e `f"{x:.1f}"` coincidono su tutti i 132, e su 200.000 valori casuali), ma è
+   la struttura che ha prodotto i 4 numeri diversi del §12. Ora c'è una sola funzione.
+3. **L'oracolo si controllava da solo.** Il gate [19] ricalcolava l'etichetta «proiezione:»
+   con la stessa espressione del generatore: una divergenza card↔Proiezioni sarebbe passata
+   inosservata *per costruzione*. Ora [19] legge **la pagina Proiezioni resa** e confronta
+   cella contro cella (titolo, UCL, retrocessione, punti attesi, posizione media): +326
+   controlli incrociati a ogni gate (233.836 → 234.162).
+4. **Le verifiche cercavano i numeri in tutta la pagina**, non nella cella di quella squadra:
+   un nome di squadra non riconosciuto dalla simulazione (o un numero finito nella cella
+   dell'avversaria) non sarebbe stato visto. Ora ogni confronto è sulla cella del suo lato.
+
+**Difetti degli strumenti (i più pericolosi: rendono invisibili i primi).**
+
+5. **L'audit delle date usava UTC** mentre la card stampa nel fuso di visualizzazione: nessuna
+   divergenza oggi su 290 date, ma un calcio d'inizio serale avrebbe prodotto un falso
+   allarme (o nascosto un errore vero). Ora la stessa regola della card.
+6. **«Unescape prima del taglio dei tag»** — tre volte, in tre strumenti diversi (l'audit, il
+   gate [19], i miei script di conteggio): «&lt;1» diventa «<1» e la finta parentesi viene
+   mangiata dal tag successivo, facendo **sparire il numero**. Effetto misurato: 79 falsi
+   scostamenti nell'audit, tutte le 81 celle-squadra con un valore agli estremi illeggibili a
+   [19], conteggi dimezzati. Regola: **prima i tag, poi le entità**.
+7. **La stessa trappola era in produzione**: la matrice dei risultati esatti scriveva `<1`
+   **crudo** nell'HTML (815 celle) e un tooltip scriveva `(<5 gare)` crudo in un attributo
+   (8 casi): 823 occorrenze su 262 pagine. I browser le recuperano come testo, ma qualunque
+   strumento che toglie i tag le mangia, e in un attributo non quotato romperebbero
+   l'attributo. Ora sono `&lt;1`/`&lt;5 gare`, con un **guardiano permanente** in
+   `verify_site`: «<» crudo davanti a una cifra = problema (0 residui; il codice dentro
+   `<script>` è escluso, verificato con un controllo positivo su una pagina di prova).
+   Nota: il gate della matrice confrontava le celle proprio con quella grafia — e ha
+   segnalato subito 82 schede «celle matrice 33 (attese 36)» finché non è stato allineato.
+8. **Un mio conteggio sbagliato diventato numero nei doc**: «47 valori «<1%»». Il numero
+   giusto, riconciliato cella per cella (164 celle-squadra), è **90** (titolo 30 ·
+   retrocessione 16 · UCL 45). La regex prendeva solo la prima `<td>` di ogni riga: contavo
+   metà delle celle. Il §12 è corretto in questa revisione — e il conteggio ora vive
+   nell'audit (`valori_sotto_1`, `valori_sopra_99`), dove è riproducibile.
+
+**Cosa ha retto alla prova.** Percentuali `mc_percent_str` (tornare a `round()` fa fallire il
+test), tooltip (verificato sull'attributo `title`, non sul testo: declassarlo a un altro
+attributo fa fallire il test), nota della convenzione nella card e nella pagina Proiezioni,
+riga dei gol, data di permanenza, stima di fine stagione (formato diverso in **uno solo** dei
+due rami = test rosso), filtro «il passato è prima» (allargare `>=` nei precedenti o `<` negli
+incroci = test rosso).
+
+**Mutazioni che non sono difetti** (registrate per non inseguirle): il filtro della partita
+stessa è **doppio** (calendario `ko < kickoff` e distinta) e allentarne uno solo non cambia
+nulla in uscita — è difesa in profondità, un test non può vederla; `round(x,1)` e `f"{x:.1f}"`
+coincidono su questi dati, quindi la mutazione del punto 2 è indistinguibile da un test.
+
+**Un errore di metodo da registrare:** i primi kill-test ripristinavano i file con
+`git checkout --`, che ha **cancellato le patch non committate** di tre file sorgente (persi e
+riapplicati identici). Da allora: si committa **prima** e si muta **dopo**.
+
+**Gate finali (build #9, 12:00).** `pytest` **604** · `ruff` pulito · `verify_site`
+**234.162 · 0** · `audit_panchina` **0 scostamenti · 0 silenzi** (`valori_sotto_1` 90 ·
+`valori_sopra_99` 2 · `tooltip_posta_in_gioco` 164 · `stima_stagione` 164 · `gol_a_gara` 158) ·
+`parita_schede` **82 · nessuna differenza** · `resa_375` **28.467 · 0**.
+
+## §14 — Caccia B: la stessa classe di difetto nel resto del sito (2026-10-11)
+
+Richiesta: cercare in tutte le pagine e i template le stesse famiglie di difetto della revisione
+(§13) — valori arrotondati a mano che devono chiudere a un totale, unescape prima del taglio dei
+tag, simboli leggibili in due modi. Misure fatte **sul sito pubblicato**, non sul codice.
+
+### Difetti veri trovati e corretti
+
+| # | Dove | Misura (build #9) | Fix |
+|---|---|---|---|
+| 1 | tabella «Ultime partite valutate» (`accuracy.html`) | **11 righe su 40** rotte (5×99, 6×101) | chiave `pct1x2` (`pct_triple`) al posto di tre `round()` |
+| 2 | `description`/`og:description` delle schede (`build.py`) | **134 occorrenze su 564** (67 schede × 2) | helper `_t1x2` + `mc_percent` in `page_desc` |
+| 3 | tabella dell'andamento 1X2 minuto per minuto (`match.html`) | **153 righe su 754** in **103 schede** (98×99, 55×101) | filtro `pct3` (lo stesso di `_matchlist`) |
+| 4 | 6 punti di `verify_site.py` | `unescape` **prima** del taglio dei tag (la trappola di §13) | ordine invertito: prima i tag, poi l'unescape |
+
+Sul totale delle quattro grafie: **298 terne rotte su 1.642 → 0** dopo la build #10.
+
+Il difetto 3 è nato dalla stessa riga di codice: `(g.p_home*100)|round|int` per ognuna delle tre
+celle, cioè tre arrotondamenti indipendenti di probabilità che sommano 1. La probabilità al 90'
+con λ 0,5/0,5 lo rende visibile anche a occhio (27 % + 47 % + 27 % = 101).
+
+### Classi verificate e risultate pulite (per non ripetere la caccia)
+
+- **testo in evidenza** (284 occorrenze): già da `pct_triple` tramite il filtro `pct3` in
+  `_matchlist.html` — 0 rotte;
+- **`advanced.py`** (25 `round()`, in coda alla caccia): solo precisione interna (4 decimali,
+  coordinate SVG, share a 1 decimale), nessuna percentuale intera pubblicata a mano;
+- **percentuali intere singole** (hit rate, p_real, over): minimo reale nei dati 1,84 % (clean
+  sheet trasferta), quindi nessun «0 %» che significhi «non è zero»; il caso opposto è coperto
+  dalla convenzione «<1»/«>99»;
+- **triple di celle percentuali consecutive** in tutto il sito: le somme ≠ 100 restano solo in
+  `stagione.html`, dove sono finestre di tabelle a 4+ colonne di eventi **non esaustivi**
+  (titolo, retrocessione, UCL) — lì la somma non deve fare 100;
+- **stringhe ambigue** segno/valore («1 1 %», «2 0 %», «1 100 %»…): 0 occorrenze.
+
+### Strumenti aggiunti (difesa alla radice)
+
+- check **[47] `check_terne_1x2`** esteso alla quarta grafia (riga dell'andamento: minuto,
+  punteggio, terna) — su build #10 riporta `1642 · tutte sommano 100`;
+- guardiano `test_unescape_sempre_dopo_il_taglio_dei_tag`: vieta la forma annidata
+  `re.sub(r"<…>", …, html_unescape(…))` in `scripts/`, `tests/` e `src/fda/` (6 occorrenze
+  corrette, 0 residue);
+- `tests/test_terne_1x2.py` cresce a 7 test, con numeri **avversariali** presi dai casi reali:
+  61,5/23,5/15 → 101 con tre `round()`, e λ 0,5/0,5 sulla fixture Inter–Monza per l'andamento.
+
+### Kill-test (7 mutazioni, tutte intercettate)
+
+K1 tabella `pct1x2`→tre `round()` ✓ · K2 `_t1x2`→tre `round()` nella description ✓ · K3 helper
+`_t1x2_testo`→tre `round()` ✓ · K4 celle di `accuracy.html`→tre `round|int` ✓ · K5 righe
+dell'andamento→tre `round()` ✓ · K6 [47] senza la grafia dell'andamento ✓ · K7 ordine
+`unescape`→taglio invertito ✓.
+
+### Gate finali (build #10, 2026-10-11 12:25)
+
+`pytest` **612 passed** (604 + 8 nuovi) · `ruff` pulito · `verify_site` **235.804 controlli ·
+0 problemi** (era 234.162: +1.642 terne) · `audit_panchina` **0 scostamenti · 0 silenzi**
+(`valori_sotto_1` 90 · `valori_sopra_99` 2 · `tooltip` 164 · `stima` 164 · `gol` 158 ·
+`card` 82) · `parita_schede` 82 nessuna differenza · `resa_375` 28.467 · 0.
+
+## §15 — Una regola sola per le cifre intere: la pista degli arrotondamenti (2026-10-11)
+
+Seguito della caccia B (§14): l'ultima classe di difetto rimasta era **due convenzioni di
+arrotondamento a intero** che convivevano nel sito. La card panchina e le simulazioni usano
+`mc_percent` (mezzo in su: 62,5 % → «63 %»); le pagine Accuratezza e le schede usavano
+`{{ (v*100)|round|int }}`, che in Python e in Jinja è il **pari più vicino**: `round(62.5)` = 62.
+
+**Misura, prima di toccare il codice** (sul sito e sui Parquet):
+
+| grandezza pubblicata come intero | valori misurati | pareggi esatti (…,5) |
+|---|---|---|
+| minuti dei quartili del primo gol (schede) | 6.458 | 0 |
+| probabilità (over 1,5/2,5/3,5, btts, porta inviolata, w_dc, Elo) | 2.153 previsioni | 0 (minimo reale 1,84 %, porta inviolata trasferta) |
+| `p_real` delle gare valutate | 189 | 0 (minimo 8,23 %) |
+| hit rate per campionato e per mercato (pagina Accuratezza) | 8 campionati · 9 mercati | 0 |
+
+Il caso «62,5 %» visto in una prima misura (Ligue 1, 24 gare) non era un difetto pubblicato: con
+il raggruppamento della pagina la Ligue 1 ha 26 gare e 61,54 % → «62 %» in entrambe le
+convenzioni. **Nessuna cifra pubblicata cambia, oggi, con questa patch**: la divergenza c'è solo
+sui mezzi esatti, e oggi non ce ne sono. Il difetto era quindi *latente*, non visibile — ma la
+regola pubblicata non può dipendere dalla parità dell'intero, e il primo 62,5 % futuro avrebbe
+cambiato una cifra senza che nessuno lo decidesse.
+
+**Fix.** `pct_int()` in `fmt.py` (stessa formula di `mc_percent`: **una sola** implementazione del
+mezzo in su), esposto come filtro Jinja `pct_i`, e sostituiti 15 punti nei template
+(5 `accuracy.html`, 8 `match.html`, 2 `_matchlist.html`) e 8 punti Python (5 `build.py`,
+3 `analysis.py`: gol nel finale, «su 100 partite così», percentuali del primo marcatore). Restano
+`round()` — di proposito, e sono dichiarati qui — i **minuti** dei quartili, le **cifre Elo**, le
+**larghezze** delle barre e del radar (disegno, non cifre da leggere) e le percentuali **a un
+decimale**, verificate con tolleranza 0,06.
+
+**Coppia affiancata.** «Stime Dixon-Coles pesato + Elo (A/B)» (282 schede) è una ripartizione che
+il lettore legge come complementare: con due arrotondamenti indipendenti e `pct_i` un w_dc di
+62,5 % pubblicherebbe «63/38» = 101. Passa dal metodo del resto massimo (`pct3`): 282 coppie,
+tutte a 100.
+
+**Difesa alla radice** (oracoli nuovi, `docs/79`):
+
+- **[1b]** (I, indipendente) — ripartizione DC/Elo pubblicata: somma 100 e valori che sono
+  pavimento o tetto di `w_dc·100`, con la specifica `terna_valida` (accetta le parità): 282
+  pagine;
+- **[48]** (M) — percentuali intere di Accuratezza ricalcolate dai Parquet: 8 campionati
+  (n gare e «esito azzeccato»), 9 mercati (gare, `k/n`, «scelte indovinate»), 40 righe `p_real`.
+  Le cifre prima non avevano **nessun** oracolo: sono quelle con cui il lettore giudica il
+  modello. La regola dichiarata (mezzo in su) è scritta a mano nel verificatore (`pct_dichiarata`),
+  così un ritorno al banker's si vede;
+- ratchet aggiornato: `S ≤ 4`, `M ≤ 19` (il 19º è [48]), `I ≥ 29` ([1b]).
+
+**Kill-test — 5 mutazioni, tutte intercettate.** K8 pagina con «62 %» dove il ricalcolo dice 63 %
+(il banker's) → [48]; K9 cifra di un mercato mutata (62 % e 64 %) → [48]; K10 `p_real` 20 → 21 %
+→ [48]; K11 coppia DC/Elo 70/30 → 71/30 → [1b]; K12 `pct_dichiarata(0.625) == 63` con la premessa
+`round(0.625*100) == 62` → test unitario.
+
+**Gate finali (build #11, 2026-10-11 14:10)**
+
+`pytest` **615 passed** (613 + 2) · `ruff` pulito · `verify_site` **236.169 controlli · 0 problemi**
+(era 235.804: +83 di [48], +282 di [1b]) — riga degli oracoli: `52 controlli: 29 indipendenti ·
+19 misti · 4 specchi` · `audit_panchina` **0 scostamenti · 0 silenzi** · `parita_schede` **82 ·
+nessuna differenza** · `resa_375` **28.467 · 0**.

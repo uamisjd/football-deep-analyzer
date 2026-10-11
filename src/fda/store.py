@@ -39,6 +39,10 @@ TABLE_KEYS: dict[str, list[str]] = {
     # senza "role": il ruolo di un giocatore cambia tra snapshot (probabile → ufficiale),
     # e con il ruolo in chiave lo stesso giocatore restava in due righe (13-19 "titolari").
     "lineup": ["match_id", "team_id", "player_id"],
+    # storico delle distinte delle stagioni precedenti (`scripts/backfill_fotmob.py`, docs/80):
+    # id, lega, stagione, data, squadre, gol. Sta **fuori** da `fixtures` perché il resto del
+    # sito (risultati, accuratezza, forma) deve continuare a vedere la sola stagione in corso.
+    "match_storico": ["match_id"],
     "events": ["match_id", "type", "minute", "minute_added", "is_home", "player_id"],
     "momentum": ["match_id", "minute"],
     "h2h": ["match_id", "home_id", "away_id", "utc"],

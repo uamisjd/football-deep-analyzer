@@ -7,7 +7,7 @@
 {% if summary %}
 <div class="card"><h2>Riepilogo</h2>
 <div class="tablewrap"><table><tr><th scope="col">Campionato</th><th scope="col" class="r">Partite valutate</th><th scope="col" class="r">di cui col modello corrente</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Brier</th><th scope="col" class="r">Esito più probabile azzeccato</th><th scope="col" class="r">RPS naive</th><th scope="col" class="r">n base</th><th scope="col" class="r">Δ vs naive</th></tr>
-{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n|it_num }}</td><td class="r">{{ r.n_corrente|it_num }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ (r.hit*100)|round|int }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r">{{ r.naive_n|it_num if r.naive_n else 'fisso' }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
+{% for r in summary %}<tr{% if r.league == 'Tutti' %} style="font-weight:600"{% endif %}><td>{{ r.league }}</td><td class="r">{{ r.n|it_num }}</td><td class="r">{{ r.n_corrente|it_num }}</td><td class="r">{{ r.rps|dec(4) }}</td><td class="r">{{ r.brier|dec(4) }}</td><td class="r">{{ r.hit|pct_i }}%</td><td class="r">{{ r.naive|dec(4) }}</td><td class="r">{{ r.naive_n|it_num if r.naive_n else 'fisso' }}</td><td class="r {{ 'good' if r.delta < 0 else 'bad' }}">{{ r.delta|dec(3, true) }}</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Δ = RPS modello − RPS della base naive: per ogni riga la base è la <b>frequenza reale
 1·X·2 della stessa lega</b> misurata sullo storico mirror (colonna «n base» = gare di storico dietro
@@ -47,7 +47,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
     <td class="r mut">{{ (m.lo*100)|dec(1) }} – {{ (m.hi*100)|dec(1) }}%</td>
     <td class="r">{{ m.brier|dec(4) }}</td><td class="r">{{ m.brier_base|dec(4) }}</td>
     <td class="r {{ 'good' if m.delta < 0 else 'bad' }}">{{ m.delta|dec(4, true) }}</td>
-    <td class="r">{{ (m.hit*100)|round|int }}%</td>
+    <td class="r">{{ m.hit|pct_i }}%</td>
     <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ 'fuori intervallo' if m.outside else 'compatibile' }}</td></tr>{% endfor %}</table></div>
 {% if grafico %}
 <figure class="grafico">
@@ -88,7 +88,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   15-20 gare al giorno).</p>
   <p class="kpi">RPS <b>{{ bt.rps|dec(4) }}</b> <span class="mut">(base {{ bt.naive|dec(4) }},
   Δ {{ bt.delta|dec(4, true) }})</span> · log-loss <b>{{ bt.logloss|dec(4) }}</b> ·
-  esito azzeccato <b>{{ (bt.hit*100)|round|int }}%</b> · Brier 9 mercati
+  esito azzeccato <b>{{ bt.hit|pct_i }}%</b> · Brier 9 mercati
   <b>{{ bt.brier_mercati|dec(4) }}</b> <span class="mut">(base {{ bt.brier_mercati_base|dec(4) }})</span></p>
   <p class="kpi small">Gol attesi <b>{{ bt.lambda_media|dec(3) }}</b> contro
   <b>{{ bt.gol_osservati|dec(3) }}</b> osservati (scarto {{ bt.bias_lambda|dec(3, true) }}) ·
@@ -133,7 +133,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   {{ lead_stats.n|it_num }} {{ 'gara' if lead_stats.n == 1 else 'gare' }} (min {{ lead_stats.min|dec(1) }},
   max {{ lead_stats.max|dec(1) }}){% endif %}.</p>
 <div class="tablewrap"><table><tr><th scope="col">Anticipo</th><th scope="col" class="r">Gare</th><th scope="col" class="r">RPS medio</th><th scope="col" class="r">Esito azzeccato</th><th scope="col" class="r">Anticipo medio</th></tr>
-{% for b in lead_buckets %}<tr><td>{{ b.label }}</td><td class="r">{{ b.n }}</td><td class="r">{{ b.rps|dec(4) }}</td><td class="r">{{ (b.hit*100)|round|int }}%</td><td class="r">{{ b.lead_mean|dec(1) }} giorni</td></tr>{% endfor %}
+{% for b in lead_buckets %}<tr><td>{{ b.label }}</td><td class="r">{{ b.n }}</td><td class="r">{{ b.rps|dec(4) }}</td><td class="r">{{ b.hit|pct_i }}%</td><td class="r">{{ b.lead_mean|dec(1) }} giorni</td></tr>{% endfor %}
 </table></div>
 <p class="small mut"><b>Perché i bucket oltre il primo sono vuoti.</b> La chiave <code>(match_id, model)</code> è unica e la
   previsione di ogni gara viene <b>rifatta a ogni run</b> (5 al giorno): ne resta una sola, l'ultima, cioè
@@ -158,8 +158,8 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 <div class="card"><h2>Ultime partite valutate</h2>
 <div class="tablewrap"><table><tr><th scope="col">Data</th><th scope="col">Partita</th><th scope="col" class="c">Risultato</th><th scope="col" class="r">1 / X / 2 previsti</th><th scope="col" class="c">Top</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Prob. esito reale</th></tr>
 {% for r in recent %}<tr><td class="mut">{{ r.date }}</td><td><a href="{{ root }}partite/{{ r.match_id }}.html">{{ r.home }} - {{ r.away }}</a></td><td class="c">{{ r.hg }}-{{ r.ag }}</td>
-<td class="r">{{ (r.p_home*100)|round|int }} / {{ (r.p_draw*100)|round|int }} / {{ (r.p_away*100)|round|int }}</td><td class="c">{{ r.top }} {% if r.hit %}<span class="good">✓</span>{% else %}<span class="bad">✗</span>{% endif %}</td>
-<td class="r">{{ r.rps|dec(3) }}</td><td class="r">{{ (r.p_real*100)|round|int }}%</td></tr>{% endfor %}
+<td class="r">{{ r.pct1x2[0] }} / {{ r.pct1x2[1] }} / {{ r.pct1x2[2] }}</td><td class="c">{{ r.top }} {% if r.hit %}<span class="good">✓</span>{% else %}<span class="bad">✗</span>{% endif %}</td>
+<td class="r">{{ r.rps|dec(3) }}</td><td class="r">{{ r.p_real|pct_i }}%</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Top = esito con la probabilità più alta secondo il modello (✓ se è quello poi verificatosi); RPS = errore della singola previsione.</p>
 </div>

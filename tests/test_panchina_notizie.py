@@ -26,6 +26,10 @@ FX = _fixtures([
     (2, 55, "2026", "2", KO("2026-09-05 18:00"), 2, "Inter", 3, "Milan", 2, 2, "finished", "fotmob"),
     (3, 55, "2026", "3", KO("2026-09-09 18:00"), 1, "Roma", 4, "Lazio", 0, 1, "finished", "fotmob"),
     (4, 55, "2026", "4", KO("2026-09-13 18:00"), 2, "Inter", 1, "Roma", None, None, "scheduled", "fotmob"),
+    # partita dell'archivio: l'attuale allenatore dell'Inter era su un'ALTRA panchina
+    # (Milan) e ha incrociato quello della Roma → precedente tra i due allenatori, non
+    # uno scontro fra i due club (`docs/78` §7)
+    (5, 55, "2026", "0", KO("2026-08-25 18:00"), 3, "Milan", 1, "Roma", 2, 1, "finished", "fotmob"),
 ])
 
 LINEUP = pd.DataFrame([
@@ -37,6 +41,10 @@ LINEUP = pd.DataFrame([
     {"match_id": 1, "team_id": 1, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
     {"match_id": 3, "team_id": 1, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
     {"match_id": 4, "team_id": 1, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
+    # l'incrocio fra i due: Milan–Roma dell'archivio, con l'allenatore dell'Inter odierno
+    # (Coach Nuovo) sulla panchina del Milan e quello della Roma (Coach Stabile) sull'altra
+    {"match_id": 5, "team_id": 3, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    {"match_id": 5, "team_id": 1, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
 ])
 
 SIM = pd.DataFrame([
@@ -99,15 +107,15 @@ def test_panchina_stabile_senza_cambio(analysis):
     c = analysis.coach(1, KO("2026-09-14 00:00"))
     assert c["name"] == "Coach Stabile"
     assert c["prev_name"] is None
-    assert c["matches"] == 3
+    assert c["matches"] == 4   # 25/08, 01/09, 09/09 e 13/09: sempre lo stesso allenatore
 
 
 def test_stakes_etichette_e_interi(analysis):
     s = analysis.stakes("Inter")
-    assert s["label"] == "corsa al titolo" and s["p_title_pct"] == 22 and s["p_top4_pct"] == 81
+    assert s["label"] == "corsa al titolo" and s["p_title_pct"] == "22" and s["p_top4_pct"] == "81"
     assert s["ucl_spots"] == 4 and s["ucl_legacy"] is True
     r = analysis.stakes("Roma")
-    assert r["label"] == "lotta salvezza" and r["p_rel_pct"] == 41
+    assert r["label"] == "lotta salvezza" and r["p_rel_pct"] == "41"
     assert analysis.stakes("Squadra Inesistente") is None
 
 
@@ -115,7 +123,7 @@ def test_stakes_usa_la_soglia_nuova_e_non_il_fallback(analysis):
     analysis.season_sim = SIM.assign(top_n=2, p_top_n=[0.55, 0.08])
     s = analysis.stakes("Inter")
     assert s["ucl_spots"] == 2 and s["ucl_legacy"] is False
-    assert s["p_top_n_pct"] == 55
+    assert s["p_top_n_pct"] == "55"
 
 
 def test_riposo_con_coppe_e_nota(analysis):
@@ -461,15 +469,109 @@ def test_keyword_score_e_clean_text():
 
 def test_bench_deep_profilo_rendimento_e_virtual(analysis):
     b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
-    assert b["tenure_line"] == "panchina nuova: 2ª gara dal subentro a Coach Vecchio"
+    assert b["tenure_line"] == ("panchina nuova: 2ª gara dal subentro a Coach Vecchio "
+                                 "(dopo la gara del 01/09)")
     # una sola gara finita col coach corrente (Inter-Milan 2-2): 1,0 punti/gara
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
-    assert b["coach_vs_opp_line"] is None      # 1 gara < soglia 3
-    assert b["coach_vs_coach_line"] is None    # 1 gara < soglia 2
+    # bilancio dell'ALLENATORE con l'avversaria (docs/78 §10): lui con qualunque club
+    # contro la Roma — la gara Milan-Roma dell'archivio, quando era sulla panchina
+    # del Milan. Mai il bilancio fra i due club (che è nella card «Precedenti»).
+    assert b["coach_vs_opp_line"] == ("da allenatore contro Roma: 1 gara nel nostro "
+                                      "archivio (1V 0N 0P)")
+    # incroci tra i due ALLENATORI: si sono trovati su panchine opposte in Milan-Roma
+    assert b["coach_vs_coach_line"] == ("un solo incrocio in panchina con Coach Stabile: "
+                                        "1V 0N 0P")
+    # la stessa gara, letta dalla panchina della Roma: speculare
+    br = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert br["coach_vs_coach_line"] == ("un solo incrocio in panchina con Coach Nuovo: "
+                                         "0V 0N 1P")
+    # l'allenatore della Roma ha affrontato l'Inter una volta: Roma-Inter 1-0
+    assert br["coach_vs_opp_line"] == ("da allenatore contro Inter: 1 gara nel nostro "
+                                       "archivio (1V 0N 0P)")
+    # e il bilancio fra i due CLUB non compare nella cella dell'allenatore
+    assert "bilancio con" not in b and "bilancio con" not in br
     assert b["table_line"] == ("2º con 7 punti · 3 punti sopra la zona retrocessione · "
-                               "in zona Europa (4º posto o meglio)")
-    assert b["virtual_line"] == ("con una vittoria 1º · con una sconfitta 2º "
+                               "in zona UCL (prime 4)")
+    # la riga virtuale applica i punti del risultato a entrambe le squadre e copre i tre
+    # esiti (`docs/78` §1): con la sconfitta la Roma incassa i 3 punti, l'Inter resta 2ª
+    assert b["virtual_line"] == ("con una vittoria 1º · con un pareggio 2º · "
+                                 "con una sconfitta 2º "
                                  "(classifica virtuale, altre gare in sospeso)")
+
+
+def test_bench_deep_non_conta_la_partita_stessa(tmp_path):
+    """`docs/78` §7-§8: il filtro inclusivo faceva entrare la gara in corso fra i precedenti.
+
+    Con il calendario che la dà già finita (dettagli vecchi) e la scheda ancora resa come
+    pre-partita, il rendimento e i precedenti includevano **questa** partita: 22 schede
+    pubblicavano il risultato in corso. Ora il passato è rigorosamente «prima».
+    """
+    rows = _fixtures([
+        (1, 55, "2026", "1", KO("2026-09-05 18:00"), 2, "Inter", 3, "Milan", 2, 2, "finished", "fotmob"),
+        # la partita della scheda: finita nel calendario, con una goleada che si vedrebbe
+        (6, 55, "2026", "6", KO("2026-09-20 18:00"), 2, "Inter", 4, "Lazio", 7, 0, "finished", "fotmob"),
+    ])
+    lineup = pd.DataFrame([
+        {"match_id": 1, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+        {"match_id": 6, "team_id": 2, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    ])
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", rows)
+    st.write("lineup", lineup)
+    st.write("season_sim", SIM)
+    st.write("fotmob_standings", STANDINGS)
+    ma = MatchAnalysis(st)
+    b = ma.bench_deep(2, "Inter", 4, "Lazio", KO("2026-09-20 18:00"))
+    # solo la gara del 05/09 (2-2): 1,0 punti/gara. Con il leak sarebbe 2,0 su 2 gare.
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+    # il 7-0 con la Lazio è QUESTA partita: non è un precedente dell'allenatore
+    assert b["coach_vs_opp_line"] is None
+    assert b["coach_vs_coach_line"] is None
+    st.close()
+
+
+def test_bench_deep_gol_a_gara_e_stima_di_stagione(analysis):
+    """`docs/78` §12: gol fatti/subiti delle sue partite e stima di fine stagione.
+
+    Il rendimento da solo non dice *come* (2,0 gol fatti e 2,0 subiti nell'unica gara
+    finita con lui); la stima pubblica i «Pt attesi» e la «Media pos.» della simulazione,
+    che prima non comparivano da nessuna parte nella scheda.
+    """
+    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["coach_goals_line"] == "con lui 2,0 gol fatti e 2,0 subiti a gara"
+    assert b["season_line"] == ("stima di fine stagione: 78,0 punti attesi · "
+                                "2,1º posto in media")
+    # con l'etichetta «proiezione:» la posizione media è già nell'etichetta: non si ripete
+    analysis.season_sim = SIM.assign(top_n=4, p_top_n=[0.05, 0.04], p_title=[0.01, 0.01],
+                                     p_rel=[0.02, 0.02], pos_mean=[11.4, 12.0],
+                                     exp_points=[52.0, 50.0])
+    r = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert r["stakes"]["label"] == "proiezione: 12,0º posto in media"
+    assert r["season_line"] == "stima di fine stagione: 50,0 punti attesi"
+
+
+def test_la_partita_stessa_non_entra_in_rendimento_nei_gol_nei_precedenti(analysis):
+    """`docs/78` §8: il passato è **rigorosamente** prima di questa partita.
+
+    Su 22 schede del 2026-10-11 la gara era già finita nel calendario ma i dettagli
+    dicevano «scheduled»: col filtro inclusivo la card contava la partita stessa fra i
+    precedenti e nel rendimento («un solo incrocio in panchina: 1V 0N 0P», cioè il
+    risultato della gara in corso). Qui la partita dell'Inter è finita 2-1: con `<` il
+    rendimento resta quello della sola gara precedente (2-2 col Milan → 1,0), con `<=`
+    diventerebbe 2,0 su due gare.
+    """
+    fx = FX.copy()
+    fx.loc[fx.match_id == 4, ["home_goals", "away_goals", "status"]] = [2, 1, "finished"]
+    analysis.fixtures = fx
+    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-13 18:00"))
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+    assert b["coach_goals_line"] == "con lui 2,0 gol fatti e 2,0 subiti a gara"
+    # i precedenti reali (25/08, Milan–Roma) restano quelli: «1 gara», «un solo incrocio».
+    # Col filtro inclusivo la partita stessa (13/09, Inter–Roma, 2-1) entrerebbe in queste
+    # due righe e diventerebbero «2 gare»/«2 incroci» — il risultato della partita in corso
+    # spacciato per precedente.
+    assert b["coach_vs_opp_line"] == "da allenatore contro Roma: 1 gara nel nostro archivio (1V 0N 0P)"
+    assert b["coach_vs_coach_line"] == "un solo incrocio in panchina con Coach Stabile: 1V 0N 0P"
 
 
 def test_bench_deep_zona_retrocessione_e_nationalita(analysis):
@@ -477,8 +579,90 @@ def test_bench_deep_zona_retrocessione_e_nationalita(analysis):
     assert "dalla salvezza diretta" in b["table_line"]   # ultima piazza: distanza dalla salvezza
     assert "con una vittoria" in b["virtual_line"]
     r = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
-    assert r["tenure_line"] == "panchina invariata da 3 gare nel nostro archivio"
-    assert r["coach_ppg_line"] == "1,5 punti/gara su 2 gare finite"  # 1-0 e 0-1: 3 punti su 2
+    assert r["tenure_line"] == ("panchina invariata da 4 gare nel nostro archivio "
+                                 "(dal 25/08)")
+    # 1-0, 0-1 e 1-2 nell'archivio: 3 punti su 3 gare finite
+    assert r["coach_ppg_line"] == "1,0 punti/gara su 3 gare finite"
+
+
+def test_stakes_arrotonda_come_proiezioni_non_col_banker(analysis):
+    """`docs/78` §12: stessa convenzione della pagina Proiezioni (`mc_percent`, mezzo in su).
+
+    Con il `round()` di Python (banker's rounding) 0,5% diventava «0%» e 62,5% «62%», mentre
+    Proiezioni stampava «1%» e «63%»: quattro numeri diversi fra le due pagine nella build
+    del 2026-10-11.
+    """
+    from fda.models.season_sim import mc_percent, mc_percent_str
+    analysis.season_sim = SIM.assign(p_title=[0.005, 0.625], p_rel=[0.625, 0.004])
+    s = analysis.stakes("Inter")
+    assert round(0.5) == mc_percent(0.005) - 1          # il vecchio comportamento differiva
+    assert s["p_title_pct"] == "1" and s["p_rel_pct"] == "63"
+    r = analysis.stakes("Roma")
+    assert r["p_title_pct"] == "63"
+    # 0,4% non è «0%» (impossibile): è «<1», un valore non nullo sotto il mezzo punto
+    assert r["p_rel_pct"] == "<1" and mc_percent_str(0.004) == "<1"
+    assert mc_percent_str(0.0) == "0" and mc_percent_str(0.999) == ">99"
+    assert mc_percent_str(1.0) == "100"
+
+
+def test_bench_deep_etichetta_champions_e_proiezione(analysis):
+    """`docs/78` §2: l'etichetta segue il numero pubblicato, non un aggettivo di posizione.
+
+    Con 4 posti UCL la soglia dei 35% è la Champions (prima diceva «corsa all'Europa»
+    accanto a un «UCL (prime 4)»); quando nessuna postura è in bilico l'etichetta è la
+    proiezione di posizione media, la stessa «Media pos.» della pagina Proiezioni.
+    """
+    analysis.season_sim = SIM.assign(top_n=4, p_top_n=[0.61, 0.05], p_title=[0.02, 0.01],
+                                     p_rel=[0.0, 0.02], pos_mean=[2.3, 11.4])
+    i = analysis.stakes("Inter")
+    assert i["label"] == "corsa alla Champions" and i["ucl_legacy"] is False
+    r = analysis.stakes("Roma")
+    assert r["label"] == "proiezione: 11,4º posto in media"
+    # uno snapshot storico (senza top_n) resta leggibile e non inventa la soglia
+    leg = SIM.assign(p_top4=[0.9, 0.1], p_top_n=[float("nan")] * 2)
+    analysis.season_sim = leg.drop(columns=["top_n"], errors="ignore")
+    assert analysis.stakes("Inter")["ucl_legacy"] is True
+
+
+def test_bench_deep_virtuale_conta_l_avversaria(tmp_path):
+    """La sconfitta fa incassare i 3 punti all'avversaria: se la scavalca, la posizione scende.
+
+    Caso reale che ha originato il fix (`docs/78` §1): Feyenoord «con una sconfitta 1º»
+    mentre coi punti dell'avversaria sarebbe 2º — 36 celle su 208 sbagliate di una posizione.
+    """
+    st = Store(tmp_path / "avversaria")
+    st.write("fixtures", FX)
+    st.write("lineup", LINEUP)
+    st.write("season_sim", SIM)
+    st.write("fotmob_standings", pd.DataFrame([
+        {"league_code": "ITA1", "team_id": 1, "team_name": "Roma", "rank": 1, "played": 3,
+         "wins": 2, "draws": 1, "losses": 0, "goals_for": 6, "goals_against": 2, "goal_diff": 4, "points": 7},
+        {"league_code": "ITA1", "team_id": 2, "team_name": "Inter", "rank": 2, "played": 3,
+         "wins": 2, "draws": 0, "losses": 1, "goals_for": 6, "goals_against": 4, "goal_diff": 2, "points": 6},
+        {"league_code": "ITA1", "team_id": 3, "team_name": "Milan", "rank": 3, "played": 3,
+         "wins": 1, "draws": 0, "losses": 2, "goals_for": 3, "goals_against": 5, "goal_diff": -2, "points": 3},
+        {"league_code": "ITA1", "team_id": 4, "team_name": "Lazio", "rank": 4, "played": 3,
+         "wins": 0, "draws": 1, "losses": 2, "goals_for": 2, "goals_against": 6, "goal_diff": -4, "points": 1},
+    ]))
+    b = MatchAnalysis(st).bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["table_line"].startswith("2º con 6 punti · ")
+    # vittoria: Inter 9, Roma 7 → 1ª; pareggio: 7 e 8 → 2ª; sconfitta: Roma 10 → 2ª
+    assert "con una vittoria 1º · con un pareggio 2º · con una sconfitta 2º" in b["virtual_line"]
+
+
+def test_bench_deep_subentro_senza_gare_dichiarato(analysis):
+    """Un allenatore appena subentrato non ha gare finite: la cella lo dice, non tace."""
+    analysis.lineup = pd.concat([
+        LINEUP,
+        pd.DataFrame([{"match_id": 2, "team_id": 3, "player_id": 555,
+                       "player_name": "Coach Precedente", "role": "coach"},
+                      {"match_id": 4, "team_id": 3, "player_id": 777,
+                       "player_name": "Coach Appena Arrivato", "role": "coach"}]),
+    ], ignore_index=True)
+    b = analysis.bench_deep(3, "Milan", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["coach_ppg_line"] is None and b["coach_ppg_absent"] is True
+    assert b["tenure_line"] == ("panchina nuova: 1ª gara dal subentro a Coach Precedente "
+                                 "(dopo la gara del 05/09)")
 
 
 def test_bench_deep_senza_classifica_degrada(tmp_path):
@@ -1149,3 +1333,44 @@ def test_fattori_contesto_leggibile(mood_analysis, monkeypatch):
     r2 = next(r for r in res2["rows"] if r["label"] == "Forma e classifica (contesto)")
     assert r2["impact"].startswith("contesto sostanzialmente pari")
     assert "a favore di" not in r2["impact"]
+
+
+def test_incroci_in_panchina_anche_dallo_storico(analysis):
+    """Con `match_storico` gli incroci contano anche le stagioni precedenti (docs/80).
+
+    Nella sola stagione in corso i due si sono affrontati una volta (Milan–Roma); nelle
+    stagioni passate, su panchine opposte e su club diversi da quelli di oggi, altre due.
+    La riga pubblicata le somma. Senza `match_storico` (fixture `analysis`) resta com'era:
+    è il test qui sopra a fissarlo.
+    """
+    st = analysis.store
+    st.write("lineup", pd.concat([LINEUP, pd.DataFrame([
+        {"match_id": 9001, "team_id": 5, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+        {"match_id": 9001, "team_id": 6, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
+        {"match_id": 9002, "team_id": 6, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
+        {"match_id": 9002, "team_id": 5, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    ])], ignore_index=True))
+    st.write("match_storico", pd.DataFrame([
+        # Torino (5) di Coach Nuovo contro il Genoa (6) di Coach Stabile: vittoria del nostro
+        {"match_id": 9001, "league_id": 55, "stagione": "2024/2025", "giornata": "3",
+         "utc_kickoff": KO("2024-09-01 18:00"), "home_id": 5, "home_name": "Torino",
+         "away_id": 6, "away_name": "Genoa", "home_goals": 2, "away_goals": 1,
+         "status": "finished"},
+        # ritorno in parità
+        {"match_id": 9002, "league_id": 55, "stagione": "2024/2025", "giornata": "20",
+         "utc_kickoff": KO("2025-02-02 18:00"), "home_id": 6, "home_name": "Genoa",
+         "away_id": 5, "away_name": "Torino", "home_goals": 1, "away_goals": 1,
+         "status": "finished"},
+    ]))
+    an = MatchAnalysis(st)
+    b = an.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["coach_vs_coach_line"] == ("incroci in panchina con Coach Stabile: 2V 1N 0P "
+                                        "su 3 gare")
+    # la stessa storia letta dalla panchina della Roma
+    br = an.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert br["coach_vs_coach_line"] == ("incroci in panchina con Coach Nuovo: 0V 1N 2P "
+                                         "su 3 gare")
+    # le altre righe della card restano quelle della stagione in corso: il rendimento non
+    # assorbe le gare storiche (`docs/80`: lo storico serve **solo** agli incroci)
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+    assert b["coach_vs_opp_line"] == "da allenatore contro Roma: 1 gara nel nostro archivio (1V 0N 0P)"

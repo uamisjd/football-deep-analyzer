@@ -107,3 +107,42 @@ def test_marcatore_sulle_squadre_con_poco_storico(tmp_path):
     assert "◇" in riga.group(0) and "Meno di 10 gare di storico" in riga.group(0)
     riga_ok = re.search(r"<tr><td>Inter.*?</tr>", html, re.DOTALL)
     assert "◇" not in riga_ok.group(0), "chi ha storico non porta il marcatore"
+
+
+def test_convenzione_degli_estremi_dichiarata_e_applicata(tmp_path):
+    """`docs/78` §12: la pagina Proiezioni usa la stessa convenzione della scheda partita.
+
+    Un valore non nullo sotto il mezzo punto si legge «<1%» e uno sopra il 99,5 «>99%»:
+    «0%»/«100%» si leggerebbero «impossibile»/«certo». Lo zero vero resta «0%». La pagina
+    lo dichiara nella sua introduzione — altrimenti «<1%» è un simbolo senza spiegazione,
+    e la scheda partita e questa pagina potrebbero divergere senza che nessuna delle due
+    sbagli il conto (i 4 numeri diversi del 2026-10-11, `docs/78` §12).
+    """
+    st = Store(tmp_path / "processed")
+    righe = [
+        dict(_sim_row("Inter", 0), p_title=0.004, p_top_n=0.9999, p_top4=0.9999, p_rel=0.0),
+        dict(_sim_row("Juventus", 1), p_title=0.005, p_top_n=0.004, p_top4=0.004, p_rel=0.9999),
+        _sim_row("Milan", 2), _sim_row("Frosinone", 3),
+    ]
+    st.write("season_sim", pd.DataFrame(righe))
+    st.write("history", pd.DataFrame(_history({t: 40 for t in SQUADRE})))
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_stagione()
+    testo = _testo((out / "stagione.html").read_text(encoding="utf-8"))
+    st.close()
+    # la convenzione è dichiarata dove il lettore la incontra
+    assert "«<1»" in testo and "«>99»" in testo and "lo zero vero resta «0»" in testo
+    assert "gli stessi numeri che la scheda partita pubblica" in testo
+    # e applicata alle colonne, cella per cella (l'intestazione del titolo è «1°», non
+    # «titolo»: il confronto si fa sulla cella, non sul testo della pagina)
+    html = (out / "stagione.html").read_text(encoding="utf-8")
+
+    def celle(squadra: str) -> list[str]:
+        riga = re.search(rf"<tr><td>{squadra}.*?</tr>", html, re.DOTALL).group(0)
+        return [html_mod.unescape(x).strip()
+                for x in re.findall(r'<td class="r">(.*?)</td>', riga, re.DOTALL)]
+
+    inter = celle("Inter")      # PG, Pt, Pt attesi, Media pos., 1°, UCL (prime 4), Retro
+    assert inter[4] == "<1%" and inter[5] == ">99%" and inter[-1] == "0%"   # 0,4% · 99,99% · 0
+    juventus = celle("Juventus")
+    assert juventus[4] == "1%" and juventus[5] == "<1%" and juventus[-1] == ">99%"

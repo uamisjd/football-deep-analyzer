@@ -6,7 +6,9 @@
 <p class="small mut">Monte Carlo su {{ n_sims|it_num }} stagioni simulate per lega — Dixon-Coles + Elo (ensemble 70/30)
   sui punteggi delle gare restanti. Aggiornato: {{ updated }}.
   Le probabilità sono arrotondate all'unità: con {{ n_sims|it_num }} simulazioni l'errore standard massimo è circa
-  0,5 punti percentuali. La classifica simulata usa punti → differenza reti → gol fatti; gli scontri diretti
+  0,5 punti percentuali. Il valore non nullo sotto il mezzo punto si dichiara «&lt;1» e quello sopra il 99,5 «&gt;99»
+  (lo zero vero resta «0»); «Pt attesi» e «Media pos.» sono gli stessi numeri che la scheda partita pubblica
+  nella riga «stima di fine stagione». La classifica simulata usa punti → differenza reti → gol fatti; gli scontri diretti
   non sono simulati e l'ordine alfabetico chiude le parità residue.
   Le squadre del tutto prive di storico sarebbero simulate con le medie di lega: oggi
   {% if n_senza_storico == 0 %}non ce n'è nessuna (tutte le {{ n_squadre|it_num }} hanno almeno una gara nello

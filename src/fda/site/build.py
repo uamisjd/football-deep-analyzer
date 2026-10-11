@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..backoff import is_suspended_row
 from ..config import CALENDAR_DAYS, DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
-from ..models.season_sim import mc_percent, mc_se
+from ..models.season_sim import mc_percent, mc_percent_str, mc_se
 from ..store import Store
 from .analysis import MatchAnalysis, allineamento_fonti, insight_drop_stats, prediction_meta
 from .audit import audit_match
@@ -29,6 +29,7 @@ from .fmt import (
     decimali_it,
     displayed_sum,
     it_plural,
+    pct_int,
     pct_triple,
 )
 from .players import PlayerCatalog
@@ -218,6 +219,18 @@ def font_locali_presenti(assets: Path | None = None) -> bool:
     return css.exists() and bool(list((base / "fonts").glob("*.woff2")))
 
 
+def _t1x2_testo(p: dict) -> str:
+    """«1 34% · X 33% · 2 33% — incerta»: terna con la regola di casa, somma esatta 100.
+
+    Tre `round()` indipendenti sommano 99 o 101 (misurato l'11/10/2026: 11 righe su 40 nella
+    tabella Accuratezza e 134 descrizioni SEO su 564, `docs/78` §14). La terna passa da
+    `pct_triple`, la stessa funzione delle righe del calendario.
+    """
+    a, b, c = pct_triple((float(p.get("p_home", 0)), float(p.get("p_draw", 0)),
+                          float(p.get("p_away", 0))))
+    return f"1 {a}% · X {b}% · 2 {c}% — incerta"
+
+
 class SiteBuilder:
     def __init__(self, store: Store | None = None, out_dir: Path | None = None) -> None:
         self.store = store or Store()
@@ -227,6 +240,8 @@ class SiteBuilder:
                                autoescape=select_autoescape(["html"]), trim_blocks=True, lstrip_blocks=True)
         # barra 1X2: larghezze ed etichette che sommano esattamente 100 (nd=0 o 1 decimali)
         self.env.filters["pct3"] = lambda t, nd=0: pct_triple(tuple(float(v) for v in t), nd)
+        # percentuali intere pubblicate: una sola regola, il mezzo in su (`pct_int`, docs/78 §15)
+        self.env.filters["pct_i"] = pct_int
         self.env.filters["it_dt"] = it_datetime
         self.env.filters["it_num"] = it_thousands
         self.env.filters["dec"] = it_dec
@@ -458,7 +473,7 @@ class SiteBuilder:
                 tot = displayed_sum(float(p.lambda_home), float(p.lambda_away))
                 prev = {"pct": pct, "fav": ("h", "d", "a")[fav_i], "fav_i": fav_i,
                         "gol": it_dec(tot, 1) if np.isfinite(tot) else None,
-                        "over": round(float(p.p_over25) * 100) if np.isfinite(p.p_over25) else None}
+                        "over": pct_int(p.p_over25) if np.isfinite(p.p_over25) else None}
             else:
                 senza += 1
             mesi[(local.year, local.month)].append({
@@ -546,7 +561,7 @@ class SiteBuilder:
                     except Exception:
                         pass
             avg_gol = round(sum(gols) / len(gols), 2) if gols else None
-            avg_over = round(sum(overs) / len(overs) * 100) if overs else None
+            avg_over = pct_int(sum(overs) / len(overs)) if overs else None
             high_over = sum(1 for o in overs if o >= 0.60)
             # bilanciata = max prob più bassa, sbilanciata = max prob più alta
             def max_prob(r):
@@ -577,17 +592,17 @@ class SiteBuilder:
             if highest_over:
                 p = highest_over.get("prediction") or {}
                 hl.append({"kind": "over", "label": "Over 2,5 più probabile", "icon": "🔥", "match": highest_over,
-                           "detail": f"Over 2,5 al {round(p.get('p_over25',0)*100)}%"})
+                           "detail": f"Over 2,5 al {pct_int(p.get('p_over25', 0))}%"})
             if most_balanced:
                 p = most_balanced.get("prediction") or {}
                 hl.append({"kind": "balanced", "label": "Più equilibrata", "icon": "⚖️", "match": most_balanced,
-                           "detail": f"1 {round(p.get('p_home',0)*100)}% · X {round(p.get('p_draw',0)*100)}% · 2 {round(p.get('p_away',0)*100)}% — incerta"})
+                           "detail": _t1x2_testo(p)})
             if most_one_sided:
                 p = most_one_sided.get("prediction") or {}
                 # evita duplicato se stessa della balanced
                 if most_one_sided != most_balanced:
                     hl.append({"kind": "onesided", "label": "Favorita netta", "icon": "🎯", "match": most_one_sided,
-                               "detail": f"{max_prob(most_one_sided)*100:.0f}% sul favorito"})
+                               "detail": f"{pct_int(max_prob(most_one_sided))}% sul favorito"})
             out["highlights"] = hl[:3]  # max 3 per non affollare
 
             # ---- live / finite / timeline (valore per Oggi) ----
@@ -627,7 +642,7 @@ class SiteBuilder:
                     fin_verified.append({"match": r, "real": real, "fav": fav, "hit": hit})
                 out["finished"] = fin_verified[:10]
                 if finished:
-                    out["finished_summary"] = {"total": len(finished), "hits": hits, "hit_rate": round(hits/len(finished)*100) if finished else 0}
+                    out["finished_summary"] = {"total": len(finished), "hits": hits, "hit_rate": pct_int(hits/len(finished)) if finished else 0}
             except Exception:
                 out["finished"] = []
             try:
@@ -858,12 +873,15 @@ class SiteBuilder:
             if p and p.get("p_home") is not None:
                 _lh, _la = float(p.get("lambda_home", 0.0)), float(p.get("lambda_away", 0.0))
                 _gc = lambda v: f"{v:.2f}".replace(".", ",")
-                # il totale è la somma delle due cifre stampate: la description finisce su Google,
-                # dove il lettore non ha contesto per accorgersi di un «2,38» che non chiude (docs/22)
+                # la description finisce su Google, dove il lettore non ha contesto per
+                # accorgersi di una cifra che non chiude: il totale dei gol è la somma delle due
+                # cifre stampate (docs/22) e la terna 1X2 passa da `pct_triple` — con tre
+                # `round()` indipendenti 134 occorrenze su 564 non chiudevano (docs/78 §14)
+                _t1x2 = pct_triple((float(p["p_home"]), float(p["p_draw"]), float(p["p_away"])))
                 page_desc = (f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name}: '
-                             f'1 {round(p["p_home"]*100)}% X {round(p["p_draw"]*100)}% 2 {round(p["p_away"]*100)}% '
+                             f'1 {_t1x2[0]}% X {_t1x2[1]}% 2 {_t1x2[2]}% '
                              f'· gol attesi {_gc(_lh)} + {_gc(_la)} ({_gc(displayed_sum(_lh, _la))} totali) · '
-                             f'Over 2,5 {round(p.get("p_over25",0)*100)}%')
+                             f'Over 2,5 {mc_percent(p.get("p_over25", 0))}%')
             else:
                 page_desc = f'{ctx.get("home_name")}–{ctx.get("away_name")} · {league_name} — analisi pre-partita, forma e precedenti.'
             page_title = f'{ctx.get("home_name")} - {ctx.get("away_name")} — analisi · CalcioMetro'
@@ -955,9 +973,10 @@ class SiteBuilder:
                 if raw_top is None or pd.isna(raw_top):
                     raw_top = row.get("p_top4")
                 row["p_top_n"] = raw_top
-                row["p_title_pct"] = mc_percent(row["p_title"])
-                row["p_top_n_pct"] = None if raw_top is None or pd.isna(raw_top) else mc_percent(raw_top)
-                row["p_rel_pct"] = mc_percent(row["p_rel"])
+                row["p_title_pct"] = mc_percent_str(row["p_title"])
+                row["p_top_n_pct"] = (None if raw_top is None or pd.isna(raw_top)
+                                      else mc_percent_str(raw_top))
+                row["p_rel_pct"] = mc_percent_str(row["p_rel"])
                 rows.append(row)
             n_sims = int(pd.to_numeric(grp["n_sims"], errors="coerce").max())
             conteggio = conteggi.get(str(key))
@@ -1061,6 +1080,10 @@ class SiteBuilder:
                                    "match_id": int(r.match_id), "home": fxn.loc[r.match_id, "home_name"],
                                    "away": fxn.loc[r.match_id, "away_name"], "hg": int(r.home_goals), "ag": int(r.away_goals),
                                    "p_home": r.p_home, "p_draw": r.p_draw, "p_away": r.p_away, "p_real": r.p_real,
+                                   # terna pubblicata come «61 / 24 / 15»: tre arrotondamenti indipendenti
+                                   # sommano 99 o 101 su 11 righe su 40 (misurato il 2026-10-11). `pct_triple`
+                                   # esiste per questo ed è già usata dalle righe del calendario (`docs/78` §14).
+                                   "pct1x2": pct_triple((float(r.p_home), float(r.p_draw), float(r.p_away))),
                                    "top": r.top, "hit": bool(r.hit), "rps": float(r.rps)})
                 # mercati binari: Brier contro quello della frequenza di base (stesso campione)
                 tot = (p.home_goals.astype(float) + p.away_goals.astype(float)).to_numpy()

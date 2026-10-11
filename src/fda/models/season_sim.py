@@ -65,6 +65,22 @@ def mc_percent(p: float) -> int:
     return int(np.floor(q * 100.0 + 0.5))
 
 
+def mc_percent_str(p: float) -> str:
+    """Percento Monte Carlo per lo schermo, con gli estremi dichiarati.
+
+    «0%» per un valore reale di 0,1% si legge «impossibile»: sotto il mezzo punto il numero
+    diventa «<1» (e sopra il 99,5 «>99»). Stessa funzione per la scheda partita e per la
+    pagina Proiezioni, così le due pagine non possono divergere (`docs/78` §12).
+    """
+    q = min(max(float(p), 0.0), 1.0)
+    n = mc_percent(q)
+    if n == 0 and q > 0:
+        return "<1"
+    if n == 100 and q < 1:
+        return ">99"
+    return str(n)
+
+
 def persist_history(store: Any, hist: pd.DataFrame, league_key: str) -> int:
     """Salva lo storico usato dai modelli nella tabella ``history``.
 

@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import math
 import re
 import unicodedata
 from collections import Counter
@@ -30,6 +31,154 @@ TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole
 # Misurato il 2026-10-07: 375 occorrenze nelle 375 schede post-partita + 1 in info.html — e le
 # due pagine che citavano lo stesso numero di RPS dei bookmaker lo scrivevano in due modi.
 RANGE_ASCII = re.compile(r"\d+,\d+-\d+,\d+")
+# «<» crudo davanti a una cifra («<1», «<5 gare»): i browser lo recuperano come testo, ma
+# il taglio dei tag degli strumenti di verifica lo mangia insieme alla parentesi finta —
+# e in un attributo non quotato romperebbe l'attributo. Il segno va scritto «&lt;».
+# Misurato il 2026-10-11: 823 occorrenze su 262 pagine (815 nella matrice dei risultati
+# esatti, 8 nel tooltip della forma), tutte corrette in `&lt;` (docs/78 §12).
+RAW_LT_DIGIT = re.compile(r"<\d")
+SCRIPT_BLOCK = re.compile(r"<script\b.*?</script>", re.DOTALL | re.IGNORECASE)
+
+# ---- oracoli indipendenti -------------------------------------------------------------------
+# Le funzioni del generatore **non** si importano per costruire il valore atteso: se il
+# verificatore chiama la stessa funzione che ha prodotto la pagina, verifica che la pagina renda
+# quel codice, non che il numero sia giusto (`docs/79`). Dove una riscrittura indipendente è
+# possibile, vive qui: formule ricavate dalla definizione, non copiate. Al momento dell'innesto
+# (2026-10-11) sono state confrontate col generatore su casi reali e casuali: RPS 4.000 terne,
+# Wilson su tutte le coppie k,n ≤ 60, terne 40.000, somme stampate 20.000 — zero divergenze.
+
+
+def rps_indip(probs: list, outcomes: list) -> float:
+    """RPS medio: ``1/(r−1)·Σᵢ (Fᵢ − Oᵢ)²`` sulle cumulative, per i = 1…r−1."""
+    if not len(probs):
+        return 0.0
+    tot = 0.0
+    for p, o in zip(probs, outcomes):
+        cum_p = cum_o = 0.0
+        s = 0.0
+        for i in range(len(p) - 1):
+            cum_p += float(p[i])
+            cum_o += 1.0 if int(o) == i else 0.0
+            s += (cum_p - cum_o) ** 2
+        tot += s / (len(p) - 1)
+    return tot / len(probs)
+
+
+def wilson_indip(k: int, n: int, z: float = 1.96) -> tuple[float, float]:
+    """Intervallo di Wilson: radici in p di ``(p̂−p)² = z²·p(1−p)/n`` (equazione di 2º grado)."""
+    if n <= 0:
+        return (0.0, 1.0)
+    a = 1.0 + z * z / n
+    b = -2.0 * (k / n) - z * z / n
+    c = (k / n) ** 2
+    disc = max(b * b - 4 * a * c, 0.0)
+    r = math.sqrt(disc)
+    return ((-b - r) / (2 * a), (-b + r) / (2 * a))
+
+
+def terna_indip(p, nd: int = 0) -> list[float]:
+    """Interi (o decimi) che sommano 100: pavimento + resto ai resti frazionari più alti."""
+    scala = 10**nd
+    grezzi = [float(x) * 100 * scala for x in p]
+    base = [math.floor(x) for x in grezzi]
+    manca = round(100 * scala) - sum(base)
+    ordine = sorted(range(len(base)), key=lambda i: (-(grezzi[i] - base[i]), i))
+    for i in ordine[:manca]:
+        base[i] += 1
+    return [v / scala for v in base]
+
+
+def terna_valida(p, nd: int, mostrati) -> bool:
+    """La terna pubblicata è un arrotondamento legittimo? (specifica, non identità fra funzioni)
+
+    Chiude esattamente su 100, ogni valore è il pavimento o il tetto del valore esatto e il
+    numero di tetti è quello che serve. Accetta i casi di parità in cui due implementazioni
+    corrette scelgono un valore diverso: è la regola a essere verificata, non il tie-break.
+    """
+    scala = 10**nd
+    grezzi = [float(x) * 100 * scala for x in p]
+    if len(mostrati) != len(grezzi):
+        return False
+    if sum(round(float(v) * scala) for v in mostrati) != round(100 * scala):
+        return False
+    tetti = 0
+    for g, m in zip(grezzi, mostrati):
+        v = round(float(m) * scala)
+        if v == math.floor(g):
+            continue
+        if v == math.ceil(g):
+            tetti += 1
+            continue
+        return False
+    return tetti == round(100 * scala) - sum(math.floor(g) for g in grezzi)
+
+
+def somma_stampata_indip(a: float, b: float, nd: int = 2) -> float:
+    """La somma come la fa il lettore: prima arrotonda le due cifre, poi le addiziona."""
+    return round(round(float(a), nd) + round(float(b), nd), nd)
+
+
+def pct_dichiarata(x: float) -> int:
+    """Percentuale intera come la dichiara il sito: **mezzo in su** (docs/78 §15).
+
+    Non è `round()`: ``round(0.625 * 100)`` fa 62, cioè il pari più vicino, e la cifra
+    pubblicata non deve dipendere dalla parità dell'intero. Il verifier ricalcola con
+    questa regola scritta qui a mano: se il generatore tornasse al banker's, i mezzi
+    esatti — l'unico punto in cui le due convenzioni divergono — lo farebbero vedere.
+    """
+    return math.floor(float(x) * 100.0 + 0.5)
+
+# Card «Panchina e posta in gioco»: l'oracolo di [19] legge le celle della tabella (non chiama
+# ``bench_deep``, altrimenti verificherebbe il generatore con se stesso — docs/78 §1).
+PANCHINA_CARD = re.compile(r'<div class="card" id="panchina">(.*?)(?=<div class="card"|<footer)',
+                           re.DOTALL)
+PANCHINA_ROW = re.compile(r'<th scope="row">(Allenatore|Posta in gioco|Età media titolari)</th>'
+                          r'(.*?)(?=</tr>)', re.DOTALL)
+PANCHINA_TD = re.compile(r'<td>(.*?)</td>', re.DOTALL)
+
+
+def panchina_cella(html: str) -> str:
+    """Testo della cella della card panchina: via i tag, poi le entità, spazi normalizzati.
+
+    L'ordine conta: al contrario «&lt;1» diventa «<1» e la finta parentesi viene mangiata
+    dal tag successivo, facendo sparire il valore: con l'ordine sbagliato le 81 celle-squadra
+    che pubblicano un valore agli estremi (su 164 con la riga dei numeri, build #9) non
+    tornavano più, perché nella cella il numero c'era ma illeggibile (`docs/78` §13).
+    """
+    return re.sub(r"\s+", " ", html_unescape(re.sub(r"<[^>]+>", " ", html))).strip()
+
+
+def ggmm_cella(ts: Any, tz: Any) -> str:
+    """Data breve (gg/mm) nel fuso display: stesso formato della cella «Allenatore»."""
+    import pandas as pd  # import locale: il modulo tiene pandas fuori dal costo d'avvio
+
+    v = pd.Timestamp(ts)
+    if v.tzinfo is None:
+        v = v.tz_localize("UTC")
+    v = v.tz_convert(tz)
+    return f"{v.day:02d}/{v.month:02d}"
+
+
+def posizione_virtuale(tab: Any, tid: int, opp_id: int, pts: int, gd: int,
+                       delta_mio: int, delta_avv: int) -> int:
+    """Posizione virtuale con questo risultato: punti a **entrambe** le squadre della partita.
+
+    Ricalcolo indipendente della riga verde di «Panchina e posta in gioco» (docs/78 §1):
+    nella sconfitta l'avversaria incassa i 3 punti e può scavalcare, nella vittoria li
+    incassa la squadra. Le altre gare restano in sospeso e la differenza reti è quella
+    attuale, come dichiara la nota della card.
+    """
+    mio = pts + delta_mio
+    sopra = 0
+    for rr in tab.itertuples(index=False):
+        rid = int(rr.team_id)
+        if rid == tid:
+            continue
+        pu = int(rr.points) + (delta_avv if rid == opp_id else 0)
+        di = int(rr.goal_diff or 0)
+        if pu > mio or (pu == mio and di > gd):
+            sopra += 1
+    return sopra + 1
 
 
 def record_campo(fx: Any, team_id: int, in_casa: bool, kickoff: Any) -> tuple[int, int, int, int]:
@@ -275,6 +424,10 @@ def check_pages(site: Path) -> tuple[list[str], int]:
             fails.append(f"{rel}: concordanza {m.group(0)!r}")
         for m in RANGE_ASCII.finditer(text):
             fails.append(f"{rel}: intervallo col trattino ASCII {m.group(0)!r} (serve «–»)")
+        for m in RAW_LT_DIGIT.finditer(SCRIPT_BLOCK.sub(" ", raw)):
+            i = m.start()
+            fails.append(f"{rel}: «<» crudo davanti a una cifra: "
+                         f"{raw[max(0, i - 30):i + 20]!r} (serve &lt;)")
 
         # stessa terna di controlli sugli attributi pronunciati dai lettori di schermo
         for attr in parser.readable_attrs:
@@ -587,6 +740,75 @@ def check_bars(site: Path) -> tuple[list[str], int]:
 DC_ROW = re.compile(r"Doppia chance 1X / 12 / X2</th><td[^>]*>(\d+)% / (\d+)% / (\d+)%</td>")
 #: le tre forme in cui il sito pubblica «λ + λ (totale)»: hero della scheda, card delle
 #: liste (riga visibile) e tooltip della stessa riga, description SEO, riga del calendario.
+# ---- registro degli oracoli ------------------------------------------------------------------
+# Da dove viene il valore atteso di ogni controllo (`docs/79`). «I» = oracolo indipendente: il
+# valore si ricalcola da dati primari o è un'identità sui numeri stampati. «M» = misto: una parte
+# è indipendente, una parte si appoggia al generatore. «S» = specchio: il valore atteso si
+# costruisce con il codice del generatore, quindi il controllo verifica la resa, non il calcolo —
+# l'oracolo dei modelli sono i loro test (tests/test_models.py, test_season_sim.py, test_advanced.py).
+# Il confronto col generatore doveva esistere: il 2026-10-11 la tenuta della terna dell'andamento
+# è passata sotto [2] per una tolleranza «>3» e la sua regola d'arrotondamento non la vedeva
+# nessuno. Il test `test_ogni_controllo_dichiara_il_suo_oracolo` obbliga ogni nuovo controllo a
+# dichiararsi qui, così il debito non cresce in silenzio.
+ORACOLI: dict[str, tuple[str, str]] = {
+    "1": ("S", "matrice dei punteggi dalle funzioni del modello (identità: celle+coda = 100%)"),
+    "1b": ("I", "ripartizione DC/Elo pubblicata: somma 100 e valori legittimi di w_dc"),
+    "2": ("I", "andamento: somma esatta delle tre celle e ultima riga = risultato"),
+    "3": ("M", "RPS ricalcolato dal verificatore; il campione è selezionato dai Parquet"),
+    "3b": ("I", "Δ = RPS − naive sui numeri stampati e somma delle leghe = riga «Tutti»"),
+    "4": ("I", "vincoli della simulazione: somme per lega = 1 e alias deprecati"),
+    "5": ("I", "ruoli, indisponibili e precedenti ↔ distinta e archivio"),
+    "6": ("I", "assist e xG 1T/2T ↔ events e team_stats"),
+    "7": ("M", "intervallo di Wilson ricalcolato; il segnale viene dal Parquet"),
+    "8": ("M", "RPS ricalcolato; campione del backtest dai Parquet"),
+    "8b": ("M", "calibrazione salvata e somme del backtest dai Parquet"),
+    "9": ("S", "distribuzione dei gol dalle funzioni del generatore (`goals_view`)"),
+    "10": ("S", "scomposizione della probabilità dal generatore (`probability_steps`)"),
+    "11": ("I", "calendario e margine sul secondo: identità sui numeri stampati"),
+    "11a": ("I", "barre 1X2: etichette = larghezze, somma 100, un solo favorito"),
+    "12": ("M", "copertura ↔ somma delle percentuali in pagina; il resto dai Parquet"),
+    "13-14": ("I", "template e formattazione anti-falso (conteggi scritti a mano)"),
+    "15": ("M", "fasce dal backtest; intervallo di Wilson ricalcolato"),
+    "16": ("M", "posizione di lega dai Parquet; somma stampata ricalcolata"),
+    "17": ("M", "conteggi da events; le probabilità con la formula del verificatore"),
+    "18": ("I", "etichette d'impatto dell'infermeria e tooltip richiesti"),
+    "19": ("M", ("classifica e posizione virtuale ricalcolate; posta in gioco dal Parquet "
+                 "con la formattazione del generatore, confrontata con Proiezioni")),
+    "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
+    "21": ("M", "righe del clima dal Parquet delle notizie"),
+    "22": ("I", "radar e scontri ricalcolati da team_stats e Understat"),
+    "23": ("I", "badge «giocherà?» ↔ distinta"),
+    "24": ("I", "«Il prossimo impegno» ↔ calendario"),
+    "25": ("I", "conversione delle grandi occasioni ↔ occasioni"),
+    "26": ("M", "card mercato ↔ tabella transfers; le soglie sono del generatore"),
+    "27": ("I", "residui, inglese, scope, trattini, «<» crudo, link interni"),
+    "27b": ("I", "attributi leggibili (aria-label, title, alt)"),
+    "28": ("I", "coerenza di stato.html: ogni fonte sospesa dichiara motivo e piano"),
+    "29": ("I", "CSS esterno in ogni pagina, zero <style> inline"),
+    "30": ("I", "doppie chance = somma delle 1X2 stampate; totali = somma delle cifre"),
+    "31": ("I", "somme stampate che devono chiudere"),
+    "32": ("I", "stime per-90 e ◇/◎ ↔ minuti del campione"),
+    "33": ("I", "indice della scheda ↔ sezioni presenti"),
+    "34": ("I", "pallini e punti della forma ↔ calendario"),
+    "35": ("I", "fonti dichiarate in info.html ↔ moduli implementati"),
+    "36": ("I", "tabelle dentro .tablewrap"),
+    "37": ("I", "didascalie del punteggio coerenti col punteggio"),
+    "38": ("I", "importi non azzerati dall'arrotondamento"),
+    "39": ("M", "movimenti di mercato ↔ tabella transfers"),
+    "40": ("I", "meteo: valori pubblicati ↔ soglie del codice"),
+    "41": ("M", ("struttura e soglie della card dei Fattori; il testo delle soglie è del "
+                 "generatore (fattori_soglie_testo)")),
+    "42": ("M", "fatti ricalcolati dai Parquet; il gruppo «nostro» usa `form_facts`"),
+    "43": ("M", "finestra e righe ricalcolate; la tendenza è `arrival_trend`"),
+    "44": ("M", "forma e calendario ricalcolati; i rapporti di forza usano il modello Elo"),
+    "45": ("M", "cronologia del verificatore (`elo_reference_at_dates`); valori Elo del modello"),
+    "46": ("M", "λ e confronti ricalcolati; la griglia Dixon-Coles è quella del modello"),
+    "47": ("I", "terne 1/X/2 pubblicate: somma esatta, quattro grafie"),
+    "48": ("M", ("percentuali intere di Accuratezza: regola dichiarata, hit e "
+                 "eventi osservati ricalcolati dai gol")),
+}
+
+
 HERO_LAM = re.compile(r"<b>(\d+,\d+) \+ (\d+,\d+)</b><span>gol attesi · <b>(\d+,\d+) totali</b></span>")
 CARD_LAM = re.compile(r"Gol attesi <b>(\d+,\d+) \+ (\d+,\d+)</b> <span class=\"mut\">\((\d+,\d+) totali\)</span>")
 TIP_LAM = re.compile(r"(\d+,\d+) casa \+ (\d+,\d+) trasferta = (\d+,\d+) totali")
@@ -1245,7 +1467,6 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     import numpy as np
     import pandas as pd
 
-    from fda.models.predict import rps as pb_rps
     from fda.site.advanced import dixon_coles_grid, grid_1x2, score_matrix
     from fda.store import Store
 
@@ -1271,10 +1492,19 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             continue
         r = preds.loc[mid]
         m = score_matrix(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
-        cells = re.findall(r'<td[^>]*title="(\d)-(\d) · (meno di 0,1|\d+,\d+)%[^"]*">(<1|\d+,\d)</td>', html)
+        # il valore «<1» è scritto «&lt;1» dal 2026-10-11 (docs/78 §12): col segno crudo i
+        # browser lo recuperavano come testo ma il taglio dei tag degli strumenti di verifica
+        # lo mangiava, e in un attributo non quotato avrebbe rotto l'attributo. Qui si
+        # accettano entrambe le grafie, così la lettura regge anche su una build vecchia.
+        cells = re.findall(
+            r'<td[^>]*title="(\d)-(\d) · (meno di 0,1|\d+,\d+)%[^"]*">((?:&lt;|<)1|\d+,\d)</td>',
+            html)
         if len(cells) != 36:
             fails.append(f"{pg.name}: celle matrice {len(cells)} (attese 36)")
             continue
+        # normalizzato una volta sola: i due lettori qui sotto (verifica del valore e somma
+        # a 100%) devono vedere la stessa grafia
+        cells = [(i, j, t, "<1" if c in ("<1", "&lt;1") else c) for i, j, t, c in cells]
         n_matrix += 1
         for i, j, _title_p, cell_p in cells:
             checks += 1
@@ -1310,7 +1540,36 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                          f"({r.p_home:.3f}/{r.p_draw:.3f})")
     print(f"[1] matrici punteggi verificate: {n_matrix}")
 
-    # 2) probabilità in-play: ogni riga somma ~100 e l'ultima coincide col risultato
+    # 1b) coppia «Stime Dixon-Coles pesato + Elo (A/B)»: due cifre affiancate che il lettore
+    #     legge come una ripartizione, quindi devono chiudere 100. Fino al 2026-10-11 erano due
+    #     arrotondamenti indipendenti: un w_dc di 62,5% pubblicava «62/38» con `round()` e
+    #     «63/38» = 101 col mezzo in su (`docs/78` §15). Ora il generatore usa il metodo del
+    #     resto massimo (`pct3`) e qui si verifica la **specifica**, non l'identità con la
+    #     funzione: somma 100 e valori che sono pavimento o tetto di w_dc·100 — i casi di
+    #     parità in cui due implementazioni corrette scelgono diversamente sono ammessi.
+    n_dcelo = 0
+    for pg in pages:
+        html = pg.read_text(encoding="utf-8")
+        mj = re.search(r"Stime Dixon-Coles pesato \+ Elo \((\d{1,3})/(\d{1,3})\)", html)
+        if not mj:
+            continue
+        mid = int(pg.stem)
+        if mid not in preds.index or "w_dc" not in preds.columns:
+            fails.append(f"{pg.name}: riga Dixon-Coles/Elo senza previsione con w_dc")
+            continue
+        n_dcelo += 1
+        checks += 1
+        w = float(preds.loc[mid, "w_dc"])
+        if not terna_valida((w, 1 - w), 0, (int(mj.group(1)), int(mj.group(2)))):
+            fails.append(f"{pg.name}: ripartizione DC/Elo {mj.group(1)}/{mj.group(2)} non è un "
+                         f"arrotondamento legittimo di w_dc = {w:.4f}")
+    print(f"[1b] ripartizioni Dixon-Coles/Elo verificate: {n_dcelo}")
+
+    # 2) probabilità in-play: ogni riga somma **esattamente** 100 e l'ultima coincide col
+    #    risultato. Fino al 2026-10-11 la tolleranza era «>3» perché il generatore arrotondava
+    #    le tre celle con tre `round()` indipendenti: con quella tolleranza 153 righe rotte
+    #    (99/101) sono passate sotto il naso di questo controllo e le ha viste solo [47],
+    #    aggiunto dopo (`docs/79`). Ora che la terna passa da `pct_triple` la somma è esatta.
     n_wp = 0
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
@@ -1326,7 +1585,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         n_wp += 1
         checks += 1
         for minute, _score, a, b, c in rows:
-            if abs(int(a) + int(b) + int(c) - 100) > 3:
+            if int(a) + int(b) + int(c) != 100:
                 fails.append(f"{pg.name}: in-play {minute}' = {a}+{b}+{c}")
         sc = re.match(r"\s*(\d+)-(\d+)", rows[-1][1])
         hg, ag = (int(sc.group(1)), int(sc.group(2))) if sc else (0, 0)
@@ -1345,7 +1604,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     acc_path = site / "accuratezza.html"
     if not p.empty and acc_path.exists():
         outc = np.where(p.home_goals > p.away_goals, 0, np.where(p.home_goals == p.away_goals, 1, 2))
-        mine = pb_rps(p[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(), outc.tolist())
+        mine = rps_indip(p[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(), outc.tolist())
         acc_txt = acc_path.read_text(encoding="utf-8")
         mrow = re.search(r'Tutti</td><td class="r">(\d+)</td>'
                          r'(?:<td class="r">\d+</td>)?<td class="r">(\d+,\d+)</td>', acc_txt)
@@ -1413,7 +1672,6 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
 
     # 7) accuratezza: intervalli di Wilson pubblicati, ricalcolati con la funzione del progetto
     if acc_path.exists():
-        from fda.site.build import wilson_interval
 
         def _n(txt: str) -> float:
             return float(re.sub(r"<[^>]+>", "", txt).replace(".", "").replace(",", ".").rstrip("%"))
@@ -1436,7 +1694,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 n = int(_n(cells[1]))
                 prev, obs = _n(cells[2]), _n(cells[3])
                 k = round(obs * n / 100.0)
-            lo, hi = wilson_interval(k, n)
+            lo, hi = wilson_indip(k, n)
             checks += 1
             righe += 1
             if abs(lo_p - lo * 100) > 0.06 or abs(hi_p - hi * 100) > 0.06:
@@ -1477,7 +1735,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append("accuratezza.html: card backtest senza numerosità o RPS")
             else:
                 checks += 1
-                mine = pb_rps(bt[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(),
+                mine = rps_indip(bt[["p_home", "p_draw", "p_away"]].to_numpy(float).tolist(),
                               bt["outcome"].to_numpy(int).tolist())
                 rps_bt = float(m_r.group(1).replace(",", "."))
                 if _int_it(m_n.group(1)) != len(bt):
@@ -1709,7 +1967,6 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
 
     # 9) distribuzione dei gol totali + dotplot quantile: ricalcolate dalla λ/ρ salvate
     from fda.site.advanced import goals_view, probability_steps
-    from fda.site.fmt import pct_triple
 
     n_goals = 0
     for pg in pages:
@@ -1823,16 +2080,16 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         for (h, x, a), (_n, lab), passo in zip(resi, labels, steps):
             if lab != passo["label"]:
                 fails.append(f"{pg.name}: passo «{lab}» != «{passo['label']}»")
-            # il confronto è con il vettore **pubblicato** (resto massimo a un decimale), non con
-            # l'arrotondamento indipendente dei tre valori grezzi: era la stessa regola sbagliata
-            # corretta nelle barre (docs/19 §3.3) e tollerava 0,06 pp di scarto. Qui lo scarto
-            # ammesso è zero, perché la pagina e il verificatore chiamano la stessa funzione.
-            attesi = pct_triple((passo["p_home"], passo["p_draw"], passo["p_away"]), 1)
-            for shown, key, atteso in ((h, "p_home", attesi[0]), (x, "p_draw", attesi[1]),
-                                       (a, "p_away", attesi[2])):
-                if abs(float(shown.replace(",", ".")) - atteso) > 1e-9:
-                    fails.append(f"{pg.name}: {passo['label']} {key} = {shown}% vs {atteso:.1f}% "
-                                 f"(vettore pubblicato {attesi})")
+            # la terna pubblicata deve essere un arrotondamento legittimo del vettore grezzo
+            # (regola del resto massimo, somma esatta al decimo). Prima la si confrontava con
+            # `pct_triple` del generatore — stessa funzione che ha prodotto la pagina, quindi lo
+            # stesso errore sarebbe passato due volte (`docs/79` §2). Ora si verifica la regola,
+            # e le parità (due terne ugualmente legittime) non fanno fallire il gate.
+            mostrati = [float(v.replace(",", ".")) for v in (h, x, a)]
+            grezzi = (passo["p_home"], passo["p_draw"], passo["p_away"])
+            if not terna_valida(grezzi, 1, mostrati):
+                fails.append(f"{pg.name}: {passo['label']} pubblica {mostrati} invece di una terna "
+                             f"che chiude a 100 al decimo (riferimento {terna_indip(grezzi, 1)})")
         # la catena deve chiudersi sull'1X2 pubblicato in cima alla scheda
         for key in ("p_home", "p_draw", "p_away"):
             if abs(steps[-1][key] - float(r[key])) > 1e-6:
@@ -1924,7 +2181,6 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     n_fasc = 0
     if not bt.empty and "outcome" in bt.columns:
         from fda.site.analysis import MatchAnalysis
-        from fda.site.build import wilson_interval
 
         pv_ = bt[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
         fav_ = pv_.max(axis=1)
@@ -1936,7 +2192,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if nb < 30:
                 continue
             kb = int(hit_[mm].sum())
-            wl_b, wh_b = wilson_interval(kb, nb)
+            wl_b, wh_b = wilson_indip(kb, nb)
             tab_bt.append({"label": label_b, "lo": lo_b, "hi": hi_b, "n": nb,
                            "obs": kb / nb, "wl": wl_b, "wh": wh_b, "pm": float(fav_[mm].mean())})
         # La riga della tabella porta anche la colonna P2.3 «previsto → uscito»: la barra è
@@ -2032,9 +2288,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 continue
             # il valore pubblicato in «Dove si colloca» è la somma dei due λ **stampati** in testa
             # alla scheda: qui si confronta quel numero, non la somma grezza (docs/22 §2)
-            from fda.site.fmt import displayed_sum as _disp_sum
 
-            lam_here = _disp_sum(float(row.lambda_home.iloc[0]), float(row.lambda_away.iloc[0]))
+            lam_here = somma_stampata_indip(float(row.lambda_home.iloc[0]),
+                                           float(row.lambda_away.iloc[0]))
             dist = p_latest[p_latest.league_key == row.league_key.iloc[0]]["lam"]
             dist = dist[np.isfinite(dist)]
             n_exp = len(dist)
@@ -2045,7 +2301,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: gol attesi {here_t} vs somma delle λ stampate "
                              f"{_stamp_it(lam_here)}")
             below = float((dist < lam_here).mean())
-            if int(pct_t) != round(below * 100):
+            if int(pct_t) != pct_dichiarata(below):
                 fails.append(f"{pg.name}: percentile {pct_t}% vs ricalcolato {below * 100:.1f}%")
             if int(n_t) != n_exp:
                 fails.append(f"{pg.name}: partite di lega {n_t} vs {n_exp} in predictions")
@@ -2093,7 +2349,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     ("tacca mediana", float(mv.group(10)),
                      _pos_pct(float(dist.median()), lo_q, hi_q)),
                     ("tacca media", float(mv.group(11)), _pos_pct(float(dist.mean()), lo_q, hi_q)),
-                    ("percentile in aria-label", float(mv.group(2)), round(below * 100))):
+                    ("percentile in aria-label", float(mv.group(2)), pct_dichiarata(below))):
                 checks += 1
                 if abs(letto - atteso) > 0.2:
                     fails.append(f"{pg.name}: barra posizione, {cosa} {letto}% vs ricalcolato {atteso}%")
@@ -2283,8 +2539,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: etichetta «senza minuti in stagione» senza tooltip esplicativo")
     print(f"[18] etichette impatto infermeria verificate: {n_imp} pagine")
 
-    # 19) panchina e posta in gioco (docs/21 P0-1): coach, subentro e percentuali Monte Carlo
-    # ricalcolati dai Parquet; la sezione deve esserci se e solo se i dati ci sono.
+    # 19) panchina e posta in gioco (docs/21 P0-1): coach, subentro, rendimento, distanze di
+    # classifica e posizione virtuale ricalcolati dai Parquet **senza** passare da
+    # ``bench_deep``. Il gate che riusa la funzione del generatore non può vedere gli errori
+    # che stanno *dentro* la funzione: la posizione virtuale che dimenticava i punti
+    # dell'avversaria è passata [19] per 36 celle su 208 fino al 2026-10-11 (docs/78 §1).
+    from fda.config import leagues as _leagues19
+    from fda.config import load_leagues_config
+    from fda.models.season_sim import mc_percent_str
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
@@ -2296,9 +2558,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     desc19 = ({str(x): str(y or "") for x, y in zip(nd19.title, nd19.description)}
               if not nd19.empty and "description" in nd19.columns else {})
     sim19 = st.read("season_sim")
+    fm19 = st.read("fotmob_standings")
+    mi19 = st.read("match_info")
     from fda.site.analysis import MatchAnalysis as _MA
     from fda.sources.news import JUNK_NEWS, is_italian_news, news_value
     ma19 = _MA(st)
+    _lg19 = {lg.fotmob_id: lg.key for lg in _leagues19()}
+    _ucl19 = {lg.key: lg.ucl_spots for lg in _leagues19()}
     n_bench = 0
     if not fx19.empty and not lu19.empty and "role" in lu19.columns:
         ko19 = fx19.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
@@ -2310,6 +2576,30 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not sim19.empty:
             for r in sim19.itertuples(index=False):
                 sim19map.setdefault(_canon(r.team), r)
+        # La pagina Proiezioni è il **secondo** posto dove vanno a schermo gli stessi numeri:
+        # se una delle due pagine cambia arrotondamento o formattazione le due divergono senza
+        # che nessuna delle due sbagli il conto (successo il 2026-10-11 con `round()`: 4 numeri
+        # diversi, `docs/78` §12). Qui non si ricalcola niente: si legge la pagina resa e si
+        # confronta con la cella della scheda, così l'oracolo non ripete l'espressione del
+        # generatore (che è come sono passati inosservati i 4 numeri).
+        proiez19: dict[str, dict[str, str | None]] = {}
+        pg_stag19 = site / "stagione.html"
+        if pg_stag19.is_file():
+            for nome_pg, corpo_pg in re.findall(
+                    r"<tr><td>([^<]+)(?:<span[^>]*>[^<]*</span>)?</td>(.*?)</tr>",
+                    pg_stag19.read_text(encoding="utf-8"), re.DOTALL):
+                celle_pg = [html_unescape(x).strip() for x in
+                            re.findall(r'<td class="r">(.*?)</td>', corpo_pg, re.DOTALL)]
+                # PG, Pt, Pt attesi, Media pos., 1° [, UCL (prime N)] , Retro
+                if len(celle_pg) < 6:
+                    continue
+                proiez19.setdefault(_canon(nome_pg.strip()), {
+                    "ep": celle_pg[2], "pm": celle_pg[3], "titolo": celle_pg[4],
+                    "ucl": celle_pg[5] if len(celle_pg) >= 7 else None,
+                    "retro": celle_pg[-1]})
+        fin19 = fx19[fx19.status == "finished"].copy() if not fx19.empty else fx19
+        if not fin19.empty:
+            fin19["ko"] = pd.to_datetime(fin19.utc_kickoff, utc=True)
         for pg in pages:
             html = pg.read_text(encoding="utf-8")
             if "Analisi pre-partita" not in html:
@@ -2320,8 +2610,26 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fr = fx19[fx19.match_id == mid].iloc[0]
             kickoff = pd.Timestamp(fr.utc_kickoff)
             txt = html_unescape(html)   # le etichette con apostrofo arrivano escaped (&#39;)
+            # docs/78 §8: se il calendario dà la gara finita, la scheda non può restare
+            # «Analisi pre-partita» solo perché i dettagli sono un'istantanea vecchia.
+            # Nella build del 2026-10-11 succedeva su 22 schede, e la card contava la
+            # partita stessa fra i «precedenti».
+            checks += 1
+            if str(fr.status) == "finished" and 'id="panchina"' in html:
+                fails.append(f"{pg.name}: scheda pre-partita per una gara che il calendario "
+                             f"dà finita")
             atteso = False
-            for tid, tname in ((int(fr.home_id), fr.home_name), (int(fr.away_id), fr.away_name)):
+            # dall'HTML grezzo, non da `txt`: l'unescape prima dei tag mangerebbe «&lt;1»
+            card19 = PANCHINA_CARD.search(html)
+            righe19 = {}
+            if card19:
+                for nome_riga, corpo in PANCHINA_ROW.findall(card19.group(1)):
+                    celle = PANCHINA_TD.findall(corpo)
+                    if len(celle) == 2:
+                        righe19[nome_riga] = [panchina_cella(c) for c in celle]
+            for lato, (tid, tname, oid, oname) in enumerate((
+                    (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
+                    (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name)))):
                 ct = co19[(co19.team_id == tid) & (co19.ko <= kickoff)] if not co19.empty else co19
                 coach = None
                 if not ct.empty:
@@ -2338,53 +2646,318 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 sr = sim19map.get(_canon(str(tname)))
                 if coach or sr is not None:
                     atteso = True
-                if coach and 'id="panchina"' in html:
+                if 'id="panchina"' not in html:
+                    continue
+                # --- allenatore: nome, permanenza, rendimento (ricalcolo indipendente) ---
+                # Le righe della cella si leggono dal testo della cella (i valori utili stanno
+                # dentro <b>, quindi cercarli nell'HTML grezzo li troverebbe spezzati dai tag).
+                cella_all = (righe19.get("Allenatore") or ["", ""])[lato]
+                if coach:
                     checks += 1
                     if coach[0] not in txt:
                         fails.append(f"{pg.name}: panchina senza il coach {coach[0]} dei Parquet")
-                    if coach[1] is not None and \
-                            ("panchina nuova" not in txt or str(coach[1]) not in txt):
-                        fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
-                if sr is not None and 'id="panchina"' in html:
+                    # docs/78 §5: la nazione si stampa col nome italiano; un codice ISO grezzo
+                    # («· 45 anni · ROU») significa che la mappa `_COUNTRY_IT` è rimasta indietro
+                    checks += 1
+                    if re.search(r"anni · [A-Z]{3}\b", cella_all):
+                        fails.append(f"{pg.name}: nazione in codice grezzo nella cella "
+                                     f"allenatore ({tname}): {cella_all[:60]}")
+                    # la permanenza dichiara anche da quando (docs/78 §12): la data viene
+                    # dalla prima gara in archivio del coach corrente, o dall'ultima del
+                    # predecessore — ricalcolate qui dalle distinte
+                    from zoneinfo import ZoneInfo as _ZI19
+                    _tz19 = _ZI19(load_leagues_config().get("timezone_display", "Europe/Rome"))
+                    cur19p = ct.iloc[-1].player_id if not ct.empty else None
+                    dal19 = None
+                    if cur19p is not None and not pd.isna(cur19p):
+                        if coach[1]:
+                            prec19 = ct[ct.player_id != cur19p]
+                            if not prec19.empty:
+                                dal19 = ggmm_cella(prec19.ko.max(), _tz19)
+                        else:
+                            same19 = ct[ct.player_id == cur19p]
+                            if not same19.empty:
+                                dal19 = ggmm_cella(same19.ko.min(), _tz19)
+                    stretta = ((f"panchina nuova: {coach[2]}ª gara dal subentro a {coach[1]}"
+                                + (f" (dopo la gara del {dal19})" if dal19 else ""))
+                               if coach[1] else
+                               (f"panchina invariata da {coach[2]} "
+                                f"{'gara' if coach[2] == 1 else 'gare'} nel nostro archivio"
+                                + (f" (dal {dal19})" if dal19 else "")))
+                    checks += 1
+                    if stretta not in cella_all:
+                        fails.append(f"{pg.name}: riga permanenza ({tname}) «{stretta}» assente")
+                    # rendimento: punti/gara nelle gare finite dirette dal coach corrente
+                    ids_coach = set(ct.loc[ct.player_id == ct.iloc[-1].player_id, "match_id"]) \
+                        if not ct.empty else set()
+                    gare_coach = fin19[fin19.match_id.isin(ids_coach) & (fin19.ko <= kickoff)] \
+                        if not fin19.empty else fin19
+                    checks += 1
+                    if len(gare_coach):
+                        punti = int(sum(
+                            3 if ((r.home_id == tid and r.home_goals > r.away_goals)
+                                  or (r.away_id == tid and r.away_goals > r.home_goals))
+                            else 1 if r.home_goals == r.away_goals else 0
+                            for r in gare_coach.itertuples(index=False)))
+                        pg_gara = f"{punti / len(gare_coach):.1f}".replace(".", ",")
+                        atteso_ppg = (f"rendimento: {pg_gara} punti/gara su "
+                                      f"{len(gare_coach)} "
+                                      f"{'gara finita' if len(gare_coach) == 1 else 'gare finite'}")
+                    else:
+                        atteso_ppg = "rendimento: nessuna gara finita con lui in panchina"
+                    if atteso_ppg not in cella_all:
+                        fails.append(f"{pg.name}: rendimento panchina ({tname}) «{atteso_ppg}» assente")
+                    # gol fatti/subiti a gara nelle stesse partite (docs/78 §12)
+                    checks += 1
+                    if len(gare_coach):
+                        gf19 = sum(int(r.home_goals) if int(r.home_id) == tid
+                                   else int(r.away_goals) for r in gare_coach.itertuples(index=False))
+                        ga19 = sum(int(r.away_goals) if int(r.home_id) == tid
+                                   else int(r.home_goals) for r in gare_coach.itertuples(index=False))
+                        atteso_gol = (f"con lui {gf19 / len(gare_coach):.1f}".replace(".", ",")
+                                      + " gol fatti e "
+                                      + f"{ga19 / len(gare_coach):.1f}".replace(".", ",")
+                                      + " subiti a gara")
+                        if atteso_gol not in cella_all:
+                            fails.append(f"{pg.name}: gol a gara della panchina ({tname}) "
+                                         f"«{atteso_gol}» assenti o diversi")
+                    else:
+                        if "gol fatti e" in cella_all:
+                            fails.append(f"{pg.name}: gol a gara ({tname}) senza gare finite")
+                    # bilancio dell'**allenatore** con l'avversaria: le sue gare in panchina
+                    # (con qualunque club) contro questa squadra, finite, prima di questa
+                    # partita (`docs/78` §10). Il bilancio fra i due **club** non deve
+                    # comparire sotto il nome dell'allenatore: sta nella card «Precedenti»
+                    # (una prima stesura lo pubblicava lì, attribuendolo all'allenatore).
+                    checks += 1
+                    atteso_c19 = None
+                    if coach and not lu19.empty:
+                        cur19 = ct.iloc[-1].player_id if not ct.empty else None
+                        if cur19 is not None and not pd.isna(cur19):
+                            sue19 = lu19[(lu19.role == "coach")
+                                         & (lu19.player_id == cur19)]
+                            fxi19 = fx19.drop_duplicates("match_id").set_index("match_id") \
+                                if not fx19.empty else fx19
+                            n_a = w_a = d_a = l_a = 0
+                            for r in sue19.itertuples(index=False):
+                                if (r.match_id not in fxi19.index or pd.isna(r.team_id)
+                                        or pd.isna(r.match_id)):
+                                    continue
+                                g19 = fxi19.loc[r.match_id]
+                                if (str(g19.status) != "finished"
+                                        or pd.isna(g19.home_goals) or pd.isna(g19.away_goals)
+                                        or pd.Timestamp(g19.utc_kickoff) >= kickoff):
+                                    continue
+                                casa = int(r.team_id) == int(g19.home_id)
+                                if (int(g19.away_id) if casa else int(g19.home_id)) != oid:
+                                    continue
+                                gf, ga = ((g19.home_goals, g19.away_goals) if casa
+                                          else (g19.away_goals, g19.home_goals))
+                                n_a += 1
+                                if gf > ga:
+                                    w_a += 1
+                                elif gf == ga:
+                                    d_a += 1
+                                else:
+                                    l_a += 1
+                            if n_a:
+                                atteso_c19 = (
+                                    f"da allenatore contro {oname}: 1 gara nel nostro "
+                                    f"archivio ({w_a}V {d_a}N {l_a}P)" if n_a == 1 else
+                                    f"da allenatore contro {oname}: {n_a} gare nel nostro "
+                                    f"archivio ({w_a}V {d_a}N {l_a}P)")
+                    if atteso_c19 is None:
+                        if f"da allenatore contro {oname}" in cella_all:
+                            fails.append(f"{pg.name}: bilancio allenatore ({tname}) presente "
+                                         f"senza gare reali nei Parquet")
+                        if f"bilancio con {oname} nel nostro archivio" in cella_all:
+                            fails.append(f"{pg.name}: bilancio dei due club attribuito "
+                                         f"all'allenatore ({tname})")
+                    elif atteso_c19 not in cella_all:
+                        fails.append(f"{pg.name}: bilancio allenatore ({tname}) "
+                                     f"«{atteso_c19}» assenti o diversi")
+                    # incroci in panchina: precedenti tra i due **allenatori** — gare in cui
+                    # si sono trovati su panchine opposte, qualsiasi club, prima di questa
+                    # (`docs/78` §7). Ricalcolo indipendente dalle distinte del Parquet.
+                    checks += 1
+                    opp19 = None
+                    occ19 = co19[(co19.team_id == oid) & (co19.ko <= kickoff)] if not co19.empty else co19
+                    if not occ19.empty:
+                        opp19 = occ19.sort_values("ko", kind="stable").iloc[-1]
+                    atteso_inc = None
+                    if coach and opp19 is not None and not pd.isna(opp19.player_id):
+                        cur19 = co19[(co19.team_id == tid) & (co19.ko <= kickoff)] \
+                            .sort_values("ko", kind="stable").iloc[-1].player_id
+                        if not pd.isna(cur19):
+                            lc19 = co19[co19.ko < kickoff]
+                            miei19 = lc19[lc19.player_id == cur19]
+                            suoi19 = lc19[lc19.player_id == opp19.player_id]
+                            mm19 = []
+                            for m19 in set(miei19["match_id"]) & set(suoi19["match_id"]):
+                                t1 = set(miei19.loc[miei19.match_id == m19, "team_id"])
+                                t2 = set(suoi19.loc[suoi19.match_id == m19, "team_id"])
+                                if t1 and t2 and not (t1 & t2):
+                                    mm19.append(m19)
+                            w19i = d19i = l19i = 0
+                            if mm19 and not fin19.empty:
+                                gg19 = fin19[(fin19.match_id.isin(mm19)) & (fin19.ko < kickoff)]
+                                for r in gg19.itertuples(index=False):
+                                    tm19 = set(miei19.loc[miei19.match_id == r.match_id,
+                                                         "team_id"])
+                                    gf19, ga19 = ((r.home_goals, r.away_goals)
+                                                  if r.home_id in tm19
+                                                  else (r.away_goals, r.home_goals))
+                                    if pd.isna(gf19) or pd.isna(ga19):
+                                        continue
+                                    if gf19 > ga19:
+                                        w19i += 1
+                                    elif gf19 == ga19:
+                                        d19i += 1
+                                    else:
+                                        l19i += 1
+                            n19i = w19i + d19i + l19i
+                            if n19i:
+                                nome19 = str(opp19.player_name)
+                                atteso_inc = (
+                                    f"un solo incrocio in panchina con {nome19}: "
+                                    f"{w19i}V {d19i}N {l19i}P" if n19i == 1 else
+                                    f"incroci in panchina con {nome19}: "
+                                    f"{w19i}V {d19i}N {l19i}P su {n19i} gare")
+                    if atteso_inc is None:
+                        if "incrocio in panchina con" in cella_all \
+                                or "incroci in panchina con" in cella_all:
+                            fails.append(f"{pg.name}: incroci in panchina ({tname}) presenti "
+                                         f"senza un precedente reale nei Parquet")
+                    elif atteso_inc not in cella_all:
+                        fails.append(f"{pg.name}: incroci in panchina ({tname}) "
+                                     f"«{atteso_inc}» assenti o diversi")
+                # --- posta in gioco e classifica (ricalcolo indipendente) ---
+                cella_st = (righe19.get("Posta in gioco") or ["", ""])[lato]
+                if sr is not None:
                     checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
                     if raw_top is None or pd.isna(raw_top):
                         raw_top = getattr(sr, "p_top4", None)
                     raw_n = getattr(sr, "top_n", None)
                     top_n = 4 if raw_n is None or pd.isna(raw_n) else int(raw_n)
-                    pt = round(float(sr.p_title) * 100)
-                    pe = None if raw_top is None or pd.isna(raw_top) else round(float(raw_top) * 100)
-                    pr = round(float(sr.p_rel) * 100)
+                    pt = mc_percent_str(float(sr.p_title))
+                    pe = None if raw_top is None or pd.isna(raw_top) else mc_percent_str(float(raw_top))
+                    pr = mc_percent_str(float(sr.p_rel))
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
-                    if atteso not in txt or f"salvezza {pr}%" not in txt:
+                    if atteso not in cella_st or f"retrocessione {pr}%" not in cella_st:
                         fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
-                    lab = ("corsa al titolo" if float(sr.p_title) >= 0.15 else
-                           ("corsa alla Champions" if top_n < 4 else "corsa all'Europa")
-                           if raw_top is not None and not pd.isna(raw_top) and float(raw_top) >= 0.35 else
-                           "lotta salvezza" if float(sr.p_rel) >= 0.35 else
-                           "zona salvezza non lontana" if float(sr.p_rel) >= 0.15 else
-                           "stagione di metà classifica")
-                    if lab not in txt:
+                    checks += 1
+                    if float(sr.p_title) >= 0.15:
+                        lab = "corsa al titolo"
+                    elif raw_top is not None and not pd.isna(raw_top) and float(raw_top) >= 0.35:
+                        lab = "corsa alla Champions"
+                    elif float(sr.p_rel) >= 0.35:
+                        lab = "lotta salvezza"
+                    elif float(sr.p_rel) >= 0.15:
+                        lab = "zona salvezza non lontana"
+                    else:
+                        lab = (f"proiezione: {str(round(float(sr.pos_mean), 1)).replace('.', ',')}"
+                               f"º posto in media")
+                    if lab not in cella_st:
                         fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
+                    # «stima di fine stagione»: punti attesi (e posizione media quando
+                    # l'etichetta non la pubblica già), dai Parquet della simulazione
+                    checks += 1
+                    _ep19, _pm19 = getattr(sr, "exp_points", None), getattr(sr, "pos_mean", None)
+                    if _ep19 is not None and _pm19 is not None and not pd.isna(_ep19) \
+                            and not pd.isna(_pm19):
+                        _ep_s = f"{float(_ep19):.1f}".replace(".", ",")
+                        atteso_st = (f"stima di fine stagione: {_ep_s} punti attesi"
+                                     if lab.startswith("proiezione:") else
+                                     f"stima di fine stagione: {_ep_s} punti attesi · "
+                                     f"{float(_pm19):.1f}".replace(".", ",") + "º posto in media")
+                        if atteso_st not in cella_st:
+                            fails.append(f"{pg.name}: stima di fine stagione ({tname}) "
+                                         f"«{atteso_st}» assente o diversa")
+                    # controllo incrociato con la pagina Proiezioni: la posizione media compare
+                    # sempre nella cella (nell'etichetta o nella stima), i punti attesi sempre
+                    r_pg = proiez19.get(_canon(str(tname)))
+                    if r_pg:
+                        checks += 1
+                        for nome_num, frase_pg in (
+                                ("titolo", f"titolo {r_pg['titolo']}"),
+                                ("retrocessione", f"retrocessione {r_pg['retro']}"),
+                                ("punti attesi",
+                                 f"stima di fine stagione: {r_pg['ep']} punti attesi"),
+                                ("posizione media", f"{r_pg['pm']}º posto in media")):
+                            if frase_pg not in cella_st:
+                                fails.append(
+                                    f"{pg.name}: {nome_num} di {tname} non torna fra scheda e "
+                                    f"pagina Proiezioni (Proiezioni «{frase_pg}»)")
+                        if r_pg["ucl"] is not None and "UCL (prime" in cella_st:
+                            checks += 1
+                            if f"UCL (prime {top_n}) {r_pg['ucl']}" not in cella_st:
+                                fails.append(
+                                    f"{pg.name}: UCL di {tname} non torna fra scheda e pagina "
+                                    f"Proiezioni (Proiezioni «{r_pg['ucl']}%»)")
+                code19 = _lg19.get(int(fr.league_id)) if not pd.isna(fr.league_id) else None
+                tab19 = (fm19[fm19.league_code == code19].drop_duplicates("team_id")
+                         if code19 and not fm19.empty else fm19.iloc[0:0])
+                riga19 = tab19[tab19.team_id == tid]
+                if not riga19.empty and 'id="panchina"' in html:
+                    r19 = riga19.iloc[0]
+                    n19 = len(tab19)
+                    pts19, gd19, rank19 = int(r19.points), int(r19.goal_diff or 0), int(r19["rank"])
+                    by_rank19 = tab19.set_index("rank")
+                    releg19 = n19 - 2 if n19 == 20 else n19 - 1
+                    pezzi = [f"{rank19}º con {pts19} punt{'o' if pts19 == 1 else 'i'}"]
+                    if releg19 in by_rank19.index and rank19 < releg19:
+                        marg19 = pts19 - int(by_rank19.loc[releg19, "points"])
+                        pezzi.append(
+                            f"{marg19} punt{'o' if marg19 == 1 else 'i'} sopra la zona retrocessione"
+                            if marg19 > 0 else "a pari punti con la zona retrocessione")
+                    elif releg19 - 1 in by_rank19.index:
+                        need19 = int(by_rank19.loc[releg19 - 1, "points"]) - pts19
+                        pezzi.append(
+                            f"{need19} punt{'o' if need19 == 1 else 'i'} dalla salvezza diretta"
+                            if need19 > 0 else "in zona salvezza diretta")
+                    ucl19 = _ucl19.get(code19) if code19 else None
+                    if ucl19 is not None and ucl19 in by_rank19.index:
+                        if rank19 <= ucl19:
+                            pezzi.append(f"in zona UCL (prime {ucl19})")
+                        else:
+                            ge19 = int(by_rank19.loc[ucl19, "points"]) - pts19
+                            pezzi.append(
+                                f"{ge19} punt{'o' if ge19 == 1 else 'i'} dal {ucl19}º posto"
+                                if ge19 > 0 else f"a pari punti col {ucl19}º posto")
+                    checks += 1
+                    atteso_tab = " · ".join(pezzi)
+                    if atteso_tab not in txt:
+                        fails.append(f"{pg.name}: distanze di classifica ({tname}) «{atteso_tab}» "
+                                     f"assenti o diverse")
+
+                    checks += 1
+                    atteso_vir = (
+                        f"con una vittoria {posizione_virtuale(tab19, tid, oid, pts19, gd19, 3, 0)}º · "
+                        f"con un pareggio {posizione_virtuale(tab19, tid, oid, pts19, gd19, 1, 1)}º · "
+                        f"con una sconfitta {posizione_virtuale(tab19, tid, oid, pts19, gd19, 0, 3)}º")
+                    if atteso_vir not in txt:
+                        fails.append(f"{pg.name}: posizione virtuale ({tname}) «{atteso_vir}» "
+                                     f"assente o diversa")
+                # --- età media titolari: dichiarata quando la distinta non c'è ---
+                if not mi19.empty and "home_avg_starter_age" in mi19.columns and card19:
+                    col19 = "home_avg_starter_age" if lato == 0 else "away_avg_starter_age"
+                    info19 = mi19[mi19.match_id == mid]
+                    eta19 = info19.iloc[0].get(col19) if not info19.empty else None
+                    titolari19 = len(lu19[(lu19.match_id == mid) & (lu19.team_id == tid)
+                                          & (lu19.role == "starter")]) if not lu19.empty else 0
+                    checks += 1
+                    cella_eta = (righe19.get("Età media titolari") or ["", ""])[lato]
+                    if eta19 is not None and not pd.isna(eta19):
+                        atteso_eta = f"{round(float(eta19), 1):.1f}".replace(".", ",") + " anni"
+                    else:
+                        atteso_eta = "n.d." if titolari19 else "distinta non ancora pubblicata"
+                    if atteso_eta not in cella_eta:
+                        fails.append(f"{pg.name}: età media titolari ({tname}) «{atteso_eta}» "
+                                     f"attesa, in pagina «{cella_eta[:60]}»")
             if atteso and 'id="panchina"' not in html:
                 fails.append(f"{pg.name}: scheda pre senza sezione panchina pur avendo i dati")
-            # righe «utili» della card (rendimento, precedenti mirati, distacchi, virtuale):
-            # ricalcolate con le funzioni del progetto e confrontate col testo stampato
-            if 'id="panchina"' in html:
-                for tid, tname, oid, oname in (
-                        (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
-                        (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name))):
-                    bd = ma19.bench_deep(tid, tname, oid, oname, kickoff)
-                    if not bd:
-                        continue
-                    for key in ("tenure_line", "coach_ppg_line", "coach_vs_opp_line",
-                                "coach_vs_coach_line", "table_line", "virtual_line"):
-                        val = bd.get(key)
-                        if val:
-                            checks += 1
-                            if val not in txt:
-                                fails.append(f"{pg.name}: riga panchina «{key}» ({tname}) assente o diversa")
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 
@@ -2522,7 +3095,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     if gt:
                         tardi, totale = gt
                         riga = (f"{tname} ha subito {tardi} dei {totale} gol dopo il 75' "
-                                f"(il {round(100 * tardi / totale)}% di quelli presi fin qui).")
+                                f"(il {pct_dichiarata(tardi / totale)}% di quelli presi fin qui).")
                         if riga not in testo_card:
                             fails.append(f"{pg.name}: gol nel finale di {tname[:20]} "
                                          f"assenti o diversi ({tardi}/{totale})")
@@ -3002,6 +3575,194 @@ def check_nav(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+TERNA_TAB = re.compile(r'<td class="r">(\d{1,3}) / (\d{1,3}) / (\d{1,3})</td>')
+TERNA_TESTO = re.compile(r"1 (\d{1,3})% · X (\d{1,3})% · 2 (\d{1,3})%")
+TERNA_DESC = re.compile(r"1 (\d{1,3})% X (\d{1,3})% 2 (\d{1,3})%")
+# riga della tabella «win probability»: minuto, punteggio, poi la terna 1/X/2
+TERNA_WP = re.compile(r"<td class=\"mut small\">\d+'</td>\s*<td>[^<]*</td>\s*"
+                      r"<td class=\"r\">(\d{1,3})%</td>\s*<td class=\"r\">(\d{1,3})%</td>\s*"
+                      r"<td class=\"r\">(\d{1,3})%</td>")
+
+
+def check_terne_1x2(site: Path) -> tuple[list[str], int]:
+    """[47] Le terne 1/X/2 pubblicate devono sommare 100, ovunque compaiano.
+
+    Tre arrotondamenti indipendenti delle stesse probabilità sommano 99 o 101: succedeva su
+    11 righe su 40 della tabella Accuratezza e su 134 occorrenze delle descrizioni SEO su 564
+    (che finiscono su Google, `docs/22`) finché la terna non è passata da `pct_triple`
+    (`docs/78` §14). Le quattro grafie controllate sono quelle che il sito usa davvero: la
+    tabella «Ultime partite valutate», i testi in evidenza di index/prossime, le
+    description/og:description delle schede, e la tabella dell'andamento 1X2 minuto per
+    minuto delle schede (153 righe su 754 rotte prima del fix).
+    """
+    fails: list[str] = []
+    checks = 0
+    n_terne = 0
+    for pg in sorted(site.rglob("*.html")):
+        h = pg.read_text(encoding="utf-8")
+        for pat, dove in ((TERNA_TAB, "tabella"), (TERNA_TESTO, "testo"),
+                          (TERNA_DESC, "descrizione"), (TERNA_WP, "andamento")):
+            for m in pat.finditer(h):
+                n_terne += 1
+                checks += 1
+                somma = sum(int(x) for x in m.groups())
+                if somma != 100:
+                    fails.append(f"{pg.name}: terna 1X2 in {dove} somma {somma} "
+                                 f"({m.group(0)[:44]})")
+    print(f"[47] terne 1/X/2 pubblicate: {n_terne} · tutte sommano 100")
+    return fails, checks
+
+
+# Mercati binari della pagina Accuratezza: etichetta in pagina → colonna della previsione.
+# Scritta a mano (non presa da SiteBuilder.MARKETS): se il generatore cambia una colonna o una
+# soglia, questo controllo deve continuare a misurare la pagina, non seguire il generatore.
+PCT_MERCATI = (
+    ("Over 1,5 gol", "p_over15"),
+    ("Over 2,5 gol", "p_over25"),
+    ("Over 3,5 gol", "p_over35"),
+    ("Gol · entrambe a segno", "p_btts"),
+    ("Doppia chance 1X", "p_1x"),
+    ("Doppia chance 12", "p_12"),
+    ("Doppia chance X2", "p_x2"),
+    ("Porta inviolata casa", "p_home_clean_sheet"),
+    ("Porta inviolata trasferta", "p_away_clean_sheet"),
+)
+
+
+def check_pct_accuratezza(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[48] Le percentuali intere della pagina Accuratezza, ricalcolate dai Parquet.
+
+    Sono le cifre con cui il lettore giudica il modello: l'esito più probabile azzeccato per
+    campionato, le «scelte indovinate» dei nove mercati e la probabilità dell'esito poi
+    verificatosi nella tabella delle ultime partite. Il ricalcolo è scritto qui: la regola
+    dichiarata per le cifre intere (**mezzo in su**, `docs/78` §15, non `round()`), la soglia
+    del mercato binario (probabilità ≥ 0,5), e gli eventi osservati dai gol (over = totale
+    oltre la soglia, btts, doppie chance, porta inviolata). L'hit per campionato è l'identità
+    che il lettore può rifare a mano: esito più probabile = esito vero, contato sulle stesse
+    gare valutate della pagina. Il campione (ultima previsione prima del fischio) viene dai
+    Parquet, quindi il controllo è misto; la cifra no.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from fda.config import leagues
+    from fda.store import Store
+
+    fails: list[str] = []
+    checks = 0
+    pag = site / "accuratezza.html"
+    if not pag.is_file():
+        return fails, checks
+    h = pag.read_text(encoding="utf-8")
+    st = Store(data) if data else Store()
+    preds, fx = st.read("predictions"), st.read("fixtures")
+    if preds.empty or fx.empty or "status" not in fx.columns:
+        return fails, checks
+    fin = fx[fx.status == "finished"][["match_id", "home_goals", "away_goals", "utc_kickoff",
+                                        "league_id"]]
+    p = preds.merge(fin, on="match_id", suffixes=("", "_fx"))
+    inizio = "utc_kickoff_fx" if "utc_kickoff_fx" in p.columns else "utc_kickoff"
+    p = p[p.made_at < p[inizio]]
+    p = p.sort_values("made_at").groupby("match_id").tail(1)
+    if p.empty:
+        return fails, checks
+    p["outcome"] = [0 if int(hg) > int(ag) else (1 if int(hg) == int(ag) else 2)
+                    for hg, ag in zip(p.home_goals, p.away_goals)]
+    probs = p[["p_home", "p_draw", "p_away"]].to_numpy(dtype=float)
+    p["hit"] = probs.argmax(axis=1) == p["outcome"].to_numpy()
+    p["p_real"] = probs[np.arange(len(p)), p["outcome"].to_numpy()]
+    nomi = {lg.fotmob_id: lg.name for lg in leagues()}
+    p["lega"] = p.league_id.map(nomi)
+
+    # A) righe per campionato: «Partite valutate» e «Esito più probabile azzeccato»
+    riga_re = re.compile(r'<tr[^>]*><td>([^<]+)</td><td class="r">(\d+)</td><td class="r">[\d.,]+</td>'
+                         r'<td class="r">[\d,]+</td><td class="r">[\d,]+</td><td class="r">(\d+)%</td>')
+    n_camp = 0
+    for m in riga_re.finditer(h):
+        nome, n_st, hit_st = m.group(1), int(m.group(2)), int(m.group(3))
+        gruppo = p if nome == "Tutti" else p[p.lega == nome]
+        if gruppo.empty:
+            fails.append(f"accuratezza.html: riga «{nome}» senza gare nel ricalcolo")
+            continue
+        n_camp += 1
+        checks += 2
+        if n_st != len(gruppo):
+            fails.append(f"accuratezza.html: {nome} «{n_st} partite valutate» vs {len(gruppo)} "
+                         "dai Parquet (ultima previsione prima del fischio)")
+        atteso = pct_dichiarata(float(gruppo["hit"].mean()))
+        if hit_st != atteso:
+            fails.append(f"accuratezza.html: {nome} esito azzeccato {hit_st}% vs ricalcolato "
+                         f"{atteso}% ({int(gruppo['hit'].sum())}/{len(gruppo)})")
+
+    # B) nove mercati: «gare», «(k/n)» e «scelte indovinate»
+    blocco = re.search(r"Accuratezza per mercato(.*?)</table>", h, re.DOTALL)
+    totale = (p.home_goals.astype(float) + p.away_goals.astype(float)).to_numpy()
+    soli_home, soli_away = p.home_goals.astype(float).to_numpy(), p.away_goals.astype(float).to_numpy()
+    osservati = {
+        "p_over15": totale > 1.5, "p_over25": totale > 2.5, "p_over35": totale > 3.5,
+        "p_btts": (soli_home > 0) & (soli_away > 0),
+        "p_1x": soli_home >= soli_away, "p_12": soli_home != soli_away, "p_x2": soli_home <= soli_away,
+        "p_home_clean_sheet": soli_away == 0, "p_away_clean_sheet": soli_home == 0}
+    n_merc = 0
+    if blocco:
+        righe = {lab.strip(): corpo for lab, corpo in
+                 re.findall(r"<tr><td>([^<]+)</td>(.*?)</tr>", blocco.group(1), re.DOTALL)}
+        for lab, col in PCT_MERCATI:
+            corpo = righe.get(lab)
+            if corpo is None:
+                fails.append(f"accuratezza.html: riga di mercato «{lab}» assente")
+                continue
+            celle = [re.sub(r"<[^>]+>", "", c) for c in re.findall(r"<td[^>]*>(.*?)</td>", corpo, re.DOTALL)]
+            if len(celle) < 9 or col not in p.columns:
+                fails.append(f"accuratezza.html: riga di mercato «{lab}» inattesa")
+                continue
+            n_merc += 1
+            pr = pd.to_numeric(p[col], errors="coerce").to_numpy(dtype=float)
+            ok = ~np.isnan(pr)
+            y = osservati[col][ok]
+            # la riga dopo lo <td> dell'etichetta: gare, previsto, osservato (k/n), intervallo,
+            # Brier, Brier base, Δ, scelte indovinate, segnale
+            n_st, mkn = int(celle[0]), re.search(r"\((\d+)/(\d+)\)", celle[2])
+            hit_st = int(celle[7].strip().rstrip("%"))
+            checks += 3
+            if n_st != int(ok.sum()):
+                fails.append(f"accuratezza.html: {lab} «{n_st} gare» vs {int(ok.sum())} con "
+                             "probabilità pubblicata")
+            if mkn:
+                k_st, n_kn = int(mkn.group(1)), int(mkn.group(2))
+                if k_st != int(y.sum()) or n_kn != int(ok.sum()):
+                    fails.append(f"accuratezza.html: {lab} «({k_st}/{n_kn})» vs "
+                                 f"{int(y.sum())}/{int(ok.sum())} osservati dai gol")
+            atteso = pct_dichiarata(float(((pr[ok] >= 0.5) == y).mean()))
+            if hit_st != atteso:
+                fails.append(f"accuratezza.html: {lab} scelte indovinate {hit_st}% vs ricalcolato "
+                             f"{atteso}%")
+
+    # C) tabella «Ultime partite valutate»: la probabilità dell'esito poi verificatosi
+    rec_re = re.compile(r'<tr><td class="mut">[\d/]+</td>'
+                        r'<td><a href="[^"]*?partite/(\d+)\.html">[^<]*</a></td>'
+                        r'<td class="c">(\d+)-(\d+)</td>\s*'
+                        r'<td class="r">\d+ / \d+ / \d+</td>\s*<td class="c">.*?</td>\s*'
+                        r'<td class="r">[\d,]+</td>\s*<td class="r">(\d+)%</td></tr>')
+    per_id = p.set_index("match_id")
+    n_rec = 0
+    for m in rec_re.finditer(h):
+        mid, hit_st = int(m.group(1)), int(m.group(4))
+        if mid not in per_id.index:
+            fails.append(f"accuratezza.html: partita {mid} nella tabella ma non fra le valutate")
+            continue
+        n_rec += 1
+        checks += 1
+        atteso = pct_dichiarata(float(per_id.loc[mid, "p_real"]))
+        if hit_st != atteso:
+            fails.append(f"accuratezza.html: {mid} p_real {hit_st}% vs ricalcolato {atteso}% "
+                         f"({float(per_id.loc[mid, 'p_real']) * 100:.4f}%)")
+
+    print(f"[48] percentuali intere di Accuratezza ricalcolate: {n_camp} campionati · "
+          f"{n_merc} mercati · {n_rec} partite")
+    return fails, checks
+
+
 def check_assets(site: Path) -> tuple[list[str], int]:
     """[29] CSS esterno (docs/19 P0.5): link giusto in ogni pagina, zero <style> inline.
 
@@ -3439,7 +4200,7 @@ def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
         if mid not in info.index:
             continue
         n += 1
-        testo = re.sub(r"<[^>]+>", " ", html_unescape(m.group(1)))
+        testo = html_unescape(re.sub(r"<[^>]+>", " ", m.group(1)))
         testo = re.sub(r"\s+", " ", testo).strip()
         r = info.loc[mid]
         if isinstance(r, pd.DataFrame):
@@ -3569,9 +4330,9 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: riga dei Fattori con {len(celle)} colonne invece di 4")
                 continue
             for k, c in enumerate(celle):
-                if not re.sub(r"<[^>]+>", "", html_unescape(c)).strip():
+                if not html_unescape(re.sub(r"<[^>]+>", "", c)).strip():
                     fails.append(f"{pg.name}: riga dei Fattori con la colonna {k + 1} vuota")
-            etichetta = re.sub(r"<[^>]+>", "", html_unescape(r)).strip()
+            etichetta = html_unescape(re.sub(r"<[^>]+>", "", r)).strip()
             nome = next((x for x in FACTOR_ROWS_AMMESSE if x in etichetta), None)
             if nome is None:
                 fails.append(f"{pg.name}: riga dei Fattori con etichetta fuori standard "
@@ -3581,7 +4342,7 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
             # le medie di stagione devono dichiarare il campione nelle **celle** (non nel ⓘ, che
             # parla sempre di «gara»): senza, un PPDA su 4 gare sembra solido come uno su 30
             if nome in FACTOR_ROWS_CAMPIONE:
-                celle_txt = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(c)) for c in celle[:2])
+                celle_txt = " ".join(html_unescape(re.sub(r"<[^>]+>", " ", c)) for c in celle[:2])
                 checks += 1
                 if not re.search(r"\d+ gare?\)?|n\.d\.", celle_txt):
                     fails.append(f"{pg.name}: riga «{nome}» senza il numero di gare nelle celle")
@@ -3597,10 +4358,10 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
         checks += 1
         m = re.search(r"Sotto soglia o non calcolabile, non in tabella \(casa e ospite\): (.*?)\.</p>",
                       sec, re.DOTALL)
-        sotto = re.sub(r"<[^>]+>", " ", html_unescape(m.group(1))) if m else ""
+        sotto = html_unescape(re.sub(r"<[^>]+>", " ", m.group(1))) if m else ""
         # solo le **righe** contano come «in tabella»: la riga introduttiva nomina tutte le soglie
         # (quindi tutti e quattro i fattori) e non può valere come presenza del fattore
-        tabella = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(r)).lower() for r in righe)
+        tabella = " ".join(html_unescape(re.sub(r"<[^>]+>", " ", r)).lower() for r in righe)
         for kw, etichetta in FACTOR_KEYWORDS:
             checks += 1
             if etichetta.lower() not in tabella and kw not in sotto.lower():
@@ -4217,7 +4978,6 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
     import pandas as pd
 
     from fda.site.analysis import MatchAnalysis
-    from fda.site.fmt import pct_triple
     from fda.store import Store
 
     fails: list[str] = []
@@ -4303,9 +5063,11 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: λ di partenza del card {m.group(1)}/{m.group(2)} ≠ "
                          f"previsione salvata {lh:.2f}/{la:.2f}")
         base_pub = [int(m.group(3)), int(m.group(4)), int(m.group(5))]
-        base_calc = list(pct_triple(_lab_1x2(lh, la, rho), 0))
-        if base_pub != base_calc:
-            fails.append(f"{pg.name}: 1X2 di partenza del card {base_pub} ≠ ricalcolato {base_calc}")
+        base_grezzi = _lab_1x2(lh, la, rho)          # griglia del modello, come il generatore
+        if not terna_valida(base_grezzi, 0, base_pub):
+            fails.append(f"{pg.name}: 1X2 di partenza del card {base_pub} non è un arrotondamento "
+                         f"legittimo di {[round(v, 4) for v in base_grezzi]} "
+                         f"(riferimento {terna_indip(base_grezzi)})")
 
         kickoff = riga_fx.utc_kickoff
         previsti = {
@@ -4352,11 +5114,11 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
                              f"≠ ricalcolato {lh2:.2f}/{la2:.2f} (k={k})")
                 continue
             pub = [int(riga.group(6)), int(riga.group(7)), int(riga.group(8))]
-            calc = list(pct_triple(_lab_1x2(lh2, la2, rho), 0))
+            grezzi2 = _lab_1x2(lh2, la2, rho)
             checks += 1
-            if pub != calc:
-                fails.append(f"{pg.name}: {idea}, 1X2 {pub} ≠ ricalcolato {calc} "
-                             f"(λ {lh2:.2f}/{la2:.2f}, k={k})")
+            if not terna_valida(grezzi2, 0, pub):
+                fails.append(f"{pg.name}: {idea}, 1X2 {pub} non è un arrotondamento legittimo "
+                             f"(riferimento {terna_indip(grezzi2)}, λ {lh2:.2f}/{la2:.2f}, k={k})")
             # ---- seconda coppia: lo stesso what-if con la costante dichiarata nel codice,
             #      pubblicata sotto per confronto (`docs/74` §10). Se manca in pagina ma il
             #      k dichiarato esiste (o viceversa), la riga non racconta la stessa regola.
@@ -4373,11 +5135,12 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
                                  f"(k={k_decl})")
                 else:
                     q = [int(riga.group(11)), int(riga.group(12)), int(riga.group(13))]
-                    q_calc = list(pct_triple(_lab_1x2(lh3, la3, rho), 0))
+                    grezzi3 = _lab_1x2(lh3, la3, rho)
                     checks += 1
-                    if q != q_calc:
-                        fails.append(f"{pg.name}: {idea}, 1X2 di confronto {q} "
-                                     f"≠ ricalcolato {q_calc} (k={k_decl})")
+                    if not terna_valida(grezzi3, 0, q):
+                        fails.append(f"{pg.name}: {idea}, 1X2 di confronto {q} non è un "
+                                     f"arrotondamento legittimo (riferimento "
+                                     f"{terna_indip(grezzi3)}, k={k_decl})")
             elif k_decl is not None and ih_a is not None:
                 fails.append(f"{pg.name}: {idea}: manca il confronto con il k dichiarato "
                              f"({k_decl}) pubblicato accanto al what-if")
@@ -4672,6 +5435,12 @@ def main() -> int:
         assets, asset_checks = check_assets(site)
         fails += assets
         checks += asset_checks
+        terne, terne_checks = check_terne_1x2(site)
+        fails += terne
+        checks += terne_checks
+        pctacc, pctacc_checks = check_pct_accuratezza(site, Path(args.data) if args.data else None)
+        fails += pctacc
+        checks += pctacc_checks
 
     # riepilogo per tipo: il prefisso è ciò che segue «<pagina>: ». Un messaggio senza «: »
     # (ne è arrivato uno il 2026-10-08) faceva cadere il gate **dopo** i controlli, nascondendo
@@ -4685,6 +5454,10 @@ def main() -> int:
         for f in fails[:40]:
             print("  -", f)
         return 1
+    conta = Counter(categoria for categoria, _ in ORACOLI.values())
+    print(f"oracoli ({len(ORACOLI)} controlli dichiarati): {conta['I']} indipendenti · "
+          f"{conta['M']} misti · {conta['S']} specchi — l'oracolo dei modelli sono i loro test "
+          f"(tests/test_models.py, test_season_sim.py, test_advanced.py)")
     print(f"nessun problema · {checks} controlli numerici superati")
     return 0
 
