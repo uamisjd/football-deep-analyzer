@@ -539,6 +539,22 @@ def test_bench_deep_zona_retrocessione_e_nationalita(analysis):
     assert r["coach_ppg_line"] == "1,0 punti/gara su 3 gare finite"
 
 
+def test_stakes_arrotonda_come_proiezioni_non_col_banker(analysis):
+    """`docs/78` §12: stessa convenzione della pagina Proiezioni (`mc_percent`, mezzo in su).
+
+    Con il `round()` di Python (banker's rounding) 0,5% diventava «0%» e 62,5% «62%», mentre
+    Proiezioni stampava «1%» e «63%»: quattro numeri diversi fra le due pagine nella build
+    del 2026-10-11.
+    """
+    from fda.models.season_sim import mc_percent
+    analysis.season_sim = SIM.assign(p_title=[0.005, 0.625], p_rel=[0.625, 0.005])
+    s = analysis.stakes("Inter")
+    assert round(0.005 * 100) != mc_percent(0.005)      # il vecchio comportamento differiva
+    assert s["p_title_pct"] == 1 and s["p_rel_pct"] == 63
+    r = analysis.stakes("Roma")
+    assert r["p_title_pct"] == 63 and r["p_rel_pct"] == 1
+
+
 def test_bench_deep_etichetta_champions_e_proiezione(analysis):
     """`docs/78` §2: l'etichetta segue il numero pubblicato, non un aggettivo di posizione.
 

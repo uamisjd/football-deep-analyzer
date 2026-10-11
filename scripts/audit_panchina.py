@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from fda.models.season_sim import mc_percent
+
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "partite"
 DATA = ROOT / "data" / "processed"
@@ -269,8 +271,8 @@ def main() -> int:
                 agg["stakes_senza_simulazione"] += int("(simulazione stagione)" in c_st)
             else:
                 r = sm.iloc[0]
-                pct = (f"titolo {round(float(r.p_title) * 100)}%",
-                       f"retrocessione {round(float(r.p_rel) * 100)}%")
+                pct = (f"titolo {mc_percent(float(r.p_title))}%",
+                       f"retrocessione {mc_percent(float(r.p_rel))}%")
                 if pct[0] in c_st and pct[1] in c_st:
                     agg["stakes_pct"] += 1
                 else:

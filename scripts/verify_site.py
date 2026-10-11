@@ -2324,6 +2324,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # che stanno *dentro* la funzione: la posizione virtuale che dimenticava i punti
     # dell'avversaria è passata [19] per 36 celle su 208 fino al 2026-10-11 (docs/78 §1).
     from fda.config import leagues as _leagues19
+    from fda.models.season_sim import mc_percent
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
@@ -2559,9 +2560,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         raw_top = getattr(sr, "p_top4", None)
                     raw_n = getattr(sr, "top_n", None)
                     top_n = 4 if raw_n is None or pd.isna(raw_n) else int(raw_n)
-                    pt = round(float(sr.p_title) * 100)
-                    pe = None if raw_top is None or pd.isna(raw_top) else round(float(raw_top) * 100)
-                    pr = round(float(sr.p_rel) * 100)
+                    pt = mc_percent(float(sr.p_title))
+                    pe = None if raw_top is None or pd.isna(raw_top) else mc_percent(float(raw_top))
+                    pr = mc_percent(float(sr.p_rel))
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
                     if atteso not in txt or f"retrocessione {pr}%" not in txt:

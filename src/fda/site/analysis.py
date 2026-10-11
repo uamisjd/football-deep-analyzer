@@ -25,6 +25,7 @@ from scipy.stats import poisson
 
 from ..config import leagues, load_leagues_config
 from ..models.predict import EloModel, wilson_interval
+from ..models.season_sim import mc_percent
 from ..sources.news import (
     TOPIC_LABELS,
     TOPIC_WEIGHTS,
@@ -1792,12 +1793,16 @@ class MatchAnalysis:
             # 101 fuori dall'intervallo 7ª–13ª, `docs/78` §2) va il numero della
             # simulazione, lo stesso «Media pos.» della pagina Proiezioni.
             label = f"proiezione: {str(round(float(r.pos_mean), 1)).replace('.', ',')}º posto in media"
-        p_e_pct = None if p_e is None else round(p_e * 100)
+        # Stessa convenzione della pagina Proiezioni (`mc_percent`: mezzo in su, mai il
+        # banker's rounding di Python). Con `round()` 0,5% diventava «0%» e 62,5% «62%»
+        # mentre Proiezioni stampava «1%» e «63%»: 4 numeri diversi fra le due pagine
+        # nella build del 2026-10-11 (`docs/78` §12).
+        p_e_pct = None if p_e is None else mc_percent(p_e)
         return {"p_title": p_t, "p_top_n": p_e, "p_top4": p_e, "p_rel": p_r,
                 "ucl_spots": top_n, "ucl_legacy": legacy_top,
-                "p_title_pct": round(p_t * 100),
+                "p_title_pct": mc_percent(p_t),
                 "p_top_n_pct": p_e_pct, "p_top4_pct": p_e_pct,
-                "p_rel_pct": round(p_r * 100),
+                "p_rel_pct": mc_percent(p_r),
                 "pos_mean": float(r.pos_mean), "exp_points": float(r.exp_points),
                 "label": label, "played": int(r.played)}
 
