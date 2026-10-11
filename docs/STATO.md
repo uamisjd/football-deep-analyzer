@@ -77,6 +77,27 @@ Gate su build #8: **601 test**, `ruff` pulito, `verify_site` **233.836 · 0**, a
 **0 scostamenti · 0 silenzi**, `parita_schede` **82 · nessuna differenza**, `resa_375`
 **28.467 · 0**.
 
+**Revisione indipendente (docs/78 §13, build #9).** Su richiesta dell'utente («revisiona e
+verifica che sia tutto corretto») la card è stata riletta e poi **provata a romperla** con 13
+mutazioni deliberate. Quattro difetti veri: (1) «>99%» era pubblicato da 2 celle (UCL di
+Barcellona e Bayern) **senza essere spiegato** da nessuna parte — ora la convenzione è nel
+tooltip, nella nota della card e nell'introduzione della pagina Proiezioni, che non spiegava
+nemmeno «<1»; (2) la card formattava la posizione media con `round()` e la pagina Proiezioni
+con `dec(1)` — due strade per la stessa cifra, ora una sola; (3) il gate [19] ricalcolava
+l'etichetta con la stessa espressione del generatore, quindi una divergenza fra le due pagine
+sarebbe passata inosservata **per costruzione** — ora legge la pagina Proiezioni resa e la
+confronta cella per cella (+326 controlli); (4) le verifiche cercavano i numeri in tutta la
+pagina invece che nella cella di quella squadra. Corretti anche: l'audit delle date che usava
+UTC invece del fuso display, il gate [19] che unescappava prima di tagliare i tag (le 81
+celle-squadra con «<1%» illeggibili), e — trovato così — **un difetto di produzione**: la
+matrice dei risultati esatti scriveva `<1` crudo nell'HTML (815 celle) e un tooltip `(<5 gare)`
+crudo in un attributo, 823 occorrenze su 262 pagine: i browser le recuperano, gli strumenti no.
+Ora sono `&lt;1`, con un guardiano permanente in `verify_site`. Il conteggio dei valori «<1%»
+scritto nel §12 era 47: sbagliato (contavo una cella per pagina), quello giusto è **90** più 2
+«>99%», e vive nell'audit. Gate su build #9: **604 test**, `ruff` pulito, `verify_site`
+**234.162 · 0**, audit panchina **0 scostamenti · 0 silenzi**, `parita_schede` **82 · nessuna
+differenza**, `resa_375` **28.467 · 0**.
+
 Gate rifatti dopo l'ultima modifica: **598 test**, Ruff pulito, build **493 schede**,
 `verify_site` **233.508 · 0** (nuove invarianti: niente card su una gara che il calendario dà
 finita; il bilancio dei club mai nella cella dell'allenatore), audit panchina **0 scostamenti ·

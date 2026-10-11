@@ -5,7 +5,7 @@
     dichiarata nella descrizione per chi usa un lettore di schermo. Prima la serie si leggeva solo
     scorrendo fino all'analisi o alla card della squadra. Solo a gara non ancora giocata: a
     risultato acquisito l'hero racconta la partita, non l'attesa. -#}
-{% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta){% if f.n < 5 %} — campione ridotto (<5 gare), lettura provvisoria{% endif %}"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span>{% if f.n < 5 %}<span class="small mut" title="meno di 5 gare: forma provvisoria"> ⚠</span>{% endif %}</span>{% endif %}{% endmacro %}
+{% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta){% if f.n < 5 %} — campione ridotto (&lt;5 gare), lettura provvisoria{% endif %}"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span>{% if f.n < 5 %}<span class="small mut" title="meno di 5 gare: forma provvisoria"> ⚠</span>{% endif %}</span>{% endif %}{% endmacro %}
 {% block content %}
 {% set p = c.prediction %}
 {#- docs/77: il punteggio nell'hero esce solo se lo stato lo giustifica (finale, in corso,
@@ -1050,7 +1050,7 @@
       <tr>
         <th scope="row" aria-label="Gol {{ c.home_name }} {{ row[0].i }}">{{ row[0].i }}</th>
         {% for cell in row %}
-        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }});font-variant-numeric:tabular-nums" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) if cell.p*100 >= 0.05 else 'meno di 0,1' }}%{% if cell.p*100 < 0.05 %} (così raro che su 100 partite non ne riempie una){% endif %}">{% if cell.p*100 < 0.05 %}<1{% else %}{{ (cell.p*100)|dec(1) }}{% endif %}</td>
+        <td{% if cell.mode %} class="mode"{% endif %} style="background:rgba(40,200,147,{{ cell.op }});font-variant-numeric:tabular-nums" title="{{ cell.i }}-{{ cell.j }} · {{ (cell.p*100)|dec(1) if cell.p*100 >= 0.05 else 'meno di 0,1' }}%{% if cell.p*100 < 0.05 %} (così raro che su 100 partite non ne riempie una){% endif %}">{% if cell.p*100 < 0.05 %}&lt;1{% else %}{{ (cell.p*100)|dec(1) }}{% endif %}</td>
         {% endfor %}
       </tr>
       {% endfor %}

@@ -287,9 +287,13 @@ tooltip (contatore `tooltip_posta_in_gioco` dell'audit, con 0 celle mancanti).
 «impossibile», e non lo è. Convenzione allineata a tutta la scheda: un valore **non nullo sotto
 il mezzo punto** si dichiara **«<1%»**; sopra **99,5%** si dichiara **«>99%»**; lo **zero vero**
 resta «0%» e il 100% resta «100%». Nella pagina Proiezioni la colonna porta la stessa
-convenzione (nota aggiornata). Misura su build #8: **47 valori «<1%» pubblicati** in 82 celle
-(titolo 14 · UCL 24 · retrocessione 9); nessun valore non nullo mascherato da «0%»; le celle
-interamente a zero restano oneste («titolo 0% · UCL (prime 1) 0%», §11).
+convenzione (nota aggiornata nella revisione, §13). Misura su build #9, cella per cella:
+**90 valori «<1%» pubblicati** su 164 celle-squadra con la riga dei numeri (titolo 30 ·
+retrocessione 16 · UCL 45: prime 4 → 27, prime 2 → 10, prime 3 → 7) e **2 «>99%»**
+(UCL prime 4); nessun valore non nullo mascherato da «0%»; le celle interamente a zero
+restano oneste («titolo 0% · UCL (prime 1) 0%», §11). Il primo conteggio scritto qui diceva
+47: era un conteggio sbagliato (una cella per pagina invece di due — la regex prendeva solo
+la prima `<td>` della riga), non un numero della build; vedi §13.
 
 **C) Contesto dell'allenatore: come gioca e da quando.** La cella diceva *quanto* rende
 (punti/gara) ma non *da quando* né *come*. Ora la permanenza è datata — «panchina invariata da
@@ -318,3 +322,77 @@ pulito; `parita_schede` 82 schede · struttura identica · nessuna differenza; `
 **28.467 · 0**. Un difetto dello strumento trovato qui: l'audit unescappava le entità **prima**
 di togliere i tag, quindi «&lt;1» diventava «<1» e veniva mangiato dal tag successivo (79 falsi
 scostamenti): ora i tag si tolgono prima delle entità.
+
+## §13 — Revisione indipendente dei potenziamenti (richiesta dell'utente, 2026-10-11)
+
+Richiesta: «ok revisiona e verifica che sia tutto corretto». La revisione è stata fatta a
+mano sul codice, poi provando a **romperlo**: 13 mutazioni deliberate (una per volta, su
+copia ripristinata) per vedere se i test e i gate se ne accorgevano. Quattro difetti veri e
+sei difetti dei miei stessi strumenti.
+
+**Difetti trovati e corretti (build #9 → commit `608c0b2` + questo).**
+
+1. **«>99%» pubblicato senza spiegazione.** Due celle lo stampavano già — UCL prime 4 di
+   Barcellona (p 0,9999) e Bayern (0,9993) — mentre tooltip e note spiegavano solo «<1». È
+   esattamente la classe di difetto che il §12 è nato per togliere (un simbolo a schermo che
+   nessuno spiega): ora la convenzione è nel tooltip della card, nella nota della card e
+   nell'introduzione della pagina Proiezioni, che **non la diceva nemmeno per «<1»** (il §12
+   la dava per «nota aggiornata»: non lo era, era una mia affermazione non verificata).
+2. **Due strade per la stessa cifra.** La card formattava la posizione media con `round()` di
+   Python, la pagina Proiezioni con `dec(1)`: nessuna divergenza oggi su 132 valori (misurato:
+   `round(x,1)` e `f"{x:.1f}"` coincidono su tutti i 132, e su 200.000 valori casuali), ma è
+   la struttura che ha prodotto i 4 numeri diversi del §12. Ora c'è una sola funzione.
+3. **L'oracolo si controllava da solo.** Il gate [19] ricalcolava l'etichetta «proiezione:»
+   con la stessa espressione del generatore: una divergenza card↔Proiezioni sarebbe passata
+   inosservata *per costruzione*. Ora [19] legge **la pagina Proiezioni resa** e confronta
+   cella contro cella (titolo, UCL, retrocessione, punti attesi, posizione media): +326
+   controlli incrociati a ogni gate (233.836 → 234.162).
+4. **Le verifiche cercavano i numeri in tutta la pagina**, non nella cella di quella squadra:
+   un nome di squadra non riconosciuto dalla simulazione (o un numero finito nella cella
+   dell'avversaria) non sarebbe stato visto. Ora ogni confronto è sulla cella del suo lato.
+
+**Difetti degli strumenti (i più pericolosi: rendono invisibili i primi).**
+
+5. **L'audit delle date usava UTC** mentre la card stampa nel fuso di visualizzazione: nessuna
+   divergenza oggi su 290 date, ma un calcio d'inizio serale avrebbe prodotto un falso
+   allarme (o nascosto un errore vero). Ora la stessa regola della card.
+6. **«Unescape prima del taglio dei tag»** — tre volte, in tre strumenti diversi (l'audit, il
+   gate [19], i miei script di conteggio): «&lt;1» diventa «<1» e la finta parentesi viene
+   mangiata dal tag successivo, facendo **sparire il numero**. Effetto misurato: 79 falsi
+   scostamenti nell'audit, tutte le 81 celle-squadra con un valore agli estremi illeggibili a
+   [19], conteggi dimezzati. Regola: **prima i tag, poi le entità**.
+7. **La stessa trappola era in produzione**: la matrice dei risultati esatti scriveva `<1`
+   **crudo** nell'HTML (815 celle) e un tooltip scriveva `(<5 gare)` crudo in un attributo
+   (8 casi): 823 occorrenze su 262 pagine. I browser le recuperano come testo, ma qualunque
+   strumento che toglie i tag le mangia, e in un attributo non quotato romperebbero
+   l'attributo. Ora sono `&lt;1`/`&lt;5 gare`, con un **guardiano permanente** in
+   `verify_site`: «<» crudo davanti a una cifra = problema (0 residui; il codice dentro
+   `<script>` è escluso, verificato con un controllo positivo su una pagina di prova).
+   Nota: il gate della matrice confrontava le celle proprio con quella grafia — e ha
+   segnalato subito 82 schede «celle matrice 33 (attese 36)» finché non è stato allineato.
+8. **Un mio conteggio sbagliato diventato numero nei doc**: «47 valori «<1%»». Il numero
+   giusto, riconciliato cella per cella (164 celle-squadra), è **90** (titolo 30 ·
+   retrocessione 16 · UCL 45). La regex prendeva solo la prima `<td>` di ogni riga: contavo
+   metà delle celle. Il §12 è corretto in questa revisione — e il conteggio ora vive
+   nell'audit (`valori_sotto_1`, `valori_sopra_99`), dove è riproducibile.
+
+**Cosa ha retto alla prova.** Percentuali `mc_percent_str` (tornare a `round()` fa fallire il
+test), tooltip (verificato sull'attributo `title`, non sul testo: declassarlo a un altro
+attributo fa fallire il test), nota della convenzione nella card e nella pagina Proiezioni,
+riga dei gol, data di permanenza, stima di fine stagione (formato diverso in **uno solo** dei
+due rami = test rosso), filtro «il passato è prima» (allargare `>=` nei precedenti o `<` negli
+incroci = test rosso).
+
+**Mutazioni che non sono difetti** (registrate per non inseguirle): il filtro della partita
+stessa è **doppio** (calendario `ko < kickoff` e distinta) e allentarne uno solo non cambia
+nulla in uscita — è difesa in profondità, un test non può vederla; `round(x,1)` e `f"{x:.1f}"`
+coincidono su questi dati, quindi la mutazione del punto 2 è indistinguibile da un test.
+
+**Un errore di metodo da registrare:** i primi kill-test ripristinavano i file con
+`git checkout --`, che ha **cancellato le patch non committate** di tre file sorgente (persi e
+riapplicati identici). Da allora: si committa **prima** e si muta **dopo**.
+
+**Gate finali (build #9, 12:00).** `pytest` **604** · `ruff` pulito · `verify_site`
+**234.162 · 0** · `audit_panchina` **0 scostamenti · 0 silenzi** (`valori_sotto_1` 90 ·
+`valori_sopra_99` 2 · `tooltip_posta_in_gioco` 164 · `stima_stagione` 164 · `gol_a_gara` 158) ·
+`parita_schede` **82 · nessuna differenza** · `resa_375` **28.467 · 0**.

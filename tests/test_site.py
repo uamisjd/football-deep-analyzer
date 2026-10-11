@@ -2913,6 +2913,9 @@ def test_card_panchina_trasparenza_e_convenzione_degli_estremi(tmp_path):
     # l'estremo si dichiara: il Monza (0,4% reale) non è «0%» ma «<1»; l'Inter, che è
     # esattamente a zero, resta «0%» — lo zero vero non si maschera
     assert "retrocessione &lt;1%" in card and "retrocessione 0%" in card
+    # anche la nota in fondo alla card dichiara la convenzione, entrambi i lati (nel
+    # sorgente sono entità: «<1» scritto crudo il browser lo mangerebbe come un tag)
+    assert "«&lt;1%»" in card and "«&gt;99%»" in card
     st.close()
 
 

@@ -30,6 +30,13 @@ TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole
 # Misurato il 2026-10-07: 375 occorrenze nelle 375 schede post-partita + 1 in info.html — e le
 # due pagine che citavano lo stesso numero di RPS dei bookmaker lo scrivevano in due modi.
 RANGE_ASCII = re.compile(r"\d+,\d+-\d+,\d+")
+# «<» crudo davanti a una cifra («<1», «<5 gare»): i browser lo recuperano come testo, ma
+# il taglio dei tag degli strumenti di verifica lo mangia insieme alla parentesi finta —
+# e in un attributo non quotato romperebbe l'attributo. Il segno va scritto «&lt;».
+# Misurato il 2026-10-11: 823 occorrenze su 262 pagine (815 nella matrice dei risultati
+# esatti, 8 nel tooltip della forma), tutte corrette in `&lt;` (docs/78 §12).
+RAW_LT_DIGIT = re.compile(r"<\d")
+SCRIPT_BLOCK = re.compile(r"<script\b.*?</script>", re.DOTALL | re.IGNORECASE)
 
 # Card «Panchina e posta in gioco»: l'oracolo di [19] legge le celle della tabella (non chiama
 # ``bench_deep``, altrimenti verificherebbe il generatore con se stesso — docs/78 §1).
@@ -44,8 +51,9 @@ def panchina_cella(html: str) -> str:
     """Testo della cella della card panchina: via i tag, poi le entità, spazi normalizzati.
 
     L'ordine conta: al contrario «&lt;1» diventa «<1» e la finta parentesi viene mangiata
-    dal tag successivo, facendo sparire il valore (le celle con «<1%» sono 164 su 164
-    celle-squadra il 2026-10-11: qui sparivano tutte, `docs/78` §12).
+    dal tag successivo, facendo sparire il valore: con l'ordine sbagliato le 81 celle-squadra
+    che pubblicano un valore agli estremi (su 164 con la riga dei numeri, build #9) non
+    tornavano più, perché nella cella il numero c'era ma illeggibile (`docs/78` §13).
     """
     return re.sub(r"\s+", " ", html_unescape(re.sub(r"<[^>]+>", " ", html))).strip()
 
@@ -326,6 +334,10 @@ def check_pages(site: Path) -> tuple[list[str], int]:
             fails.append(f"{rel}: concordanza {m.group(0)!r}")
         for m in RANGE_ASCII.finditer(text):
             fails.append(f"{rel}: intervallo col trattino ASCII {m.group(0)!r} (serve «–»)")
+        for m in RAW_LT_DIGIT.finditer(SCRIPT_BLOCK.sub(" ", raw)):
+            i = m.start()
+            fails.append(f"{rel}: «<» crudo davanti a una cifra: "
+                         f"{raw[max(0, i - 30):i + 20]!r} (serve &lt;)")
 
         # stessa terna di controlli sugli attributi pronunciati dai lettori di schermo
         for attr in parser.readable_attrs:
@@ -1322,10 +1334,19 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             continue
         r = preds.loc[mid]
         m = score_matrix(float(r.lambda_home), float(r.lambda_away), float(r.dc_rho or 0.0))
-        cells = re.findall(r'<td[^>]*title="(\d)-(\d) · (meno di 0,1|\d+,\d+)%[^"]*">(<1|\d+,\d)</td>', html)
+        # il valore «<1» è scritto «&lt;1» dal 2026-10-11 (docs/78 §12): col segno crudo i
+        # browser lo recuperavano come testo ma il taglio dei tag degli strumenti di verifica
+        # lo mangiava, e in un attributo non quotato avrebbe rotto l'attributo. Qui si
+        # accettano entrambe le grafie, così la lettura regge anche su una build vecchia.
+        cells = re.findall(
+            r'<td[^>]*title="(\d)-(\d) · (meno di 0,1|\d+,\d+)%[^"]*">((?:&lt;|<)1|\d+,\d)</td>',
+            html)
         if len(cells) != 36:
             fails.append(f"{pg.name}: celle matrice {len(cells)} (attese 36)")
             continue
+        # normalizzato una volta sola: i due lettori qui sotto (verifica del valore e somma
+        # a 100%) devono vedere la stessa grafia
+        cells = [(i, j, t, "<1" if c in ("<1", "&lt;1") else c) for i, j, t, c in cells]
         n_matrix += 1
         for i, j, _title_p, cell_p in cells:
             checks += 1
