@@ -1197,6 +1197,14 @@ class MatchAnalysis:
         # specchio dei risultati (3 stagioni, 7 leghe): serve allo split di sede della card
         # «Fattori» (`venue_form`), che sulla sola stagione in corso avrebbe 2-3 gare per sede
         self.history = store.read("history")
+        # storico delle distinte (`scripts/backfill_fotmob.py`, `docs/80`): tabella assente =
+        # comportamento identico a prima. Serve **solo** agli incroci in panchina, che senza le
+        # stagioni precedenti non hanno nulla da dire (`audit_panchina`: 164 assenti su 164).
+        self.storico = store.read("match_storico")
+        # indici unificati stagione + storico, calcolati una volta: match_id → data d'inizio e
+        # gare finite con squadre e gol. Le altre card continuano a leggere `self.fixtures`.
+        self.ko_unito = self._indice_ko_unito()
+        self.risultati_uniti = self._risultati_uniti()
         self._pools_cache: dict[tuple[int | None, int | None], dict[str, Pool]] | None = None
         self._hist_venue_df: pd.DataFrame | None = None
 
@@ -1756,6 +1764,31 @@ class MatchAnalysis:
         return {"id": int(cur_id), "name": str(last.player_name), "matches": int(streak),
                 "prev_name": prev_name, "first_seen": co[co.player_id == cur_id].ko.min()}
 
+    def _indice_ko_unito(self) -> pd.Series:
+        """match_id → calcio d'inizio su **stagione e storico** (per gli incroci in panchina).
+
+        Le partite dello storico non stanno in ``fixtures`` (scelta di `docs/80`: il resto del
+        sito non deve vederle); questo indice è l'unico punto in cui le due fonti si uniscono.
+        """
+        parti = []
+        for df in (self.fixtures, self.storico):
+            if not df.empty and {"match_id", "utc_kickoff"} <= set(df.columns):
+                parti.append(df[["match_id", "utc_kickoff"]])
+        if not parti:
+            return pd.Series(dtype="datetime64[ns, UTC]")
+        tutti = pd.concat(parti, ignore_index=True).dropna(subset=["utc_kickoff"])
+        serie = tutti.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
+        return pd.to_datetime(serie, utc=True)
+
+    def _risultati_uniti(self) -> pd.DataFrame:
+        """Gare finite con squadre e gol su **stagione e storico** (per gli incroci)."""
+        colonne = ["match_id", "home_id", "away_id", "home_goals", "away_goals", "status"]
+        parti = [df[colonne] for df in (self.fixtures, self.storico)
+                 if not df.empty and set(colonne) <= set(df.columns)]
+        if not parti:
+            return pd.DataFrame(columns=colonne)
+        return pd.concat(parti, ignore_index=True).drop_duplicates("match_id")
+
     def stakes(self, team_name: str) -> dict[str, Any] | None:
         """Cosa vale la stagione della squadra: Monte Carlo di ``season_sim``.
 
@@ -2030,9 +2063,14 @@ class MatchAnalysis:
                         opp_coach = self.coach(opp_id, kickoff)
                         opp_cid = (opp_coach or {}).get("id")
                         if opp_cid is not None and not pd.isna(opp_cid):
+                            # panchine su stagione **e storico** (`docs/80`): l'archivio del
+                            # collector copre poche giornate e nessuna coppia si è ancora
+                            # incontrata due volte; con le stagioni precedenti gli incroci
+                            # esistono davvero.
+                            ko_st = self.ko_unito
                             lc = self.lineup[(self.lineup.role == "coach")
-                                             & (self.lineup.match_id.isin(ko.index))].copy()
-                            lc["ko"] = pd.to_datetime(lc.match_id.map(ko), utc=True)
+                                             & (self.lineup.match_id.isin(ko_st.index))].copy()
+                            lc["ko"] = pd.to_datetime(lc.match_id.map(ko_st), utc=True)
                             lc = lc[lc.ko < pd.Timestamp(kickoff)]
                             miei = lc[lc.player_id == cur]
                             suoi = lc[lc.player_id == opp_cid]
@@ -2043,8 +2081,9 @@ class MatchAnalysis:
                                 if tm and to and not (tm & to):
                                     incontri.append(m)   # stessa panchina = dato anomalo
                             if incontri:
-                                gare = self.fixtures[(self.fixtures.match_id.isin(incontri))
-                                                     & (self.fixtures.status == "finished")]
+                                ris = self.risultati_uniti
+                                gare = ris[(ris.match_id.isin(incontri))
+                                           & (ris.status == "finished")]
                                 w = d = l = 0
                                 for r in gare.itertuples(index=False):
                                     tm = set(miei.loc[miei.match_id == r.match_id, "team_id"])

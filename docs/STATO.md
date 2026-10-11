@@ -1,3 +1,19 @@
+## 2026-10-11 — Incroci in panchina: piano e script di backfill (docs/80)
+
+Gli incroci fra allenatori sono a zero su tutte le 164 panchine non per un difetto di calcolo ma
+per **profondità d'archivio**: 411 gare finite, tutte della stagione in corso, e con otto giornate
+giocate nessuna coppia si è ancora incontrata due volte. `scripts/backfill_fotmob.py` scarica le
+distinte (`matchDetails`) delle stagioni precedenti e salva in Parquet le righe `coach` e una
+tabella nuova `match_storico` (id, stagione, data, squadre, gol) — **fuori da `fixtures`**, perché
+il resto del sito (risultati, accuratezza, forma, precedenti, medie) deve continuare a vedere la
+sola stagione in corso. `analysis.py` legge lo storico **solo** nel blocco degli incroci: con la
+tabella assente il comportamento è identico a prima, per costruzione. Lo script è ripartibile, con
+cache HTTP condivisa col collector, `--dry-run`, `--limite` e un `--riepilogo` che dice quante
+panchine in programma hanno davvero un incrocio. 5 test offline (client finto sui sample) e un
+test dell'analisi con lo storico; `audit_panchina.py` ricalcola gli incroci sulla stessa fonte.
+Costo: ~7.500 partite, ~2h05m a 1 s di rate per tre stagioni (due stagioni ~1h20m). Comandi e
+dettagli in `docs/80`.
+
 ## 2026-10-11 — Una regola sola per le cifre intere (docs/78 §15)
 
 Coda della caccia B: nel sito convivevano **due convenzioni di arrotondamento a intero** —

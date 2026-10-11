@@ -1333,3 +1333,44 @@ def test_fattori_contesto_leggibile(mood_analysis, monkeypatch):
     r2 = next(r for r in res2["rows"] if r["label"] == "Forma e classifica (contesto)")
     assert r2["impact"].startswith("contesto sostanzialmente pari")
     assert "a favore di" not in r2["impact"]
+
+
+def test_incroci_in_panchina_anche_dallo_storico(analysis):
+    """Con `match_storico` gli incroci contano anche le stagioni precedenti (docs/80).
+
+    Nella sola stagione in corso i due si sono affrontati una volta (Milan–Roma); nelle
+    stagioni passate, su panchine opposte e su club diversi da quelli di oggi, altre due.
+    La riga pubblicata le somma. Senza `match_storico` (fixture `analysis`) resta com'era:
+    è il test qui sopra a fissarlo.
+    """
+    st = analysis.store
+    st.write("lineup", pd.concat([LINEUP, pd.DataFrame([
+        {"match_id": 9001, "team_id": 5, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+        {"match_id": 9001, "team_id": 6, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
+        {"match_id": 9002, "team_id": 6, "player_id": 300, "player_name": "Coach Stabile", "role": "coach"},
+        {"match_id": 9002, "team_id": 5, "player_id": 200, "player_name": "Coach Nuovo", "role": "coach"},
+    ])], ignore_index=True))
+    st.write("match_storico", pd.DataFrame([
+        # Torino (5) di Coach Nuovo contro il Genoa (6) di Coach Stabile: vittoria del nostro
+        {"match_id": 9001, "league_id": 55, "stagione": "2024/2025", "giornata": "3",
+         "utc_kickoff": KO("2024-09-01 18:00"), "home_id": 5, "home_name": "Torino",
+         "away_id": 6, "away_name": "Genoa", "home_goals": 2, "away_goals": 1,
+         "status": "finished"},
+        # ritorno in parità
+        {"match_id": 9002, "league_id": 55, "stagione": "2024/2025", "giornata": "20",
+         "utc_kickoff": KO("2025-02-02 18:00"), "home_id": 6, "home_name": "Genoa",
+         "away_id": 5, "away_name": "Torino", "home_goals": 1, "away_goals": 1,
+         "status": "finished"},
+    ]))
+    an = MatchAnalysis(st)
+    b = an.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["coach_vs_coach_line"] == ("incroci in panchina con Coach Stabile: 2V 1N 0P "
+                                        "su 3 gare")
+    # la stessa storia letta dalla panchina della Roma
+    br = an.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert br["coach_vs_coach_line"] == ("incroci in panchina con Coach Nuovo: 0V 1N 2P "
+                                         "su 3 gare")
+    # le altre righe della card restano quelle della stagione in corso: il rendimento non
+    # assorbe le gare storiche (`docs/80`: lo storico serve **solo** agli incroci)
+    assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
+    assert b["coach_vs_opp_line"] == "da allenatore contro Roma: 1 gara nel nostro archivio (1V 0N 0P)"

@@ -98,6 +98,21 @@ def main() -> int:
     fx["home_goals"] = pd.to_numeric(fx.home_goals, errors="coerce")
     fx["away_goals"] = pd.to_numeric(fx.away_goals, errors="coerce")
     fxr = fx.set_index("match_id")
+    # Storico delle distinte delle stagioni precedenti (`match_storico`, popolata da
+    # `scripts/backfill_fotmob.py`, docs/80): serve **soltanto** al ricalcolo degli incroci in
+    # panchina, che con la sola stagione in corso non hanno nulla da contare. Permanenza,
+    # rendimento, precedenti ed età restano letti dalla stagione in corso, come il generatore.
+    sto_path = DATA / "match_storico.parquet"
+    sto = pd.read_parquet(sto_path) if sto_path.exists() else pd.DataFrame()
+    if not sto.empty:
+        sto["ko"] = pd.to_datetime(sto.utc_kickoff, utc=True, errors="coerce")
+        sto["home_goals"] = pd.to_numeric(sto.home_goals, errors="coerce")
+        sto["away_goals"] = pd.to_numeric(sto.away_goals, errors="coerce")
+    fx_inc = pd.concat([fx, sto], ignore_index=True) if not sto.empty else fx
+    co_inc = lu[(lu.role == "coach") & (lu.match_id.isin(fx_inc.match_id))].copy()
+    co_inc["ko"] = pd.to_datetime(
+        co_inc.match_id.map(fx_inc.drop_duplicates("match_id").set_index("match_id")["ko"]), utc=True)
+    fin_inc = fx_inc[fx_inc.status == "finished"].copy()
     fx["lg"] = fx.league_id.map(chiave)
     ko = fx.drop_duplicates("match_id").set_index("match_id")["ko"]
     co = lu[(lu.role == "coach") & (lu.match_id.isin(ko.index))].copy()
@@ -283,7 +298,7 @@ def main() -> int:
             # qualsiasi club, prima di questa partita (`docs/78` §7)
             comune = 0
             if oid_coach is not None and not pd.isna(oid_coach):
-                lc19 = co[co.ko < kickoff]
+                lc19 = co_inc[co_inc.ko < kickoff]
                 miei19 = lc19[lc19.player_id == cur_id]
                 suoi19 = lc19[lc19.player_id == oid_coach]
                 for m19 in set(miei19["match_id"]) & set(suoi19["match_id"]):
@@ -292,12 +307,13 @@ def main() -> int:
                     if t1 and t2 and not (t1 & t2):
                         comune += 1
             if comune:
-                lc18 = co[co.ko < kickoff]
+                lc18 = co_inc[co_inc.ko < kickoff]
                 miei18 = lc18[lc18.player_id == cur_id]
                 suoi18 = lc18[lc18.player_id == oid_coach]
                 mm18 = sorted(set(miei18["match_id"]) & set(suoi18["match_id"]))
                 wi = di = li = 0
-                for r in fin[fin.match_id.isin(mm18) & (fin.ko < kickoff)].itertuples(index=False):
+                for r in fin_inc[fin_inc.match_id.isin(mm18)
+                                  & (fin_inc.ko < kickoff)].itertuples(index=False):
                     tm18 = set(miei18.loc[miei18.match_id == r.match_id, "team_id"])
                     to18 = set(suoi18.loc[suoi18.match_id == r.match_id, "team_id"])
                     if not (tm18 and to18 and not (tm18 & to18)):
