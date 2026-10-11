@@ -775,7 +775,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "19": ("M", ("classifica e posizione virtuale ricalcolate; posta in gioco dal Parquet "
                  "con la formattazione del generatore, confrontata con Proiezioni")),
     "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
-    "21": ("M", "righe del clima dal Parquet delle notizie"),
+    "21": ("I", "clima del club: strisce di campionato, xPTS (Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, infermeria dai Parquet"),
     "22": ("I", "radar e scontri ricalcolati da team_stats e Understat"),
     "23": ("I", "badge «giocherà?» ↔ distinta"),
     "24": ("I", "«Il prossimo impegno» ↔ calendario"),
@@ -3202,36 +3202,270 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
     print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
 
-    # 21) clima del club (docs/21 P2-6): ogni riga stampata è ricalcolata da club_mood
-    # con le stesse soglie; se una squadra ha segnali la card deve esserci. Da P2.2 (`docs/28`
-    # §3) la card c'è **sempre** sulle schede pre-partita: due squadre senza segnali non devono
-    # farla sparire (il lettore non distinguerebbe «clima tranquillo» da «dato non raccolto»),
-    # e in quel caso la pagina lo dice riga per riga. Il controllo verifica le due direzioni.
+    # 21) clima del club (docs/21 P2-6): **oracolo indipendente** dal 2026-10-11 (`docs/81`
+    # §5). Fino a ieri il controllo chiamava `club_mood` e si limitava a ritrovare nella pagina
+    # le righe che il generatore aveva appena prodotto — uno specchio (`docs/79` §1): non
+    # poteva vedere gli errori *dentro* la funzione. Ora ogni riga è ricalcolata dai Parquet
+    # con strade diverse: strisce sulla stagione intera di campionato, riposo e congestione da
+    # calendario ∪ coppe, xPTS da Understat o dal Poisson sui soli xG FotMob, panchina dalle
+    # distinte, infermeria da distinta e statistiche di stagione. Le soglie sono la
+    # **specifica dichiarata** nella nota della card: se il generatore le cambia senza
+    # aggiornare qui (o viceversa) il gate si accende.
     n_mood = 0
     vuota = ("Nessun segnale anomalo nei dati raccolti: clima normale.")
+    mood_fx = fx19.copy()
+    if not mood_fx.empty:
+        mood_fx["ko"] = pd.to_datetime(mood_fx.utc_kickoff, utc=True, errors="coerce")
+        for _c in ("home_goals", "away_goals"):
+            mood_fx[_c] = pd.to_numeric(mood_fx.get(_c), errors="coerce")
+    mood_cup = st.read("cup_fixtures")
+    if not mood_cup.empty:
+        mood_cup["ko"] = pd.to_datetime(mood_cup.utc_kickoff, utc=True, errors="coerce")
+        for _c in ("home_goals", "away_goals"):
+            mood_cup[_c] = pd.to_numeric(mood_cup.get(_c), errors="coerce")
+    mood_us = st.read("understat_team_matches")
+    if not mood_us.empty:
+        mood_us["_nome"] = mood_us.team_name.map(_canon)
+        mood_us["_data"] = pd.to_datetime(mood_us.date, utc=True, errors="coerce")
+    mood_agg = pd.DataFrame()
+    if not ps19.empty and "value" in ps19.columns:
+        _mps = ps19.assign(num=pd.to_numeric(ps19.value, errors="coerce")).dropna(subset=["num"])
+        if not _mps.empty:
+            mood_agg = (_mps.groupby(["team_id", "player_name", "key"]).num.sum()
+                        .unstack("key").reset_index())
+
+    # la specifica della card, scritta qui come la nota la dichiara al lettore
+    _S_LOSS, _S_NOWIN, _S_UNB, _S_DRY = 3, 4, 5, 3
+    _S_ASS, _S_START, _S_CONTRIB = 4, 2, 0.5
+    _S_REST, _S_CN, _S_CD, _S_SD = 3, 3, 10, 1.133
+
+    def _striscia_uguale(ris: list[str], val: str) -> int:
+        n = 0
+        for r in reversed(ris):
+            if r == val:
+                n += 1
+            else:
+                break
+        return n
+
+    def _striscia_fino_a(ris: list[str], diverso: str) -> int:
+        n = 0
+        for r in reversed(ris):
+            if r != diverso:
+                n += 1
+            else:
+                break
+        return n
+
+    def _poisson_xpts_indip(lh: float, la: float) -> tuple[float, float]:
+        """xPTS attesi dai soli xG (Poisson indipendente, scritto qui dalla definizione)."""
+        import math as _math
+        def pmf(k: int, lam: float) -> float:
+            return _math.exp(-lam) * lam ** k / _math.factorial(k)
+        g = range(16)
+        p_draw = sum(pmf(k, lh) * pmf(k, la) for k in g)
+        p_home = sum(pmf(i, lh) * sum(pmf(j, la) for j in range(i)) for i in g)
+        p_away = sum(pmf(j, la) * sum(pmf(i, lh) for i in range(j)) for j in g)
+        return 3 * p_home + p_draw, 3 * p_away + p_draw
+
+    def _risultati(righe: Any, tid: int) -> tuple[list[str], list[int]]:
+        """Esiti e gol fatti della squadra, in ordine cronologico (dai Parquet grezzi)."""
+        ris, gf = [], []
+        for r in righe:
+            a, b = (r.home_goals, r.away_goals) if int(r.home_id) == tid else (r.away_goals, r.home_goals)
+            if pd.isna(a) or pd.isna(b):
+                continue
+            ris.append("V" if a > b else ("N" if a == b else "P"))
+            gf.append(int(a))
+        return ris, gf
+
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
-        if "Analisi pre-partita" not in html or fx19.empty or int(pg.stem) not in ko19.index:
+        if "Analisi pre-partita" not in html or mood_fx.empty or int(pg.stem) not in ko19.index:
             continue
         txt = html_unescape(html)
-        fr = fx19[fx19.match_id == int(pg.stem)].iloc[0]
-        kickoff = pd.Timestamp(fr.utc_kickoff)
-        rows_h = ma19.club_mood(int(pg.stem), int(fr.home_id), str(fr.home_name), kickoff)
-        rows_a = ma19.club_mood(int(pg.stem), int(fr.away_id), str(fr.away_name), kickoff)
+        fr = mood_fx[mood_fx.match_id == int(pg.stem)].iloc[0]
+        kickoff = pd.Timestamp(fr.ko)
         n_mood += 1
         if 'id="clima"' not in html:
             fails.append(f"{pg.name}: card clima assente (deve esserci su ogni scheda pre-partita)")
             continue
-        for r in rows_h + rows_a:
+        checks += 1
+        _blocco = re.search(r'<div class="card" id="clima">(.*?)(?=<div class="card"|<footer)',
+                            html, re.DOTALL)
+        parti = re.split(r'<p style="margin:0 0 6px"><b>', _blocco.group(1)) if _blocco else []
+        if len(parti) != 3:
+            fails.append(f"{pg.name}: struttura della card clima inattesa ({len(parti)} blocchi)")
+            continue
+        note = html_unescape(parti[2])
+        checks += 1
+        # la nota dichiara il perimetro delle strisce e il significato dei tre colori (docs/81 §2-§4)
+        if "campionato" not in note:
+            fails.append(f"{pg.name}: la nota del clima non dichiara il perimetro di campionato")
+        if not all(x in note for x in ("rosso", "ambra", "verde")):
+            fails.append(f"{pg.name}: la nota del clima non spiega i toni dei colori")
+        senza = 0
+        for lato, (tid, tname) in enumerate(((int(fr.home_id), str(fr.home_name)),
+                                             (int(fr.away_id), str(fr.away_name)))):
+            tid = int(tid)
+            righe = [html_unescape(x) for x in
+                     re.findall(r'<li class="mood-(?:bad|warn|good)"><span class="small">(.*?)</span></li>',
+                                parti[lato + 1], re.DOTALL)]
+            if not righe:
+                senza += 1
+            attese: list[str] = []
+            prefissi: list[str] = []
+            # --- strisce: stagione intera di campionato ---
+            gare = mood_fx[(mood_fx.status == "finished") & (mood_fx.ko < kickoff)
+                           & ((mood_fx.home_id == tid) | (mood_fx.away_id == tid))].sort_values("ko")
+            ris, gf = _risultati(gare.itertuples(index=False), tid)
+            lose, nowin, unbeaten = (_striscia_uguale(ris, "P"), _striscia_fino_a(ris, "V"),
+                                     _striscia_fino_a(ris, "P"))
+            secco = _striscia_uguale(["1" if x else "0" for x in gf], "0")
+            if lose >= _S_LOSS:
+                attese.append(f"crisi di risultati: {lose} sconfitte consecutive in campionato")
+            elif nowin >= _S_NOWIN:
+                nd = sum(1 for r in ris[len(ris) - nowin:] if r == "N")
+                attese.append(f"non vince da {nowin} gare in campionato ({nd} N, {nowin - nd} P)")
+            elif unbeaten >= _S_UNB:
+                attese.append(f"imbattuta da {unbeaten} gare in campionato: clima di fiducia")
+            if secco >= _S_DRY:
+                attese.append(f"attacco a secco: {secco} gare senza segnare in campionato")
+            # --- xPTS: Understat alla vigilia; senza Understat il Poisson sui soli xG FotMob ---
+            diff = banda = None
+            ur = (mood_us[(mood_us._nome == _canon(tname)) & (mood_us._data < kickoff)]
+                  if not mood_us.empty else mood_us)
+            if not ur.empty and len(ur) >= 3 and {"xpts", "pts"} <= set(ur.columns):
+                diff, banda = float(ur.pts.sum()) - float(ur.xpts.sum()), _S_SD * len(ur) ** 0.5
+            else:
+                fin = mood_fx[(mood_fx.status == "finished") & (mood_fx.ko < kickoff)
+                              & ((mood_fx.home_id == tid) | (mood_fx.away_id == tid))]
+                info = mi19[mi19.match_id.isin(fin.match_id)] if not mi19.empty else pd.DataFrame()
+                _col = {"home_xg", "away_xg", "home_goals", "away_goals"}
+                if not info.empty and _col <= set(info.columns):
+                    info = info.assign(**{c: pd.to_numeric(info[c], errors="coerce")
+                                          for c in _col}).dropna(subset=sorted(_col))
+                else:
+                    info = pd.DataFrame()
+                if len(info) >= 3:
+                    totx = totp = 0.0
+                    for r in info.itertuples(index=False):
+                        casa = int(r.home_id) == tid
+                        xp, xpa = _poisson_xpts_indip(float(r.home_xg), float(r.away_xg))
+                        totx += xp if casa else xpa
+                        hg, ag = int(r.home_goals), int(r.away_goals)
+                        signed = hg - ag if casa else ag - hg
+                        totp += 3 if signed > 0 else 1 if signed == 0 else 0
+                    diff, banda = totp - totx, _S_SD * len(info) ** 0.5
+            if diff is not None and banda is not None:
+                if diff >= banda:
+                    attese.append("rende più di quanto crea (xPTS)")
+                elif diff <= -banda:
+                    attese.append("raccoglie meno punti di quanto crea (xPTS)")
+            # --- panchina nuova: cambio rilevato **e** allenatore in carica da ≤3 gare ---
+            co = lu19[(lu19.team_id == tid) & (lu19.role == "coach")] if not lu19.empty else lu19
+            if not co.empty:
+                # la permanenza è la sequenza **consecutiva** con lo stesso id allenatore
+                # (come ``coach()``): il totale delle righe conterebbe anche un ritorno
+                co = co[co.match_id.isin(mood_fx.match_id)].copy()
+                if not co.empty:
+                    co["ko"] = pd.to_datetime(co.match_id.map(
+                        mood_fx.drop_duplicates("match_id").set_index("match_id")["ko"]), utc=True)
+                    co = co[co.ko <= kickoff].sort_values("ko", kind="stable")
+                if not co.empty:
+                    cur = co.iloc[-1].player_id
+                    subentro = 0
+                    for _pid in co.player_id.iloc[::-1]:
+                        if _pid == cur:
+                            subentro += 1
+                        else:
+                            break
+                    if (co.player_id != cur).any() and subentro <= 3:
+                        attese.append("panchina nuova: il cambio di allenatore")
+            # --- infermeria: presenza e numero dagli stessi dati; il contributo è quello stampato ---
+            unav = (lu19[(lu19.match_id == int(pg.stem)) & (lu19.team_id == tid)
+                         & (lu19.role == "unavailable") & lu19.player_id.notna()]
+                    if not lu19.empty else lu19)
+            n_un = len(unav)
+            titolari, contrib_certo = 0, 0.0
+            if n_un and not mood_agg.empty:
+                st_t = mood_agg[mood_agg.team_id == tid].drop_duplicates("player_name") \
+                    .set_index("player_name")
+                per_g = float(st_t["minutes_played"].sum()) / 11 if "minutes_played" in st_t else 0.0
+                for r in unav.itertuples(index=False):
+                    nm = str(r.player_name)
+                    if nm not in st_t.index or "minutes_played" not in st_t:
+                        continue
+                    _mv = st_t.loc[nm, "minutes_played"]
+                    mins = 0.0 if pd.isna(_mv) else float(_mv)
+                    if per_g and mins >= 0.5 * per_g:
+                        titolari += 1
+                    if mins >= 90.0:
+                        # sopra i 90′ il generatore pubblica il valore grezzo: la somma è
+                        # ricalcolabile qui senza la stima stabilizzata (`docs/19` §1.10)
+                        _c = 0.0
+                        for _k in ("expected_goals", "expected_assists"):
+                            if _k in st_t.columns:
+                                _v = st_t.loc[nm, _k]
+                                _c += 0.0 if pd.isna(_v) else float(_v)
+                        contrib_certo += round(_c / (mins / 90.0), 2) if _c else 0.0
+            riga_inf = next((x for x in righe if x.startswith("infermeria pesante")), None)
+            if riga_inf:
+                prefissi.append("infermeria pesante")
+                checks += 1
+                mm = re.search(r"≈ ([0-9]+,[0-9]+) xG\+xA a partita in meno", riga_inf)
+                pub = float(mm.group(1).replace(",", ".")) if mm else 0.0
+                if not (n_un >= _S_ASS or titolari >= _S_START or pub >= _S_CONTRIB):
+                    fails.append(f"{pg.name}: {tname} infermeria pubblicata senza soglia "
+                                 f"({n_un} assenti, {titolari} titolari, {pub} xG+xA)")
+                _nm = re.match(r"infermeria pesante: ([0-9]+) assent", riga_inf)
+                if _nm and int(_nm.group(1)) != n_un:
+                    fails.append(f"{pg.name}: {tname} infermeria «{riga_inf[:40]}» con {n_un} assenti")
+            else:
+                checks += 1
+                if n_un >= _S_ASS or titolari >= _S_START or contrib_certo >= _S_CONTRIB:
+                    fails.append(f"{pg.name}: {tname} infermeria assente con {n_un} assenti, "
+                                 f"{titolari} titolari e {contrib_certo} xG+xA pubblicabili")
+            # --- riposo e congestione: campionato + coppe ---
+            src = (pd.concat([mood_fx, mood_cup], ignore_index=True, sort=False)
+                   if not mood_cup.empty else mood_fx)
+            prec = src[(src.status == "finished") & (src.ko < kickoff)
+                       & ((src.home_id == tid) | (src.away_id == tid))]
+            riga_rest = next((x for x in righe if x.startswith("riposo corto")), None)
+            riga_cong = next((x for x in righe if x.startswith("congestione")), None)
+            if not prec.empty:
+                rest = int((kickoff - prec.ko.max()).total_seconds() // 86400)
+                checks += 1
+                if rest <= _S_REST and riga_rest is None:
+                    fails.append(f"{pg.name}: {tname} riposo {rest} giorni senza riga")
+                if rest > _S_REST and riga_rest:
+                    fails.append(f"{pg.name}: {tname} riga «{riga_rest[:40]}» con riposo {rest} giorni")
+            if riga_rest:
+                prefissi.append("riposo corto")
+            finestra = src[(src.status == "finished") & (src.ko >= kickoff - pd.Timedelta(days=_S_CD))
+                           & (src.ko < kickoff) & ((src.home_id == tid) | (src.away_id == tid))]
             checks += 1
-            if r["text"] not in txt:
-                fails.append(f"{pg.name}: riga clima «{r['text'][:40]}» assente o diversa")
-        senza = (0 if rows_h else 1) + (0 if rows_a else 1)
+            if len(finestra) >= _S_CN and riga_cong is None:
+                fails.append(f"{pg.name}: {tname} {len(finestra)} gare in {_S_CD} giorni senza congestione")
+            if len(finestra) < _S_CN and riga_cong:
+                fails.append(f"{pg.name}: {tname} «{riga_cong[:40]}» con {len(finestra)} gare in {_S_CD} giorni")
+            if riga_cong:
+                prefissi.append("congestione")
+            # --- le due direzioni: nessuna riga inventata, nessuna riga attesa mancante ---
+            for atteso in attese:
+                checks += 1
+                if not any(x.startswith(atteso[:24]) for x in righe):
+                    fails.append(f"{pg.name}: {tname} riga clima attesa assente «{atteso[:50]}»")
+            for riga in righe:
+                checks += 1
+                if not any(riga.startswith(a[:24]) for a in attese) and \
+                        not any(riga.startswith(p) for p in prefissi):
+                    fails.append(f"{pg.name}: {tname} riga clima non giustificata «{riga[:50]}»")
         checks += 1
         if txt.count(vuota) != senza:
             fails.append(f"{pg.name}: {senza} squadre senza segnali ma la riga «clima normale» "
                          f"compare {txt.count(vuota)} volte")
-    print(f"[21] pagine con clima del club riconciliate: {n_mood}")
+    print(f"[21] pagine con clima del club riconciliate: {n_mood} (oracolo indipendente)")
 
     # 22) scontro tattico: graduatorie attacco/difesa e duello chiave ricalcolati dalla
     # classifica FotMob (fonte unica) e confrontati col testo stampato.

@@ -2216,6 +2216,16 @@ class MatchAnalysis:
     MOOD_NOWIN = 4              # gare senza vittoria → «non vince da»
     MOOD_UNBEATEN = 5           # gare senza sconfitte → clima sereno
     MOOD_DRY = 3                # gare consecutive senza segnare
+    # Le strisce si contano sull'**intera stagione** di campionato, non sulla finestra di
+    # cinque gare di `form()`: con `tail(5)` ogni striscia più lunga usciva come «5», un
+    # pavimento travestito da numero (misurato il 2026-10-11: 14 celle su 82 schede —
+    # Inter «imbattuta da 5» contro 6 vere, Barcelona «5» contro 8; docs/81 §1).
+    MOOD_STREAK_N = 60          # abbastanza per una stagione intera (max 38 gare di lega)
+    # «Panchina nuova» solo se l'allenatore è in carica da poche gare: la stessa soglia della
+    # voce «Panchina nuova» in «Da sapere» (`news_sapere`, ≤3) e del conteggio stampato in
+    # «Panchina e posta in gioco». Senza soglia la riga restava accesa per tutta la stagione
+    # (misurato il 2026-10-11: Estrela da Amadora, 7ª gara dal subentro; docs/81 §3).
+    MOOD_COACH_NEW = 3
     # lo scarto punti−xPTS non ha più una soglia propria: usa la banda di rumore misurata
     # (`XPTS_NOISE_SD`, `xpts_reading`), la stessa della card «Le due squadre» e della
     # narrativa pre-partita — docs/64 §2.2
@@ -2234,12 +2244,20 @@ class MatchAnalysis:
         Segnali derivati solo da dati già raccolti (forma, xPTS, panchina, infermeria,
         riposo e congestione anche coppe), ognuno con la propria soglia dichiarata nella
         nota della card; toni: ``bad`` (allarme), ``warn`` (attenzione), ``good`` (sereno).
-        Soglia riposo allineata a ricerca PubMed RR 1,32 per ≤4 vs ≥6 giorni.
+        **Perimetro dichiarato** (`docs/81` §2): le strisce contano le sole gare di
+        campionato — la stessa base della riga «Forma» — mentre riposo e congestione
+        includono le coppe; le righe lo dicono («in campionato») perché con le coppe dentro
+        la stessa squadra avrebbe un altro verdetto su 22 celle su 154 (misurato).
+        Soglia riposo: corto da ≤3 giorni (``MOOD_REST_SHORT``); la ricerca PubMed indica un
+        aumento del rischio di infortunio già da ≤4 giorni (RR 1,32 vs ≥6), quindi la soglia
+        pubblicata è la fascia più corta e conservativa — l'ambiguità sta nella nota, non in
+        un numero.
         Se nessun segnale supera le soglie la squadra resta senza righe: la card lo dice
         («nessun segnale anomalo») invece di inventare un clima neutro a parole.
         """
         out: list[dict[str, Any]] = []
-        f = self.form(team_id, kickoff)
+        # stagione intera, non `tail(5)`: vedi `MOOD_STREAK_N`
+        f = self.form(team_id, kickoff, n=self.MOOD_STREAK_N)
         seq = [r["res"] for r in f]
         lose = nowin = unbeaten = dry = 0
         for r in reversed(seq):
@@ -2261,16 +2279,18 @@ class MatchAnalysis:
             else:
                 break
         if lose >= self.MOOD_LOSS_STREAK:
-            out.append({"tone": "bad", "text": f"crisi di risultati: {lose} sconfitte consecutive"})
+            out.append({"tone": "bad",
+                        "text": f"crisi di risultati: {lose} sconfitte consecutive in campionato"})
         elif nowin >= self.MOOD_NOWIN:
             nd = sum(1 for r in seq[-nowin:] if r == "N")
             out.append({"tone": "warn",
-                        "text": f"non vince da {nowin} gare ({nd} N, {nowin - nd} P)"})
+                        "text": f"non vince da {nowin} gare in campionato ({nd} N, {nowin - nd} P)"})
         elif unbeaten >= self.MOOD_UNBEATEN:
             out.append({"tone": "good",
-                        "text": f"imbattuta da {unbeaten} gare: clima di fiducia"})
+                        "text": f"imbattuta da {unbeaten} gare in campionato: clima di fiducia"})
         if dry >= self.MOOD_DRY:
-            out.append({"tone": "bad", "text": f"attacco a secco: {dry} gare senza segnare"})
+            out.append({"tone": "bad",
+                        "text": f"attacco a secco: {dry} gare senza segnare in campionato"})
         xg = self.season_xg(team_name, team_id, kickoff)
         if xg and (lettura := xg.get("xpts_read")) and lettura.get("verdict") in ("sopra", "sotto"):
             # M2 (`docs/55` §6, regola di `docs/30`): il numero sta **solo** nella card della
@@ -2287,7 +2307,7 @@ class MatchAnalysis:
                                     "qualità del gioco, regressione possibile — i numeri in "
                                     "«Le due squadre»"})
         coach = self.coach(team_id, kickoff)
-        if coach and coach.get("prev_name"):
+        if coach and coach.get("prev_name") and (coach.get("matches") or 0) <= self.MOOD_COACH_NEW:
             # Il numero (quale gara dal subentro, e da chi) è un dato della card «Panchina e
             # posta in gioco»: qui resta il segnale, col rimando — stesso schema del segnale
             # xPTS due righe sopra (docs/30, e docs/78 §4 per la misura: 11 schede

@@ -729,6 +729,65 @@ def test_clima_squadra_serenissima_senza_segnali(mood_analysis):
     assert [r["text"] for r in roma] == ["riposo corto: 3 giorni"]
 
 
+def test_clima_striscia_intera_non_finestra_di_cinque(tmp_path):
+    """`docs/81` §1: «imbattuta da N» conta la striscia intera, non le ultime cinque gare.
+
+    Con la finestra di ``form()`` (5 gare) una squadra imbattuta da sette pubblicava «da 5»:
+    un pavimento travestito da numero, misurato il 2026-10-11 su 14 celle su 154 (Inter 5
+    contro 6, Barcelona 5 contro 8). Qui la striscia è di 7 gare e la finestra ne conterebbe 5.
+    """
+    st = Store(tmp_path / "striscia")
+    st.write("fixtures", _fixtures([
+        (200 + i, 55, "2026", str(i), KO(f"2026-08-{10 + i:02d} 18:00"), 4, "Lazio", 9, "Ospiti",
+         2, 0, "finished", "fotmob")
+        for i in range(7)          # sette vittorie consecutive, dal 10 al 16 agosto
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 200, "team_id": 4, "player_id": 1, "player_name": "Coach",
+         "role": "coach", "market_value_eur": None, "unavailability_type": None,
+         "expected_return": None},
+    ]))
+    testi = [r["text"] for r in MatchAnalysis(st).club_mood(207, 4, "Lazio", KO("2026-09-20 18:00"))]
+    # il perimetro è dichiarato nella riga (docs/81 §2): le strisce sono di campionato
+    assert any(t == "imbattuta da 7 gare in campionato: clima di fiducia" for t in testi), testi
+    assert not any("imbattuta da 5" in t for t in testi), testi
+
+
+def test_clima_panchina_nuova_solo_se_recente(tmp_path):
+    """`docs/81` §3: «panchina nuova» vale solo con l'allenatore in carica da ≤3 gare.
+
+    Senza soglia la riga restava accesa per tutta la stagione (misurato: Estrela da Amadora
+    alla 7ª gara dal subentro dichiarava ancora uno «shock»), mentre la voce «Panchina nuova»
+    di «Da sapere» usa ≤3 (``news_sapere``). La soglia è una sola, condivisa.
+    """
+    def store(cartella, prima_del_nuovo):
+        """Dieci gare vinte (nessuna striscia da segnalare); il nuovo coach entra alla gara
+        ``prima_del_nuovo``, quindi le sue gare in carica prima del 20/09 sono ``10 − i``."""
+        st = Store(cartella)
+        st.write("fixtures", _fixtures([
+            (mid, 55, "2026", str(i), KO(f"2026-08-{10 + i:02d} 18:00"),
+             7, "Prova", 9, "Ospiti", 2, 0, "finished", "fotmob")
+            for i, mid in enumerate(range(300, 310))
+        ]))
+        st.write("lineup", pd.DataFrame([
+            {"match_id": mid, "team_id": 7, "player_id": 1 if i < prima_del_nuovo else 2,
+             "player_name": "Coach Vecchio" if i < prima_del_nuovo else "Coach Nuovo",
+             "role": "coach", "market_value_eur": None, "unavailability_type": None,
+             "expected_return": None}
+            for i, mid in enumerate(range(300, 310))
+        ]))
+        return MatchAnalysis(st)
+
+    # nuovo dalla 7ª gara (indice 6): 4 gare in carica → la riga non si pubblica
+    testi = [r["text"] for r in store(tmp_path / "vecchia", 6)
+             .club_mood(310, 7, "Prova", KO("2026-09-20 18:00"))]
+    assert not any(t.startswith("panchina nuova") for t in testi), testi
+    # nuovo dalla 9ª gara (indice 8): 2 gare in carica → il segnale c'è
+    testi = [r["text"] for r in store(tmp_path / "nuova", 8)
+             .club_mood(310, 7, "Prova", KO("2026-09-20 18:00"))]
+    assert any(t.startswith("panchina nuova: il cambio di allenatore") for t in testi), testi
+
+
 def test_clima_infermeria_concordanza_titolari(mood_analysis, monkeypatch):
     """«di cui 1 titolare abituale», non «di cui 1 titolari abituali» (audit 18/09/2026).
 
