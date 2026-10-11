@@ -1003,13 +1003,13 @@
   <p class="small mut" style="margin:8px 0 0"><span style="color:var(--leg-home)">●</span> 1 {{ c.home_name }} · <span style="color:var(--leg-draw)">●</span> X · <span style="color:var(--leg-away)">●</span> 2 {{ c.away_name }}</p>
   <div class="tablewrap"><table style="margin-top:8px">
     <tr><th scope="col">Minuto</th><th scope="col">Punteggio</th><th scope="col" class="r">1</th><th scope="col" class="r">X</th><th scope="col" class="r">2</th></tr>
-    {% for g in c.wp_path.points %}
+    {% for g in c.wp_path.points %}{% set w3 = (g.p_home, g.p_draw, g.p_away)|pct3 %}
     <tr>
       <td class="mut small">{{ g.minute|round|int }}'</td>
       <td>{{ g.hg }}-{{ g.ag }}{% if g.player %} · {{ g.player }}{% endif %}</td>
-      <td class="r">{{ (g.p_home*100)|round|int }}%</td>
-      <td class="r">{{ (g.p_draw*100)|round|int }}%</td>
-      <td class="r">{{ (g.p_away*100)|round|int }}%</td>
+      <td class="r">{{ w3[0] }}%</td>
+      <td class="r">{{ w3[1] }}%</td>
+      <td class="r">{{ w3[2] }}%</td>
     </tr>
     {% endfor %}
   </table></div>

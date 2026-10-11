@@ -3391,6 +3391,44 @@ def check_nav(site: Path) -> tuple[list[str], int]:
     return fails, checks
 
 
+TERNA_TAB = re.compile(r'<td class="r">(\d{1,3}) / (\d{1,3}) / (\d{1,3})</td>')
+TERNA_TESTO = re.compile(r"1 (\d{1,3})% · X (\d{1,3})% · 2 (\d{1,3})%")
+TERNA_DESC = re.compile(r"1 (\d{1,3})% X (\d{1,3})% 2 (\d{1,3})%")
+# riga della tabella «win probability»: minuto, punteggio, poi la terna 1/X/2
+TERNA_WP = re.compile(r"<td class=\"mut small\">\d+'</td>\s*<td>[^<]*</td>\s*"
+                      r"<td class=\"r\">(\d{1,3})%</td>\s*<td class=\"r\">(\d{1,3})%</td>\s*"
+                      r"<td class=\"r\">(\d{1,3})%</td>")
+
+
+def check_terne_1x2(site: Path) -> tuple[list[str], int]:
+    """[47] Le terne 1/X/2 pubblicate devono sommare 100, ovunque compaiano.
+
+    Tre arrotondamenti indipendenti delle stesse probabilità sommano 99 o 101: succedeva su
+    11 righe su 40 della tabella Accuratezza e su 134 occorrenze delle descrizioni SEO su 564
+    (che finiscono su Google, `docs/22`) finché la terna non è passata da `pct_triple`
+    (`docs/78` §14). Le quattro grafie controllate sono quelle che il sito usa davvero: la
+    tabella «Ultime partite valutate», i testi in evidenza di index/prossime, le
+    description/og:description delle schede, e la tabella dell'andamento 1X2 minuto per
+    minuto delle schede (153 righe su 754 rotte prima del fix).
+    """
+    fails: list[str] = []
+    checks = 0
+    n_terne = 0
+    for pg in sorted(site.rglob("*.html")):
+        h = pg.read_text(encoding="utf-8")
+        for pat, dove in ((TERNA_TAB, "tabella"), (TERNA_TESTO, "testo"),
+                          (TERNA_DESC, "descrizione"), (TERNA_WP, "andamento")):
+            for m in pat.finditer(h):
+                n_terne += 1
+                checks += 1
+                somma = sum(int(x) for x in m.groups())
+                if somma != 100:
+                    fails.append(f"{pg.name}: terna 1X2 in {dove} somma {somma} "
+                                 f"({m.group(0)[:44]})")
+    print(f"[47] terne 1/X/2 pubblicate: {n_terne} · tutte sommano 100")
+    return fails, checks
+
+
 def check_assets(site: Path) -> tuple[list[str], int]:
     """[29] CSS esterno (docs/19 P0.5): link giusto in ogni pagina, zero <style> inline.
 
@@ -3828,7 +3866,7 @@ def check_meteo_soglie(site: Path, data: Path | None) -> tuple[list[str], int]:
         if mid not in info.index:
             continue
         n += 1
-        testo = re.sub(r"<[^>]+>", " ", html_unescape(m.group(1)))
+        testo = html_unescape(re.sub(r"<[^>]+>", " ", m.group(1)))
         testo = re.sub(r"\s+", " ", testo).strip()
         r = info.loc[mid]
         if isinstance(r, pd.DataFrame):
@@ -3958,9 +3996,9 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: riga dei Fattori con {len(celle)} colonne invece di 4")
                 continue
             for k, c in enumerate(celle):
-                if not re.sub(r"<[^>]+>", "", html_unescape(c)).strip():
+                if not html_unescape(re.sub(r"<[^>]+>", "", c)).strip():
                     fails.append(f"{pg.name}: riga dei Fattori con la colonna {k + 1} vuota")
-            etichetta = re.sub(r"<[^>]+>", "", html_unescape(r)).strip()
+            etichetta = html_unescape(re.sub(r"<[^>]+>", "", r)).strip()
             nome = next((x for x in FACTOR_ROWS_AMMESSE if x in etichetta), None)
             if nome is None:
                 fails.append(f"{pg.name}: riga dei Fattori con etichetta fuori standard "
@@ -3970,7 +4008,7 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
             # le medie di stagione devono dichiarare il campione nelle **celle** (non nel ⓘ, che
             # parla sempre di «gara»): senza, un PPDA su 4 gare sembra solido come uno su 30
             if nome in FACTOR_ROWS_CAMPIONE:
-                celle_txt = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(c)) for c in celle[:2])
+                celle_txt = " ".join(html_unescape(re.sub(r"<[^>]+>", " ", c)) for c in celle[:2])
                 checks += 1
                 if not re.search(r"\d+ gare?\)?|n\.d\.", celle_txt):
                     fails.append(f"{pg.name}: riga «{nome}» senza il numero di gare nelle celle")
@@ -3986,10 +4024,10 @@ def check_fattori(site: Path) -> tuple[list[str], int]:
         checks += 1
         m = re.search(r"Sotto soglia o non calcolabile, non in tabella \(casa e ospite\): (.*?)\.</p>",
                       sec, re.DOTALL)
-        sotto = re.sub(r"<[^>]+>", " ", html_unescape(m.group(1))) if m else ""
+        sotto = html_unescape(re.sub(r"<[^>]+>", " ", m.group(1))) if m else ""
         # solo le **righe** contano come «in tabella»: la riga introduttiva nomina tutte le soglie
         # (quindi tutti e quattro i fattori) e non può valere come presenza del fattore
-        tabella = " ".join(re.sub(r"<[^>]+>", " ", html_unescape(r)).lower() for r in righe)
+        tabella = " ".join(html_unescape(re.sub(r"<[^>]+>", " ", r)).lower() for r in righe)
         for kw, etichetta in FACTOR_KEYWORDS:
             checks += 1
             if etichetta.lower() not in tabella and kw not in sotto.lower():
@@ -5061,6 +5099,9 @@ def main() -> int:
         assets, asset_checks = check_assets(site)
         fails += assets
         checks += asset_checks
+        terne, terne_checks = check_terne_1x2(site)
+        fails += terne
+        checks += terne_checks
 
     # riepilogo per tipo: il prefisso è ciò che segue «<pagina>: ». Un messaggio senza «: »
     # (ne è arrivato uno il 2026-10-08) faceva cadere il gate **dopo** i controlli, nascondendo

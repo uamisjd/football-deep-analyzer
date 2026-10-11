@@ -776,3 +776,27 @@ def test_verify_site_forma_non_autocertifica_elo_odierno(tmp_path, monkeypatch):
     assert any("ranghi/Elo degli avversari" in f for f in fails)
     assert any("forza media avversari" in f for f in fails)
     st.close()
+
+
+def test_unescape_sempre_dopo_il_taglio_dei_tag():
+    """Regola di sessione: prima si tolgono i tag, poi si unescapa.
+
+    Al contrario `&lt;1` diventa `<1` e il taglio `<[^>]+>` se lo mangia insieme al valore
+    (è successo tre volte: `audit_panchina.testo`, `panchina_cella` in [19], e 6 punti di
+    `verify_site` corretti l'11/10/2026). Il guardiano vieta la forma annidata
+    `re.sub(r"<...>", …, html_unescape(…))` in script, test e generatore.
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    annidato = _re.compile(r"""re\.sub\(\s*r?["']<[^"']*>\s*["'][^)]*?unescape\s*\(""")
+    radice = _Path(__file__).resolve().parents[1]
+    sospetti = []
+    for cartella, glob in (("scripts", "*.py"), ("tests", "*.py"), ("src/fda", "**/*.py")):
+        for f in sorted((radice / cartella).glob(glob)):
+            if f.name == "test_verify_scripts.py":
+                continue          # questo test nomina il pattern per definirlo
+            for i, riga in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+                if annidato.search(riga):
+                    sospetti.append(f"{f.relative_to(radice)}:{i}: {riga.strip()[:90]}")
+    assert not sospetti, "unescape prima del taglio dei tag:\n" + "\n".join(sospetti)

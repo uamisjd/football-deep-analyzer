@@ -396,3 +396,62 @@ riapplicati identici). Da allora: si committa **prima** e si muta **dopo**.
 **234.162 · 0** · `audit_panchina` **0 scostamenti · 0 silenzi** (`valori_sotto_1` 90 ·
 `valori_sopra_99` 2 · `tooltip_posta_in_gioco` 164 · `stima_stagione` 164 · `gol_a_gara` 158) ·
 `parita_schede` **82 · nessuna differenza** · `resa_375` **28.467 · 0**.
+
+## §14 — Caccia B: la stessa classe di difetto nel resto del sito (2026-10-11)
+
+Richiesta: cercare in tutte le pagine e i template le stesse famiglie di difetto della revisione
+(§13) — valori arrotondati a mano che devono chiudere a un totale, unescape prima del taglio dei
+tag, simboli leggibili in due modi. Misure fatte **sul sito pubblicato**, non sul codice.
+
+### Difetti veri trovati e corretti
+
+| # | Dove | Misura (build #9) | Fix |
+|---|---|---|---|
+| 1 | tabella «Ultime partite valutate» (`accuracy.html`) | **11 righe su 40** rotte (5×99, 6×101) | chiave `pct1x2` (`pct_triple`) al posto di tre `round()` |
+| 2 | `description`/`og:description` delle schede (`build.py`) | **134 occorrenze su 564** (67 schede × 2) | helper `_t1x2` + `mc_percent` in `page_desc` |
+| 3 | tabella dell'andamento 1X2 minuto per minuto (`match.html`) | **153 righe su 754** in **103 schede** (98×99, 55×101) | filtro `pct3` (lo stesso di `_matchlist`) |
+| 4 | 6 punti di `verify_site.py` | `unescape` **prima** del taglio dei tag (la trappola di §13) | ordine invertito: prima i tag, poi l'unescape |
+
+Sul totale delle quattro grafie: **298 terne rotte su 1.642 → 0** dopo la build #10.
+
+Il difetto 3 è nato dalla stessa riga di codice: `(g.p_home*100)|round|int` per ognuna delle tre
+celle, cioè tre arrotondamenti indipendenti di probabilità che sommano 1. La probabilità al 90'
+con λ 0,5/0,5 lo rende visibile anche a occhio (27 % + 47 % + 27 % = 101).
+
+### Classi verificate e risultate pulite (per non ripetere la caccia)
+
+- **testo in evidenza** (284 occorrenze): già da `pct_triple` tramite il filtro `pct3` in
+  `_matchlist.html` — 0 rotte;
+- **`advanced.py`** (25 `round()`, in coda alla caccia): solo precisione interna (4 decimali,
+  coordinate SVG, share a 1 decimale), nessuna percentuale intera pubblicata a mano;
+- **percentuali intere singole** (hit rate, p_real, over): minimo reale nei dati 1,84 % (clean
+  sheet trasferta), quindi nessun «0 %» che significhi «non è zero»; il caso opposto è coperto
+  dalla convenzione «<1»/«>99»;
+- **triple di celle percentuali consecutive** in tutto il sito: le somme ≠ 100 restano solo in
+  `stagione.html`, dove sono finestre di tabelle a 4+ colonne di eventi **non esaustivi**
+  (titolo, retrocessione, UCL) — lì la somma non deve fare 100;
+- **stringhe ambigue** segno/valore («1 1 %», «2 0 %», «1 100 %»…): 0 occorrenze.
+
+### Strumenti aggiunti (difesa alla radice)
+
+- check **[47] `check_terne_1x2`** esteso alla quarta grafia (riga dell'andamento: minuto,
+  punteggio, terna) — su build #10 riporta `1642 · tutte sommano 100`;
+- guardiano `test_unescape_sempre_dopo_il_taglio_dei_tag`: vieta la forma annidata
+  `re.sub(r"<…>", …, html_unescape(…))` in `scripts/`, `tests/` e `src/fda/` (6 occorrenze
+  corrette, 0 residue);
+- `tests/test_terne_1x2.py` cresce a 7 test, con numeri **avversariali** presi dai casi reali:
+  61,5/23,5/15 → 101 con tre `round()`, e λ 0,5/0,5 sulla fixture Inter–Monza per l'andamento.
+
+### Kill-test (7 mutazioni, tutte intercettate)
+
+K1 tabella `pct1x2`→tre `round()` ✓ · K2 `_t1x2`→tre `round()` nella description ✓ · K3 helper
+`_t1x2_testo`→tre `round()` ✓ · K4 celle di `accuracy.html`→tre `round|int` ✓ · K5 righe
+dell'andamento→tre `round()` ✓ · K6 [47] senza la grafia dell'andamento ✓ · K7 ordine
+`unescape`→taglio invertito ✓.
+
+### Gate finali (build #10, 2026-10-11 12:25)
+
+`pytest` **612 passed** (604 + 8 nuovi) · `ruff` pulito · `verify_site` **235.804 controlli ·
+0 problemi** (era 234.162: +1.642 terne) · `audit_panchina` **0 scostamenti · 0 silenzi**
+(`valori_sotto_1` 90 · `valori_sopra_99` 2 · `tooltip` 164 · `stima` 164 · `gol` 158 ·
+`card` 82) · `parita_schede` 82 nessuna differenza · `resa_375` 28.467 · 0.

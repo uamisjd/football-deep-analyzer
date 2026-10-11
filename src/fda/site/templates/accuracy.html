@@ -158,7 +158,7 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
 <div class="card"><h2>Ultime partite valutate</h2>
 <div class="tablewrap"><table><tr><th scope="col">Data</th><th scope="col">Partita</th><th scope="col" class="c">Risultato</th><th scope="col" class="r">1 / X / 2 previsti</th><th scope="col" class="c">Top</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Prob. esito reale</th></tr>
 {% for r in recent %}<tr><td class="mut">{{ r.date }}</td><td><a href="{{ root }}partite/{{ r.match_id }}.html">{{ r.home }} - {{ r.away }}</a></td><td class="c">{{ r.hg }}-{{ r.ag }}</td>
-<td class="r">{{ (r.p_home*100)|round|int }} / {{ (r.p_draw*100)|round|int }} / {{ (r.p_away*100)|round|int }}</td><td class="c">{{ r.top }} {% if r.hit %}<span class="good">✓</span>{% else %}<span class="bad">✗</span>{% endif %}</td>
+<td class="r">{{ r.pct1x2[0] }} / {{ r.pct1x2[1] }} / {{ r.pct1x2[2] }}</td><td class="c">{{ r.top }} {% if r.hit %}<span class="good">✓</span>{% else %}<span class="bad">✗</span>{% endif %}</td>
 <td class="r">{{ r.rps|dec(3) }}</td><td class="r">{{ (r.p_real*100)|round|int }}%</td></tr>{% endfor %}
 </table></div>
 <p class="small mut">Top = esito con la probabilità più alta secondo il modello (✓ se è quello poi verificatosi); RPS = errore della singola previsione.</p>
