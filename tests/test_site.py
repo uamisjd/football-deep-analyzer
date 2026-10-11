@@ -1927,6 +1927,15 @@ def _fixture_lontana(match_id: int, giorni: int, home: str, away: str, now) -> d
             "status": "scheduled", "source": "test"}
 
 
+def _fixture_futura(match_id: int, giorni: int, home_id: int, home: str, away_id: int,
+                    away: str, now) -> dict:
+    """Partita futura con gli id delle squadre scelte (le fixture del seed li fissano)."""
+    return {"match_id": match_id, "league_id": 55, "season": "2026/2027", "round": None,
+            "utc_kickoff": now + timedelta(days=giorni), "home_id": home_id, "home_name": home,
+            "away_id": away_id, "away_name": away, "home_goals": None, "away_goals": None,
+            "status": "scheduled", "source": "test"}
+
+
 def test_build_indexes_calendario_entro_la_finestra_compatta(tmp_path):
     """«Prossime» = finestra dettagliata + calendario compatto entro 30 giorni.
 
@@ -2784,4 +2793,118 @@ def test_card_due_squadre_distinta_non_pubblicata_dichiarata(tmp_path):
     con = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
     con = con.split('id="squadre"', 1)[1].split('id="club"', 1)[0]
     assert "non ha ancora pubblicato la distinta" not in con
+    st.close()
+
+
+def test_card_panchina_tre_esiti_eta_dichiarata_e_orologio(tmp_path):
+    """`docs/78` §1–§3: la card dichiara i tre esiti, l'età mancante e l'orologio.
+
+    Misurato sulla build del 2026-10-11: la riga virtuale copriva solo vittoria e
+    sconfitta (e nel computo l'avversaria non incassava i suoi punti), 108 celle su 208
+    dicevano un «n.d.» muto sull'età media dei titolari, e la classifica usata dalle
+    distanze non dichiarava di essere quella raccolta oggi.
+    """
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    # Inter–Monza: entrambe nella simulazione di stagione → la card si pubblica anche
+    # senza distinta per questa partita (nessuna riga di lineup). Gli id 8636/6504 sono
+    # quelli delle squadre nel campione dei test (TEAM_MAP di FakeFotMob).
+    st.upsert("fixtures", [_fixture_futura(5900005, 5, 8636, "Inter", 6504, "Monza", now)])
+    # classifica con quattro squadre (la card calcola le distanze solo con una tabella
+    # completa): Monza ultima, così la riga delle distanze e la virtuale hanno senso
+    st.upsert("fotmob_standings", [
+        {"league_code": "ITA1", "team_id": 8636, "team_name": "Inter", "rank": 1, "played": 3,
+         "wins": 3, "draws": 0, "losses": 0, "goals_for": 8, "goals_against": 2, "goal_diff": 6, "points": 9},
+        {"league_code": "ITA1", "team_id": 9875, "team_name": "Napoli", "rank": 2, "played": 3,
+         "wins": 2, "draws": 1, "losses": 0, "goals_for": 6, "goals_against": 3, "goal_diff": 3, "points": 7},
+        {"league_code": "ITA1", "team_id": 8564, "team_name": "Milan", "rank": 3, "played": 3,
+         "wins": 1, "draws": 0, "losses": 2, "goals_for": 4, "goals_against": 5, "goal_diff": -1, "points": 3},
+        {"league_code": "ITA1", "team_id": 6504, "team_name": "Monza", "rank": 4, "played": 3,
+         "wins": 0, "draws": 1, "losses": 2, "goals_for": 2, "goals_against": 8, "goal_diff": -6, "points": 1},
+    ])
+    # archivio testa-a-testata raccolto per QUESTA partita (docs/78 §7): tre confronti
+    # diretti già giocati, dal punto di vista dell'Inter 1V 1N 1P e del Monza 1V 1N 1P
+    st.upsert("h2h", [
+        {"match_id": 5900005, "utc": "2025-01-15T18:00:00+00:00", "league": "Serie A",
+         "home_id": 8636, "away_id": 6504, "home_goals": 2, "away_goals": 1},
+        {"match_id": 5900005, "utc": "2025-05-20T18:00:00+00:00", "league": "Serie A",
+         "home_id": 6504, "away_id": 8636, "home_goals": 1, "away_goals": 1},
+        {"match_id": 5900005, "utc": "2025-09-10T18:00:00+00:00", "league": "Serie A",
+         "home_id": 8636, "away_id": 6504, "home_goals": 0, "away_goals": 2},
+    ])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900005})
+    html = (out / "partite" / "5900005.html").read_text(encoding="utf-8")
+    card = html.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
+    # i precedenti vengono dall'archivio testa-a-testata, non dall'archivio distinte
+    # (1 gara per coppia): la riga si accende su entrambe le celle, speculare
+    assert card.count("nel nostro archivio: 1V 1N 1P su 3 gare") == 2
+    assert "bilancio con Monza nel nostro archivio" in card
+    assert "bilancio con Inter nel nostro archivio" in card
+    # docs/78 §6: il numero è la probabilità di retrocessione (colonna «Retro» di Proiezioni),
+    # non la salvezza: fino al 2026-10-11 la coda diceva «salvezza N%» invertendo il significato
+    assert re.search(r"retrocessione \d+%", card) and not re.search(r"salvezza \d+%", card)
+    # tre esiti, non due
+    assert re.search(r"con una vittoria \d+º · con un pareggio \d+º · con una sconfitta \d+º",
+                     card)
+    # niente distinta per questa partita: la cella dell'età lo dichiara, non tace
+    assert card.count("distinta non ancora pubblicata") == 2
+    assert ">n.d.<" not in card
+    # le convenzioni della riga virtuale e l'orologio della classifica sono dichiarati
+    assert "raccolta oggi, non quella alla vigilia" in card
+    assert "entrambe</b> le squadre di questa partita" in card
+    # con lo snapshot del seed (senza p_top_n) la soglia è storica: la nota lo spiega
+    assert "«Dato storico» indica uno snapshot precedente a P1.7" in card
+    # con lo snapshot nuovo la frase sparisce: non si spiega un'etichetta che non c'è
+    sim = st.read("season_sim")
+    sim["top_n"] = 4
+    sim["p_top_n"] = sim.p_top4
+    st.write("season_sim", sim)
+    out2 = tmp_path / "sito2"
+    SiteBuilder(store=st, out_dir=out2).build_match_pages({5900005})
+    card2 = (out2 / "partite" / "5900005.html").read_text(encoding="utf-8")
+    card2 = card2.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
+    assert "«Dato storico»" not in card2
+    st.close()
+
+
+def test_scheda_di_una_gara_finita_non_resta_pre_partita(tmp_path):
+    """`docs/78` §8: i dettagli possono essere un'istantanea vecchia, il calendario no.
+
+    Nella build del 2026-10-11, 22 gare già finite nel calendario avevano i dettagli a
+    «scheduled»/«live»: la scheda restava «Analisi pre-partita» (card panchina compresa)
+    e, col filtro ``ko <= kickoff``, la card contava la partita stessa fra i «precedenti»,
+    pubblicando il risultato già maturato. Qui la partita campione è finita nel calendario
+    e la sua riga `match_info` dice «scheduled»: la scheda deve uscire come finita, senza
+    la card pre-partita.
+    """
+    st = _seed(tmp_path)
+    mi = st.read("match_info")
+    mi.loc[mi.match_id == 5749645, "status"] = "scheduled"
+    st.write("match_info", mi)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})
+    html = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    assert 'id="panchina"' not in html
+    assert "Analisi pre-partita" not in html
+    st.close()
+
+
+def test_card_panchina_rendimento_dichiarato_per_un_subentro(tmp_path):
+    """Un allenatore appena subentrato senza gare finite lo dice (`docs/78` §3)."""
+    st = _seed(tmp_path)
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_futura(5900006, 4, 6504, "Monza", 9875, "Napoli", now)])
+    lu = st.read("lineup")
+    nuovo = pd.concat([
+        lu,
+        pd.DataFrame([{"match_id": 5900006, "team_id": 6504, "player_id": 900001,
+                       "player_name": "Nuovo Allenatore", "role": "coach"}]),
+    ], ignore_index=True)
+    st.write("lineup", nuovo)
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900006})
+    card = (out / "partite" / "5900006.html").read_text(encoding="utf-8")
+    card = card.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
+    assert "rendimento: <b>nessuna gara finita con lui in panchina</b>" in card
     st.close()

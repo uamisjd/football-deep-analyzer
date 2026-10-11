@@ -31,6 +31,41 @@ TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole
 # due pagine che citavano lo stesso numero di RPS dei bookmaker lo scrivevano in due modi.
 RANGE_ASCII = re.compile(r"\d+,\d+-\d+,\d+")
 
+# Card «Panchina e posta in gioco»: l'oracolo di [19] legge le celle della tabella (non chiama
+# ``bench_deep``, altrimenti verificherebbe il generatore con se stesso — docs/78 §1).
+PANCHINA_CARD = re.compile(r'<div class="card" id="panchina">(.*?)(?=<div class="card"|<footer)',
+                           re.DOTALL)
+PANCHINA_ROW = re.compile(r'<th scope="row">(Allenatore|Posta in gioco|Età media titolari)</th>'
+                          r'(.*?)(?=</tr>)', re.DOTALL)
+PANCHINA_TD = re.compile(r'<td>(.*?)</td>', re.DOTALL)
+
+
+def panchina_cella(html: str) -> str:
+    """Testo della cella della card panchina: via i tag, spazi normalizzati."""
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+
+
+def posizione_virtuale(tab: Any, tid: int, opp_id: int, pts: int, gd: int,
+                       delta_mio: int, delta_avv: int) -> int:
+    """Posizione virtuale con questo risultato: punti a **entrambe** le squadre della partita.
+
+    Ricalcolo indipendente della riga verde di «Panchina e posta in gioco» (docs/78 §1):
+    nella sconfitta l'avversaria incassa i 3 punti e può scavalcare, nella vittoria li
+    incassa la squadra. Le altre gare restano in sospeso e la differenza reti è quella
+    attuale, come dichiara la nota della card.
+    """
+    mio = pts + delta_mio
+    sopra = 0
+    for rr in tab.itertuples(index=False):
+        rid = int(rr.team_id)
+        if rid == tid:
+            continue
+        pu = int(rr.points) + (delta_avv if rid == opp_id else 0)
+        di = int(rr.goal_diff or 0)
+        if pu > mio or (pu == mio and di > gd):
+            sopra += 1
+    return sopra + 1
+
 
 def record_campo(fx: Any, team_id: int, in_casa: bool, kickoff: Any) -> tuple[int, int, int, int]:
     """Bilancio di una squadra **nel ruolo in cui gioca questa partita**.
@@ -2283,8 +2318,12 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: etichetta «senza minuti in stagione» senza tooltip esplicativo")
     print(f"[18] etichette impatto infermeria verificate: {n_imp} pagine")
 
-    # 19) panchina e posta in gioco (docs/21 P0-1): coach, subentro e percentuali Monte Carlo
-    # ricalcolati dai Parquet; la sezione deve esserci se e solo se i dati ci sono.
+    # 19) panchina e posta in gioco (docs/21 P0-1): coach, subentro, rendimento, distanze di
+    # classifica e posizione virtuale ricalcolati dai Parquet **senza** passare da
+    # ``bench_deep``. Il gate che riusa la funzione del generatore non può vedere gli errori
+    # che stanno *dentro* la funzione: la posizione virtuale che dimenticava i punti
+    # dell'avversaria è passata [19] per 36 celle su 208 fino al 2026-10-11 (docs/78 §1).
+    from fda.config import leagues as _leagues19
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
@@ -2296,9 +2335,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     desc19 = ({str(x): str(y or "") for x, y in zip(nd19.title, nd19.description)}
               if not nd19.empty and "description" in nd19.columns else {})
     sim19 = st.read("season_sim")
+    h2h19 = st.read("h2h")
+    fm19 = st.read("fotmob_standings")
+    mi19 = st.read("match_info")
     from fda.site.analysis import MatchAnalysis as _MA
     from fda.sources.news import JUNK_NEWS, is_italian_news, news_value
     ma19 = _MA(st)
+    _lg19 = {lg.fotmob_id: lg.key for lg in _leagues19()}
+    _ucl19 = {lg.key: lg.ucl_spots for lg in _leagues19()}
     n_bench = 0
     if not fx19.empty and not lu19.empty and "role" in lu19.columns:
         ko19 = fx19.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
@@ -2310,6 +2354,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         if not sim19.empty:
             for r in sim19.itertuples(index=False):
                 sim19map.setdefault(_canon(r.team), r)
+        fin19 = fx19[fx19.status == "finished"].copy() if not fx19.empty else fx19
+        if not fin19.empty:
+            fin19["ko"] = pd.to_datetime(fin19.utc_kickoff, utc=True)
         for pg in pages:
             html = pg.read_text(encoding="utf-8")
             if "Analisi pre-partita" not in html:
@@ -2320,8 +2367,25 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             fr = fx19[fx19.match_id == mid].iloc[0]
             kickoff = pd.Timestamp(fr.utc_kickoff)
             txt = html_unescape(html)   # le etichette con apostrofo arrivano escaped (&#39;)
+            # docs/78 §8: se il calendario dà la gara finita, la scheda non può restare
+            # «Analisi pre-partita» solo perché i dettagli sono un'istantanea vecchia.
+            # Nella build del 2026-10-11 succedeva su 22 schede, e la card contava la
+            # partita stessa fra i «precedenti».
+            checks += 1
+            if str(fr.status) == "finished" and 'id="panchina"' in html:
+                fails.append(f"{pg.name}: scheda pre-partita per una gara che il calendario "
+                             f"dà finita")
             atteso = False
-            for tid, tname in ((int(fr.home_id), fr.home_name), (int(fr.away_id), fr.away_name)):
+            card19 = PANCHINA_CARD.search(txt)
+            righe19 = {}
+            if card19:
+                for nome_riga, corpo in PANCHINA_ROW.findall(card19.group(1)):
+                    celle = PANCHINA_TD.findall(corpo)
+                    if len(celle) == 2:
+                        righe19[nome_riga] = [panchina_cella(c) for c in celle]
+            for lato, (tid, tname, oid, oname) in enumerate((
+                    (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
+                    (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name)))):
                 ct = co19[(co19.team_id == tid) & (co19.ko <= kickoff)] if not co19.empty else co19
                 coach = None
                 if not ct.empty:
@@ -2338,14 +2402,132 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 sr = sim19map.get(_canon(str(tname)))
                 if coach or sr is not None:
                     atteso = True
-                if coach and 'id="panchina"' in html:
+                if 'id="panchina"' not in html:
+                    continue
+                # --- allenatore: nome, permanenza, rendimento (ricalcolo indipendente) ---
+                # Le righe della cella si leggono dal testo della cella (i valori utili stanno
+                # dentro <b>, quindi cercarli nell'HTML grezzo li troverebbe spezzati dai tag).
+                cella_all = (righe19.get("Allenatore") or ["", ""])[lato]
+                if coach:
                     checks += 1
                     if coach[0] not in txt:
                         fails.append(f"{pg.name}: panchina senza il coach {coach[0]} dei Parquet")
-                    if coach[1] is not None and \
-                            ("panchina nuova" not in txt or str(coach[1]) not in txt):
-                        fails.append(f"{pg.name}: subentro a {coach[1]} non dichiarato")
-                if sr is not None and 'id="panchina"' in html:
+                    # docs/78 §5: la nazione si stampa col nome italiano; un codice ISO grezzo
+                    # («· 45 anni · ROU») significa che la mappa `_COUNTRY_IT` è rimasta indietro
+                    checks += 1
+                    if re.search(r"anni · [A-Z]{3}\b", cella_all):
+                        fails.append(f"{pg.name}: nazione in codice grezzo nella cella "
+                                     f"allenatore ({tname}): {cella_all[:60]}")
+                    stretta = (f"panchina nuova: {coach[2]}ª gara dal subentro a {coach[1]}"
+                               if coach[1] else
+                               f"panchina invariata da {coach[2]} "
+                               f"{'gara' if coach[2] == 1 else 'gare'} nel nostro archivio")
+                    checks += 1
+                    if stretta not in cella_all:
+                        fails.append(f"{pg.name}: riga permanenza ({tname}) «{stretta}» assente")
+                    # rendimento: punti/gara nelle gare finite dirette dal coach corrente
+                    ids_coach = set(ct.loc[ct.player_id == ct.iloc[-1].player_id, "match_id"]) \
+                        if not ct.empty else set()
+                    gare_coach = fin19[fin19.match_id.isin(ids_coach) & (fin19.ko <= kickoff)] \
+                        if not fin19.empty else fin19
+                    checks += 1
+                    if len(gare_coach):
+                        punti = int(sum(
+                            3 if ((r.home_id == tid and r.home_goals > r.away_goals)
+                                  or (r.away_id == tid and r.away_goals > r.home_goals))
+                            else 1 if r.home_goals == r.away_goals else 0
+                            for r in gare_coach.itertuples(index=False)))
+                        pg_gara = f"{punti / len(gare_coach):.1f}".replace(".", ",")
+                        atteso_ppg = (f"rendimento: {pg_gara} punti/gara su "
+                                      f"{len(gare_coach)} "
+                                      f"{'gara finita' if len(gare_coach) == 1 else 'gare finite'}")
+                    else:
+                        atteso_ppg = "rendimento: nessuna gara finita con lui in panchina"
+                    if atteso_ppg not in cella_all:
+                        fails.append(f"{pg.name}: rendimento panchina ({tname}) «{atteso_ppg}» assente")
+                    # precedenti: bilancio dall'archivio testa-a-testata di questa partita
+                    # (`docs/78` §7), ricalcolato dalla tabella h2h senza passare da
+                    # ``_h2h_core``; e incroci in panchina dalle distinte
+                    checks += 1
+                    if not h2h19.empty:
+                        hh19 = h2h19[(h2h19.match_id == mid)
+                                     & (((h2h19.home_id == tid) & (h2h19.away_id == oid))
+                                        | ((h2h19.home_id == oid) & (h2h19.away_id == tid)))]
+                        hh19 = hh19.dropna(subset=["utc", "home_goals", "away_goals",
+                                                   "home_id", "away_id"])
+                        hh19 = hh19[pd.to_datetime(hh19.utc, utc=True) < kickoff]
+                        if len(hh19):
+                            w19p = int(sum(1 for r in hh19.itertuples(index=False)
+                                           if (r.home_id == tid and r.home_goals > r.away_goals)
+                                           or (r.away_id == tid and r.away_goals > r.home_goals)))
+                            d19p = int(sum(1 for r in hh19.itertuples(index=False)
+                                           if r.home_goals == r.away_goals))
+                            l19p = len(hh19) - w19p - d19p
+                            atteso_prec = (
+                                f"un solo precedente in archivio con {oname}: "
+                                f"{w19p}V {d19p}N {l19p}P" if len(hh19) == 1 else
+                                f"bilancio con {oname} nel nostro archivio: "
+                                f"{w19p}V {d19p}N {l19p}P su {len(hh19)} gare")
+                            if atteso_prec not in cella_all:
+                                fails.append(f"{pg.name}: precedenti ({tname}) "
+                                             f"«{atteso_prec}» assenti o diversi")
+                    # incroci in panchina: precedenti tra i due **allenatori** — gare in cui
+                    # si sono trovati su panchine opposte, qualsiasi club, prima di questa
+                    # (`docs/78` §7). Ricalcolo indipendente dalle distinte del Parquet.
+                    checks += 1
+                    opp19 = None
+                    occ19 = co19[(co19.team_id == oid) & (co19.ko <= kickoff)] if not co19.empty else co19
+                    if not occ19.empty:
+                        opp19 = occ19.sort_values("ko", kind="stable").iloc[-1]
+                    atteso_inc = None
+                    if coach and opp19 is not None and not pd.isna(opp19.player_id):
+                        cur19 = co19[(co19.team_id == tid) & (co19.ko <= kickoff)] \
+                            .sort_values("ko", kind="stable").iloc[-1].player_id
+                        if not pd.isna(cur19):
+                            lc19 = co19[co19.ko < kickoff]
+                            miei19 = lc19[lc19.player_id == cur19]
+                            suoi19 = lc19[lc19.player_id == opp19.player_id]
+                            mm19 = []
+                            for m19 in set(miei19["match_id"]) & set(suoi19["match_id"]):
+                                t1 = set(miei19.loc[miei19.match_id == m19, "team_id"])
+                                t2 = set(suoi19.loc[suoi19.match_id == m19, "team_id"])
+                                if t1 and t2 and not (t1 & t2):
+                                    mm19.append(m19)
+                            w19i = d19i = l19i = 0
+                            if mm19 and not fin19.empty:
+                                gg19 = fin19[(fin19.match_id.isin(mm19)) & (fin19.ko < kickoff)]
+                                for r in gg19.itertuples(index=False):
+                                    tm19 = set(miei19.loc[miei19.match_id == r.match_id,
+                                                         "team_id"])
+                                    gf19, ga19 = ((r.home_goals, r.away_goals)
+                                                  if r.home_id in tm19
+                                                  else (r.away_goals, r.home_goals))
+                                    if pd.isna(gf19) or pd.isna(ga19):
+                                        continue
+                                    if gf19 > ga19:
+                                        w19i += 1
+                                    elif gf19 == ga19:
+                                        d19i += 1
+                                    else:
+                                        l19i += 1
+                            n19i = w19i + d19i + l19i
+                            if n19i:
+                                nome19 = str(opp19.player_name)
+                                atteso_inc = (
+                                    f"un solo incrocio in panchina con {nome19}: "
+                                    f"{w19i}V {d19i}N {l19i}P" if n19i == 1 else
+                                    f"incroci in panchina con {nome19}: "
+                                    f"{w19i}V {d19i}N {l19i}P su {n19i} gare")
+                    if atteso_inc is None:
+                        if "incrocio in panchina con" in cella_all \
+                                or "incroci in panchina con" in cella_all:
+                            fails.append(f"{pg.name}: incroci in panchina ({tname}) presenti "
+                                         f"senza un precedente reale nei Parquet")
+                    elif atteso_inc not in cella_all:
+                        fails.append(f"{pg.name}: incroci in panchina ({tname}) "
+                                     f"«{atteso_inc}» assenti o diversi")
+                # --- posta in gioco e classifica (ricalcolo indipendente) ---
+                if sr is not None:
                     checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
                     if raw_top is None or pd.isna(raw_top):
@@ -2357,34 +2539,84 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pr = round(float(sr.p_rel) * 100)
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
-                    if atteso not in txt or f"salvezza {pr}%" not in txt:
+                    if atteso not in txt or f"retrocessione {pr}%" not in txt:
                         fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
-                    lab = ("corsa al titolo" if float(sr.p_title) >= 0.15 else
-                           ("corsa alla Champions" if top_n < 4 else "corsa all'Europa")
-                           if raw_top is not None and not pd.isna(raw_top) and float(raw_top) >= 0.35 else
-                           "lotta salvezza" if float(sr.p_rel) >= 0.35 else
-                           "zona salvezza non lontana" if float(sr.p_rel) >= 0.15 else
-                           "stagione di metà classifica")
+                    checks += 1
+                    if float(sr.p_title) >= 0.15:
+                        lab = "corsa al titolo"
+                    elif raw_top is not None and not pd.isna(raw_top) and float(raw_top) >= 0.35:
+                        lab = "corsa alla Champions"
+                    elif float(sr.p_rel) >= 0.35:
+                        lab = "lotta salvezza"
+                    elif float(sr.p_rel) >= 0.15:
+                        lab = "zona salvezza non lontana"
+                    else:
+                        lab = (f"proiezione: {str(round(float(sr.pos_mean), 1)).replace('.', ',')}"
+                               f"º posto in media")
                     if lab not in txt:
                         fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
+                code19 = _lg19.get(int(fr.league_id)) if not pd.isna(fr.league_id) else None
+                tab19 = (fm19[fm19.league_code == code19].drop_duplicates("team_id")
+                         if code19 and not fm19.empty else fm19.iloc[0:0])
+                riga19 = tab19[tab19.team_id == tid]
+                if not riga19.empty and 'id="panchina"' in html:
+                    r19 = riga19.iloc[0]
+                    n19 = len(tab19)
+                    pts19, gd19, rank19 = int(r19.points), int(r19.goal_diff or 0), int(r19["rank"])
+                    by_rank19 = tab19.set_index("rank")
+                    releg19 = n19 - 2 if n19 == 20 else n19 - 1
+                    pezzi = [f"{rank19}º con {pts19} punt{'o' if pts19 == 1 else 'i'}"]
+                    if releg19 in by_rank19.index and rank19 < releg19:
+                        marg19 = pts19 - int(by_rank19.loc[releg19, "points"])
+                        pezzi.append(
+                            f"{marg19} punt{'o' if marg19 == 1 else 'i'} sopra la zona retrocessione"
+                            if marg19 > 0 else "a pari punti con la zona retrocessione")
+                    elif releg19 - 1 in by_rank19.index:
+                        need19 = int(by_rank19.loc[releg19 - 1, "points"]) - pts19
+                        pezzi.append(
+                            f"{need19} punt{'o' if need19 == 1 else 'i'} dalla salvezza diretta"
+                            if need19 > 0 else "in zona salvezza diretta")
+                    ucl19 = _ucl19.get(code19) if code19 else None
+                    if ucl19 is not None and ucl19 in by_rank19.index:
+                        if rank19 <= ucl19:
+                            pezzi.append(f"in zona UCL (prime {ucl19})")
+                        else:
+                            ge19 = int(by_rank19.loc[ucl19, "points"]) - pts19
+                            pezzi.append(
+                                f"{ge19} punt{'o' if ge19 == 1 else 'i'} dal {ucl19}º posto"
+                                if ge19 > 0 else f"a pari punti col {ucl19}º posto")
+                    checks += 1
+                    atteso_tab = " · ".join(pezzi)
+                    if atteso_tab not in txt:
+                        fails.append(f"{pg.name}: distanze di classifica ({tname}) «{atteso_tab}» "
+                                     f"assenti o diverse")
+
+                    checks += 1
+                    atteso_vir = (
+                        f"con una vittoria {posizione_virtuale(tab19, tid, oid, pts19, gd19, 3, 0)}º · "
+                        f"con un pareggio {posizione_virtuale(tab19, tid, oid, pts19, gd19, 1, 1)}º · "
+                        f"con una sconfitta {posizione_virtuale(tab19, tid, oid, pts19, gd19, 0, 3)}º")
+                    if atteso_vir not in txt:
+                        fails.append(f"{pg.name}: posizione virtuale ({tname}) «{atteso_vir}» "
+                                     f"assente o diversa")
+                # --- età media titolari: dichiarata quando la distinta non c'è ---
+                if not mi19.empty and "home_avg_starter_age" in mi19.columns and card19:
+                    col19 = "home_avg_starter_age" if lato == 0 else "away_avg_starter_age"
+                    info19 = mi19[mi19.match_id == mid]
+                    eta19 = info19.iloc[0].get(col19) if not info19.empty else None
+                    titolari19 = len(lu19[(lu19.match_id == mid) & (lu19.team_id == tid)
+                                          & (lu19.role == "starter")]) if not lu19.empty else 0
+                    checks += 1
+                    cella_eta = (righe19.get("Età media titolari") or ["", ""])[lato]
+                    if eta19 is not None and not pd.isna(eta19):
+                        atteso_eta = f"{round(float(eta19), 1):.1f}".replace(".", ",") + " anni"
+                    else:
+                        atteso_eta = "n.d." if titolari19 else "distinta non ancora pubblicata"
+                    if atteso_eta not in cella_eta:
+                        fails.append(f"{pg.name}: età media titolari ({tname}) «{atteso_eta}» "
+                                     f"attesa, in pagina «{cella_eta[:60]}»")
             if atteso and 'id="panchina"' not in html:
                 fails.append(f"{pg.name}: scheda pre senza sezione panchina pur avendo i dati")
-            # righe «utili» della card (rendimento, precedenti mirati, distacchi, virtuale):
-            # ricalcolate con le funzioni del progetto e confrontate col testo stampato
-            if 'id="panchina"' in html:
-                for tid, tname, oid, oname in (
-                        (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
-                        (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name))):
-                    bd = ma19.bench_deep(tid, tname, oid, oname, kickoff)
-                    if not bd:
-                        continue
-                    for key in ("tenure_line", "coach_ppg_line", "coach_vs_opp_line",
-                                "coach_vs_coach_line", "table_line", "virtual_line"):
-                        val = bd.get(key)
-                        if val:
-                            checks += 1
-                            if val not in txt:
-                                fails.append(f"{pg.name}: riga panchina «{key}» ({tname}) assente o diversa")
             n_bench += 1
     print(f"[19] panchina e posta in gioco verificate: {n_bench} pagine")
 

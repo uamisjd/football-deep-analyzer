@@ -1,3 +1,57 @@
+## 2026-10-11 — Card «Panchina e posta in gioco»: controllo a 360 gradi (docs/78)
+
+Richiesta dell'utente: revisione completa di cosa propone e come lo propone la card, su tutte
+le schede. Misura in `scripts/audit_panchina.py` (ricalcolo indipendente dai Parquet, mai
+`bench_deep`); dettagli e numeri in `docs/78`. Difetti trovati e corretti:
+
+1. **Riga verde a due esiti e senza i punti dell'avversaria** — 36 celle su 208 sbagliavano la
+   posizione «con una sconfitta» (l'avversaria incassa i 3 punti e può scavalcare). Ora tre
+   esiti con i punti applicati a **entrambe** le squadre, ricalcolati dall'oracolo [19].
+2. **Etichette che contraddicevano il numero** — «corsa all'Europa» su 23 celle che stampavano
+   `UCL (prime 4)` ≥35% (ora «corsa alla Champions»); senza postura in bilico l'aggettivo è
+   sostituito dal numero della simulazione, «proiezione: X,Xº posto in media» (la «Media pos.»
+   di Proiezioni). Soglie dichiarate 0,15/0,35.
+3. **Celle mute** — 108 celle con «n.d.» sull'età (ora «distinta non ancora pubblicata» con
+   tooltip) e 6 celle senza rendimento per un subentro (ora «nessuna gara finita con lui in
+   panchina»).
+4. **Ripetizioni** — notizia del subentro in due card (11 schede) e «Panchina nuova» due volte
+   (2): una voce per fatto; clima e «Da sapere» rimandano alla card.
+5. **Nazioni in codice grezzo** — 9 celle stampavano `ROU`, `BIH`, `DEN`, `CHI`, `USA`:
+   `_COUNTRY_IT` completa sui 116 codici delle distinte + `country_it()` (un codice ignoto non
+   finisce a schermo). Ora 164/164 celle in italiano.
+6. **«salvezza N%» era «retrocessione N%»** — `p_rel` è la probabilità di finire nei posti
+   rossi (la colonna «Retro» di Proiezioni): significato invertito su tutte le celle. Parola,
+   nota, attesi di [19]/audit e test di regressione allineati.
+7. **Precedenti** — le due righe non si accendevano mai (0/208: l'archivio distinte copre 1
+   gara per coppia). Il bilancio con l'avversaria ora viene dall'**archivio testa-a-testata**
+   già raccolto (`h2h`, la stessa fonte della card omonima): 160 celle su 164 pubblicano il
+   bilancio (es. «2V 5N 23P su 30 gare»). Gli **incroci in panchina fra allenatori** — la prima
+   stesura contava le gare del club, sbagliando (segnalato dall'utente) — ora sono definiti
+   come le gare in cui i due si sono trovati su panchine opposte, su qualunque coppia di club,
+   prima di questa: **0 incroci reali** nell'archivio panchine di oggi (441 partite, dal 7
+   agosto), quindi la riga non si pubblica — meglio il silenzio di un numero finto; il codice
+   è testato e si accenderà quando l'archivio conterrà un incrocio (o con un backfill da
+   decidere).
+
+**Difetto trovato mentre si misurava il punto 7:** **22 schede (44 celle)** erano rese come
+«Analisi pre-partita» per gare che il **calendario dava già finite** — i dettagli
+(`match_info`) restano a «scheduled»/«live» quando la finestra a budget non li riaggiorna, e la
+pagina si fidava dei dettagli. Col taglio `ko <= kickoff` la card contava **quella stessa
+gara** fra i precedenti: per Genoa–Fiorentina (1-0) pubblicava «un solo incrocio in panchina
+con Paolo Vanoli: 1V 0N 0P», cioè il risultato della partita in corso. Corretto con due regole:
+**una partita finita lo resta** (basta che lo dica il calendario; nessun caso inverso nello
+store) e **il passato è rigorosamente prima** di questa partita. Effetto: schede pre-partita
+104 → 82 (le altre si leggono come «Finale», con punteggio e sezioni post-partita), righe
+«incrocio» pubblicate 44 → 0.
+
+Gate rifatti dopo l'ultima modifica: **598 test**, Ruff pulito, build **493 schede**,
+`verify_site` **233.508 · 0** (nuova invariante: niente card su una gara che il calendario dà
+finita), audit panchina **0 scostamenti · 0 silenzi**, `parita_schede` **82 · nessuna
+differenza**, `resa_375` **28.467 · 0**. Nessuna richiesta alle fonti. Punti aperti: backfill
+delle distinte storiche per gli incroci fra allenatori (decisione a parte), 4 celle POR1 con
+tutte le percentuali ≤1 (dichiarate), 4 celle senza archivio h2h (2 partite, si riempiranno
+alla prossima raccolta).
+
 ## 2026-10-10 — Card «Le due squadre»: controllo a 360 gradi (docs/76)
 
 Richiesta dell'utente: revisione completa di cosa propone e come lo propone la card «Le due

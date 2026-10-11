@@ -1755,6 +1755,10 @@ class MatchAnalysis:
             return None
         r = rows.iloc[0]
         p_t = float(r.p_title)
+        # `p_rel` è la probabilità di finire nei posti rossi della lega (REL_COUNTS: dirette +
+        # spareggio dove previsto, `season_sim.py`) — la colonna «Retro» di Proiezioni. Va
+        # stampata come «retrocessione», mai come «salvezza»: «salvezza N%» invertiva il
+        # significato della coda (`docs/78` §6, misurato il 2026-10-11 su 208 celle).
         p_r = float(r.p_rel)
         raw_top = r.get("p_top_n")
         legacy_top = raw_top is None or pd.isna(raw_top)
@@ -1772,13 +1776,22 @@ class MatchAnalysis:
         if p_t >= 0.15:
             label = "corsa al titolo"
         elif p_e is not None and p_e >= 0.35:
-            label = "corsa alla Champions" if top_n and top_n < 4 else "corsa all'Europa"
+            # Il numero pubblicato due righe sotto è la probabilità di chiudere nei posti
+            # UCL ordinari della lega: con 4 posti quel traguardo è la Champions, non
+            # «l'Europa». La vecchia inversione (`top_n < 4`) etichettava «corsa all'Europa»
+            # 23 celle che stampavano «UCL (prime 4) 36–99%» — Dortmund primo con 92%
+            # compreso (`docs/78` §2).
+            label = "corsa alla Champions"
         elif p_r >= 0.35:
             label = "lotta salvezza"
         elif p_r >= 0.15:
             label = "zona salvezza non lontana"
         else:
-            label = "stagione di metà classifica"
+            # Nessuna postura in bilico: al posto di un aggettivo di posizione che poteva
+            # contraddire la classifica stampata accanto (metà classifica su 47 celle su
+            # 101 fuori dall'intervallo 7ª–13ª, `docs/78` §2) va il numero della
+            # simulazione, lo stesso «Media pos.» della pagina Proiezioni.
+            label = f"proiezione: {str(round(float(r.pos_mean), 1)).replace('.', ',')}º posto in media"
         p_e_pct = None if p_e is None else round(p_e * 100)
         return {"p_title": p_t, "p_top_n": p_e, "p_top4": p_e, "p_rel": p_r,
                 "ucl_spots": top_n, "ucl_legacy": legacy_top,
@@ -1799,18 +1812,54 @@ class MatchAnalysis:
         return {"coach": coach, "stakes": stakes, "avg_age": age}
 
     # Nazionalità degli allenatori → italiano (i codici ISO grezzi non vanno a schermo).
-    _COUNTRY_IT: ClassVar[dict[str, str]] = {"ITA": "Italia", "ESP": "Spagna", "GER": "Germania", "FRA": "Francia",
-                   "ENG": "Inghilterra", "NED": "Paesi Bassi", "POR": "Portogallo",
-                   "BEL": "Belgio", "SCO": "Scozia", "ARG": "Argentina", "BRA": "Brasile",
-                   "CRO": "Croazia", "SRB": "Serbia", "DNK": "Danimarca",
-                   "AUT": "Austria", "SUI": "Svizzera", "URU": "Uruguay", "MEX": "Messico",
-                   "JPN": "Giappone", "KOR": "Corea del Sud", "POL": "Polonia", "SWE": "Svezia",
-                   "NOR": "Norvegia", "TUR": "Turchia", "GRE": "Grecia", "IRL": "Irlanda",
-                   "WAL": "Galles", "NIR": "Irlanda del Nord", "MAR": "Marocco", "ALG": "Algeria",
-                   "SEN": "Senegal", "GHA": "Ghana", "NGA": "Nigeria", "AUS": "Australia"}
+    # La mappa copre **tutti** i 116 codici presenti nelle distinte raccolte (misura del
+    # 2026-10-11, `docs/78` §5): con le 35 voci di prima nove celle stampavano il codice
+    # grezzo («· 45 anni · ROU», «· 49 anni · BIH», «· 48 anni · USA»...). Un codice nuovo
+    # non mappato non finisce a schermo: `country_it()` restituisce None e la cella mostra
+    # solo l'età, come quando la fonte la nazione non la pubblica affatto.
+    _COUNTRY_IT: ClassVar[dict[str, str]] = {
+        "ALB": "Albania", "ALG": "Algeria", "ANG": "Angola", "ARG": "Argentina",
+        "ARM": "Armenia", "AUS": "Australia", "AUT": "Austria", "BDI": "Burundi",
+        "BEL": "Belgio", "BEN": "Benin", "BFA": "Burkina Faso",
+        "BIH": "Bosnia ed Erzegovina", "BOL": "Bolivia", "BRA": "Brasile",
+        "BUL": "Bulgaria", "CAN": "Canada", "CGO": "Congo", "CHI": "Cile", "CHL": "Cile",
+        "CIV": "Costa d'Avorio", "CMR": "Camerun", "COD": "RD del Congo", "COL": "Colombia",
+        "COM": "Comore", "CPV": "Capo Verde", "CRC": "Costa Rica", "CRO": "Croazia",
+        "CTA": "Repubblica Centrafricana", "CUW": "Curaçao", "CYP": "Cipro",
+        "CZE": "Repubblica Ceca", "DEN": "Danimarca", "DNK": "Danimarca", "DOM": "Repubblica Dominicana",
+        "ECU": "Ecuador", "EGY": "Egitto", "ENG": "Inghilterra",
+        "EQG": "Guinea Equatoriale", "ESP": "Spagna", "EST": "Estonia", "FIN": "Finlandia",
+        "FRA": "Francia", "GAB": "Gabon", "GAM": "Gambia", "GEO": "Georgia",
+        "GER": "Germania", "GHA": "Ghana", "GLP": "Guadalupa", "GNB": "Guinea-Bissau",
+        "GRE": "Grecia", "GUI": "Guinea", "HAI": "Haiti", "HON": "Honduras",
+        "HUN": "Ungheria", "IDN": "Indonesia", "IRL": "Irlanda", "IRN": "Iran",
+        "IRQ": "Iraq", "ISL": "Islanda", "ISR": "Israele", "ITA": "Italia",
+        "JAM": "Giamaica", "JOR": "Giordania", "JPN": "Giappone", "KEN": "Kenya",
+        "KOR": "Corea del Sud", "KSA": "Arabia Saudita", "KVX": "Kosovo", "LIB": "Libano",
+        "LTU": "Lituania", "LUX": "Lussemburgo", "LVA": "Lettonia", "MAR": "Marocco",
+        "MAS": "Malaysia", "MEX": "Messico", "MKD": "Macedonia del Nord", "MLI": "Mali",
+        "MNE": "Montenegro", "MOZ": "Mozambico", "MTN": "Mauritania", "MTQ": "Martinica",
+        "NED": "Paesi Bassi", "NGA": "Nigeria", "NIG": "Niger", "NIR": "Irlanda del Nord",
+        "NOR": "Norvegia", "NZL": "Nuova Zelanda", "PAR": "Paraguay", "PER": "Perù",
+        "PHI": "Filippine", "POL": "Polonia", "POR": "Portogallo", "PUR": "Porto Rico",
+        "ROU": "Romania", "RSA": "Sudafrica", "RUS": "Russia", "SCO": "Scozia",
+        "SEN": "Senegal", "SLE": "Sierra Leone", "SRB": "Serbia", "SUI": "Svizzera",
+        "SUR": "Suriname", "SVK": "Slovacchia", "SVN": "Slovenia", "SWE": "Svezia",
+        "TAN": "Tanzania", "THA": "Thailandia", "TOG": "Togo", "TUN": "Tunisia",
+        "TUR": "Turchia", "UKR": "Ucraina", "URU": "Uruguay", "USA": "Stati Uniti",
+        "UZB": "Uzbekistan", "VEN": "Venezuela", "WAL": "Galles", "ZAM": "Zambia",
+    }
+
+    @classmethod
+    def country_it(cls, code: Any) -> str | None:
+        """Nome italiano del codice nazione della distinta, ``None`` se non mappato."""
+        if not isinstance(code, str) or not code.strip():
+            return None
+        return cls._COUNTRY_IT.get(code.strip().upper())
 
     def bench_deep(self, team_id: int, team_name: str, opp_id: int, opp_name: str,
-                   kickoff: datetime, avg_age: Any = None) -> dict[str, Any] | None:
+                   kickoff: datetime, avg_age: Any = None,
+                   match_id: int | None = None) -> dict[str, Any] | None:
         """La panchina e la posta in gioco come informazioni *utili*, non anagrafica.
 
         Tutto derivato dai Parquet già raccolti (nessuna fonte nuova, nessun numero
@@ -1820,8 +1869,11 @@ class MatchAnalysis:
           (subentro rilevato dal cambio di id, mai da voci);
         - **rendimento**: punti/gara sulle partite *finite* con l'allenatore corrente
           (le future non contano);
-        - **precedenti mirati**: bilancio dell'allenatore corrente contro la squadra
-          avversaria (da 3 gare in su) e contro l'allenatore avversario (da 2 in su);
+        - **precedenti**: bilancio con la squadra avversaria dall'**archivio dei
+          testa-a-testata** raccolto per questa partita (``h2h``, la stessa fonte della card
+          omonima) e incroci in panchina con l'allenatore avversario — le gare del nostro
+          archivio panchine in cui i due si sono trovati su panchine opposte, su qualunque
+          coppia di club, sempre **prima** di questa partita;
         - **posta in gioco di classifica**: distacco reale dalla zona retrocessione
           (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18) e dal 4º posto
           (linea Europa minima in tutte e 7 le leghe), dalla classifica FotMob viva;
@@ -1834,7 +1886,8 @@ class MatchAnalysis:
         age = None if avg_age is None or pd.isna(avg_age) else float(avg_age)
         out: dict[str, Any] = {"coach": coach, "stakes": stakes, "avg_age": age,
                                "coach_age": None, "coach_country_it": None,
-                               "coach_ppg_line": None, "coach_vs_opp_line": None,
+                               "coach_ppg_line": None, "coach_ppg_absent": False,
+                               "club_vs_opp_line": None,
                                "coach_vs_coach_line": None, "tenure_line": None,
                                "table_line": None, "virtual_line": None}
         # ---- profilo e rendimento dell'allenatore -------------------------------------------
@@ -1851,16 +1904,18 @@ class MatchAnalysis:
                     age_v, country_v = last.get("age"), last.get("country")
                     if age_v is not None and not pd.isna(age_v):
                         out["coach_age"] = int(age_v)
-                    if isinstance(country_v, str) and country_v.strip():
-                        out["coach_country_it"] = self._COUNTRY_IT.get(country_v.strip().upper(),
-                                                                       country_v.strip().upper())
+                    out["coach_country_it"] = self.country_it(country_v)
                     cur = last.player_id
                     fin = self.fixtures[(self.fixtures.status == "finished")
                                         & ((self.fixtures.home_id == team_id)
                                            | (self.fixtures.away_id == team_id))].copy()
                     fin["ko"] = pd.to_datetime(fin.utc_kickoff, utc=True)
-                    fin = fin[fin.ko <= pd.Timestamp(kickoff)]
-                    ids = set(ct.loc[ct.player_id == cur, "match_id"])
+                    # Rigorosamente *prima*: con ``<=`` la partita stessa (che può essere
+                    # già finita nel calendario mentre la scheda è ancora pre-partita)
+                    # entrava nel rendimento e nei precedenti (`docs/78` §7-§8).
+                    k19 = pd.Timestamp(kickoff)
+                    fin = fin[fin.ko < k19]
+                    ids = set(ct.loc[(ct.player_id == cur) & (ct.ko < k19), "match_id"])
                     mine = fin[fin.match_id.isin(ids)]
                     if not mine.empty:
                         pts = sum(
@@ -1873,32 +1928,80 @@ class MatchAnalysis:
                             f"{ppg:.1f}".replace(".", ",") +
                             (" punti/gara su 1 gara finita" if len(mine) == 1
                              else f" punti/gara su {len(mine)} gare finite"))
-                    # precedenti contro l'avversaria e contro l'allenatore avversario
-                    if pd.notna(cur):
-                        vs = mine[((mine.home_id == opp_id) | (mine.away_id == opp_id))]
-                        if len(vs) >= 3:
-                            w = sum(1 for r in vs.itertuples(index=False)
-                                    if (r.home_id == team_id and r.home_goals > r.away_goals)
-                                    or (r.away_id == team_id and r.away_goals > r.home_goals))
-                            d = sum(1 for r in vs.itertuples(index=False) if r.home_goals == r.away_goals)
-                            l = len(vs) - w - d
-                            out["coach_vs_opp_line"] = (
-                                f"bilancio contro {opp_name}: {w}V {d}N {l}P su {len(vs)} gare")
+                    else:
+                        # Un subentro appena avvenuto non ha gare concluse: senza questa riga
+                        # la cella taceva e il lettore non distingueva «dato perso» da
+                        # «nessuna partita ancora diretta» (misurato il 2026-10-11 su 6 celle
+                        # pre-partita, `docs/78` §3).
+                        out["coach_ppg_absent"] = True
+                    # precedenti: bilancio con l'avversaria dall'**archivio dei
+                    # testa-a-testata** raccolto per questa partita (la stessa fonte della
+                    # card omonima). Fino al 2026-10-11 questa riga leggeva l'archivio
+                    # delle distinte, che per coppia di squadre copre una sola gara: con le
+                    # soglie di allora (3 gare) non si accendeva su nessuna delle 208 celle
+                    # (`docs/78` §7). L'archivio h2h copre 202 celle su 208, mediana 20 gare.
+                    if match_id is not None:
+                        past = self._h2h_core(int(match_id), team_id, opp_id,
+                                              pd.Timestamp(kickoff), n=200)
+                        if past:
+                            w = sum(1 for r in past
+                                    if (r["home_id"] == team_id and r["hg"] > r["ag"])
+                                    or (r["away_id"] == team_id and r["ag"] > r["hg"]))
+                            d = sum(1 for r in past if r["hg"] == r["ag"])
+                            l = len(past) - w - d
+                            out["club_vs_opp_line"] = (
+                                f"un solo precedente in archivio con {opp_name}: "
+                                f"{w}V {d}N {l}P"
+                                if len(past) == 1 else
+                                f"bilancio con {opp_name} nel nostro archivio: "
+                                f"{w}V {d}N {l}P su {len(past)} gare")
+                    # incroci in panchina con l'allenatore avversario: le gare del nostro
+                    # archivio panchine in cui i due si sono trovati su panchine **opposte**,
+                    # su qualunque coppia di club — sono i precedenti tra i due allenatori,
+                    # non la sfida tra i due club (che sta nella riga qui sopra, con
+                    # l'archivio testa-a-testata). Fino al 2026-10-11 questa riga contava le
+                    # gare del *club* col coach avversario e, col filtro inclusivo sulla data,
+                    # finiva per contare **la partita stessa** su 22 schede: il risultato
+                    # della gara in corso spacciato per precedente (`docs/78` §7).
+                    if match_id is not None and pd.notna(cur):
                         opp_coach = self.coach(opp_id, kickoff)
-                        if opp_coach and opp_coach.get("id") is not None:
-                            occ = self.lineup[(self.lineup.role == "coach")
-                                              & (self.lineup.player_id == opp_coach["id"])]
-                            hv = mine[mine.match_id.isin(set(occ.match_id))]
-                            if len(hv) >= 2:
-                                w = sum(1 for r in hv.itertuples(index=False)
-                                        if (r.home_id == team_id and r.home_goals > r.away_goals)
-                                        or (r.away_id == team_id and r.away_goals > r.home_goals))
-                                d = sum(1 for r in hv.itertuples(index=False)
-                                        if r.home_goals == r.away_goals)
-                                l = len(hv) - w - d
-                                out["coach_vs_coach_line"] = (
-                                    f"scontro diretto con {opp_coach['name']}: "
-                                    f"{w}V {d}N {l}P su {len(hv)} gare")
+                        opp_cid = (opp_coach or {}).get("id")
+                        if opp_cid is not None and not pd.isna(opp_cid):
+                            lc = self.lineup[(self.lineup.role == "coach")
+                                             & (self.lineup.match_id.isin(ko.index))].copy()
+                            lc["ko"] = pd.to_datetime(lc.match_id.map(ko), utc=True)
+                            lc = lc[lc.ko < pd.Timestamp(kickoff)]
+                            miei = lc[lc.player_id == cur]
+                            suoi = lc[lc.player_id == opp_cid]
+                            incontri = []
+                            for m in set(miei["match_id"]) & set(suoi["match_id"]):
+                                tm = set(miei.loc[miei.match_id == m, "team_id"])
+                                to = set(suoi.loc[suoi.match_id == m, "team_id"])
+                                if tm and to and not (tm & to):
+                                    incontri.append(m)   # stessa panchina = dato anomalo
+                            if incontri:
+                                gare = self.fixtures[(self.fixtures.match_id.isin(incontri))
+                                                     & (self.fixtures.status == "finished")]
+                                w = d = l = 0
+                                for r in gare.itertuples(index=False):
+                                    tm = set(miei.loc[miei.match_id == r.match_id, "team_id"])
+                                    gf, ga = ((r.home_goals, r.away_goals) if r.home_id in tm
+                                              else (r.away_goals, r.home_goals))
+                                    if pd.isna(gf) or pd.isna(ga):
+                                        continue
+                                    if gf > ga:
+                                        w += 1
+                                    elif gf == ga:
+                                        d += 1
+                                    else:
+                                        l += 1
+                                n_inc = w + d + l
+                                if n_inc:
+                                    out["coach_vs_coach_line"] = (
+                                        f"un solo incrocio in panchina con {opp_coach['name']}: "
+                                        f"{w}V {d}N {l}P" if n_inc == 1 else
+                                        f"incroci in panchina con {opp_coach['name']}: "
+                                        f"{w}V {d}N {l}P su {n_inc} gare")
             if coach.get("prev_name"):
                 out["tenure_line"] = (f"panchina nuova: {coach['matches']}ª gara dal subentro "
                                       f"a {coach['prev_name']}")
@@ -1930,11 +2033,11 @@ class MatchAnalysis:
                 ucl_n = self.ucl_spots(code)
                 if ucl_n is not None and ucl_n in by_rank.index:
                     if rank <= ucl_n:
-                        # Manteniamo «Europa» per la frase storica della scheda; il
-                        # numero di posizione è quello ufficiale configurato per lega.
-                        gap_eur = (f"in zona Europa ({ucl_n}º posto o meglio)"
-                                   if ucl_n == 4 else
-                                   f"in zona Champions ({ucl_n}º posto o meglio)")
+                        # «in zona UCL (prime N)» e non «in zona Europa»: la riga sopra
+                        # stampa «UCL (prime N) X%», e con 4 posti il 4º posto È la
+                        # Champions — la vecchia etichetta si contraddiceva da sola su 23
+                        # celle delle 4 leghe a 4 posti (`docs/78` §2).
+                        gap_eur = f"in zona UCL (prime {ucl_n})"
                     else:
                         ge = int(by_rank.loc[ucl_n, "points"]) - pts
                         gap_eur = (
@@ -1952,18 +2055,31 @@ class MatchAnalysis:
                     parts.append(gap_eur)
                 out["table_line"] = " · ".join(parts)
 
-                def _virtual(my_pts: int) -> int:
+                def _virtual(my_delta: int, opp_delta: int) -> int:
+                    """Posizione virtuale se questa partita finisce così.
+
+                    I punti del risultato vanno applicati a **entrambe** le squadre di questa
+                    partita: nella sconfitta l'avversaria incassa i 3 punti e può scavalcare —
+                    il vecchio calcolo li lasciava fermi e su 36 celle su 208 la posizione
+                    stampata era una in più del vero (`docs/78` §1). Le altre gare restano in
+                    sospeso e la differenza reti è quella attuale (il margine del risultato
+                    non è noto).
+                    """
+                    my = pts + my_delta
                     better = 0
                     for r in tab.itertuples(index=False):
-                        if int(r.team_id) == int(st.get("team_id", -1)):
+                        rid = int(r.team_id)
+                        if rid == int(st.get("team_id", -1)):
                             continue
-                        op, og = int(r.points), int(r.goal_diff or 0)
-                        if op > my_pts or (op == my_pts and og > gd):
+                        op = int(r.points) + (opp_delta if rid == int(opp_id) else 0)
+                        og = int(r.goal_diff or 0)
+                        if op > my or (op == my and og > gd):
                             better += 1
                     return better + 1
 
-                pw, pl = _virtual(pts + 3), _virtual(pts)
-                out["virtual_line"] = (f"con una vittoria {pw}º · con una sconfitta {pl}º "
+                pw, pn, pl = _virtual(3, 0), _virtual(1, 1), _virtual(0, 3)
+                out["virtual_line"] = (f"con una vittoria {pw}º · con un pareggio {pn}º · "
+                                       f"con una sconfitta {pl}º "
                                        f"(classifica virtuale, altre gare in sospeso)")
         if all(out[k] is None for k in ("coach", "stakes", "avg_age", "table_line", "virtual_line")):
             return None
@@ -2048,9 +2164,13 @@ class MatchAnalysis:
                                     "«Le due squadre»"})
         coach = self.coach(team_id, kickoff)
         if coach and coach.get("prev_name"):
+            # Il numero (quale gara dal subentro, e da chi) è un dato della card «Panchina e
+            # posta in gioco»: qui resta il segnale, col rimando — stesso schema del segnale
+            # xPTS due righe sopra (docs/30, e docs/78 §4 per la misura: 11 schede
+            # ripetevano lo stesso conteggio in due card della stessa pagina).
             out.append({"tone": "warn",
-                        "text": f"{coach['matches']}ª gara dal subentro a {coach['prev_name']}: "
-                                f"il cambio panchina è una variabile di shock"})
+                        "text": "panchina nuova: il cambio di allenatore è una variabile di "
+                                "shock — i dettagli in «Panchina e posta in gioco»"})
         ab = self.absences_weight(match_id, team_id)
         if ab and (ab["n"] >= self.MOOD_ABSENT_N
                    or ab["starters_out"] >= self.MOOD_ABSENT_STARTERS
@@ -3139,11 +3259,13 @@ class MatchAnalysis:
             except (TypeError, ValueError):
                 continue
             if gare <= 3:
-                testo = (f"{nome} ha cambiato allenatore da poco: {co.get('name')} è in "
-                        f"carica da {it_plural(gare, 'gara')}")
-                if co.get("prev_name"):
-                    testo += f", ha preso il posto di {co['prev_name']}"
-                out.append({"titolo": "Panchina nuova", "testo": testo + "."})
+                # Il fatto resta (è vita del club), i numeri no: quale gara sia e da chi sia
+                # subentrato è il dato della card «Panchina e posta in gioco», che li stampa
+                # con la stessa soglia sulla stessa pagina (docs/30; docs/78 §4).
+                out.append({"titolo": "Panchina nuova",
+                            "testo": (f"{nome} ha cambiato allenatore da poco: "
+                                      f"{co.get('name')} è la nuova guida — i dettagli in "
+                                      f"«Panchina e posta in gioco».")})
         # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati)
         if not self.fixtures.empty:
             fin = self.fixtures[self.fixtures.status == "finished"]
@@ -5992,7 +6114,15 @@ class MatchAnalysis:
         info = _first(self.info[self.info.match_id == match_id]) if not self.info.empty else {}
         kickoff = pd.Timestamp(f["utc_kickoff"])
         home_id, away_id = int(f["home_id"]), int(f["away_id"])
-        status = _val(info, "status") or f["status"]
+        # Una partita finita lo resta anche se i suoi dettagli sono un'istantanea vecchia:
+        # il calendario (`fixtures`) si riaggiorna a ogni run, i dettagli (`match_info`)
+        # vivono in una finestra a budget e possono restare a «scheduled»/«live» per ore.
+        # Fidarsi dei dettagli, come si faceva, faceva nascere schede «Analisi pre-partita»
+        # per gare già giocate — 22 nella build del 2026-10-11 (`docs/78` §8) — e la card
+        # «Panchina e posta in gioco» contava quella stessa gara fra i «precedenti».
+        # Regola: basta che **una** delle due fonti dica «finita».
+        status = ("finished" if str(f["status"]) == "finished"
+                  else (_val(info, "status") or f["status"]))
         weather = self._weather(match_id, _val(info, "weather_desc"),
                                 _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
         weather["wind"] = _val(info, "weather_wind")
@@ -6063,10 +6193,12 @@ class MatchAnalysis:
             "home_absences": self.absences_weight(match_id, home_id) if status != "finished" else None,
             "away_absences": self.absences_weight(match_id, away_id) if status != "finished" else None,
             "home_bench": self.bench_deep(home_id, f["home_name"], away_id, f["away_name"],
-                                          kickoff, _val(info, "home_avg_starter_age"))
+                                          kickoff, _val(info, "home_avg_starter_age"),
+                                          match_id=match_id)
                           if status != "finished" else None,
             "away_bench": self.bench_deep(away_id, f["away_name"], home_id, f["home_name"],
-                                          kickoff, _val(info, "away_avg_starter_age"))
+                                          kickoff, _val(info, "away_avg_starter_age"),
+                                          match_id=match_id)
                           if status != "finished" else None,
             "home_mood": self.club_mood(match_id, home_id, f["home_name"], kickoff)
                           if status != "finished" else [],
