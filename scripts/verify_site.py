@@ -3223,6 +3223,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         mood_cup["ko"] = pd.to_datetime(mood_cup.utc_kickoff, utc=True, errors="coerce")
         for _c in ("home_goals", "away_goals"):
             mood_cup[_c] = pd.to_numeric(mood_cup.get(_c), errors="coerce")
+    mood_ev = st.read("events")
     mood_us = st.read("understat_team_matches")
     if not mood_us.empty:
         mood_us["_nome"] = mood_us.team_name.map(_canon)
@@ -3238,6 +3239,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     _S_LOSS, _S_NOWIN, _S_UNB, _S_DRY = 3, 4, 5, 3
     _S_ASS, _S_START, _S_CONTRIB = 4, 2, 0.5
     _S_REST, _S_CN, _S_CD, _S_SD = 3, 3, 10, 1.133
+    _S_PESANTE = 3   # scarto di una sconfitta → «sconfitta pesante»
 
     def _striscia_uguale(ris: list[str], val: str) -> int:
         n = 0
@@ -3331,6 +3333,26 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 attese.append(f"imbattuta da {unbeaten} gare in campionato: clima di fiducia")
             if secco >= _S_DRY:
                 attese.append(f"attacco a secco: {secco} gare senza segnare in campionato")
+            # --- ultima gara di campionato: sconfitta pesante e espulsione (`docs/81` §9) ---
+            _gare = mood_fx[(mood_fx.status == "finished") & (mood_fx.ko < kickoff)
+                            & ((mood_fx.home_id == tid) | (mood_fx.away_id == tid))]
+            if not _gare.empty:
+                _u = _gare.loc[_gare.ko.idxmax()]
+                _casa = int(_u.home_id) == tid
+                _gf, _ga = ((_u.home_goals, _u.away_goals) if _casa
+                            else (_u.away_goals, _u.home_goals))
+                if pd.notna(_gf) and pd.notna(_ga) and int(_ga) - int(_gf) >= _S_PESANTE:
+                    attese.append(f"sconfitta pesante nell'ultima gara di campionato: "
+                                  f"{int(_gf)}-{int(_ga)}")
+                    prefissi.append("sconfitta pesante nell'ultima gara di campionato")
+                if not mood_ev.empty and {"match_id", "card", "is_home"} <= set(mood_ev.columns):
+                    _rossi = mood_ev[(mood_ev.match_id == int(_u.match_id))
+                                     & mood_ev.card.astype(str).str.lower().isin(("red", "yellowred"))
+                                     & mood_ev.is_home.notna()
+                                     & (mood_ev.is_home.astype(bool) == _casa)]
+                    if not _rossi.empty:
+                        attese.append("espulsione nell'ultima gara di campionato")
+                        prefissi.append("espulsione nell'ultima gara di campionato")
             # --- xPTS: Understat alla vigilia; senza Understat il Poisson sui soli xG FotMob ---
             diff = banda = None
             ur = (mood_us[(mood_us._nome == _canon(tname)) & (mood_us._data < kickoff)]
@@ -3409,16 +3431,28 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                 _v = st_t.loc[nm, _k]
                                 _c += 0.0 if pd.isna(_v) else float(_v)
                         contrib_certo += round(_c / (mins / 90.0), 2) if _c else 0.0
-            riga_inf = next((x for x in righe if x.startswith("infermeria pesante")), None)
+            riga_inf = next((x for x in righe if x.startswith(("infermeria pesante", "assenze pesanti"))), None)
             if riga_inf:
-                prefissi.append("infermeria pesante")
+                prefissi.append("infermeria pesante" if riga_inf.startswith("infermeria")
+                                else "assenze pesanti")
+                # «infermeria» solo con i soli infortuni; con uno squalificato «assenze pesanti»
+                checks += 1
+                _soli_inf = all(str(t).strip().lower() == "injury"
+                                for t in unav.unavailability_type.dropna()) if not unav.empty else True
+                if _soli_inf and not riga_inf.startswith("infermeria pesante"):
+                    fails.append(f"{pg.name}: {tname} assenze etichettate «assenze pesanti» "
+                                 f"con soli infortuni")
+                if not _soli_inf and riga_inf.startswith("infermeria pesante"):
+                    fails.append(f"{pg.name}: {tname} «infermeria pesante» con una squalifica "
+                                 f"fra gli indisponibili")
                 checks += 1
                 mm = re.search(r"≈ ([0-9]+,[0-9]+) xG\+xA a partita in meno", riga_inf)
                 pub = float(mm.group(1).replace(",", ".")) if mm else 0.0
                 if not (n_un >= _S_ASS or titolari >= _S_START or pub >= _S_CONTRIB):
                     fails.append(f"{pg.name}: {tname} infermeria pubblicata senza soglia "
                                  f"({n_un} assenti, {titolari} titolari, {pub} xG+xA)")
-                _nm = re.match(r"infermeria pesante: ([0-9]+) assent", riga_inf)
+                _nm = re.match(r"(?:infermeria pesante|assenze pesanti): ([0-9]+) assent",
+                                 riga_inf)
                 if _nm and int(_nm.group(1)) != n_un:
                     fails.append(f"{pg.name}: {tname} infermeria «{riga_inf[:40]}» con {n_un} assenti")
             else:

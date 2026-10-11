@@ -128,11 +128,18 @@ l'audit aveva corretto mezz'ora prima. Un oracolo indipendente serve esattamente
 | note non allineate alle soglie del codice | 0 | 0 |
 | righe pubblicate | 228 | 228 (14 numeri corretti) |
 
-Gate (build del 2026-10-11): **`pytest` 623 passed** (+2 test nuovi), **`ruff` pulito**,
-**`fda build` 493 partite · 2.364 gare di calendario · 7.578 giocatori** (exit 0),
-**`verify_site` 0 problemi · 235.782 controlli** con [21] oracolo indipendente,
+Gate del **primo giro** (build del 2026-10-11): **`pytest` 623 passed** (+2 test nuovi),
+**`ruff` pulito**, **`fda build` 493 partite · 2.364 gare di calendario · 7.578 giocatori**
+(exit 0), **`verify_site` 0 problemi · 235.782 controlli** con [21] oracolo indipendente,
 **`parita_schede` 77 schede · nessuna differenza**, **`resa_375` 28.466 misure · 0 problemi**,
 `audit_clima` 0 difetti strutturali.
+
+Gate del **secondo giro** (§8-§10, build successiva): **`pytest` 624 passed** (+3 test, 3
+riscritti), `ruff` pulito, **`verify_site` 0 problemi · 235.902 controlli** ([21] esteso a
+sconfitta pesante, espulsione ed etichetta delle assenze), **`parita_schede` 77 · nessuna
+differenza** (minimo 90% della mediana), **`resa_375` 28.466 · 0**, `audit_clima` 0 difetti
+strutturali, `audit_clima_candidati` duplicazione **45 → 0**. Nessuna richiesta alle fonti
+esterne in nessuno dei due giri.
 
 **Limite dichiarato dell'audit.** Tre celle (Frosinone, Le Mans, Frankfurt) pubblicano la riga
 «infermeria pesante» grazie alla **stima stabilizzata** di un giocatore sotto i 90 minuti
@@ -157,10 +164,90 @@ tabella della stessa card.
   «in campionato» (12 caratteri) e la nota di una riga di legenda; il testo visibile mediano
   delle schede resta invariato al 100% della parità (`parita_schede`).
 
-## §8 — Prossimo passo
+## §8 — Secondo giro: un dato in un posto (la duplicazione con «Da sapere»)
+
+**La misura.** La card «Vita del club» apre con le voci «Da sapere · …», e tre di esse —
+*Momento delicato* (3 sconfitte), *Digiuno di vittorie* (5 gare) e *Striscia positiva*
+(5 imbattute) — calcolano **gli stessi fatti** delle strisce del clima. Misura sulle 154
+celle: **45 celle** pubblicavano lo stesso fatto in due card della stessa pagina, con **due
+soglie diverse** per lo stesso numero (5 gare contro 4 per «non vince da»), e per 22 celle
+«Da sapere» **ripeteva la stessa frase due volte** (una per squadra). È la violazione della
+regola `docs/30` (un dato in un posto) già applicata nel `docs/78` §4 a panchina e clima.
+
+**La verifica prima della correzione (regola B.10).** Le tre voci sono state misurate una per
+una: tutte le **77 schede** hanno almeno un'altra voce di «Da sapere» (bilancio in casa/fuori,
+uomo gol, porta inviolata, finale da brividi) — quindi rimuoverle **non** lascia nessuna
+pagina senza contenuto. Il blocco è stato rimosso da `news_sapere`; le strisce restano solo
+nella card clima, col tono e col numero intero.
+
+**Misure dopo:** celle con lo stesso fatto in due card **45 → 0**; frasi ripetute in «Da
+sapere» **22 → 0**. Test `test_da_sapere_senza_strisce_che_vivono_nel_clima` (le tre voci non
+escono più da `news_sapere`, i fatti di rendimento restano, la striscia è nel clima).
+
+## §9 — Due segnali nuovi dall'«ultima gara di campionato»
+
+**Perché.** La forma racconta l'*esito* dell'ultima gara («P»), non la sua gravità né cosa è
+successo in campo. Il metodo per aggiungere un segnale è quello di sempre: misurare la
+frequenza reale e la ridondanza, poi decidere.
+
+**Segnale 1 — sconfitta pesante (scarto ≥3 gol).** Frequenza misurata: **13 celle su 154**,
+di cui **12 non già in crisi di risultati** (Lecce 0-3, Frosinone 0-3, Utrecht 0-5, Zwolle
+0-3, Bournemouth 1-5, Manchester United 0-4, Frankfurt 0-6…). Ruolo della soglia: la
+distribuzione dei |margini| del campionato è 0/1/2/3+ con P(≥3) ≈ 2,9% per gara — un filtro
+che non si accende quasi mai per caso. Il numero pubblicato è lo **stesso punteggio della
+riga «Forma»**, quindi nessuna informazione nuova da spiegare.
+
+**Segnale 2 — espulsione nell'ultima gara.** Frequenza: **11 celle**; l'espulsione spiega
+perché la squadra ha chiuso in inferiorità numerica **e** chi è squalificato per questa
+partita. Il minuto esce quando la fonte lo pubblica (nove volte il minuto secco, due col
+recupero: «al 90+6'»). Dati da `events` (FotMob, la stessa fonte della cronaca), perimetro di
+campionato come le strisce.
+
+**Effetto:** righe pubblicate **228 → 252** (+13 sconfitte pesanti, +11 espulsioni), toni
+`warn` 194 → 218. Nessuna soglia tocca righe esistenti.
+
+**Invarianti e test.** L'oracolo [21] ricalcola entrambi i segnali dai Parquet (calendario per
+il punteggio, `events` per il rosso) e verifica le due direzioni; `scripts/audit_clima.py` fa
+lo stesso in modo indipendente (`ultima_gara`: 0 scostamenti). Test
+`test_clima_ultima_gara_sconfitta_pesante_ed_espulsione` (0-3 pesante + rosso al 53'; 1-2 con
+soli gialli → nessuna riga).
+
+## §10 — «Infermeria» non è la parola giusta con uno squalificato
+
+**La misura.** Il dataset degli indisponibili contiene due nature: `injury` (529 righe) e
+`suspension` (20). La riga «infermeria pesante» mescolava le due — e su **10 celle** almeno
+uno dei contati era uno **squalificato** (misurato il 2026-10-11; nel build dopo la correzione
+sono 19 celle su 189 righe di assenze). Anche la soglia dei «titolari abituali» pesa uno
+squalificato come un infortunato: resta così, è una scelta di severità dichiarata, non un
+errore.
+
+**La correzione.** L'etichetta è dinamica: «**infermeria pesante**» solo quando fra gli
+indisponibili ci sono **soli infortuni**, «**assenze pesanti**» altrimenti (19 righe oggi). La
+nota lo spiega. Tutti i consumatori (test, audit, oracolo [21], narrativa) accettano entrambe
+le etichette e verificano **quale spetta** dal tipo di indisponibilità.
+
+## §11 — Candidati misurati e **non** pubblicati (regola B.10)
+
+La ricerca profonda ha prodotto cinque candidati oltre ai due pubblicati. Quattro sono stati
+**scartati con la prova**, uno è rinviato alla sezione di competenza:
+
+| candidato | misura | esito |
+|---|---|---|
+| Striscia difensiva (3+ gare con 2+ gol subiti) | sulle 154 celle: **7 celle** con 3 gare consecutive, ma il modello nullo (gol subiti indipendenti, P(2+) = 0,467 → 7,3 celle attese su 154) ne prevede **7,3**: il segnale **non supera il caso** | **scartato** |
+| Digiuno del capocannoniere | su 87 celle con un bomber da 3+ gol: mediana **1 gara** di digiuno, ≥3 gare su **10 celle** (di cui 4 già in crisi/non-vince) | **scartato** (rumore) |
+| Congestione **in arrivo** (gare nei 7 giorni) | dalla misura della sosta: **0 celle** con 3+ gare in arrivo, 19 con 2 | **scartato oggi**, riapribile a calendario denso |
+| Umore dalle notizie | richiede sentiment + dizionario tarato; il segnale «allenatore a rischio» è già nelle notizie pubblicate | **rinviato** alla coda «Vita del club» |
+| Rendimento contro avversarie dirette; differenza reti alla vigilia | non ancora misurati: richiedono una definizione di «diretta» e un riferimento di lega (2–4 ore di lavoro) | **rinviati** alla coda, con misura |
+
+**Non** toccati, per non duplicare (`docs/30`): difesa e porta inviolata (già in «Da sapere»
+e «Le due squadre»), xPTS (già in tre card con la stessa lettura), PPDA e stile (card
+«Fattori»/«Scontro tattico»).
+
+## §12 — Prossimo passo
 
 La coda di revisione sezione per sezione (`docs/55` §7, `docs/STATO.md`) resta: **Mercato**,
-**Vita del club**, **Previsione del modello ensemble**, **Verifica approfondita**, **Confronto
-di stagione** — oltre ai residui dichiarati in `docs/64` §6 (id di fase NED1, Cagliari,
-collisione 58/58). Il lavoro va sul branch `arena/9912b625-football-deep-analyzer` con la
-solita PR unica di sessione: merge all'utente.
+**Vita del club** (dove passa anche la voce «umore dalle notizie»), **Previsione del modello
+ensemble**, **Verifica approfondita**, **Confronto di stagione** — oltre ai residui dichiarati
+in `docs/64` §6 (id di fase NED1, Cagliari, collisione 58/58) e ai due candidati «rinviati»
+qui sopra. Il lavoro va sul branch `arena/9912b625-football-deep-analyzer` con la solita PR
+unica di sessione: merge all'utente.

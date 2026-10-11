@@ -2236,6 +2236,52 @@ class MatchAnalysis:
     MOOD_REST_VERY_SHORT = 2    # ≤2 → bad, 3 → warn
     MOOD_CONGEST_DAYS = 10      # finestra di congestione
     MOOD_CONGEST_N = 3          # gare giocate nella finestra → congestione
+    MOOD_HEAVY_DEFEAT = 3       # scarto di una sconfitta → «sconfitta pesante»
+
+    def ultima_gara_campionato(self, team_id: int, kickoff: datetime) -> dict[str, Any] | None:
+        """L'ultima gara di **campionato** prima di ``kickoff``: punteggio, sconfitta, espulsioni.
+
+        Serve ai due segnali di «Clima del club» introdotti il 2026-10-11 (`docs/81` §9): una
+        sconfitta per 3+ gol è uno shock di morale che la forma («P») non racconta, e
+        un'espulsione spiega perché la squadra ha chiuso in inferiorità numerica (e chi è
+        squalificato per questa gara). I cartellini vengono da ``events`` (FotMob, la stessa
+        fonte della cronaca della scheda); il match_id non esce dal calendario di lega, quindi
+        il perimetro è il campionato — lo stesso delle strisce. Con la tabella eventi assente,
+        o senza quella partita, il solo segnale delle espulsioni manca (mai inventato).
+        """
+        fx = self.fixtures
+        if fx.empty or "utc_kickoff" not in fx.columns:
+            return None
+        d = fx.assign(_ko=pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce"))
+        d = d[(d.status == "finished") & (d._ko < pd.Timestamp(kickoff))
+              & ((d.home_id == team_id) | (d.away_id == team_id))]
+        if d.empty:
+            return None
+        r = d.loc[d._ko.idxmax()]
+        casa = int(r.home_id) == int(team_id)
+        gf, ga = (r.home_goals, r.away_goals) if casa else (r.away_goals, r.home_goals)
+        if pd.isna(gf) or pd.isna(ga):
+            return None
+        out: dict[str, Any] = {"gf": int(gf), "ga": int(ga),
+                               "pesante": int(ga) - int(gf) >= self.MOOD_HEAVY_DEFEAT,
+                               "espulsione": None}
+        if self.events.empty or not {"match_id", "card", "is_home"} <= set(self.events.columns):
+            return out
+        ev = self.events[(self.events.match_id == int(r.match_id))
+                         & self.events.card.astype(str).str.lower().isin(("red", "yellowred"))
+                         & self.events.is_home.notna()
+                         & (self.events.is_home.astype(bool) == casa)]
+        if ev.empty:
+            return out
+        ev = ev.sort_values(["minute", "minute_added"], kind="stable")
+        m = ev.iloc[0]
+        minuto = None
+        if pd.notna(m.get("minute")):
+            extra = m.get("minute_added")
+            coda = f"+{int(extra)}" if pd.notna(extra) and float(extra) > 0 else ""
+            minuto = f"{int(m.minute)}{coda}'"
+        out["espulsione"] = minuto or ""
+        return out
 
     def club_mood(self, match_id: int, team_id: int, team_name: str,
                   kickoff: datetime) -> list[dict[str, Any]]:
@@ -2291,6 +2337,20 @@ class MatchAnalysis:
         if dry >= self.MOOD_DRY:
             out.append({"tone": "bad",
                         "text": f"attacco a secco: {dry} gare senza segnare in campionato"})
+        # Ultima gara di campionato (`docs/81` §9): la forma mostra l'esito («P»), non la sua
+        # gravità né cosa è successo in campo. Due fatti misurati e non pubblicati altrove:
+        # una sconfitta per 3+ gol (shock di morale) e un'espulsione (inferiorità numerica,
+        # e il giocatore salta questa partita). Soglie e perimetro nella nota della card.
+        ult = self.ultima_gara_campionato(team_id, kickoff)
+        if ult:
+            if ult["pesante"]:
+                out.append({"tone": "warn",
+                            "text": f"sconfitta pesante nell'ultima gara di campionato: "
+                                    f"{ult['gf']}-{ult['ga']}"})
+            if ult["espulsione"]:
+                al = f" al {ult['espulsione']}" if ult["espulsione"] else ""
+                out.append({"tone": "warn",
+                            "text": f"espulsione nell'ultima gara di campionato{al}"})
         xg = self.season_xg(team_name, team_id, kickoff)
         if xg and (lettura := xg.get("xpts_read")) and lettura.get("verdict") in ("sopra", "sotto"):
             # M2 (`docs/55` §6, regola di `docs/30`): il numero sta **solo** nella card della
@@ -2324,7 +2384,13 @@ class MatchAnalysis:
             # indisponibile la frase stampava «infermeria pesante: 1 assenti» — il gate
             # verify_site del 19/09/2026 l'ha fermata su partite/5749682.html. È lo stesso
             # helper usato due righe sotto per «di cui 1 titolare abituale».
-            bits = ["infermeria pesante: " + it_plural(ab["n"], "assente")]
+            # «Infermeria» solo quando fra gli indisponibili ci sono **soli infortuni**:
+            # con uno squalificato la parola sarebbe sbagliata (`docs/81` §10, 10 celle
+            # dell'archivio al 2026-10-11 contavano almeno una squalifica fra gli assenti).
+            tipi = {str(u.get("type") or "").strip().lower()
+                    for u in self.unavailable(match_id, team_id)}
+            etichetta = "infermeria pesante" if tipi <= {"infortunio"} else "assenze pesanti"
+            bits = [etichetta + ": " + it_plural(ab["n"], "assente")]
             if ab["starters_out"]:
                 # concordanza: con un solo titolare «di cui 1 titolari abituali» non è italiano
                 # (25 occorrenze su 22 schede, audit 18/09). it_plural è lo stesso helper che
@@ -3410,72 +3476,16 @@ class MatchAnalysis:
                             "testo": (f"{nome} ha cambiato allenatore da poco: "
                                       f"{co.get('name')} è la nuova guida — i dettagli in "
                                       f"«Panchina e posta in gioco».")})
-        # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati)
-        if not self.fixtures.empty:
-            fin = self.fixtures[self.fixtures.status == "finished"]
-            for tid, nome in ((home_id, home_name), (away_id, away_name)):
-                matches = fin[(fin.utc_kickoff < kickoff) & ((fin.home_id == tid) | (fin.away_id == tid))]
-                if len(matches) < 3:
-                    continue
-                recent = matches.sort_values("utc_kickoff").tail(8)
-                res = []
-                for _, r in recent.iterrows():
-                    is_h = (r.home_id == tid)
-                    hg, ag = r.home_goals, r.away_goals
-                    if hg is None or ag is None:
-                        continue
-                    w = (hg > ag) if is_h else (ag > hg)
-                    l = (hg < ag) if is_h else (ag < hg)
-                    res.append("W" if w else "L" if l else "D")
-                loss_streak = 0
-                for ch in reversed(res):
-                    if ch == "L":
-                        loss_streak += 1
-                    else:
-                        break
-                if loss_streak >= 3:
-                    out.append({
-                        "titolo": "Momento delicato",
-                        "testo": f"{nome} è reduce da {it_plural(loss_streak, 'sconfitta')} consecutiv{'a' if loss_streak == 1 else 'e'} in campionato.",
-                    })
-                    continue
-                winless = 0
-                d_in = l_in = 0
-                for ch in reversed(res):
-                    if ch in ("L", "D"):
-                        winless += 1
-                        if ch == "L":
-                            l_in += 1
-                        else:
-                            d_in += 1
-                    else:
-                        break
-                if winless >= 5:
-                    p_text = f"{it_plural(d_in, 'pareggio')}"
-                    s_text = f"{it_plural(l_in, 'sconfitta')}"
-                    out.append({
-                        "titolo": "Digiuno di vittorie",
-                        "testo": f"{nome} non vince da {it_plural(winless, 'gara')} di campionato ({p_text}, {s_text}).",
-                    })
-                    continue
-                unbeaten = 0
-                w_un = d_un = 0
-                for ch in reversed(res):
-                    if ch in ("W", "D"):
-                        unbeaten += 1
-                        if ch == "W":
-                            w_un += 1
-                        else:
-                            d_un += 1
-                    else:
-                        break
-                if unbeaten >= 5:
-                    v_text = f"{it_plural(w_un, 'vittoria', 'vittorie')}"
-                    p_text = f"{it_plural(d_un, 'pareggio')}"
-                    out.append({
-                        "titolo": "Striscia positiva",
-                        "testo": f"{nome} è imbattuto da {it_plural(unbeaten, 'partita')} consecutiv{'a' if unbeaten == 1 else 'e'} ({v_text}, {p_text}).",
-                    })
+        # Strisce aperte e digiuni di campionato (fatti oggettivi dai nostri dati) NON stanno
+        # più qui: dal 2026-10-11 (`docs/81` §8) le strisce vivono solo nella card «Clima del
+        # club», che le pubblica col tono, il numero intero e il perimetro dichiarato. Prima
+        # erano in due card della stessa pagina su 45 celle su 154 (misurato: «Momento
+        # delicato»/«Digiuno di vittorie»/«Striscia positiva» contro «crisi di risultati»/
+        # «non vince da»/«imbattuta da»), con due soglie diverse (5 contro 4 gare). Regola
+        # `docs/30`: un dato in un posto. Le altre voci di «Da sapere» (bilancio in casa e
+        # fuori, uomo gol, porta inviolata, finale da brividi) restano: misurato che tutte le
+        # 77 schede pre-partita hanno almeno una di queste anche senza le strisce.
+
         # Fatti di rendimento dentro le proprie mura (docs/25 §4): servono quando la
         # rassegna stampa in italiano non copre la squadra. Senza queste due righe, con
         # il filtro lingua del 17/09/2026 la card restava vuota nel 78% delle partite di
@@ -4298,6 +4308,13 @@ class MatchAnalysis:
             # numero stampato è quello ricontato dal calendario. Un disallineamento
             # match_info/calendario (daily 38005701599, issue #99) non gonfia il campione.
             fin = self._finite_nel_calendario()
+            # Schema incompleto (FotMob cambia payload, o una fase del collect degrada):
+            # meglio restare senza xG che rompere l'intero build — la card mostra i suoi
+            # numeri, il clima/xPTS tace. Senza questa guardia un `match_info` non vuoto
+            # ma senza colonne xG alzava un AttributeError (trovato dal test del 2026-10-11).
+            if not {"home_id", "away_id", "home_xg", "away_xg"} <= set(fin.columns):
+                fin = pd.DataFrame(columns=["match_id", "home_id", "away_id",
+                                            "home_xg", "away_xg"])
             if cut is not None:
                 fin = fin[fin.match_id.astype(int).map(self._match_kickoffs()) < cut]
             if {"home_xg", "away_xg"} <= set(fin.columns):

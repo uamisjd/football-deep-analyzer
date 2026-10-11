@@ -3,31 +3,49 @@
 Richiesta dell'utente: rivedere e verificare la sezione «Clima del club», trovare errori,
 correggerli, individuare miglioramenti. Misura in `scripts/audit_clima.py` (ricalcolo
 indipendente dai Parquet, mai `club_mood`), su 77 schede pre-partita · 154 celle · 228 righe
-(toni: bad 15 · warn 194 · good 19). Difetti trovati e corretti:
+(toni: bad 15 · warn 194 · good 19). **Primo giro** — difetti trovati e corretti:
 
 1. **Contatori delle strisce troncati alla finestra di 5** — `form()` leggeva le ultime 5
    gare: **14 celle** pubblicavano «5» come pavimento (Inter 5 contro 6, Feyenoord 5 contro 8,
    Willem II 5 contro 7, Barcelona 5 contro 8, Málaga 5 contro 8…). Ora `MOOD_STREAK_N = 60`
    (stagione intera): 14 numeri corretti, 0 righe cambiate.
 2. **Perimetro non dichiarato** — le strisce contano il solo campionato, riposo e congestione
-   includono le coppe: con le coppe dentro il verdetto cambierebbe su **30 celle** (7 righe
-   sparirebbero, 4 comparirebbero, 11 cambierebbero numero). Scelta di `docs/60` §5: non
-   cambiare la base, **dichiararla** («in campionato» su 53 righe + nota con i due perimetri).
-3. **«Panchina nuova» senza scadenza (latente)** — la riga scattava con il solo cambio in
-   archivio, senza guardare la permanenza; ora `MOOD_COACH_NEW = 3`, lo stesso criterio di
-   «Da sapere». Oggi 0 celle interessate (permanenza consecutiva massima 3): è una guardia,
-   come il difetto latente di `docs/78` §15.
+   includono le coppe: con le coppe dentro il verdetto cambierebbe su **30 celle**. Scelta di
+   `docs/60` §5: non cambiare la base, **dichiararla** («in campionato» + nota coi due perimetri).
+3. **«Panchina nuova» senza scadenza (latente)** — ora `MOOD_COACH_NEW = 3`, lo stesso criterio
+   di «Da sapere». Oggi 0 celle interessate (permanenza consecutiva massima 3).
 4. **Toni non spiegati** — 228 righe con bordo colorato e **77 pagine su 77** senza legenda:
    ora la nota dice rosso/ambra/verde.
 5. **Oracolo [21] da specchio a indipendente** (`docs/79`) — ricalcola strisce, xPTS (Understat
-   o Poisson FotMob), panchina, infermeria, riposo/congestione dai Parquet; registro `ORACOLI`
-   corretto (era «M» con la nota delle notizie): **30 indipendenti · 18 misti · 4 specchi**.
+   o Poisson FotMob), panchina, infermeria, riposo/congestione dai Parquet; registro corretto
+   (era «M» con la nota delle notizie): **30 indipendenti · 18 misti · 4 specchi**.
 
-Tre falsi allarmi dell'audit, corretti e documentati in `docs/81` §3 (conteggio totale invece
-che consecutivo; `sum()` senza `break` per una striscia): la lezione è che anche la misura va
-misurata. Gate (build 2026-10-11): **`pytest` 623**, `ruff` pulito, **`fda build` 493/2.364/7.578**,
-**`verify_site` 0 problemi · 235.782 controlli**, `parita_schede` **77 · nessuna differenza**,
-`resa_375` **28.466 · 0**, `audit_clima` 0 difetti. Nessuna richiesta alle fonti esterne.
+**Secondo giro — ricerca profonda su cosa altro si può fare** (misura → decisione → prova):
+
+6. **Un dato in un posto (docs/30)** — le strisce erano anche in «Da sapere» (*Momento
+   delicato*, *Digiuno di vittorie*, *Striscia positiva*): **45 celle** con lo stesso fatto in
+   due card della stessa pagina, con **due soglie diverse** (5 contro 4 gare), e 22 voci
+   ripetute due volte. Verificato prima che tutte le 77 schede hanno altri fatti di «Da
+   sapere» → rimosse: duplicazione **45 → 0**.
+7. **Due segnali nuovi dall'ultima gara di campionato** — *sconfitta pesante* (scarto ≥3 gol:
+   13 celle, 12 non già in crisi; P(≥3 strappi) ≈ 2,9% per gara) ed *espulsione* (11 celle,
+   col minuto: «al 90+6'»). Righe **228 → 252**.
+8. **«Infermeria» non è la parola giusta con uno squalificato** — il dataset ha `injury` 529 e
+   `suspension` 20: l'etichetta è ora dinamica («infermeria pesante» solo con i soli infortuni,
+   «**assenze pesanti**» altrimenti: 19 righe oggi).
+9. **Guardia trovata scrivendo il test**: `season_xg` alzava `AttributeError` con un
+   `match_info` non vuoto ma senza colonne xG (build fragile); ora degrada.
+
+**Candidati misurati e scartati con la prova** (`docs/81` §11): striscia difensiva «2+ subiti»
+(7 celle osservate contro **7,3 attese** dal modello nullo → è caso), digiuno del capocannoniere
+(mediana 1 gara), congestione in arrivo (0 celle), umore dalle notizie (rinviato alla coda
+«Vita del club»).
+
+Tre falsi allarmi dell'audit, corretti e documentati (`docs/81` §3): la lezione è che anche la
+misura va misurata. Gate (build 2026-10-11): **`pytest` 624**, `ruff` pulito, **`fda build`
+493/2.364/7.578**, **`verify_site` 0 problemi · 235.902 controlli**, `parita_schede` **77 ·
+nessuna differenza**, `resa_375` **28.466 · 0**, `audit_clima` 0 difetti, duplicazione 0.
+Nessuna richiesta alle fonti esterne.
 
 **Prossimo passo:** PR di sessione per il branch `arena/9912b625` (merge all'utente); coda
 revisione sezione per sezione — Mercato, Vita del club, Previsione del modello ensemble,

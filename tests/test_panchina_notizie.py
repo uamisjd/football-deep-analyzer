@@ -709,10 +709,16 @@ def mood_analysis(tmp_path):
 
 
 def test_clima_crisi_infermeria_congestione(mood_analysis):
+    """Con una squalifica fra gli assenti la riga dice «assenze pesanti» (docs/81 §10).
+
+    Nel fixture ci sono 3 infortuni e 1 squalifica: «infermeria» sarebbe la parola
+    sbagliata, perché vale solo quando fra gli indisponibili non c'è nessuno squalificato.
+    """
     rows = mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))
     texts = [r["text"] for r in rows]
     assert any(t.startswith("crisi di risultati: 3 sconfitte consecutive") for t in texts)
-    assert any(t.startswith("infermeria pesante: 4 assenti") for t in texts)
+    assert any(t.startswith("assenze pesanti: 4 assenti") for t in texts)
+    assert not any(t.startswith("infermeria pesante") for t in texts)
     assert any("35 M€ di mercato ai box" in t for t in texts)   # 12+9+8+6 = 35
     assert any(t.startswith("riposo corto: 2 giorni") for t in texts)
     assert any(t.startswith("congestione: 5 gare giocate negli ultimi 10 giorni") for t in texts)
@@ -751,6 +757,45 @@ def test_clima_striscia_intera_non_finestra_di_cinque(tmp_path):
     # il perimetro è dichiarato nella riga (docs/81 §2): le strisce sono di campionato
     assert any(t == "imbattuta da 7 gare in campionato: clima di fiducia" for t in testi), testi
     assert not any("imbattuta da 5" in t for t in testi), testi
+
+
+def test_clima_ultima_gara_sconfitta_pesante_ed_espulsione(tmp_path):
+    """`docs/81` §9: dall'ultima gara di campionato escono la sconfitta pesante e il rosso.
+
+    Misurato il 2026-10-11 su 154 celle: 13 con una sconfitta per 3+ gol (12 non già in
+    crisi), 11 con un'espulsione nell'ultima gara. La soglia della sconfitta è 3 gol di
+    scarto; il minuto dell'espulsione esce solo se la fonte lo pubblica.
+    """
+    st = Store(tmp_path / "ultimagara")
+    st.write("fixtures", _fixtures([
+        # Prova: ultima gara persa 0-3 (pesante) con un'espulsione al 53'
+        (400, 55, "2026", "1", KO("2026-09-01 18:00"), 7, "Prova", 9, "Ospiti", 2, 0, "finished", "fotmob"),
+        (401, 55, "2026", "2", KO("2026-09-08 18:00"), 7, "Prova", 9, "Ospiti", 0, 3, "finished", "fotmob"),
+        (402, 55, "2026", "3", KO("2026-09-20 18:00"), 7, "Prova", 9, "Ospiti", None, None, "scheduled", "fotmob"),
+        # Sereni: ultima gara persa 1-2 (non pesante), nessun rosso
+        (500, 55, "2026", "1", KO("2026-09-01 18:00"), 8, "Sereni", 9, "Ospiti", 2, 0, "finished", "fotmob"),
+        (501, 55, "2026", "2", KO("2026-09-08 18:00"), 8, "Sereni", 9, "Ospiti", 1, 2, "finished", "fotmob"),
+        (502, 55, "2026", "3", KO("2026-09-20 18:00"), 8, "Sereni", 9, "Ospiti", None, None, "scheduled", "fotmob"),
+    ]))
+    st.write("lineup", pd.DataFrame([
+        {"match_id": 400, "team_id": 7, "player_id": 1, "player_name": "Coach", "role": "coach",
+         "market_value_eur": None, "unavailability_type": None, "expected_return": None},
+        {"match_id": 500, "team_id": 8, "player_id": 2, "player_name": "Coach", "role": "coach",
+         "market_value_eur": None, "unavailability_type": None, "expected_return": None},
+    ]))
+    st.write("events", pd.DataFrame([
+        # il rosso è della squadra di casa (Prova); is_home distingue le due squadre
+        {"match_id": 401, "type": "Card", "minute": 53, "minute_added": None, "is_home": True,
+         "player_id": 77, "player_name": "Espulso", "card": "Red"},
+        {"match_id": 401, "type": "Card", "minute": 70, "minute_added": None, "is_home": False,
+         "player_id": 78, "player_name": "Avversario", "card": "Yellow"},
+    ]))
+    an = MatchAnalysis(st)
+    prova = [r["text"] for r in an.club_mood(402, 7, "Prova", KO("2026-09-20 18:00"))]
+    assert "sconfitta pesante nell'ultima gara di campionato: 0-3" in prova, prova
+    assert "espulsione nell'ultima gara di campionato al 53'" in prova, prova
+    sereni = [r["text"] for r in an.club_mood(502, 8, "Sereni", KO("2026-09-20 18:00"))]
+    assert not any(t.startswith(("sconfitta pesante", "espulsione")) for t in sereni), sereni
 
 
 def test_clima_panchina_nuova_solo_se_recente(tmp_path):
@@ -828,8 +873,8 @@ def test_concordanza_uno_assente_giorno_gara(mood_analysis, monkeypatch):
         return _f
 
     testi: list[str] = []
-    for n, titolari, attesa in ((1, 1, "infermeria pesante: 1 assente,"),
-                                (4, 2, "infermeria pesante: 4 assenti,")):
+    for n, titolari, attesa in ((1, 1, "assenze pesanti: 1 assente,"),
+                                (4, 2, "assenze pesanti: 4 assenti,")):
         monkeypatch.setattr(MatchAnalysis, "absences_weight", peso(n, titolari))
         testi = [r["text"] for r in mood_analysis.club_mood(8, 4, "Lazio", KO("2026-09-16 18:00"))]
         assert any(attesa in t for t in testi), (n, testi)
@@ -984,8 +1029,14 @@ def test_parse_direct_sports_rss():
     assert diag.get("direct_feed_attribuiti") == 3
 
 
-def test_da_sapere_strisce_e_digiuni(tmp_path):
-    """«Da sapere» rileva strisce di imbattibilità, serie di sconfitte e digiuni dai dati."""
+def test_da_sapere_senza_strisce_che_vivono_nel_clima(tmp_path):
+    """`docs/81` §8: le strisce non stanno più in «Da sapere» — vivono solo nel «Clima».
+
+    Erano in due card della stessa pagina su 45 celle su 154, con due soglie diverse
+    («Digiuno di vittorie» da 5 gare contro «non vince da» da 4). Regola `docs/30`: un dato
+    in un posto. Il test fissa la rimozione: le tre voci spariscono, i fatti di rendimento
+    (bilancio in casa/fuori) restano.
+    """
     st = Store(tmp_path / "strisce")
     # Squadra 1 (Roma): 5 vittorie consecutive
     # Squadra 2 (Inter): 3 sconfitte consecutive
@@ -1008,8 +1059,13 @@ def test_da_sapere_strisce_e_digiuni(tmp_path):
     an = MatchAnalysis(st)
     sapere = an.news_sapere(9, 1, "Roma", 2, "Inter", KO("2026-09-17 18:00"))
 
-    assert any(s["titolo"] == "Striscia positiva" and "Roma" in s["testo"] and "5 partite consecutive" in s["testo"] for s in sapere)
-    assert any(s["titolo"] == "Momento delicato" and "Inter" in s["testo"] and "3 sconfitte consecutive" in s["testo"] for s in sapere)
+    titoli = {s["titolo"] for s in sapere}
+    assert not {"Striscia positiva", "Momento delicato", "Digiuno di vittorie"} & titoli, titoli
+    # i fatti che restano tengono in piedi la card (misurato: 77 schede su 77 ne hanno almeno uno)
+    assert "Dentro le mura" in titoli or "Lontano da casa" in titoli, titoli
+    # e la stessa striscia è pubblicata dal clima, col tono e col perimetro dichiarato
+    clima = [r["text"] for r in an.club_mood(9, 1, "Roma", KO("2026-09-17 18:00"))]
+    assert any(t == "imbattuta da 5 gare in campionato: clima di fiducia" for t in clima), clima
     st.close()
 
 

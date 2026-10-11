@@ -127,6 +127,7 @@ def main() -> int:
             mi[col] = pd.to_numeric(mi[col], errors="coerce")
     fx = fx.dropna(subset=["ko"])
     cup = cup.dropna(subset=["ko"])
+    ev = pd.read_parquet(DATA / "events.parquet")
     us["_nome"] = us.team_name.map(canon)
     us["_data"] = pd.to_datetime(us.date, utc=True, errors="coerce")
 
@@ -139,7 +140,7 @@ def main() -> int:
 
     esiti: dict[str, list[str]] = {
         "xpts": [], "infermeria": [], "riposo": [], "congestione": [], "striscia": [],
-        "panchina": [], "punteggio_mancante": [], "annotazione": [],
+        "panchina": [], "ultima_gara": [], "punteggio_mancante": [], "annotazione": [],
     }
     difetti: dict[str, list[str]] = {
         "troppo_corta": [], "perimetro_coppe_verdetto": [], "panchina_vecchia": [],
@@ -308,7 +309,8 @@ def main() -> int:
             unav = lu[(lu.match_id == mid) & (lu.team_id == tid) & (lu.role == "unavailable")
                       & lu.player_id.notna()]
             n_un = len(unav)
-            r_inf = trova("infermeria pesante:")
+            r_inf = next((t for t in cell
+                          if t.startswith(("infermeria pesante", "assenze pesanti"))), None)
             stats = agg[agg.team_id == tid].set_index("player_name")
             minuti_squadra = float(stats["minutes_played"].sum()) if "minutes_played" in stats else 0.0
             per_giocatore = minuti_squadra / 11 if minuti_squadra else 0.0
@@ -344,10 +346,18 @@ def main() -> int:
                         f"{pg.stem}|{tname}| riga assente con n={n_un} titolari={titolari} "
                         f"contrib certo={contrib_certo:.2f}")
                 else:
-                    mm = re.match(r"infermeria pesante: ([0-9]+) assent", r_inf)
+                    mm = re.match(r"(?:infermeria pesante|assenze pesanti): ([0-9]+) assent", r_inf)
                     if not mm or int(mm.group(1)) != n_un:
                         esiti["infermeria"].append(
                             f"{pg.stem}|{tname}| «{r_inf[:60]}» con n={n_un}")
+                    # «infermeria» solo con i soli infortuni (docs/81 §10)
+                    _soli_inf = (all(str(t).strip().lower() == "injury"
+                                     for t in unav.unavailability_type.dropna())
+                                 if n_un else True)
+                    attesa_et = "infermeria pesante" if _soli_inf else "assenze pesanti"
+                    if not r_inf.startswith(attesa_et):
+                        esiti["infermeria"].append(
+                            f"{pg.stem}|{tname}| etichetta «{r_inf[:40]}» invece di «{attesa_et}»")
             elif r_inf and contrib < soglia_contrib:
                 esiti["infermeria"].append(
                     f"{pg.stem}|{tname}| pubblicata «{r_inf[:60]}» con n={n_un} "
@@ -397,6 +407,36 @@ def main() -> int:
                                          f"dentro la banda {banda:.2f} ({fonte})")
             elif sopra or sotto:
                 esiti["xpts"].append(f"{pg.stem}|{tname}| verdetto senza campione sufficiente")
+
+            # ---------- ultima gara di campionato: sconfitta pesante e espulsione ----------
+            ug = fx[(fx.status == "finished") & (fx.ko < kickoff)
+                    & ((fx.home_id == tid) | (fx.away_id == tid))]
+            if not ug.empty:
+                u = ug.loc[ug.ko.idxmax()]
+                casa = int(u.home_id) == tid
+                gf, ga = (u.home_goals, u.away_goals) if casa else (u.away_goals, u.home_goals)
+                r_pes = trova("sconfitta pesante nell'ultima gara di campionato:")
+                if pd.notna(gf) and pd.notna(ga) and (int(ga) - int(gf)) >= 3:
+                    agg_tipi["sconfitta pesante"] += 1
+                    atteso_pes = (f"sconfitta pesante nell'ultima gara di campionato: "
+                                  f"{int(gf)}-{int(ga)}")
+                    if atteso_pes not in cell:
+                        esiti["ultima_gara"].append(f"{pg.stem}|{tname}| atteso «{atteso_pes}»")
+                elif r_pes:
+                    esiti["ultima_gara"].append(f"{pg.stem}|{tname}| pubblicata «{r_pes[:50]}»")
+                r_esp = trova("espulsione nell'ultima gara di campionato")
+                miei = []
+                if not ev.empty and {"match_id", "card", "is_home"} <= set(ev.columns):
+                    miei = [r for r in ev[(ev.match_id == int(u.match_id))
+                                          & ev.card.astype(str).str.lower().isin(("red", "yellowred"))
+                                          & ev.is_home.notna()
+                                          & (ev.is_home.astype(bool) == casa)].itertuples(index=False)]
+                if miei:
+                    agg_tipi["espulsione"] += 1
+                    if r_esp is None:
+                        esiti["ultima_gara"].append(f"{pg.stem}|{tname}| espulsione attesa e assente")
+                elif r_esp:
+                    esiti["ultima_gara"].append(f"{pg.stem}|{tname}| pubblicata «{r_esp[:50]}»")
 
             # ---------- panchina ----------
             co = lu[(lu.team_id == tid) & (lu.role == "coach")]
