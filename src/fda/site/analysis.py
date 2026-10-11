@@ -3852,8 +3852,51 @@ class MatchAnalysis:
             return None
         return ts.tz_localize("UTC") if ts.tzinfo is None else ts.tz_convert("UTC")
 
+    #: Una squadra gioca al più una partita in 24 ore: una riga Understat delle squadre
+    #: della gara descritta entro questa finestra dal calcio d'inizio è **quella** gara.
+    US_STESSA_GARA: ClassVar[pd.Timedelta] = pd.Timedelta(hours=24)
+
+    def _squadre_descritta(self, team_id: int, cut: pd.Timestamp | None) -> frozenset[str]:
+        """Le due squadre della partita che la scheda descrive (insieme vuoto se non c'è).
+
+        Serve a togliere la gara descritta dal campione «alla vigilia» di Understat:
+        la fonte data la partita qualche minuto **prima** del calcio d'inizio FotMob
+        (misurato il 2026-10-10 su 6 riquadri: Cagliari–Lecce 16:00 vs 16:30,
+        Lille–PSG 18:45 vs 19:00, Atlético Madrid–Málaga 19:00 vs 19:05) e il taglio
+        ingenuo ``date < before`` la lasciava entrare: la scheda pubblicava i numeri
+        della partita stessa come se fossero «la stagione fino alla vigilia».
+        """
+        if cut is None or self.fixtures.empty or "utc_kickoff" not in self.fixtures.columns:
+            return frozenset()
+        fx = self.fixtures
+        ko = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
+        righe = fx[((fx.home_id == team_id) | (fx.away_id == team_id)) & (ko == cut)]
+        if righe.empty:
+            return frozenset()
+        r = righe.iloc[0]
+        return frozenset({canonical(str(r.home_name)), canonical(str(r.away_name))})
+
+    def _us_alla_vigilia(self, rows: pd.DataFrame, cut: pd.Timestamp | None,
+                         descritta: frozenset[str] = frozenset()) -> pd.DataFrame:
+        """Righe Understat **prima della vigilia** di ``cut``, gara descritta esclusa.
+
+        ``descritta`` = squadre della partita che la scheda descrive
+        (:meth:`_squadre_descritta`): le loro righe entro 24 ore dal calcio d'inizio
+        sono la gara stessa e non entrano né nel campione della squadra né nella media
+        di lega. Per le altre squadre il taglio resta ``date < before``.
+        """
+        if cut is None or rows.empty:
+            return rows
+        dt = self._us_dates().reindex(rows.index)
+        keep = dt < cut
+        if descritta:
+            keep &= ~((dt >= cut - self.US_STESSA_GARA)
+                      & rows.team_name.map(canonical).isin(descritta))
+        return rows[keep]
+
     def _league_xg_reference(self, source: str, key: Any,
-                             before: pd.Timestamp | None = None) -> dict[str, float] | None:
+                             before: pd.Timestamp | None = None,
+                             descritta: frozenset[str] = frozenset()) -> dict[str, float] | None:
         """Medie di lega per gara-squadra (xG e PPDA) **dalla stessa fonte** della squadra.
 
         Senza un riferimento, «xG creati 1,42» non dice se è tanto o poco: la card lo
@@ -3873,14 +3916,16 @@ class MatchAnalysis:
         cache = getattr(self, "_lg_xg_cache", None)
         if cache is None:
             cache = self._lg_xg_cache = {}
-        ck = (source, key, before)
+        ck = (source, key, before, descritta)
         if ck in cache:
             return cache[ck]
         out: dict[str, float] | None = None
         if source == "Understat" and not self.us_team.empty and key is not None:
             rows = self.us_team[self.us_team.league_slug == key]
             if before is not None:
-                rows = rows[self._us_dates().reindex(rows.index) < before]
+                # anche la media di lega è «alla vigilia»: la gara descritta non entra
+                # nel riferimento contro cui si rapporta la squadra (docs/76 §1)
+                rows = self._us_alla_vigilia(rows, before, descritta)
             if len(rows) >= self.LEAGUE_REF_MIN_ROWS:
                 out = {"xg_pm": float(rows.xg.mean()), "n": len(rows)}
                 ppda = pd.to_numeric(rows.get("ppda"), errors="coerce").dropna() \
@@ -3916,9 +3961,10 @@ class MatchAnalysis:
         return vals.iloc[0] if len(vals) else None
 
     def _with_league_ref(self, out: dict[str, Any], source: str, key: Any,
-                         before: pd.Timestamp | None = None) -> dict[str, Any]:
+                         before: pd.Timestamp | None = None,
+                         descritta: frozenset[str] = frozenset()) -> dict[str, Any]:
         """Aggiunge a ``out`` il rapporto con la media di lega e la lettura dello scarto xPTS."""
-        ref = self._league_xg_reference(source, key, before)
+        ref = self._league_xg_reference(source, key, before, descritta)
         if ref and ref.get("xg_pm"):
             out["league_xg_pm"] = ref["xg_pm"]
             out["league_n"] = ref["n"]
@@ -3953,10 +3999,14 @@ class MatchAnalysis:
         """
         canon = canonical(team_name)
         cut = self._as_utc(before)
+        # La gara che la scheda descrive non entra nel proprio campione «alla vigilia»:
+        # Understat la data qualche minuto prima del calcio d'inizio FotMob e il solo taglio
+        # ``date < before`` la lascerebbe dentro (docs/76 §1, misurato su 6 riquadri).
+        descritta = self._squadre_descritta(team_id, cut)
         if not self.us_team.empty:
             rows = self.us_team[self.us_team.team_name.map(canonical) == canon]
             if cut is not None and not rows.empty:
-                rows = rows[self._us_dates().reindex(rows.index) < cut]
+                rows = self._us_alla_vigilia(rows, cut, descritta)
             if not rows.empty:
                 n = len(rows)
                 out = {"source": "Understat", "played": n, "xg": rows.xg.sum(), "xga": rows.xga.sum(),
@@ -3974,7 +4024,7 @@ class MatchAnalysis:
                     out["ppda_se"] = self.PPDA_SD / math.sqrt(n)
                     out["ppda_label_ok"] = n >= self.XG_RATIO_MIN_GAMES
                 slug = rows.league_slug.iloc[0] if "league_slug" in rows.columns else None
-                return self._with_league_ref(out, "Understat", slug, cut)
+                return self._with_league_ref(out, "Understat", slug, cut, descritta)
         if not self.info.empty:
             # [44] docs/64 §7: il campione è quello dell'oracolo del gate — gare finite
             # **nel calendario** prima della vigilia, con xG completo di entrambe le
@@ -4010,7 +4060,8 @@ class MatchAnalysis:
                 out = {"source": "FotMob", "played": len(xg), "xg": xg.sum(),
                        "xga": xga.sum(), "xg_pm": xg.mean(), "xga_pm": xga.mean(),
                        "xpts": xpts, "pts": pts, "ppda": None}
-                return self._with_league_ref(out, "FotMob", self._team_league_id(team_id), cut)
+                return self._with_league_ref(out, "FotMob", self._team_league_id(team_id),
+                                             cut, descritta)
         return None
 
     def season_style(self, team_name: str, team_id: int,
@@ -4153,6 +4204,49 @@ class MatchAnalysis:
                         out["label"] = "lascia giocare"
         return out
 
+    def attacco_contro_difesa(self, home_xg: dict[str, Any] | None,
+                              away_xg: dict[str, Any] | None) -> dict[str, Any] | None:
+        """Confronto incrociato attacco–difesa per la card «Le due squadre» (pre-partita).
+
+        La prima stesura (`docs/76` §2) metteva in fila i quattro rapporti di lega e
+        lasciava al lettore il conto; la revisione richiesta dall'utente (§7) pubblica la
+        **sintesi**: la produzione offensiva attesa di ciascuna squadra, ``crea × concede
+        l'avversaria`` (entrambi rapportati alla media del campionato, stessa fonte) — la
+        combinazione moltiplicativa attacco×difesa che il modello usa coi parametri
+        fittati, qui con gli xG di stagione; 1,00× vale una squadra media contro una
+        difesa media. Si pubblica solo quando **entrambe** le squadre hanno i due rapporti
+        di lega (campione ≥3 gare) e dalla **stessa fonte**: i due modelli xG hanno scale
+        diverse (`docs/64` §2.3) e il confronto reggerebbe su numeri non confrontabili.
+        """
+        if not home_xg or not away_xg:
+            return None
+        if home_xg.get("source") != away_xg.get("source"):
+            return None
+        if any(x.get(c) is None for x in (home_xg, away_xg) for c in ("xg_ratio", "xga_ratio")):
+            return None
+        prod_home = float(home_xg["xg_ratio"]) * float(away_xg["xga_ratio"])
+        prod_away = float(away_xg["xg_ratio"]) * float(home_xg["xga_ratio"])
+        q = prod_home / prod_away
+        # SE in scala log dei due prodotti e del loro rapporto (delta method sui 4 rapporti):
+        # lo squilibrio fra i due attacchi si dichiara solo oltre 1σ, come la banda xPTS e
+        # le etichette del pressing (docs/64 §2.2 e §9, docs/76 §7).
+        se_ln_q = math.sqrt(sum((self.XG_RATIO_CV / (float(r) * math.sqrt(int(x["played"])))) ** 2
+                                for x in (home_xg, away_xg)
+                                for r in (x["xg_ratio"], x["xga_ratio"])))
+        return {"source": home_xg["source"],
+                "home_crea": float(home_xg["xg_ratio"]),
+                "away_concede": float(away_xg["xga_ratio"]),
+                "away_crea": float(away_xg["xg_ratio"]),
+                "home_concede": float(home_xg["xga_ratio"]),
+                "home_prod": prod_home, "away_prod": prod_away,
+                "sbilancio": q, "oltre_rumore": bool(abs(math.log(q)) > se_ln_q),
+                "q_lo": math.exp(math.log(q) - se_ln_q),
+                "q_hi": math.exp(math.log(q) + se_ln_q)}
+
+    #: sd/media dello xG per gara-squadra (misurata su 502 gare, docs/64 §7): l'errore
+    #: standard di un rapporto «× la media» su n gare vale circa CV/√n.
+    XG_RATIO_CV: ClassVar[float] = 1.036 / 1.692
+
     def standing(self, team_name: str) -> dict[str, Any] | None:
         """Classifica: prima FotMob (fonte primaria), poi ESPN come riserva."""
         canon = canonical(team_name)
@@ -4177,12 +4271,20 @@ class MatchAnalysis:
     # ---- confronto di stagione (tabella di lega) -----------------------------------------------
     @staticmethod
     def _cmp_row(label: str, h: str, a: str, key_h: float | None = None,
-                 key_a: float | None = None, higher: bool = True) -> dict[str, Any]:
-        """Riga della card «Confronto di stagione»; evidenzia il lato migliore se confrontabile."""
+                 key_a: float | None = None, higher: bool = True,
+                 title: str | None = None) -> dict[str, Any]:
+        """Riga della card «Confronto di stagione»; evidenzia il lato migliore se confrontabile.
+
+        ``title`` (docs/76 §8): spiegazione opzionale sull'etichetta della riga — la riga
+        «Punti» la usa per dire che l'evidenziazione ragiona per punti/gara.
+        """
         best = None
         if key_h is not None and key_a is not None and key_h != key_a:
             best = "h" if (key_h > key_a) == higher else "a"
-        return {"label": label, "h": h, "a": a, "best": best}
+        row = {"label": label, "h": h, "a": a, "best": best}
+        if title:
+            row["title"] = title
+        return row
 
     def _league_averages(self, st: dict[str, Any]) -> dict[str, float] | None:
         """Media gol fatti/subiti per gara nel campionato, dalla stessa tabella della classifica."""
@@ -4197,6 +4299,22 @@ class MatchAnalysis:
             if played > 0:
                 return {"gf": pd.to_numeric(rows["goals_for"], errors="coerce").sum() / played,
                         "ga": pd.to_numeric(rows["goals_against"], errors="coerce").sum() / played}
+        return None
+
+    def _n_squadre(self, st: dict[str, Any]) -> int | None:
+        """Numero di squadre del campionato, contato nella stessa tabella della classifica.
+
+        Serve a «Confronto di stagione» (docs/76 §8): la vecchia resa scriveva «Nª su 20»
+        anche nelle leghe a 18 squadre (FRA1, GER1, NED1, POR1) e disegnava la barra della
+        posizione sulla scala 1–20. Il conto viene dalla tabella, non da un'assunzione.
+        """
+        code = st.get("league_code")
+        for df in (self.fm_standings, self.standings):
+            if df.empty or "league_code" not in df.columns:
+                continue
+            n = int((df.league_code == code).sum())
+            if n >= 2:
+                return n
         return None
 
     def season_compare(self, home_st: dict[str, Any] | None,
@@ -4225,11 +4343,17 @@ class MatchAnalysis:
 
             dash = "—"
             h, a = side(home_st), side(away_st)
+            # Numero di squadre del campionato, contato nella tabella di classifica: la resa
+            # scrive «Nª su <n>» e scala la barra su <n>, così le leghe a 18 squadre non
+            # dicono «su 20» (docs/76 §8). Le due squadre sono dello stesso campionato.
+            n_sq = self._n_squadre(home_st or away_st)
             rows = [
                 self._cmp_row("Posizione", str(h["rank"]) if h else dash, str(a["rank"]) if a else dash,
                               key_h=h and h["rank"], key_a=a and a["rank"], higher=False),
                 self._cmp_row("Punti", h["pts_s"] if h else dash, a["pts_s"] if a else dash,
-                              key_h=h and h["ppg"], key_a=a and a["ppg"]),
+                              key_h=h and h["ppg"], key_a=a and a["ppg"],
+                              title="Il migliore è evidenziato per punti/gara: le due squadre "
+                                    "possono avere una partita in più o in meno."),
                 self._cmp_row("Punti/gara", _it2(h["ppg"]) if h else dash, _it2(a["ppg"]) if a else dash,
                               key_h=h and h["ppg"], key_a=a and a["ppg"]),
                 self._cmp_row("Risultati (V-N-P)", h["wdl"] if h else dash, a["wdl"] if a else dash),
@@ -4254,7 +4378,18 @@ class MatchAnalysis:
                 note = "Attacco e difesa rapportati alla media gol del campionato: attacco più alto e difesa più bassa è meglio."
             else:
                 note = "Dalla classifica della stagione in corso."
-            return {"rows": rows, "note": note}
+            # docs/76 §8 — dichiarazione dell'orologio: la classifica è quella raccolta oggi,
+            # non quella alla vigilia; su una gara già giocata comprende anche i turni dopo.
+            note = ("Classifica raccolta oggi: su una gara già giocata comprende anche i turni "
+                    "successivi. " + note)
+            # Divario in punti (sintesi per il lettore: lo fa la scheda, non l'occhio).
+            gap = None
+            if h and a and home_st and away_st:
+                try:
+                    gap = round(float(home_st["points"]) - float(away_st["points"]))
+                except (KeyError, TypeError, ValueError):
+                    gap = None
+            return {"rows": rows, "note": note, "n_squadre": n_sq, "gap": gap}
         except (KeyError, TypeError, ValueError, ZeroDivisionError):
             return None
 
@@ -5983,6 +6118,10 @@ class MatchAnalysis:
             "away_shotmap": self.shot_map(match_id, away_id) if status == "finished" else [],
             "generated_at": datetime.now(UTC),
         }
+        # docs/76 §2: l'incrocio attacco–difesa che il lettore faceva a mente sulle quattro
+        # caselle; solo pre-partita e solo quando entrambi i campioni lo reggono
+        ctx["attacco_difesa"] = (self.attacco_contro_difesa(ctx["home_xg"], ctx["away_xg"])
+                                 if status != "finished" else None)
         if status == "finished":
             ctx["detail_stats"] = self.detail_stats(match_id, home_id, away_id)
             ctx["half_split"] = self.half_split(match_id, home_id, away_id)

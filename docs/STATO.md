@@ -1,3 +1,62 @@
+## 2026-10-10 — Card «Le due squadre»: controllo a 360 gradi (docs/76)
+
+Richiesta dell'utente: revisione completa di cosa propone e come lo propone la card «Le due
+squadre», su tutte le schede. Trovato e corretto un difetto di verità che i gate non vedevano:
+**la gara descritta entrava nel proprio campione «alla vigilia»** su 3 schede (Cagliari–Lecce,
+Lille–PSG, Atlético Madrid–Málaga), perché Understat data la partita qualche minuto prima del
+kickoff FotMob e il taglio `date < before` la lasciava passare — l'oracolo di [44] applicava
+lo stesso taglio ingenuo, per questo passava. Finestra riscritta (`_us_alla_vigilia` +
+`_squadre_descritta`), oracolo aggiornato con la stessa regola, e le tre schede ora mostrano i
+campioni veri (Atlético/Málaga: «nessuna gara di campionato prima di questa», 130 → 132
+riquadri dichiarati). Aggiunti: **striscia «Attacco contro difesa»** (voce E1 di docs/65:
+l'incrocio che il lettore faceva a mente, 89/89 schede pre-partita la pubblicano, solo con
+entrambi i rapporti dalla stessa fonte; [44] verifica presenza e numeri) e **dichiarazione
+della distinta non ancora pubblicata** (62 pannelli pre-partita prima muti, 3 anche sulle
+assenze: ora 62/62 dichiarano). Misurate e non pubblicate: E2 (il trend è già in «Come
+arrivano», non si duplica per docs/30) ed E3 (assenti→notizie: copertura 4%, troppo rumore).
+Gate: **589 test**, Ruff pulito, build **470/2.364/7.530**, `verify_site` **211.906 · 0**,
+parità **89 schede**, `resa_375` **27.696 · 0**. Nessuna richiesta alle fonti.
+
+**Revisione della striscia (§7, richiesta dell'utente):** la prima stesura metteva in fila i
+quattro rapporti e lasciava il conto al lettore — «non credo che così com'è mi sia di grande
+aiuto». Ora la striscia pubblica la **sintesi**: una barra per squadra con la **produzione
+offensiva attesa dell'incrocio** (`crea × concede l'avversaria`, scala 0–2,5× misurata su
+1.983 gare: p5 0,40 · mediana 0,93 · p95 1,86), i quattro rapporti come dettaglio sotto le
+barre e il **verdetto** solo oltre il rumore del campione — 1σ che combina gli errori dei
+quattro rapporti (sd 1,04 su media 1,69, `XG_RATIO_CV ≈ 0,612`): **918/1.983 gare (46%)
+ricevono il nome di chi ha il confronto offensivo migliore** (sulle 89 schede pre-partita:
+36 oltre, 53 entro), le altre dichiarano «entro il rumore» con l'intervallo nell'ⓘ. [44]
+riscritto (ricomputa prodotti, barre, rapporti e verdetto), test e caso 12 di manomissione
+aggiornati. Gate rifatti: **589 test**, build **470/2.364/7.530**, `verify_site`
+**212.351 · 0**, parità nessuna differenza, `resa_375` **27.696 · 0**. Dettagli in
+`docs/76` §7.
+
+**Revisione della card «Confronto di stagione» (§8, richiesta dell'utente):** trovata e
+corretta una card senza alcuna copertura numerica nei gate. Il difetto misurato: **«Nª su
+20» scritto anche dove il campionato ha 18 squadre** — la resa hardcodava 20 nel suffisso e
+nella barra della posizione, così FRA1, GER1, NED1 e POR1 pubblicavano un denominatore
+sbagliato su **257 pagine (55%)**. Ora il numero di squadre è contato nella stessa tabella
+della classifica; in più la riga «Punti» dichiara nel titolo che l'evidenziazione è per
+punti/gara, la nota dichiara l'orologio della classifica (raccolta oggi) e la frase del
+divario fa il conto per il lettore. Nuova invariante **[45] `check_confronto_stagione`**
+che ricalcola ogni numero della card dalle classifiche su tutte le pagine; test estesi e
+caso 13 di manomissione. Gate rifatti: **590 test**, build **470/2.364/7.530**,
+`verify_site` **228.331 · 0** (+15.980 controlli di [45]), parità nessuna differenza,
+`resa_375` **27.696 · 0**. Dettagli in `docs/76` §8.
+
+**Issue #104 — daily del 10/10 fermato da 12 hero «punteggio + calcio d'inizio» e 3 radar
+(docs/77):** la causa è l'anticipo della fonte — i dettagli FotMob pubblicano gol e
+statistiche prima che il calendario ribalti lo stato a «finished». Corretto rispettando la
+regola del calendario (PR #100) anche nell'hero: il punteggio esce solo se lo stato lo
+giustifica (`mostra_punteggio`), finché non è finita la scheda resta «vs · calcio d'inizio»
+come le liste; e l'oracolo [22b] del radar ora passa `before=kickoff`, la stessa finestra
+del generatore (la pagina era giusta, l'oracolo no). Test di regressione: alla gara futura
+del seed vengono infilate i gol e l'hero deve restare «vs». L'issue si chiude da sola al
+primo daily verde: serve il merge prima del run successivo. Gate: **591 test**,
+`verify_site` **223.338 · 0**, parità nessuna differenza, `resa_375` **27.312 · 0**.
+
+---
+
 ## 2026-10-10 — Errore issue #99: il campione gonfiato di una gara (docs/75)
 
 L'utente segnala lo screenshot di un errore visto stamattina: è l'issue #99 «Fallimento run

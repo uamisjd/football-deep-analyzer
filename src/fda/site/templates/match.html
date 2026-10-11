@@ -8,16 +8,23 @@
 {% macro hero_form(f, name) %}{% if f and f.n >= 3 %}<span class="form-line" aria-label="Forma di {{ name }}: {{ f.sequence }} nelle ultime {{ f.n }} partite, {{ f.points|it_plural('punto','punti') }}. V=vittoria, N=pareggio, P=sconfitta" title="Forma ultime {{ f.n }}: {{ f.sequence }} (V=vittoria, N=pareggio, P=sconfitta){% if f.n < 5 %} — campione ridotto (<5 gare), lettura provvisoria{% endif %}"><span class="fact-label">Forma</span><span class="form-dots" aria-hidden="true">{% for x in f.rows %}<span class="form-dot {{ x.res }}" title="{{ 'casa' if x.home else 'trasferta' }} vs {{ x.opponent }} {{ x.gf }}-{{ x.ga }}">{{ x.res }}</span>{% endfor %}</span><span class="fact-value">{{ f.points }} pt</span>{% if f.n < 5 %}<span class="small mut" title="meno di 5 gare: forma provvisoria"> ⚠</span>{% endif %}</span>{% endif %}{% endmacro %}
 {% block content %}
 {% set p = c.prediction %}
+{#- docs/77: il punteggio nell'hero esce solo se lo stato lo giustifica (finale, in corso,
+    intervallo…): quando il calendario dice «da giocare» ma i dettagli della fonte hanno già
+    i gol (la raccolta dei dettagli anticipa il ribaltamento dello stato, issue #104), la
+    pagina resta coerente col calendario — «vs · calcio d'inizio» — invece di stampare un
+    risultato accanto a «calcio d'inizio» (combinazione che l'invariante [37] vieta e che il
+    10/10/2026 ha fermato il daily su 12 schede). -#}
+{% set mostra_punteggio = c.home_goals is not none and c.status|didascalia_punteggio != 'calcio d\'inizio' %}
 <p class="crumb"><a href="{{ root }}index.html">← Oggi</a><span aria-hidden="true">·</span><span>{{ league_name }}{% if c.round %} · giornata {{ c.round }}{% endif %}</span></p>
 <div class="match-hero" id="sintesi">
-  <h1 class="sr-only">{{ c.home_name }} - {{ c.away_name }}{% if c.home_goals is not none %}, {{ c.home_goals }} - {{ c.away_goals }}{% endif %}</h1>
+  <h1 class="sr-only">{{ c.home_name }} - {{ c.away_name }}{% if mostra_punteggio %}, {{ c.home_goals }} - {{ c.away_goals }}{% endif %}</h1>
   <div class="match-hero-meta">
     <span class="hero-status"><span class="status-dot status-dot-{{ 'finished' if c.status == 'finished' else 'scheduled' }}" aria-hidden="true"></span>{% if c.status == 'finished' %}Finale{% else %}Analisi pre-partita{% endif %}</span>
     <span>{{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</span>
   </div>
   <div class="match-scoreline">
     <div class="match-hero-team home">{{ c.home_name }}{% if c.status != 'finished' %}{{ hero_form(c.home_form_badge, c.home_name) }}{% endif %}</div>
-    <div class="match-hero-center"><span class="result">{% if c.home_goals is not none %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
+    <div class="match-hero-center"><span class="result">{% if mostra_punteggio %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
     <div class="match-hero-team away">{{ c.away_name }}{% if c.status != 'finished' %}{{ hero_form(c.away_form_badge, c.away_name) }}{% endif %}</div>
   </div>
   {% if c.status in ('postponed','suspended','cancelled','abandoned') %}<div style="margin-top:12px;padding:10px 14px;background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);border-radius:10px;color:var(--amber);font-weight:700;font-size:13px">⚠ Partita {{ 'rinviata' if c.status == 'postponed' else 'sospesa' if c.status in ('suspended','abandoned') else 'annullata' }} — orario da confermare. La previsione resta quella dell'ultimo calcolo prima del rinvio.</div>{% endif %}
@@ -381,15 +388,45 @@
       </ol>
       {% if c[side ~ '_subs'] %}<div style="margin:8px 0 0"><p class="small mut" style="margin:0 0 4px;text-transform:uppercase;letter-spacing:.06em">Panchina ({{ c[side ~ '_subs']|length }}) — primi 5</p><p class="small">{% for sb in c[side ~ '_subs'][:5] %}{{ sb.num if sb.num is not none else '—' }} {{ sb.name }}{% if sb.pos %} <span class="mut">({{ sb.pos }})</span>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}{% if c[side ~ '_subs']|length >5 %} <span class="mut">+{{ c[side ~ '_subs']|length -5 }} altri</span>{% endif %}</p></div>{% endif %}
       {% if stt|length != 11 %}<p class="small mut" style="margin-top:6px">La fonte elenca {{ stt|length|it_plural('titolare') }}: distinta non definitiva.</p>{% endif %}
+    {% elif c.status != 'finished' %}
+    {#- docs/76 §3: 62 pannelli pre-partita su 178 non dicevano **nulla** sulla distinta —
+        il lettore non distingueva «la fonte non l'ha ancora pubblicata» da «dato perso».
+        La dichiarazione usa l'ultima informazione raccolta (l'eventuale lista degli
+        indisponibili arriva dalla stessa distinta) e il progetto distingue sempre fra
+        dato assente, dato non ancora pubblicato e fallback (direttiva utente 2026-09-08). -#}
+    <p class="small mut" style="margin-top:10px" title="FotMob pubblica la distinta a ridosso del calcio d'inizio: questa partita è ancora troppo lontana perché la fonte l'abbia già resa disponibile.">{% if ab and ab.players %}Formazione non ancora pubblicata dalla fonte: gli indisponibili qui sopra sono l'ultimo aggiornamento raccolto e possono cambiare a ridosso del calcio d'inizio.{% else %}La fonte non ha ancora pubblicato la distinta di questa squadra: formazione e indisponibili compariranno a ridosso del calcio d'inizio.{% endif %}</p>
     {% endif %}
   </div>
 {% endfor %}
+{% set ad = c.attacco_difesa %}
+{% if ad %}
+{#- docs/76 §7: la prima stesura metteva in fila i quattro rapporti e lasciava al lettore il
+    conto. Ora la striscia pubblica la sintesi — la produzione offensiva attesa di ciascuna
+    squadra (crea × concede l'avversaria, entrambi × la media del campionato, stessa fonte:
+    la combinazione attacco×difesa che il modello usa coi suoi parametri) — con una barra per
+    squadra in scala 0–2,5× e, solo oltre il rumore del campione (1σ, la convenzione del
+    progetto), il verdetto su chi ha il confronto offensivo migliore. I quattro rapporti
+    restano come dettaglio sotto le barre. -#}
+<div id="attacco-difesa" style="grid-column:1/-1;background:var(--surface2);border:1px solid var(--line);border-radius:10px;padding:10px 12px">
+  <div class="mut small" style="font-size:10.5px;text-transform:uppercase;letter-spacing:.06em">Attacco contro difesa <span title="Produzione offensiva attesa in questo incrocio, rapportata alla media del campionato: l'xG creato per gara dalla squadra moltiplicato per l'xG concesso per gara dalla difesa avversaria, entrambi rapportati alla media del campionato (stessa fonte, campione alla vigilia). È la combinazione moltiplicativa attacco×difesa che il modello usa coi parametri fittati, qui con gli xG di stagione: 1,00× vale una squadra media contro una difesa media. Barre in scala 0–2,5×. Lo squilibrio fra le due squadre si dichiara solo se supera 1σ, l'errore che combina quelli dei quattro rapporti (sd 1,04 xG su media 1,69 per gara-squadra).">ⓘ</span></div>
+  <div style="display:grid;grid-template-columns:minmax(60px,auto) 1fr auto;gap:5px 10px;align-items:center;margin-top:7px">
+    <b class="small">{{ c.home_name }}</b>
+    <div style="height:8px;background:var(--line);border-radius:999px" aria-hidden="true"><i style="display:block;height:100%;width:{{ (([ad.home_prod, 2.5]|min)/2.5*100)|round|int }}%;background:{% if ad.oltre_rumore and ad.away_prod > ad.home_prod %}var(--mut){% else %}var(--accent){% endif %};border-radius:999px"></i></div>
+    <span style="font:700 13px var(--font-head);font-variant-numeric:tabular-nums">{{ ad.home_prod|dec(2) }}×</span>
+    <b class="small">{{ c.away_name }}</b>
+    <div style="height:8px;background:var(--line);border-radius:999px" aria-hidden="true"><i style="display:block;height:100%;width:{{ (([ad.away_prod, 2.5]|min)/2.5*100)|round|int }}%;background:{% if ad.oltre_rumore and ad.home_prod > ad.away_prod %}var(--mut){% else %}var(--accent){% endif %};border-radius:999px"></i></div>
+    <span style="font:700 13px var(--font-head);font-variant-numeric:tabular-nums">{{ ad.away_prod|dec(2) }}×</span>
+  </div>
+  <div class="mut small" style="margin-top:6px">{{ c.home_name }} crea {{ ad.home_crea|dec(2) }}× la media e affronta una difesa che concede {{ ad.away_concede|dec(2) }}× · {{ c.away_name }} crea {{ ad.away_crea|dec(2) }}× e affronta una difesa che concede {{ ad.home_concede|dec(2) }}×</div>
+  <div class="small" style="margin-top:5px">{% if ad.oltre_rumore %}<b>{% if ad.home_prod > ad.away_prod %}{{ c.home_name }}{% else %}{{ c.away_name }}{% endif %}</b> ha il confronto offensivo migliore: <b>{% if ad.home_prod > ad.away_prod %}{{ ad.sbilancio|dec(1) }}{% else %}{{ (1/ad.sbilancio)|dec(1) }}{% endif %}×</b> la produzione attesa dell'altra in questo incrocio <span title="Oltre il rumore del campione: l'errore standard (1σ) del rapporto fra le due produzioni attese combina quelli dei quattro rapporti «× la media»; l'intervallo a 1σ è {{ ad.q_lo|dec(1) }}–{{ ad.q_hi|dec(1) }}× (casa su trasferta).">ⓘ</span>{% else %}le due produzioni attese non si distinguono entro il rumore del campione <span title="Il rapporto fra le due produzioni attese (casa su trasferta) è {{ ad.sbilancio|dec(1) }}×, dentro l'intervallo di rumore a 1σ {{ ad.q_lo|dec(1) }}–{{ ad.q_hi|dec(1) }}×: con questo campione non si dichiara un vincitore del confronto.">ⓘ</span>{% endif %}</div>
+</div>
+{% endif %}
 </div>
 {#- docs/64 §2.9: il piè di card spiegava «“Ruolo n.d.” = non ancora visto in distinta», una
     stringa che la pagina non stampa mai (il ruolo ignoto resta vuoto), e non diceva nulla dei
     quattro riquadri di stagione, che sono i numeri più pesanti della card. Ora descrive quello
     che c'è davvero, nell'ordine in cui compare, e ogni soglia è ripetuta nel ⓘ della sua riga. -#}
-<p class="small mut" style="margin:4px 0 0"><b>Tutti i numeri di questa card sono fermi alla vigilia di questa partita</b> (le gare giocate dopo non la riguardano: per il quadro aggiornato a oggi ci sono le pagine di campionato e di squadra). Che cosa c'è in questa card: <b>forma</b> = ultime gare di campionato prima di questa (gol fatti-subiti dal punto di vista della squadra); <b>xG creati e concessi per gara</b> con il rapporto sulla media del campionato, calcolato sempre con la stessa fonte del valore (Understat dove copre la lega, altrimenti le statistiche gara di FotMob: i due modelli di xG non sono confrontabili fra loro); <b>xPTS contro punti reali</b> nelle stesse gare del campione xG, con verdetto solo quando lo scarto supera la banda di rumore misurata; <b>indice di pressione</b> = passaggi che l'avversario gioca nella sua metà campo per ogni azione difensiva (contrasti, intercetti, falli), da FotMob perché è l'unica fonte che copre tutte e 7 le leghe — più è basso più si aggredisce alto, e l'etichetta esce solo quando lo scarto dalla media di lega supera l'errore standard del campione; il PPDA di Understat, dove la lega è coperta, è nel ⓘ della stessa casella; e <b>giorni di riposo</b> con l'ultima gara giocata, coppe europee comprese. Indisponibili e distinta: minuti, gol e assist di stagione sommati dalle statistiche gara, xG+xA per 90 dove la fonte li pubblica; «titolare» = almeno metà dei minuti medi per giocatore; «⌀» davanti a un voto indica la media di stagione, non il voto di questa partita.</p>
+<p class="small mut" style="margin:4px 0 0"><b>Tutti i numeri di questa card sono fermi alla vigilia di questa partita</b> (le gare giocate dopo non la riguardano: per il quadro aggiornato a oggi ci sono le pagine di campionato e di squadra). Che cosa c'è in questa card: <b>forma</b> = ultime gare di campionato prima di questa (gol fatti-subiti dal punto di vista della squadra); <b>xG creati e concessi per gara</b> con il rapporto sulla media del campionato, calcolato sempre con la stessa fonte del valore (Understat dove copre la lega, altrimenti le statistiche gara di FotMob: i due modelli di xG non sono confrontabili fra loro); <b>xPTS contro punti reali</b> nelle stesse gare del campione xG, con verdetto solo quando lo scarto supera la banda di rumore misurata; <b>indice di pressione</b> = passaggi che l'avversario gioca nella sua metà campo per ogni azione difensiva (contrasti, intercetti, falli), da FotMob perché è l'unica fonte che copre tutte e 7 le leghe — più è basso più si aggredisce alto, e l'etichetta esce solo quando lo scarto dalla media di lega supera l'errore standard del campione; il PPDA di Understat, dove la lega è coperta, è nel ⓘ della stessa casella; <b>giorni di riposo</b> con l'ultima gara giocata, coppe europee comprese; e prima della gara, quando entrambe le squadre hanno almeno 3 gare di campione dalla stessa fonte, <b>attacco contro difesa</b> = la produzione offensiva attesa di ciascuna squadra in questo incrocio (xG creati × xG concessi dalla difesa avversaria, entrambi contro la media del campionato), con barre a confronto e verdetto solo oltre il rumore del campione. Indisponibili e distinta: minuti, gol e assist di stagione sommati dalle statistiche gara, xG+xA per 90 dove la fonte li pubblica; «titolare» = almeno metà dei minuti medi per giocatore; «⌀» davanti a un voto indica la media di stagione, non il voto di questa partita.</p>
 
 {#- `docs/28` §2 P1.3: il gruppo si chiama per quello che è (le card del club) — prima l'id
     «contesto» stava sul gruppo, e il link «→ precedenti» atterrava in cima alle card del
@@ -397,15 +434,20 @@
     ancora: «→ precedenti» va a `#precedenti`. -#}
 <div class="grid detail-card" id="club">
   {% if c.season_compare %}
+  {#- docs/76 §8: la posizione scala sul numero vero di squadre del campionato (contato nella
+      classifica, non assunto a 20: 4 leghe su 7 ne hanno 18); la riga «Punti» dichiara nel
+      titolo che l'evidenziazione ragiona per punti/gara; la frase del divario fa il conto per
+      il lettore; la nota dichiara l'orologio della classifica (raccolta oggi). -#}
+  {% set n_sq = c.season_compare.n_squadre or 20 %}
   <div class="card" id="confronto">
     <h2>Confronto di stagione</h2>
     <div class="tablewrap"><table>
       <tr><th scope="col"></th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th></tr>
       {% for r in c.season_compare.rows %}
-      <tr><th scope="row">{{ r.label }}</th><td{% if r.best == 'h' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.h }}{% if r.label == 'Posizione' and r.h != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.h|int))/19*100)|round }}%;background:{% if r.best == 'h' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.h }}ª su 20</span>{% endif %}</td><td{% if r.best == 'a' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.a }}{% if r.label == 'Posizione' and r.a != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ ((20 - (r.a|int))/19*100)|round }}%;background:{% if r.best == 'a' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.a }}ª su 20</span>{% endif %}</td></tr>
+      <tr><th scope="row"{% if r.title %} title="{{ r.title }}"{% endif %}>{{ r.label }}</th><td{% if r.best == 'h' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.h }}{% if r.label == 'Posizione' and r.h != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ (((n_sq - (r.h|int))/(n_sq - 1))*100)|round }}%;background:{% if r.best == 'h' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.h }}ª su {{ n_sq }}</span>{% endif %}</td><td{% if r.best == 'a' and r.label != 'Posizione' %} class="best"{% endif %}>{{ r.a }}{% if r.label == 'Posizione' and r.a != '—' %}<div style="height:4px;background:var(--line2);border-radius:999px;margin-top:4px;max-width:90px"><i style="display:block;height:100%;width:{{ (((n_sq - (r.a|int))/(n_sq - 1))*100)|round }}%;background:{% if r.best == 'a' %}var(--accent){% else %}var(--mut){% endif %}"></i></div><span class="small mut">{{ r.a }}ª su {{ n_sq }}</span>{% endif %}</td></tr>
       {% endfor %}
     </table></div>
-    <p class="small mut">{{ c.season_compare.note }}</p>
+    <p class="small mut">{% set g = c.season_compare.gap %}{% if g is not none %}{% if g > 0 %}In classifica <b>{{ c.home_name }}</b> {{ 'è 1 punto' if g == 1 else 'è ' ~ g ~ ' punti' }} davanti a {{ c.away_name }}.{% elif g < 0 %}In classifica <b>{{ c.away_name }}</b> {{ 'è 1 punto' if g == -1 else 'è ' ~ (-g) ~ ' punti' }} davanti a {{ c.home_name }}.{% else %}Le due squadre sono a pari punti in classifica.{% endif %} {% endif %}{{ c.season_compare.note }}</p>
   </div>
   {% endif %}
   {% if c.home_bench or c.away_bench %}

@@ -601,6 +601,70 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
     muta = due.replace(pillola, "", 1)
     assert any("senza la pillola del ruolo" in f for f in rotta(infermeria("1,00", muta)))
 
+    # 12) attacco contro difesa (docs/76 §2): numero manomesso, striscia rimossa, striscia
+    # pubblicata su una gara che non è più pre-partita (i requisiti non sono più soddisfatti)
+    i_ad = originale.find('id="attacco-difesa"')
+    assert i_ad >= 0, "la scheda sintetica pre-partita deve pubblicare l'incrocio"
+    primo = re.search(r'font:700 13px[^>]*>([\d,]+)×</span>', originale[i_ad:]).group(1)
+    assert any("produzioni attese" in f for f in rotta(
+        originale[:i_ad] + originale[i_ad:].replace(f">{primo}×</span>", ">9,99×</span>", 1)))
+    barra = re.search(r'width:(\d+)%', originale[i_ad:]).group(1)
+    assert any("barre" in f for f in rotta(
+        originale[:i_ad] + originale[i_ad:].replace(f"width:{barra}%", "width:99%", 1)))
+    assert any("assente" in f for f in rotta(
+        originale[:i_ad - 5] + originale[originale.find("</div>", i_ad + 500):]))
+    leader = re.search(r"<b>([^<]+)</b> ha il confronto offensivo migliore", originale)
+    if leader:
+        assert any("leader atteso" in f for f in rotta(
+            originale.replace(f"<b>{leader.group(1)}</b> ha il confronto",
+                              "<b>Squadra Falsa</b> ha il confronto", 1)))
+
+    # 13) confronto di stagione (docs/76 §8): la card prima non aveva copertura numerica;
+    # [45] la ricalcola dalle classifiche — posizione su N squadre, barra, punti,
+    # evidenziazione, orologio dichiarato e divario
+    def rotta_confronto(html: str) -> list[str]:
+        pagina.write_text(html, encoding="utf-8")
+        return vs.check_confronto_stagione(out, dati)[0]
+
+    assert rotta_confronto(originale) == []
+    i_cs = originale.find('id="confronto"')
+    assert i_cs >= 0, "la scheda sintetica deve pubblicare il confronto di stagione"
+    fine_tab = originale.find("</table>", i_cs)
+    blocco_cs = originale[i_cs:fine_tab]
+
+    def con_blocco(nuovo: str) -> str:
+        return originale[:i_cs] + nuovo + originale[fine_tab:]
+
+    # a) «ª su 20» dove la classifica raccolta ha 3 squadre: la regressione che [45] blocca
+    assert any("campionato ha" in f for f in rotta_confronto(
+        con_blocco(blocco_cs.replace("ª su 3", "ª su 20"))))
+    # b) barra della posizione fuori scala
+    barra_cs = re.search(r"width:([\d.]+)%", blocco_cs).group(1)
+    assert any("barra posizione" in f for f in rotta_confronto(
+        con_blocco(blocco_cs.replace(f"width:{barra_cs}%", "width:1%", 1))))
+    # c) punti manomessi sulla riga «Punti»
+    assert any("«Punti» casa" in f for f in rotta_confronto(
+        con_blocco(re.sub(r"(<td[^>]*>)\d+( in \d+ gare</td>)", r"\g<1>99\g<2>",
+                          blocco_cs, count=1))))
+    # d) evidenziazione spostata: via il «best» dalla riga «Punti/gara»
+    assert any("evidenziazione «Punti/gara»" in f for f in rotta_confronto(
+        con_blocco(re.sub(r'(Punti/gara</th><td) class="best"', r"\g<1>", blocco_cs, count=1))))
+    # e) manca la dichiarazione dell'orologio della classifica
+    assert any("orologio" in f for f in rotta_confronto(
+        originale.replace("Classifica raccolta oggi", "Classifica", 1)))
+    # f) divario sbagliato
+    gap_m = re.search(r"In classifica <b>[^<]+</b> è (\d+) punt", originale)
+    if gap_m:
+        assert any("divario" in f for f in rotta_confronto(
+            originale.replace(f"è {gap_m.group(1)} punt", "è 99 punt", 1)))
+    # g) manca il titolo che spiega l'evidenziazione per punti/gara
+    assert any("punti/gara" in f for f in rotta_confronto(
+        con_blocco(blocco_cs.replace(' title="', ' data-x="', 1))))
+    # «Analisi pre-partita» compare anche nel titolo della sezione lettura: si sostituisce
+    # ovunque, così la pagina risulta a gara finita e la striscia non ha più i requisiti
+    assert any("senza i requisiti" in f for f in
+               rotta(originale.replace("Analisi pre-partita", "Finale")))
+
     assert rotta(originale) == []
 
 
