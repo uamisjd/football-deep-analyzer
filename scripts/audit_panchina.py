@@ -21,7 +21,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from fda.models.season_sim import mc_percent
+from fda.models.season_sim import mc_percent_str
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "partite"
@@ -38,8 +38,12 @@ PROIEZIONE = re.compile(r"proiezione: ([\d,]+)º posto in media")
 
 
 def testo(html: str) -> str:
-    """Testo della cella: via i tag, entità risolte, spazi normalizzati."""
-    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", unescape(html))).strip()
+    """Testo della cella: via i tag, entità risolte, spazi normalizzati.
+
+    Prima i tag, poi le entità: al contrario «&lt;1» diventerebbe «<1» e la finta
+    parentesi verrebbe mangiata dal tag successivo, cancellando il valore (docs/78 §12).
+    """
+    return re.sub(r"\s+", " ", unescape(re.sub(r"<[^>]+>", " ", html))).strip()
 
 
 def posizione_virtuale(tab: pd.DataFrame, tid: int, opp_id: int, pts: int, gd: int,
@@ -85,7 +89,8 @@ def main() -> int:
     silenzi: dict[str, list[str]] = {"ppg": [], "eta": [], "table": [], "stakes": []}
     errori: dict[str, list[str]] = {"tenure": [], "ppg": [], "table": [], "virtuale": [],
                                     "etichetta": [], "eta": [], "nome_coach": [], "nazione": [],
-                                    "precedenti": [], "incroci": []}
+                                    "precedenti": [], "incroci": [], "gol": [], "stima": [],
+                                    "tooltip": []}
     precedenti: list[tuple[str, int, int]] = []
     etichette: Counter[str] = Counter()
     posizioni: dict[str, list[int]] = {}
@@ -108,6 +113,7 @@ def main() -> int:
         fr = fr.iloc[0]
         kickoff = pd.Timestamp(fr.utc_kickoff)
         celle: dict[str, list[str]] = {}
+        grezze: dict[str, list[str]] = {}
         if str(fr.status) == "finished":
             agg["pagine_pre_con_calendario_finito"] += 1   # docs/78 §8: deve restare 0
         for nome, corpo in ROW.findall(m.group(1)):
@@ -116,10 +122,12 @@ def main() -> int:
             if len(tds) != 2:
                 agg[f"celle_male::{nome}"] += 1
             celle[nome] = [testo(t) for t in tds]
+            grezze[nome] = tds
         cellulare = celle.get("Allenatore", ["", ""])
         if len(cellulare) != 2:
             continue
         cell_st = celle.get("Posta in gioco", ["", ""])
+        st_raw = grezze.get("Posta in gioco", ["", ""])
         cell_eta = celle.get("Età media titolari", ["", ""])
 
         for lato, (tid, tname, oid, oname) in enumerate((
@@ -127,6 +135,13 @@ def main() -> int:
                 (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name)))):
             c_co, c_st, c_eta = cellulare[lato], cell_st[lato], cell_eta[lato]
             agg["celle_squadra"] += 1
+            # trasparenza (`docs/78` §12): il tooltip spiega i numeri, la loro precisione e
+            # le soglie delle etichette; ogni cella con la riga dei numeri deve averlo
+            if "titolo " in c_st:      # la riga dei numeri c'è: il tooltip deve esserci
+                if "errore standard fino a 0,5 punti percentuali" in st_raw[lato]:
+                    agg["tooltip_posta_in_gioco"] += 1
+                else:
+                    errori["tooltip"].append(f"{pg.stem}|{tname}| tooltip assente")
 
             # ---- allenatore: permanenza e rendimento, ricalcolati dal calendario ----
             ct = co[(co.team_id == tid) & (co.ko <= kickoff)].sort_values("ko", kind="stable")
@@ -148,10 +163,21 @@ def main() -> int:
                 else:
                     prev = str(nm)
                     break
-            atteso_ten = (f"panchina nuova: {streak}ª gara dal subentro a {prev}"
+            dal = None
+            if prev:
+                prec = ct[ct.player_id != ultimo.player_id]
+                if not prec.empty:
+                    dal = prec.ko.max().strftime("%d/%m")
+            else:
+                same = ct[ct.player_id == ultimo.player_id]
+                if not same.empty:
+                    dal = same.ko.min().strftime("%d/%m")
+            atteso_ten = ((f"panchina nuova: {streak}ª gara dal subentro a {prev}"
+                           + (f" (dopo la gara del {dal})" if dal else ""))
                           if prev else
-                          f"panchina invariata da {streak} "
-                          f"{'gara' if streak == 1 else 'gare'} nel nostro archivio")
+                          (f"panchina invariata da {streak} "
+                           f"{'gara' if streak == 1 else 'gare'} nel nostro archivio"
+                           + (f" (dal {dal})" if dal else "")))
             agg["tenure"] += int(atteso_ten in c_co)
             agg["subentri"] += int(prev is not None)
             if atteso_ten not in c_co:
@@ -177,6 +203,17 @@ def main() -> int:
                 agg["ppg"] += int(atteso_ppg in c_co)
                 if atteso_ppg not in c_co:
                     errori["ppg"].append(f"{pg.stem}|{tname}| atteso «{atteso_ppg}»")
+                gf_a = sum(int(r.home_goals) if int(r.home_id) == tid else int(r.away_goals)
+                           for r in mine.itertuples(index=False))
+                ga_a = sum(int(r.away_goals) if int(r.home_id) == tid else int(r.home_goals)
+                           for r in mine.itertuples(index=False))
+                atteso_gol = (f"con lui {gf_a / len(mine):.1f}".replace(".", ",")
+                              + " gol fatti e "
+                              + f"{ga_a / len(mine):.1f}".replace(".", ",")
+                              + " subiti a gara")
+                agg["gol_a_gara"] += int(atteso_gol in c_co)
+                if atteso_gol not in c_co:
+                    errori["gol"].append(f"{pg.stem}|{tname}| atteso «{atteso_gol}»")
             # bilancio dell'ALLENATORE con l'avversaria (sue gare in panchina, qualunque
             # club, prima di questa) e incroci in panchina — ricalcolati qui (docs/78 §10).
             # Il bilancio fra i due club non deve comparire nella cella: sta in «Precedenti».
@@ -271,8 +308,8 @@ def main() -> int:
                 agg["stakes_senza_simulazione"] += int("(simulazione stagione)" in c_st)
             else:
                 r = sm.iloc[0]
-                pct = (f"titolo {mc_percent(float(r.p_title))}%",
-                       f"retrocessione {mc_percent(float(r.p_rel))}%")
+                pct = (f"titolo {mc_percent_str(float(r.p_title))}%",
+                       f"retrocessione {mc_percent_str(float(r.p_rel))}%")
                 if pct[0] in c_st and pct[1] in c_st:
                     agg["stakes_pct"] += 1
                 else:
@@ -295,6 +332,14 @@ def main() -> int:
                 etichette[et.split(":")[0]] += 1
                 if et not in c_st:
                     errori["etichetta"].append(f"{pg.stem}|{tname}| atteso «{et}»")
+                ep_a, pm_a = float(r.exp_points), float(r.pos_mean)
+                atteso_st = (f"stima di fine stagione: {ep_a:.1f}".replace(".", ",")
+                             + " punti attesi"
+                             + ("" if et.startswith("proiezione:") else
+                                " · " + f"{pm_a:.1f}".replace(".", ",") + "º posto in media"))
+                agg["stima_stagione"] += int(atteso_st in c_st)
+                if atteso_st not in c_st:
+                    errori["stima"].append(f"{pg.stem}|{tname}| atteso «{atteso_st}»")
 
             # ---- classifica: distanze e posizione virtuale, ricalcolate dalle tabelle ----
             tab = st[st.league_code == fr.lg].drop_duplicates("team_id") if fr.lg else st.iloc[0:0]

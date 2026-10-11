@@ -45,6 +45,17 @@ def panchina_cella(html: str) -> str:
     return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
 
 
+def ggmm_cella(ts: Any, tz: Any) -> str:
+    """Data breve (gg/mm) nel fuso display: stesso formato della cella «Allenatore»."""
+    import pandas as pd  # import locale: il modulo tiene pandas fuori dal costo d'avvio
+
+    v = pd.Timestamp(ts)
+    if v.tzinfo is None:
+        v = v.tz_localize("UTC")
+    v = v.tz_convert(tz)
+    return f"{v.day:02d}/{v.month:02d}"
+
+
 def posizione_virtuale(tab: Any, tid: int, opp_id: int, pts: int, gd: int,
                        delta_mio: int, delta_avv: int) -> int:
     """Posizione virtuale con questo risultato: punti a **entrambe** le squadre della partita.
@@ -2324,7 +2335,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # che stanno *dentro* la funzione: la posizione virtuale che dimenticava i punti
     # dell'avversaria è passata [19] per 36 celle su 208 fino al 2026-10-11 (docs/78 §1).
     from fda.config import leagues as _leagues19
-    from fda.models.season_sim import mc_percent
+    from fda.config import load_leagues_config
+    from fda.models.season_sim import mc_percent_str
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
@@ -2418,10 +2430,28 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     if re.search(r"anni · [A-Z]{3}\b", cella_all):
                         fails.append(f"{pg.name}: nazione in codice grezzo nella cella "
                                      f"allenatore ({tname}): {cella_all[:60]}")
-                    stretta = (f"panchina nuova: {coach[2]}ª gara dal subentro a {coach[1]}"
+                    # la permanenza dichiara anche da quando (docs/78 §12): la data viene
+                    # dalla prima gara in archivio del coach corrente, o dall'ultima del
+                    # predecessore — ricalcolate qui dalle distinte
+                    from zoneinfo import ZoneInfo as _ZI19
+                    _tz19 = _ZI19(load_leagues_config().get("timezone_display", "Europe/Rome"))
+                    cur19p = ct.iloc[-1].player_id if not ct.empty else None
+                    dal19 = None
+                    if cur19p is not None and not pd.isna(cur19p):
+                        if coach[1]:
+                            prec19 = ct[ct.player_id != cur19p]
+                            if not prec19.empty:
+                                dal19 = ggmm_cella(prec19.ko.max(), _tz19)
+                        else:
+                            same19 = ct[ct.player_id == cur19p]
+                            if not same19.empty:
+                                dal19 = ggmm_cella(same19.ko.min(), _tz19)
+                    stretta = ((f"panchina nuova: {coach[2]}ª gara dal subentro a {coach[1]}"
+                                + (f" (dopo la gara del {dal19})" if dal19 else ""))
                                if coach[1] else
-                               f"panchina invariata da {coach[2]} "
-                               f"{'gara' if coach[2] == 1 else 'gare'} nel nostro archivio")
+                               (f"panchina invariata da {coach[2]} "
+                                f"{'gara' if coach[2] == 1 else 'gare'} nel nostro archivio"
+                                + (f" (dal {dal19})" if dal19 else "")))
                     checks += 1
                     if stretta not in cella_all:
                         fails.append(f"{pg.name}: riga permanenza ({tname}) «{stretta}» assente")
@@ -2445,6 +2475,23 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         atteso_ppg = "rendimento: nessuna gara finita con lui in panchina"
                     if atteso_ppg not in cella_all:
                         fails.append(f"{pg.name}: rendimento panchina ({tname}) «{atteso_ppg}» assente")
+                    # gol fatti/subiti a gara nelle stesse partite (docs/78 §12)
+                    checks += 1
+                    if len(gare_coach):
+                        gf19 = sum(int(r.home_goals) if int(r.home_id) == tid
+                                   else int(r.away_goals) for r in gare_coach.itertuples(index=False))
+                        ga19 = sum(int(r.away_goals) if int(r.home_id) == tid
+                                   else int(r.home_goals) for r in gare_coach.itertuples(index=False))
+                        atteso_gol = (f"con lui {gf19 / len(gare_coach):.1f}".replace(".", ",")
+                                      + " gol fatti e "
+                                      + f"{ga19 / len(gare_coach):.1f}".replace(".", ",")
+                                      + " subiti a gara")
+                        if atteso_gol not in cella_all:
+                            fails.append(f"{pg.name}: gol a gara della panchina ({tname}) "
+                                         f"«{atteso_gol}» assenti o diversi")
+                    else:
+                        if "gol fatti e" in cella_all:
+                            fails.append(f"{pg.name}: gol a gara ({tname}) senza gare finite")
                     # bilancio dell'**allenatore** con l'avversaria: le sue gare in panchina
                     # (con qualunque club) contro questa squadra, finite, prima di questa
                     # partita (`docs/78` §10). Il bilancio fra i due **club** non deve
@@ -2560,9 +2607,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                         raw_top = getattr(sr, "p_top4", None)
                     raw_n = getattr(sr, "top_n", None)
                     top_n = 4 if raw_n is None or pd.isna(raw_n) else int(raw_n)
-                    pt = mc_percent(float(sr.p_title))
-                    pe = None if raw_top is None or pd.isna(raw_top) else mc_percent(float(raw_top))
-                    pr = mc_percent(float(sr.p_rel))
+                    pt = mc_percent_str(float(sr.p_title))
+                    pe = None if raw_top is None or pd.isna(raw_top) else mc_percent_str(float(raw_top))
+                    pr = mc_percent_str(float(sr.p_rel))
                     atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
                               if pe is not None else f"titolo {pt}%")
                     if atteso not in txt or f"retrocessione {pr}%" not in txt:
@@ -2581,6 +2628,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                f"º posto in media")
                     if lab not in txt:
                         fails.append(f"{pg.name}: etichetta posta in gioco {tname} sbagliata ({lab})")
+                    # «stima di fine stagione»: punti attesi (e posizione media quando
+                    # l'etichetta non la pubblica già), dai Parquet della simulazione
+                    checks += 1
+                    _ep19, _pm19 = getattr(sr, "exp_points", None), getattr(sr, "pos_mean", None)
+                    if _ep19 is not None and _pm19 is not None and not pd.isna(_ep19) \
+                            and not pd.isna(_pm19):
+                        _ep_s = f"{float(_ep19):.1f}".replace(".", ",")
+                        atteso_st = (f"stima di fine stagione: {_ep_s} punti attesi"
+                                     if lab.startswith("proiezione:") else
+                                     f"stima di fine stagione: {_ep_s} punti attesi · "
+                                     f"{float(_pm19):.1f}".replace(".", ",") + "º posto in media")
+                        if atteso_st not in txt:
+                            fails.append(f"{pg.name}: stima di fine stagione ({tname}) "
+                                         f"«{atteso_st}» assente o diversa")
                 code19 = _lg19.get(int(fr.league_id)) if not pd.isna(fr.league_id) else None
                 tab19 = (fm19[fm19.league_code == code19].drop_duplicates("team_id")
                          if code19 and not fm19.empty else fm19.iloc[0:0])

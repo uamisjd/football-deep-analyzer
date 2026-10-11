@@ -112,10 +112,10 @@ def test_panchina_stabile_senza_cambio(analysis):
 
 def test_stakes_etichette_e_interi(analysis):
     s = analysis.stakes("Inter")
-    assert s["label"] == "corsa al titolo" and s["p_title_pct"] == 22 and s["p_top4_pct"] == 81
+    assert s["label"] == "corsa al titolo" and s["p_title_pct"] == "22" and s["p_top4_pct"] == "81"
     assert s["ucl_spots"] == 4 and s["ucl_legacy"] is True
     r = analysis.stakes("Roma")
-    assert r["label"] == "lotta salvezza" and r["p_rel_pct"] == 41
+    assert r["label"] == "lotta salvezza" and r["p_rel_pct"] == "41"
     assert analysis.stakes("Squadra Inesistente") is None
 
 
@@ -123,7 +123,7 @@ def test_stakes_usa_la_soglia_nuova_e_non_il_fallback(analysis):
     analysis.season_sim = SIM.assign(top_n=2, p_top_n=[0.55, 0.08])
     s = analysis.stakes("Inter")
     assert s["ucl_spots"] == 2 and s["ucl_legacy"] is False
-    assert s["p_top_n_pct"] == 55
+    assert s["p_top_n_pct"] == "55"
 
 
 def test_riposo_con_coppe_e_nota(analysis):
@@ -469,7 +469,8 @@ def test_keyword_score_e_clean_text():
 
 def test_bench_deep_profilo_rendimento_e_virtual(analysis):
     b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
-    assert b["tenure_line"] == "panchina nuova: 2ª gara dal subentro a Coach Vecchio"
+    assert b["tenure_line"] == ("panchina nuova: 2ª gara dal subentro a Coach Vecchio "
+                                 "(dopo la gara del 01/09)")
     # una sola gara finita col coach corrente (Inter-Milan 2-2): 1,0 punti/gara
     assert b["coach_ppg_line"] == "1,0 punti/gara su 1 gara finita"
     # bilancio dell'ALLENATORE con l'avversaria (docs/78 §10): lui con qualunque club
@@ -529,12 +530,33 @@ def test_bench_deep_non_conta_la_partita_stessa(tmp_path):
     st.close()
 
 
+def test_bench_deep_gol_a_gara_e_stima_di_stagione(analysis):
+    """`docs/78` §12: gol fatti/subiti delle sue partite e stima di fine stagione.
+
+    Il rendimento da solo non dice *come* (2,0 gol fatti e 2,0 subiti nell'unica gara
+    finita con lui); la stima pubblica i «Pt attesi» e la «Media pos.» della simulazione,
+    che prima non comparivano da nessuna parte nella scheda.
+    """
+    b = analysis.bench_deep(2, "Inter", 1, "Roma", KO("2026-09-14 00:00"))
+    assert b["coach_goals_line"] == "con lui 2,0 gol fatti e 2,0 subiti a gara"
+    assert b["season_line"] == ("stima di fine stagione: 78,0 punti attesi · "
+                                "2,1º posto in media")
+    # con l'etichetta «proiezione:» la posizione media è già nell'etichetta: non si ripete
+    analysis.season_sim = SIM.assign(top_n=4, p_top_n=[0.05, 0.04], p_title=[0.01, 0.01],
+                                     p_rel=[0.02, 0.02], pos_mean=[11.4, 12.0],
+                                     exp_points=[52.0, 50.0])
+    r = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert r["stakes"]["label"] == "proiezione: 12,0º posto in media"
+    assert r["season_line"] == "stima di fine stagione: 50,0 punti attesi"
+
+
 def test_bench_deep_zona_retrocessione_e_nationalita(analysis):
     b = analysis.bench_deep(4, "Lazio", 1, "Roma", KO("2026-09-14 00:00"))
     assert "dalla salvezza diretta" in b["table_line"]   # ultima piazza: distanza dalla salvezza
     assert "con una vittoria" in b["virtual_line"]
     r = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
-    assert r["tenure_line"] == "panchina invariata da 4 gare nel nostro archivio"
+    assert r["tenure_line"] == ("panchina invariata da 4 gare nel nostro archivio "
+                                 "(dal 25/08)")
     # 1-0, 0-1 e 1-2 nell'archivio: 3 punti su 3 gare finite
     assert r["coach_ppg_line"] == "1,0 punti/gara su 3 gare finite"
 
@@ -546,13 +568,17 @@ def test_stakes_arrotonda_come_proiezioni_non_col_banker(analysis):
     Proiezioni stampava «1%» e «63%»: quattro numeri diversi fra le due pagine nella build
     del 2026-10-11.
     """
-    from fda.models.season_sim import mc_percent
-    analysis.season_sim = SIM.assign(p_title=[0.005, 0.625], p_rel=[0.625, 0.005])
+    from fda.models.season_sim import mc_percent, mc_percent_str
+    analysis.season_sim = SIM.assign(p_title=[0.005, 0.625], p_rel=[0.625, 0.004])
     s = analysis.stakes("Inter")
-    assert round(0.005 * 100) != mc_percent(0.005)      # il vecchio comportamento differiva
-    assert s["p_title_pct"] == 1 and s["p_rel_pct"] == 63
+    assert round(0.5) == mc_percent(0.005) - 1          # il vecchio comportamento differiva
+    assert s["p_title_pct"] == "1" and s["p_rel_pct"] == "63"
     r = analysis.stakes("Roma")
-    assert r["p_title_pct"] == 63 and r["p_rel_pct"] == 1
+    assert r["p_title_pct"] == "63"
+    # 0,4% non è «0%» (impossibile): è «<1», un valore non nullo sotto il mezzo punto
+    assert r["p_rel_pct"] == "<1" and mc_percent_str(0.004) == "<1"
+    assert mc_percent_str(0.0) == "0" and mc_percent_str(0.999) == ">99"
+    assert mc_percent_str(1.0) == "100"
 
 
 def test_bench_deep_etichetta_champions_e_proiezione(analysis):
@@ -611,7 +637,8 @@ def test_bench_deep_subentro_senza_gare_dichiarato(analysis):
     ], ignore_index=True)
     b = analysis.bench_deep(3, "Milan", 1, "Roma", KO("2026-09-14 00:00"))
     assert b["coach_ppg_line"] is None and b["coach_ppg_absent"] is True
-    assert b["tenure_line"] == "panchina nuova: 1ª gara dal subentro a Coach Precedente"
+    assert b["tenure_line"] == ("panchina nuova: 1ª gara dal subentro a Coach Precedente "
+                                 "(dopo la gara del 05/09)")
 
 
 def test_bench_deep_senza_classifica_degrada(tmp_path):

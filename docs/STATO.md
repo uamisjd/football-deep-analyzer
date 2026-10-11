@@ -59,6 +59,24 @@ allenatori; si accenderà con le gare di ritorno o con un backfill delle distint
 Verificato a mano il resto della cella di Sarri: 2-1 Sassuolo, 1-0 Bologna, 2-1 a Roma, 1-2
 Cagliari, 0-2 a Torino → 6 punti su 5 gare = **1,2 punti/gara**, corretto.
 
+**Potenziamenti approvati (docs/78 §12, build #8).** Su richiesta dell'utente («c'è altro che si
+può migliorare o potenziare in questa sezione?»), dopo una revisione misurata e con tutti e
+quattro gli interventi approvati: (1) **arrotondamenti allineati** alla pagina Proiezioni — la
+card usava `round()` di Python (banker's) e pubblicava **4 numeri diversi** su 3 schede (titolo
+Marseille 0% contro 1%, retrocessione Troyes 62% contro 63%); (2) **trasparenza** — la riga
+«Posta in gioco» non aveva alcun tooltip: ora dichiara 10.000 simulazioni, errore standard fino
+a 0,5 pp, significato di «retrocessione» (posti rossi) e le soglie delle etichette (15%/35%) —
+**164 celle su 164**; (3) **«<1%»** per i valori non nulli sotto il mezzo punto (e «>99%» sopra
+99,5%), mai «0%» per un dato che non è zero: **47 valori «<1%»** pubblicati, lo zero vero resta
+«0%»; (4) **contesto dell'allenatore** — permanenza datata («(dal 23/08)», 152 celle; 12
+subentri «(dopo la gara del gg/mm)») e gol fatti/subiti delle sue gare («con lui 1,0 gol fatti e
+1,4 subiti a gara», 158 celle); (5) **stima di fine stagione** — «X,X punti attesi · Y,Yº posto
+in media» dalla simulazione, prima pubblicata in **0 schede su 82**: ora **164 celle su 164**,
+senza ripetere la posizione dove l'etichetta la contiene già (85 con, 79 senza).
+Gate su build #8: **601 test**, `ruff` pulito, `verify_site` **233.836 · 0**, audit panchina
+**0 scostamenti · 0 silenzi**, `parita_schede` **82 · nessuna differenza**, `resa_375`
+**28.467 · 0**.
+
 Gate rifatti dopo l'ultima modifica: **598 test**, Ruff pulito, build **493 schede**,
 `verify_site` **233.508 · 0** (nuove invarianti: niente card su una gara che il calendario dà
 finita; il bilancio dei club mai nella cella dell'allenatore), audit panchina **0 scostamenti ·

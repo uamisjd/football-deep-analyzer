@@ -2873,6 +2873,43 @@ def test_card_panchina_tre_esiti_eta_dichiarata_e_orologio(tmp_path):
     st.close()
 
 
+def test_card_panchina_trasparenza_e_convenzione_degli_estremi(tmp_path):
+    """`docs/78` §12: i numeri della posta in gioco si spiegano e non mentono sugli estremi.
+
+    La riga dei numeri ha un tooltip (simulazioni, errore standard, soglie delle etichette,
+    significato di «retrocessione»); «stima di fine stagione» pubblica i punti attesi e la
+    posizione media della simulazione; un valore non nullo sotto il mezzo punto si legge
+    «<1%», non «0%».
+    """
+    st = _seed(tmp_path)
+    sim = st.read("season_sim")
+    sim.loc[sim.team == "Monza", "p_rel"] = 0.004     # non nullo, ma sotto il mezzo punto
+    st.write("season_sim", sim)
+    # Inter–Monza (id del campione di test): entrambe nella simulazione di stagione, così
+    # la riga «Posta in gioco» esiste e porta tooltip, stima e convenzione degli estremi
+    now = datetime.now(UTC)
+    st.upsert("fixtures", [_fixture_futura(5900010, 5, 8636, "Inter", 6504, "Monza", now)])
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5900010})
+    html = (out / "partite" / "5900010.html").read_text(encoding="utf-8")
+    card = html.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
+    # tooltip con fonti, precisione, soglie e significato delle parole
+    assert "errore standard fino a 0,5 punti percentuali" in card
+    assert "posti rossi della lega" in card
+    assert "lotta salvezza da 35% di retrocessione" in card
+    # stima di fine stagione: i numeri della pagina Proiezioni (Inter: 84,2 punti attesi,
+    # 1,4º posto in media). Sulla cella del Monza l'etichetta È già la proiezione di
+    # posizione: il numero non si ripete due volte nella stessa cella.
+    assert "stima di fine stagione: 84,2 punti attesi · 1,4º posto in media" in card
+    assert "stima di fine stagione: 30,1 punti attesi" in card
+    assert "30,1 punti attesi · " not in card
+    assert "proiezione: 17,9º posto in media" in card
+    # l'estremo si dichiara: il Monza (0,4% reale) non è «0%» ma «<1»; l'Inter, che è
+    # esattamente a zero, resta «0%» — lo zero vero non si maschera
+    assert "retrocessione &lt;1%" in card and "retrocessione 0%" in card
+    st.close()
+
+
 def test_scheda_di_una_gara_finita_non_resta_pre_partita(tmp_path):
     """`docs/78` §8: i dettagli possono essere un'istantanea vecchia, il calendario no.
 

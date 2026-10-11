@@ -18,7 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from ..backoff import is_suspended_row
 from ..config import CALENDAR_DAYS, DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load_leagues_config
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
-from ..models.season_sim import mc_percent, mc_se
+from ..models.season_sim import mc_percent_str, mc_se
 from ..store import Store
 from .analysis import MatchAnalysis, allineamento_fonti, insight_drop_stats, prediction_meta
 from .audit import audit_match
@@ -955,9 +955,10 @@ class SiteBuilder:
                 if raw_top is None or pd.isna(raw_top):
                     raw_top = row.get("p_top4")
                 row["p_top_n"] = raw_top
-                row["p_title_pct"] = mc_percent(row["p_title"])
-                row["p_top_n_pct"] = None if raw_top is None or pd.isna(raw_top) else mc_percent(raw_top)
-                row["p_rel_pct"] = mc_percent(row["p_rel"])
+                row["p_title_pct"] = mc_percent_str(row["p_title"])
+                row["p_top_n_pct"] = (None if raw_top is None or pd.isna(raw_top)
+                                      else mc_percent_str(raw_top))
+                row["p_rel_pct"] = mc_percent_str(row["p_rel"])
                 rows.append(row)
             n_sims = int(pd.to_numeric(grp["n_sims"], errors="coerce").max())
             conteggio = conteggi.get(str(key))

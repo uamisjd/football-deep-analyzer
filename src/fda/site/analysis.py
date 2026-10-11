@@ -25,7 +25,7 @@ from scipy.stats import poisson
 
 from ..config import leagues, load_leagues_config
 from ..models.predict import EloModel, wilson_interval
-from ..models.season_sim import mc_percent
+from ..models.season_sim import mc_percent_str
 from ..sources.news import (
     TOPIC_LABELS,
     TOPIC_WEIGHTS,
@@ -168,6 +168,21 @@ def _stat_text_it(text: Any) -> str:
 
 def _first(df: pd.DataFrame) -> dict[str, Any]:
     return {} if df.empty else df.iloc[0].to_dict()
+
+
+def _ggmm_cella(ts: Any) -> str:
+    """Data breve (gg/mm) nel fuso di visualizzazione del sito (Europe/Rome da config)."""
+    tz = ZoneInfo(load_leagues_config().get("timezone_display", "Europe/Rome"))
+    t = pd.Timestamp(ts)
+    if t.tzinfo is None:
+        t = t.tz_localize("UTC")
+    t = t.tz_convert(tz)
+    return f"{t.day:02d}/{t.month:02d}"
+
+
+def _dec1(v: float) -> str:
+    """Un decimale con la virgola, come il filtro ``dec(1)`` dei template."""
+    return f"{float(v):.1f}".replace(".", ",")
 
 
 def _goals(info: dict, key: str, fixture: dict) -> int | None:
@@ -1793,16 +1808,17 @@ class MatchAnalysis:
             # 101 fuori dall'intervallo 7ª–13ª, `docs/78` §2) va il numero della
             # simulazione, lo stesso «Media pos.» della pagina Proiezioni.
             label = f"proiezione: {str(round(float(r.pos_mean), 1)).replace('.', ',')}º posto in media"
-        # Stessa convenzione della pagina Proiezioni (`mc_percent`: mezzo in su, mai il
-        # banker's rounding di Python). Con `round()` 0,5% diventava «0%» e 62,5% «62%»
-        # mentre Proiezioni stampava «1%» e «63%»: 4 numeri diversi fra le due pagine
-        # nella build del 2026-10-11 (`docs/78` §12).
-        p_e_pct = None if p_e is None else mc_percent(p_e)
+        # Stessa convenzione della pagina Proiezioni (`mc_percent_str`: mezzo in su, mai il
+        # banker's rounding di Python; «<1» sotto il mezzo punto invece di «0»). Con
+        # `round()` 0,5% diventava «0%» e 62,5% «62%» mentre Proiezioni stampava «1%» e
+        # «63%»: 4 numeri diversi fra le due pagine nella build del 2026-10-11
+        # (`docs/78` §12).
+        p_e_pct = None if p_e is None else mc_percent_str(p_e)
         return {"p_title": p_t, "p_top_n": p_e, "p_top4": p_e, "p_rel": p_r,
                 "ucl_spots": top_n, "ucl_legacy": legacy_top,
-                "p_title_pct": mc_percent(p_t),
+                "p_title_pct": mc_percent_str(p_t),
                 "p_top_n_pct": p_e_pct, "p_top4_pct": p_e_pct,
-                "p_rel_pct": mc_percent(p_r),
+                "p_rel_pct": mc_percent_str(p_r),
                 "pos_mean": float(r.pos_mean), "exp_points": float(r.exp_points),
                 "label": label, "played": int(r.played)}
 
@@ -1891,9 +1907,23 @@ class MatchAnalysis:
         out: dict[str, Any] = {"coach": coach, "stakes": stakes, "avg_age": age,
                                "coach_age": None, "coach_country_it": None,
                                "coach_ppg_line": None, "coach_ppg_absent": False,
+                               "coach_goals_line": None, "season_line": None,
                                "coach_vs_opp_line": None,
                                "coach_vs_coach_line": None, "tenure_line": None,
                                "table_line": None, "virtual_line": None}
+        # I punti attesi della simulazione non comparivano da nessuna parte nella scheda
+        # (0/82 pagine, misurato il 2026-10-11) e la posizione media solo quando l'etichetta
+        # era già «proiezione:»: la riga li pubblica, senza ripetere il numero due volte
+        # nella stessa cella (`docs/78` §12).
+        if stakes is not None:
+            ep, pm = stakes.get("exp_points"), stakes.get("pos_mean")
+            if ep is not None and pm is not None:
+                etichetta = str(stakes.get("label") or "")
+                out["season_line"] = (
+                    f"stima di fine stagione: {_dec1(ep)} punti attesi"
+                    if etichetta.startswith("proiezione:") else
+                    f"stima di fine stagione: {_dec1(ep)} punti attesi · "
+                    f"{_dec1(pm)}º posto in media")
         # ---- profilo e rendimento dell'allenatore -------------------------------------------
         if coach is not None and not self.lineup.empty:
             ko = self.fixtures.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"] \
@@ -1932,6 +1962,16 @@ class MatchAnalysis:
                             f"{ppg:.1f}".replace(".", ",") +
                             (" punti/gara su 1 gara finita" if len(mine) == 1
                              else f" punti/gara su {len(mine)} gare finite"))
+                        # Il rendimento da solo non dice *come*: i gol delle sue partite
+                        # (produzione e concessione) sono già nei Parquet e lo contestualizzano
+                        # (`docs/78` §12).
+                        gf_tot = sum(int(r.home_goals) if int(r.home_id) == team_id
+                                     else int(r.away_goals) for r in mine.itertuples(index=False))
+                        ga_tot = sum(int(r.away_goals) if int(r.home_id) == team_id
+                                     else int(r.home_goals) for r in mine.itertuples(index=False))
+                        out["coach_goals_line"] = (
+                            f"con lui {_dec1(gf_tot / len(mine))} gol fatti e "
+                            f"{_dec1(ga_tot / len(mine))} subiti a gara")
                     else:
                         # Un subentro appena avvenuto non ha gare concluse: senza questa riga
                         # la cella taceva e il lettore non distingueva «dato perso» da
@@ -2023,13 +2063,35 @@ class MatchAnalysis:
                                         f"{w}V {d}N {l}P" if n_inc == 1 else
                                         f"incroci in panchina con {opp_coach['name']}: "
                                         f"{w}V {d}N {l}P su {n_inc} gare")
+            # La permanenza dichiara anche **da quando**: la data della prima gara in
+            # archivio (o dell'ultima del predecessore) è nei Parquet e toglie l'ambiguità
+            # del «da N gare» senza finestra temporale (`docs/78` §12).
+            ct_d = self.lineup[(self.lineup.team_id == team_id) & (self.lineup.role == "coach")]
+            if not ct_d.empty:
+                ko_d = (self.fixtures.drop_duplicates("match_id").set_index("match_id")["utc_kickoff"]
+                        if not self.fixtures.empty else pd.Series(dtype="datetime64[ns, UTC]"))
+                ct_d = ct_d[ct_d.match_id.isin(ko_d.index)].copy()
+                ct_d["ko"] = pd.to_datetime(ct_d.match_id.map(ko_d), utc=True)
+                ct_d = ct_d[ct_d.ko <= pd.Timestamp(kickoff)]
             if coach.get("prev_name"):
-                out["tenure_line"] = (f"panchina nuova: {coach['matches']}ª gara dal subentro "
-                                      f"a {coach['prev_name']}")
+                dal = None
+                if not ct_d.empty:
+                    prec = ct_d[ct_d.player_id != coach.get("id")]
+                    if not prec.empty:
+                        dal = _ggmm_cella(prec["ko"].max())
+                out["tenure_line"] = (
+                    f"panchina nuova: {coach['matches']}ª gara dal subentro "
+                    f"a {coach['prev_name']}" + (f" (dopo la gara del {dal})" if dal else ""))
             else:
-                out["tenure_line"] = (f"panchina invariata da {coach['matches']} "
-                                      f"{'gara' if coach['matches'] == 1 else 'gare'} "
-                                      f"nel nostro archivio")
+                dal = None
+                if not ct_d.empty and pd.notna(coach.get("id")):
+                    same = ct_d[ct_d.player_id == coach["id"]]
+                    if not same.empty:
+                        dal = _ggmm_cella(same["ko"].min())
+                out["tenure_line"] = (
+                    f"panchina invariata da {coach['matches']} "
+                    f"{'gara' if coach['matches'] == 1 else 'gare'} nel nostro archivio"
+                    + (f" (dal {dal})" if dal else ""))
         # ---- posta in gioco di classifica + posizione virtuale -------------------------------
         st = self.standing(team_name)
         if st and not self.fm_standings.empty:

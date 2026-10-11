@@ -253,7 +253,68 @@ problema · 233.508 controlli**; `audit_panchina` **0 scostamenti**; **598 test*
   distinte storiche da FotMob (rete + budget: decisione separata, non eseguibile dal sandbox).
 - **Permanenza**: «panchina invariata da N gare nel nostro archivio» — il «nel nostro
   archivio» resta, perché la misura è quella (l'archivio distinte, non la carriera).
-- **4 celle POR1** con tutte le percentuali ≤1 (5887645/46/48/49): oneste dopo il §6
-  («titolo 0% · UCL (prime 0–1) 0% · retrocessione 0%»), senza arrotondamenti finti.
+- **4 celle POR1** con tutte le percentuali ≤1 (5887645/46/48/49): dopo il §12 (build #8)
+  due di quelle pagine non sono più schede pre-partita (5887645/48 non hanno la card) e le
+  altre due leggono «titolo 0% · UCL (prime 1) 0% · retrocessione 1%», dove **0% è lo zero
+  vero** (p_title = 0) e **1% è uno 0,5–1,4% reale** arrotondato col mezzo in su; sotto il
+  mezzo punto il valore non nullo si dichiara «<1%».
 - **4 celle senza archivio h2h** (2 partite): il bilancio non si pubblica, il resto della
   cella resta; si riempiranno alla prossima raccolta.
+
+## §12 — Arrotondamenti allineati e quattro potenziamenti approvati (A–D)
+
+Richiesta dell'utente dopo il §10: «c'è altro che si può migliorare o potenziare in questa
+sezione?». Revisione misurata su build #7 (82 schede); l'utente ha approvato **tutti e quattro**
+gli interventi proposti («Tutte e quattro»). Implementati insieme, con questi numeri.
+
+**Difetto trovato misurando (e corretto prima dei potenziamenti):** la card arrotondava con
+`round()` di Python (banker's: 0,5 → 0) mentre la pagina Proiezioni usa `mc_percent` (mezzo in
+su). Effetto: **4 numeri diversi fra le due pagine** su 3 schede (es. Marseille «titolo 0%» in
+card contro «1%» in Proiezioni; Troyes «retrocessione 62%» contro «63%»). Ora la card usa gli
+stessi arrotondamenti della pagina Proiezioni — un solo posto decide il numero pubblicato.
+Test di regressione: `test_stakes_arrotonda_come_proiezioni_non_col_banker`.
+
+**A) Trasparenza su «Posta in gioco» (tooltip).** I numeri della simulazione non si spiegavano:
+la riga non aveva alcun `title=`. Ora ogni riga dei numeri porta un tooltip: **10.000
+simulazioni Monte Carlo** del resto del campionato, **errore standard fino a 0,5 punti
+percentuali**, significato delle parole («retrocessione» = posti rossi della lega: retrocessioni
+dirette e spareggio dove previsto) e **soglie delle etichette** (corsa al titolo da 15%, corsa
+alla Champions da 35% nei posti UCL ordinari, lotta salvezza da 35% di retrocessione, zona
+salvezza non lontana da 15%). Misura: **164 celle su 164** con la riga dei numeri hanno il
+tooltip (contatore `tooltip_posta_in_gioco` dell'audit, con 0 celle mancanti).
+
+**B) «<1%» al posto di «0%» per i valori non nulli.** Un 0,4% reale stampato «0%» si legge
+«impossibile», e non lo è. Convenzione allineata a tutta la scheda: un valore **non nullo sotto
+il mezzo punto** si dichiara **«<1%»**; sopra **99,5%** si dichiara **«>99%»**; lo **zero vero**
+resta «0%» e il 100% resta «100%». Nella pagina Proiezioni la colonna porta la stessa
+convenzione (nota aggiornata). Misura su build #8: **47 valori «<1%» pubblicati** in 82 celle
+(titolo 14 · UCL 24 · retrocessione 9); nessun valore non nullo mascherato da «0%»; le celle
+interamente a zero restano oneste («titolo 0% · UCL (prime 1) 0%», §11).
+
+**C) Contesto dell'allenatore: come gioca e da quando.** La cella diceva *quanto* rende
+(punti/gara) ma non *da quando* né *come*. Ora la permanenza è datata — «panchina invariata da
+6 gare nel nostro archivio **(dal 23/08)**», «panchina nuova: 1ª gara dal subentro a X **(dopo
+la gara del 05/09)**» (date nel fuso display, le stesse della pagina) — e il rendimento è
+affiancato dal rendimento delle **sue** partite: **«con lui 1,0 gol fatti e 1,4 subiti a gara»**,
+calcolato dalle sue gare finite in panchina. Il silenzio resta dove i dati mancano. Misura:
+**152 celle** con la data di permanenza e **12 subentri** datati; **158 celle** con la riga dei
+gol (le stesse 158 che pubblicano i punti/gara: le 6 senza gare finite continuano a dichiarare
+«nessuna gara finita con lui in panchina»).
+
+**D) Stima di fine stagione.** `exp_points` e `pos_mean` della simulazione non comparivano in
+nessuna riga della card: «Pt attesi» era pubblicato **0 volte su 82 schede** e la posizione
+media solo dentro l'etichetta di 79 celle. Ora ogni cella chiude con **«stima di fine stagione:
+X,X punti attesi · Y,Yº posto in media»** — gli stessi numeri della pagina Proiezioni. Dove la
+posizione è già nell'etichetta («proiezione: 7,1º posto in media») non si ripete. Misura:
+**164 celle su 164** con la stima (85 con la posizione dentro la riga, 79 senza ripetizione);
+prima erano 0 e 79.
+
+**Verifica.** Su build #8 (10:15): audit `panchina` — scostamenti **0** su tutti i ricalcoli
+(tenure, ppg, classifica, virtuale, etichette, età, nome, nazione, precedenti, incroci, gol,
+stima, tooltip), silenzi non dichiarati **0**, «allenatore assente» 164, bilancio del club in
+cella **0**; `verify_site` **nessun problema · 233.836 controlli**; **601 test** (3 nuovi:
+gol+stima nel `bench_deep`, tooltip+«<1» sulla scheda resa, convenzione degli estremi); `ruff`
+pulito; `parita_schede` 82 schede · struttura identica · nessuna differenza; `resa_375`
+**28.467 · 0**. Un difetto dello strumento trovato qui: l'audit unescappava le entità **prima**
+di togliere i tag, quindi «&lt;1» diventava «<1» e veniva mangiato dal tag successivo (79 falsi
+scostamenti): ora i tag si tolgono prima delle entità.
