@@ -31,8 +31,8 @@ from .sources.espn import to_dicts as espn_dicts
 from .sources.fotmob import Fixture, FotMobClient, bundle_to_dicts
 from .sources.news import (
     ITALIAN_DIRECT_FEEDS,
-    ITALIAN_SEARCH_NAMES,
     NewsClient,
+    italian_search_name,
     parse_direct_sports_rss,
     parse_espn_news,
 )
@@ -542,8 +542,11 @@ def collect_news(store: Store, keys: list[str] | None = None,
     name_map: dict[str, int] = {}
     for tid, name, _lid in teams.itertuples(index=False):
         name_map[str(name).lower()] = int(tid)
-        if str(name) in ITALIAN_SEARCH_NAMES:
-            for part in re.findall(r'"([^"]+)"', ITALIAN_SEARCH_NAMES[str(name)]):
+        # gli alias della ricerca sono anche i nomi con cui i feed diretti citano la
+        # squadra: una chiave accentata o abbreviata qui valeva zero alias (docs/83 §1)
+        target = italian_search_name(str(name))
+        if target:
+            for part in re.findall(r'"([^"]+)"', target):
                 name_map[part.lower()] = int(tid)
     for source_name, feed_url in ITALIAN_DIRECT_FEEDS:
         feed_xml = _safe(f"news direct {source_name}",

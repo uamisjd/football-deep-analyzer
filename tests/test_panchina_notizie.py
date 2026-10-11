@@ -201,6 +201,46 @@ def test_classifica_le_notizie_in_lingua_locale():
     assert classify_news("Getafe, lesión de Femenía: se pierde el partido")[0] == "infortuni"
 
 
+def test_alias_stampa_normalizzati_sui_nomi_veri():
+    """La query italiana si aggancia anche quando il nome FotMob è abbreviato o accentato.
+
+    Misurato l'11/10/2026 (`docs/83` §1): «Köln», «Atlético Madrid» e «Nottm Forest» non
+    incontravano nessuna chiave della mappa e la ricerca partiva col nome secco — le due
+    squadre peggio coperte della stagione (2 notizie in 14 giorni) erano proprio due nomi
+    abbreviati nei dati, «Nottm Forest» e «M'gladbach».
+    """
+    from fda.sources.news import google_news_params, italian_search_name
+    assert "Colonia" in google_news_params("Köln")["q"]
+    assert "Atletico Madrid" in google_news_params("Atlético Madrid")["q"]
+    assert "Nottingham Forest" in google_news_params("Nottm Forest")["q"]
+    assert "Gladbach" in google_news_params("M'gladbach")["q"]
+    assert italian_search_name("Nacional") == '"Nacional Madeira"'
+    assert italian_search_name("Squadra Sconosciuta") is None
+
+
+def test_classifica_niente_collisioni_di_sottostringa():
+    """Le parole chiave non pescano dentro altre parole (misura dell'11/10/2026, docs/83 §2).
+
+    Sono i quattro casi trovati contando le voci di «Clima del club»: «Élite» dentro
+    spogliatoio (calcio a 5), «fischierà» dentro tifoseria (designazione arbitrale), «Futuro
+    del…» dentro la regola spagnola «futuro de», «rifatto» dentro «rifa», e il nome proprio
+    «Berlusconi» che da solo faceva categoria su un titolo di opinione.
+    """
+    assert classify_news("Calcio a 5 Serie A2 Élite. Lazio, avvio positivo")[0] != "spogliatoio"
+    assert classify_news("Perugia-Vado, fischierà Vincenzi di Bologna")[0] != "tifo"
+    assert classify_news("Futuro del Dall'Ara, il sindaco Lepore dà il via al confronto")[0] \
+        != "allenatore"
+    assert classify_news("Il murale di Franco Baresi vandalizzato a Casa Milan sarà rifatto"
+                         )[0] != "spogliatoio"
+    assert classify_news('Brocchi: "Non è più il Milan di Berlusconi e Galliani"'
+                         )[0] != "spogliatoio"
+    # i casi veri restano: i fischi della tifoseria sono tifoseria, il futuro del tecnico è
+    # panchina, la protesta nei confronti della società resta un fatto di società
+    assert classify_news("Fischi e striscioni dei tifosi: protesta allo stadio")[0] == "tifo"
+    assert classify_news("Il futuro del tecnico è in bilico: contatto con un nuovo allenatore"
+                         )[0] == "allenatore"
+
+
 def test_bollettino_limite_per_categoria(tmp_path):
     """Non più di due fatti per categoria: la terza voce della stessa categoria si conta
     come «oltre il limite» e non entra (docs/24 §3.5)."""
@@ -1656,3 +1696,166 @@ def test_clima_elenco_tetto_dichiarato_oltre_il_limite(tmp_path):
     assert voci[0]["title"].endswith("numero 26") and voci[-1]["title"].endswith("numero 3")
     assert cl["temi"][0]["n"] == 26                          # il conteggio resta quello completo
 
+def test_clima_voci_pertinenti_e_fatto_della_settimana(tmp_path):
+    """I gate di pertinenza del clima e la voce in evidenza (richiesta dell'11/10/2026).
+
+    Le stesse regole di «Vita del club» applicate al conteggio del clima (`docs/83` §2-§3):
+    fuori le fonti a bassa reputazione e i temi che non si vedono nel titolo pubblicato;
+    fra le voci rimaste, «il fatto della settimana» è quella che pesa di più.
+    """
+    news = pd.DataFrame([
+        # fonte a bassa reputazione: esclusa dal conteggio (9 voci «Toro News» misurate)
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, l'allenatore a rischio esonero", "url": "https://e.it/1",
+         "source": "Toro News",
+         "description": "Il futuro del tecnico è sempre più incerto dopo l'ultima sconfitta."},
+        # tema nel brano ma non nel titolo: una citazione non fa clima
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "Calcio: Pisacane, la nostra fame per vincere", "url": "https://e.it/2",
+         "source": "ANSA", "description": "Il tecnico ha parlato dell'esonero vicino del collega."},
+        # voci vere: il tema si vede nel titolo
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "S1, gli ultras disertano la trasferta", "url": "https://e.it/3",
+         "source": "ANSA",
+         "description": "La curva ha annunciato che non sarà presente allo stadio."},
+        {"team_id": 1, "published_at": KO("2026-09-14 12:00"),
+         "title": "S1, il nuovo stadio: lavori al via", "url": "https://e.it/4",
+         "source": "ANSA",
+         "description": "Il cantiere apre la prossima settimana, pronti i primi interventi."},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    assert cl["voci"] == 2 and cl["fuori_fonte"] == 1 and cl["fuori_titolo"] == 1
+    assert cl["fatto"] is not None and cl["fatto"]["url"] == "https://e.it/3"
+    # tifoseria 3 + 3 (fatto grave: la trasferta disertata) batte stadio 3
+    assert cl["fatto"]["title"] == "S1, gli ultras disertano la trasferta"
+
+
+def test_clima_fatto_grave_batte_il_tema_piu_pesante(tmp_path):
+    """Un fatto grave nel titolo (sciopero, scontri) batte anche il tema più pesante:
+    società vale 5, tifoseria 3, ma lo sciopero porta la tifoseria a 6 (`docs/83` §3)."""
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "S1, il direttore sportivo lascia il club", "url": "https://e.it/1",
+         "source": "ANSA",
+         "description": "La decisione è arrivata questa mattina, il club cerca un sostituto."},
+        {"team_id": 1, "published_at": KO("2026-09-14 08:00"),
+         "title": "S1, la curva annuncia lo sciopero del tifo", "url": "https://e.it/2",
+         "source": "ANSA",
+         "description": "Gli ultras non entreranno allo stadio per la prossima partita."},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "S1", KO("2026-09-16 18:00"))
+    assert cl["fatto"]["url"] == "https://e.it/2", cl["fatto"]
+
+def test_clima_il_club_deve_essere_nel_titolo(tmp_path):
+    """Gate di soggetto (`docs/83` §3): il club si vede nel titolo, non solo nel brano.
+
+    Il test riproduce il caso misurato l'11/10/2026: due titoli sul **Latina** contavano
+    come settimana della **Lazio** perché il brano citava la Lazio e il tema c'era.
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "Lazio, spogliatoio spaccato dopo il ko", "url": "https://e.it/1",
+         "source": "Gazzetta",
+         "description": "Il confronto è avvenuto a Formello dopo la partita."},
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "Latina, Pino D'Apuzzo diventa il nuovo presidente", "url": "https://e.it/2",
+         "source": "Gazzetta",
+         "description": "Il club pontino ha annunciato il cambio al vertice societario."},
+        {"team_id": 1, "published_at": KO("2026-09-14 11:00"),
+         "title": "Toro, contestazione dei tifosi dopo il ko", "url": "https://e.it/3",
+         "source": "ANSA",
+         "description": "Gli ultras hanno esposto uno striscione fuori dallo stadio."},
+    ])
+    a = _clima_store(tmp_path, news)
+    cl = a.club_climate(1, "Lazio", KO("2026-09-16 18:00"))
+    assert cl["voci"] == 1 and cl["fuori_soggetto"] == 2, cl
+    assert [v["title"] for t in cl["temi"] for v in t["voci"]] == [
+        "Lazio, spogliatoio spaccato dopo il ko"]
+    # e il titolo resta **fuori** dall'elenco, non solo dai conteggi
+    assert all("Latina" not in v["title"] for t in cl["temi"] for v in t["voci"])
+
+
+def test_clima_i_nomi_d_edicola_valgono_come_il_club(tmp_path):
+    """«Juve» è la Juventus e «Colonia» è il Köln: il gate usa i nomi della stampa (`docs/83` §3).
+
+    Senza, due voci vere della settimana (lo sciopero della Curva Sud, il bilancio del club
+    tedesco) sparivano perché il titolo non scriveva il nome dei dati.
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 10:00"),
+         "title": "Juve-Lazio senza Curva Sud: gli ultras disertano lo Stadium",
+         "url": "https://e.it/1", "source": "Gazzetta",
+         "description": "La protesta dei tifosi organizzati è stata annunciata ieri sera."},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"),
+         "title": "Colonia, il bilancio chiude in perdita: i tifosi protestano",
+         "url": "https://e.it/2", "source": "Gazzetta",
+         "description": "Il club tedesco ha presentato i conti della scorsa stagione."},
+    ])
+    a = _clima_store(tmp_path, news)
+    juve = a.club_climate(1, "Juventus", KO("2026-09-16 18:00"))
+    assert juve["voci"] == 1 and juve["fuori_soggetto"] == 0, juve
+    assert juve["fatto"] is not None and juve["fatto"]["url"] == "https://e.it/1"
+    colonia = a.club_climate(2, "Köln", KO("2026-09-16 18:00"))
+    assert colonia["voci"] == 1 and colonia["fuori_soggetto"] == 0, colonia
+
+
+def test_clima_fatto_solo_se_il_tema_pesa(tmp_path):
+    """Il fatto della settimana esce solo se pesa: tifoseria o stadio da soli non bastano.
+
+    Misurato l'11/10/2026 sugli 8 lati che pubblicavano un fatto di peso 3: erano una
+    petizione per una maglia, un elenco di vittorie, «polemiche sui social» (`docs/83` §4).
+    """
+    news = pd.DataFrame([
+        {"team_id": 1, "published_at": KO("2026-09-14 09:00"),
+         "title": "Lazio, la Curva prepara la coreografia per la prima in casa",
+         "url": "https://e.it/1", "source": "Gazzetta",
+         "description": "Il gruppo organizzato ha annunciato la scenografia per domenica."},
+        {"team_id": 2, "published_at": KO("2026-09-14 09:00"),
+         "title": "Juventus, sciopero della Curva Sud: gli ultras disertano lo Stadium",
+         "url": "https://e.it/2", "source": "Gazzetta",
+         "description": "La protesta è stata decisa dopo i provvedimenti della questura."},
+        {"team_id": 3, "published_at": KO("2026-09-14 09:00"),
+         "title": "Lazio, spogliatoio spaccato dopo il ko", "url": "https://e.it/3",
+         "source": "Gazzetta",
+         "description": "Il confronto è avvenuto a Formello dopo la partita."},
+    ])
+    a = _clima_store(tmp_path, news)
+    ko = KO("2026-09-16 18:00")
+    solo_tifo = a.club_climate(1, "Lazio", ko)
+    assert solo_tifo["voci"] == 1 and solo_tifo["fatto"] is None, solo_tifo
+    grave = a.club_climate(2, "Juventus", ko)          # tifoseria 3 + 3 (sciopero) = 6
+    assert grave["fatto"] is not None and grave["fatto"]["url"] == "https://e.it/2"
+    peso5 = a.club_climate(3, "Lazio", ko)             # spogliatoio 5, nessun fatto grave
+    assert peso5["fatto"] is not None and peso5["fatto"]["url"] == "https://e.it/3"
+
+
+def test_soggetto_edicola_e_fatto_grave_in_proprio():
+    """Le due regole di pertinenza in una riga di codice, senza dati (`docs/83` §3-§4).
+
+    `soggetto_tokens` riconosce i nomi d'edicola e le sigle societarie non identificano
+    nessuno; `club_nel_titolo` pretende il club come soggetto, non come oggetto; `fatto_grave`
+    non conta le citazioni e non conta le plusvalenze delle colonne di fantacalcio.
+    """
+    from fda.sources.news import club_nel_titolo, fatto_grave, soggetto_tokens
+
+    assert soggetto_tokens("Juventus") == {"juve", "juventus"}
+    assert soggetto_tokens("Köln") == {"colonia", "koln"}
+    assert soggetto_tokens("M'gladbach") == {"borussia", "gladbach", "monchengladbach"}
+    assert soggetto_tokens("Man City") == {"city", "man", "manchester"}
+    assert soggetto_tokens("Barcelona") == {"barca", "barcellona", "barcelona"}
+    assert soggetto_tokens("S1") == set()          # nome finto: il gate non giudica
+
+    roma = soggetto_tokens("Roma")
+    assert club_nel_titolo("Roma, l'analisi dei conti del club", roma) is True
+    assert club_nel_titolo("Scontri prima del derby Roma-Lazio", roma) is True
+    assert club_nel_titolo("Real Madrid, alta tensione a pochi giorni dalla Roma", roma) is False
+    assert club_nel_titolo("Protesta dei tifosi contro la Roma", roma) is False
+    assert club_nel_titolo("Romanzo di una stagione", roma) is False   # parole intere
+    assert club_nel_titolo("qualsiasi titolo", set()) is True         # niente da giudicare
+
+    assert fatto_grave("Scontri durante Torino-Juventus: emessi 22 Daspo") is True
+    assert fatto_grave('Gasperini: "Esonero Inter? Ho vacillato"') is False
+    assert fatto_grave("Statistiche Fantacampionato: le tre plusvalenze maggiori") is False
+    assert fatto_grave("Lazio, l'analisi dei conti del club: debiti record") is True

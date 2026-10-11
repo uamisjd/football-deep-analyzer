@@ -489,8 +489,13 @@ def main() -> int:
 
     # ---- card «Clima del club» (`docs/82` §5): settimana della stampa + aspettative ----------
     from fda.sources.news import TOPIC_LABELS as _TL
+    from fda.sources.news import TOPIC_WEIGHTS as _TW
     from fda.sources.news import classify_news as _cl
+    from fda.sources.news import club_nel_titolo as _cnt
+    from fda.sources.news import fatto_grave as _fg
     from fda.sources.news import is_italian_news as _it
+    from fda.sources.news import is_low_reputation as _lr
+    from fda.sources.news import soggetto_tokens as _sg
     _temi = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
     _press = ("allenatore", "spogliatoio", "societa", "tifo")
     _ord = {k: i for i, k in enumerate(_temi)}
@@ -501,8 +506,8 @@ def main() -> int:
 
     _tl = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
 
-    def _attesi_clima(tid: int, tname: str, ko: pd.Timestamp,
-                      pubblicate: set[str]) -> tuple[list[tuple[str, str]], int, list[dict]]:
+    def _attesi_clima(tid: int, tname: str, ko: pd.Timestamp, pubblicate: set[str],
+                      ) -> tuple[list[tuple[str, str]], int, list[dict], dict | None]:
         """Righe attese (testo, tono), numero di voci e gruppi elencati: la specifica dei Parquet.
 
         Dal 2026-10-11 (`docs/82` §9) la card pubblica anche l'elenco: una voce per titolo
@@ -517,6 +522,7 @@ def main() -> int:
         sub = sub.dropna(subset=["_pa"]).sort_values("_pa", ascending=False, kind="stable")
         voci_righe: list[dict] = []
         viste: set[str] = set()
+        _sogg = _sg(tname)
         for r in sub.itertuples(index=False):
             titolo = str(getattr(r, "title", "") or "").strip()
             if not titolo:
@@ -525,8 +531,13 @@ def main() -> int:
             desc = "" if desc is None or pd.isna(desc) else str(desc)
             if not _it(titolo, desc):
                 continue
-            chiave, _p = _cl(titolo, desc, getattr(r, "source", None))
+            if _lr(getattr(r, "source", None)):
+                continue
+            chiave, _p = _cl(titolo, "", getattr(r, "source", None))
             if chiave not in _temi:
+                continue
+            # gate di soggetto: il club **nel titolo** (anche «Juve», «Colonia»)
+            if not _cnt(titolo, _sogg):
                 continue
             tk = _tl(titolo)
             if not tk or tk in viste:
@@ -588,7 +599,14 @@ def main() -> int:
                     testo_atteso = (f"sopra le attese: in classifica {pos}ª con una rosa da "
                                     f"{rango}ª per valore dei titolari")
                     att.append((testo_atteso, "good"))
-        return att, voci, gruppi
+        fatto = None
+        if voci_righe:
+            def _peso(v: dict) -> int:
+                return _TW.get(v["key"], 1) + (3 if _fg(v["title"]) else 0)
+            # solo se il tema pesa almeno 4 o c'è un fatto grave (CLIMA_FATTO_MIN)
+            pesanti = [v for v in voci_righe if _peso(v) >= 4]
+            fatto = max(pesanti, key=_peso) if pesanti else None
+        return att, voci, gruppi, fatto
 
     clima_toni: Counter[str] = Counter()
     clima_tipi: Counter[str] = Counter()
@@ -611,6 +629,13 @@ def main() -> int:
         for frase, chiave in (("7 giorni", "CLIMA_SETTIMANA"),
                               ("3 voci di pressione", "CLIMA_CALDA_N"),
                               ("almeno 5 posizioni", "CLIMA_VALORE_DELTA"),
+                              ("il tema si vede nel titolo", "pertinenza"),
+                              ("il club si vede nel titolo", "soggetto"),
+                              ("avversario di passaggio", "soggetto"),
+                              ("bassa reputazione", "fonti"),
+                              ("fatto della settimana", "fatto"),
+                              ("esce solo se il tema pesa", "CLIMA_FATTO_MIN"),
+                              ("fra virgolette è la frase di qualcun altro", "fatto grave"),
                               ("valore dei titolari", "CLIMA_VALORE_MIN"),
                               ("stampa", "lingua")):
             if frase not in nota2:
@@ -633,7 +658,8 @@ def main() -> int:
         for parte in blocchi2[1:]:
             tname = testo(parte.split("</b>", 1)[0])
             tid = int(fr.home_id) if tname == str(fr.home_name) else int(fr.away_id)
-            attesi, voci, gruppi = _attesi_clima(tid, tname, pd.Timestamp(fr.ko), pubblicate)
+            attesi, voci, gruppi, fatto = _attesi_clima(tid, tname, pd.Timestamp(fr.ko),
+                                                        pubblicate)
             righe = [(unescape(t), tone) for tone, t in LI.findall(parte)]
             clima_lati += 1
             for testo_atteso, tono in attesi:
@@ -662,6 +688,19 @@ def main() -> int:
                     f"{pg.stem}|{tname}| vuoto dichiarato incoerente ({voci} voci)")
             if voci == 0:
                 clima_vuoto += 1
+            # il fatto della settimana: la voce più pesante (tema + fatto grave), o niente
+            fatto_pag = re.search(
+                r'<p class="small" style="margin:6px 0 0"><b>Il fatto della settimana:</b>\s*'
+                r'<a href="([^"]+)"[^>]*>(.*?)</a>', parte, re.DOTALL)
+            if (fatto is None) != (fatto_pag is None):
+                difetti["clima_elenco_disallineato"].append(
+                    f"{pg.stem}|{tname}| fatto della settimana "
+                    f"{'assente' if fatto else 'presente'} contro l'atteso")
+            elif fatto_pag is not None and (fatto_pag.group(1) != fatto["url"]
+                                            or unescape(fatto_pag.group(2)) != fatto["title"]):
+                difetti["clima_elenco_disallineato"].append(
+                    f"{pg.stem}|{tname}| fatto «{unescape(fatto_pag.group(2))[:50]}» "
+                    f"invece di «{fatto['title'][:50]}»")
             # l'elenco delle voci contate (`docs/82` §9): sommario, gruppi, item, marcatori
             elencate = sum(len(g["voci"]) for g in gruppi)
             in_vita = sum(1 for g in gruppi for v in g["voci"] if v["in_vita"])

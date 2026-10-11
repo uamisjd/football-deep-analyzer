@@ -833,7 +833,8 @@ ORACOLI: dict[str, tuple[str, str]] = {
                  "eventi osservati ricalcolati dai gol")),
     "49": ("M", ("clima del club (`docs/82` §5-§9): conteggi **e voci elencate** della "
                  "settimana, marcatori «anche in «Vita del club»» e rango per valore ricalcolati "
-                 "dai Parquet; la classificazione dei temi è `classify_news` della fonte")),
+                 "dai Parquet; la classificazione dei temi e i gate di pertinenza (tema, club, "
+                 "fonte, fatto grave) sono quelli dichiarati dalla fonte (`docs/83` §3-§4)")),
 }
 
 
@@ -3549,7 +3550,16 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # comparire **se e solo se** il conteggio è zero.
     n_clima = 0
     if not nd19.empty and not fx19.empty and "title" in nd19.columns:
-        from fda.sources.news import TOPIC_LABELS, classify_news, is_italian_news
+        from fda.sources.news import (
+            TOPIC_LABELS,
+            TOPIC_WEIGHTS,
+            classify_news,
+            club_nel_titolo,
+            fatto_grave,
+            is_italian_news,
+            is_low_reputation,
+            soggetto_tokens,
+        )
         _temi49 = ("allenatore", "spogliatoio", "societa", "tifo", "stadio", "fuoricampo")
         _press49 = ("allenatore", "spogliatoio", "societa", "tifo")
         _ord49 = {k: i for i, k in enumerate(_temi49)}
@@ -3563,10 +3573,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         _tl49 = lambda t: re.sub(r"[^a-z0-9]+", " ", (t or "").lower()).strip()
 
         def _attesi49(tid: int, tname: str, ko: Any, pubblicate: set[str],
-                      ) -> tuple[list[tuple[str, str]], int, list[dict]]:
+                      ) -> tuple[list[tuple[str, str]], int, list[dict], dict | None]:
             """Righe attese (testo, tono), voci contate e gruppi elencati, dai Parquet grezzi."""
             att: list[tuple[str, str]] = []
             ko = pd.Timestamp(ko)
+            _sogg49 = soggetto_tokens(tname)
             sub = _nd49[(_nd49.team_id == tid) & (_nd49._pa >= ko - pd.Timedelta(days=7))
                         & (_nd49._pa <= ko)].dropna(subset=["_pa"])
             voci_righe: list[dict] = []
@@ -3579,8 +3590,14 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 desc = "" if desc is None or pd.isna(desc) else str(desc)
                 if not is_italian_news(titolo, desc):
                     continue
-                chiave, _prova = classify_news(titolo, desc, getattr(r, "source", None))
+                if is_low_reputation(getattr(r, "source", None)):
+                    continue
+                chiave, _prova = classify_news(titolo, "", getattr(r, "source", None))
                 if chiave not in _temi49:
+                    continue
+                # gate di soggetto: il club deve essere **nel titolo** (anche col nome
+                # d'edicola: «Juve», «Colonia»); con l'insieme vuoto il gate non giudica
+                if not club_nel_titolo(titolo, _sogg49):
                     continue
                 tk = _tl49(titolo)
                 if not tk or tk in viste:
@@ -3647,7 +3664,15 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 per_tema49.setdefault(v["key"], []).append(v)
             gruppi = [{"key": k, "label": TOPIC_LABELS.get(k, k), "n": int(conta[k]),
                        "voci": per_tema49.get(k, [])} for k in temi]
-            return att, voci, gruppi
+            fatto49 = None
+            if voci_righe:
+                def _peso49(v: dict) -> int:
+                    return (TOPIC_WEIGHTS.get(v["key"], 1)
+                            + (3 if fatto_grave(v["title"]) else 0))
+                # solo se pesa almeno 4 (CLIMA_FATTO_MIN): tifoseria o stadio da soli no
+                pesanti49 = [v for v in voci_righe if _peso49(v) >= 4]
+                fatto49 = max(pesanti49, key=_peso49) if pesanti49 else None
+            return att, voci, gruppi, fatto49
 
         for pg in pages:
             html = pg.read_text(encoding="utf-8")
@@ -3669,7 +3694,11 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 continue
             nota49 = html_unescape(blocco49.group(1))
             for frammento in ("7 giorni", "5 posizioni", "valore dei titolari", "stampa",
-                              "l'elenco delle voci contate", "24 voci elencate"):
+                              "l'elenco delle voci contate", "24 voci elencate",
+                              "il tema si vede nel titolo", "il club si vede nel titolo",
+                              "avversario di passaggio", "bassa reputazione",
+                              "fatto della settimana", "esce solo se il tema pesa",
+                              "fra virgolette è la frase di qualcun altro"):
                 checks += 1
                 if frammento not in nota49:
                     fails.append(f"{pg.name}: la nota del clima non dichiara «{frammento}»")
@@ -3686,7 +3715,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             for parte in parti49[1:]:
                 tname49 = html_unescape(parte.split("</b>", 1)[0]).strip()
                 tid49 = int(fr49.home_id) if tname49 == str(fr49.home_name) else int(fr49.away_id)
-                attesi49, voci49, gruppi = _attesi49(tid49, tname49, ko49, pubblicate49)
+                attesi49, voci49, gruppi, fatto49 = _attesi49(tid49, tname49, ko49,
+                                                              pubblicate49)
                 # righe pubblicate: devono corrispondere una a una ai segnali attesi
                 righe49 = [(html_unescape(t), tone) for tone, t in
                            re.findall(r'<li class="mood-(bad|warn|good)"><span class="small">'
@@ -3768,6 +3798,24 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                              f"«{v49['title'][:40]}» "
                                              f"{'marcata' if marcata49 else 'non marcata'} "
                                              f"contro l'atteso ({v49['in_vita']})")
+                # il fatto della settimana: titolo e link devono essere quelli della voce
+                # più pesante (tema + fatto grave), o assente se non c'è nessuna voce
+                fatto_pag = re.search(
+                    r'<p class="small" style="margin:6px 0 0"><b>Il fatto della settimana:</b>\s*'
+                    r'<a href="([^"]+)"[^>]*>(.*?)</a>', parte, re.DOTALL)
+                checks += 1
+                if (fatto49 is None) != (fatto_pag is None):
+                    atteso49 = "c'è" if fatto49 else "non c'è"
+                    fails.append(f"{pg.name}: {tname49} fatto della settimana "
+                                 f"{'assente' if fatto49 else 'presente'} contro "
+                                 f"l'atteso ({atteso49})")
+                elif fatto_pag is not None:
+                    checks += 1
+                    if (fatto_pag.group(1) != fatto49["url"]
+                            or html_unescape(fatto_pag.group(2)) != fatto49["title"]):
+                        fails.append(f"{pg.name}: {tname49} fatto della settimana "
+                                     f"«{html_unescape(fatto_pag.group(2))[:50]}» "
+                                     f"invece di «{fatto49['title'][:50]}»")
                 if voci49 > elencate49:
                     checks += 1
                     atteso_coda49 = ("E un'altra voce della settimana, non elencata."

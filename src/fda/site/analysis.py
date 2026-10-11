@@ -31,9 +31,12 @@ from ..sources.news import (
     TOPIC_LABELS,
     TOPIC_WEIGHTS,
     classify_news,
+    club_nel_titolo,
+    fatto_grave,
     is_italian_news,
     is_low_reputation,
     news_value,
+    soggetto_tokens,
 )
 from ..store import Store
 from ..teams import canonical, soft_key
@@ -2271,6 +2274,24 @@ class MatchAnalysis:
     # col numero (`elencate`/`oltre`). Oggi il massimo osservato è 19 su un lato, quindi il tetto
     # non taglia nulla: è una guardia, non una regola di pubblicazione.
     CLIMA_VOCI_MAX = 24
+    #: Il «fatto della settimana»: fra le voci contate, quella che pesa di più. Il peso è
+    #: quello dichiarato dei temi (`TOPIC_WEIGHTS`: 5 panchina/spogliatoio/società, 4 fuori
+    #: dal campo, 3 tifoseria/stadio) più 3 se il titolo dice un **fatto grave** — scontri,
+    #: daspo, sciopero, esonero, inchiesta, debiti… —, non un'opinione: a +2 lo sciopero
+    #: della curva pareggiava con una voce di società qualunque e decideva l'ora, non il fatto.
+    #: A parità di peso, la più recente. Il riconoscitore è
+    #: :func:`fda.sources.news.fatto_grave` — una sola copia della lista, e **senza** le
+    #: citazioni fra virgolette: «Esonero Inter? Ho vacillato» è la frase di un altro club,
+    #: non un fatto di questo (`docs/83` §4). Verificata dall'oracolo [49].
+    #: Peso minimo per pubblicare un «fatto della settimana»: 4 = fuori dal campo, 5 = panchina,
+    #: spogliatoio, società, oppure 3 + fatto grave. Il solo tema di tifoseria o di stadio
+    #: (peso 3) non basta: misurato l'11/10/2026 sugli 8 lati che pubblicavano un fatto di peso
+    #: 3, erano tutti cose che non spostano nulla — una petizione dei tifosi per una maglia
+    #: ritirata, un listicle «le 10 migliori vittorie», «polemiche dei tifosi sui social», un
+    #: incontro politico sullo stadio — e nessuno di quei lati aveva un fatto più pesante da
+    #: mettere al posto loro: la riga esce solo quando c'è davvero qualcosa, altrimenti tace
+    #: (`docs/83` §4).
+    CLIMA_FATTO_MIN = 4
 
     def ultima_gara_campionato(self, team_id: int, kickoff: datetime) -> dict[str, Any] | None:
         """L'ultima gara di **campionato** prima di ``kickoff``: punteggio, sconfitta, espulsioni.
@@ -2461,7 +2482,7 @@ class MatchAnalysis:
         return out
 
     # ---- clima del club (`docs/82` §5): la settimana della stampa e le aspettative ----------
-    def club_week(self, team_id: int, kickoff: datetime,
+    def club_week(self, team_id: int, team_name: str, kickoff: datetime,
                   visti: set[str] | None = None) -> dict[str, Any]:
         """La settimana del club secondo la stampa raccolta: i conteggi **e le voci contate**.
 
@@ -2475,6 +2496,13 @@ class MatchAnalysis:
 
         - perimetro `kickoff − 7 giorni ≤ data ≤ kickoff`, **lingua italiana** e
           :func:`fda.sources.news.classify_news` negli stessi temi di prima (`CLIMA_TEMI`);
+        - **tre gate di pertinenza**, gli stessi tre della card «Vita del club» (`docs/83` §3):
+          fonte non a bassa reputazione (``fuori_fonte``), tema **nel titolo** (``fuori_titolo``,
+          che è il testo che la card pubblica) e **club nel titolo** (``fuori_soggetto``) —
+          quest'ultimo riconosce anche i nomi d'edicola (`fda.sources.news.soggetto_tokens`:
+          «Juve», «Colonia», «Gladbach»). Senza, il 2026-10-11 contavano come clima della Lazio
+          due titoli sul Latina e come «fatto» della Juventus un'intervista a un direttore
+          sportivo che non nominava la Juventus (misure in `docs/83` §3);
         - **una voce per titolo** (``news_title_key``, la stessa chiave del dedup di
           `team_news`): il 2026-10-11 undici righe dell'archivio erano lo stesso titolo
           ripetuto e gonfiavano i conteggi di 5 lati (97 righe → 86 voci);
@@ -2491,7 +2519,9 @@ class MatchAnalysis:
         """
         out: dict[str, Any] = {"righe": [], "voci": 0, "pressione": 0, "temi": [],
                                "vuota": True, "finestra": self.CLIMA_SETTIMANA,
-                               "elencate": 0, "oltre": 0, "in_vita": 0}
+                               "elencate": 0, "oltre": 0, "in_vita": 0,
+                               "fuori_fonte": 0, "fuori_titolo": 0, "fuori_soggetto": 0,
+                               "fatto": None}
         if self.news_df.empty or "title" not in self.news_df.columns:
             return out
         ko = pd.Timestamp(kickoff)
@@ -2503,6 +2533,10 @@ class MatchAnalysis:
                                                           kind="stable")
         voci: list[dict[str, Any]] = []
         viste: set[str] = set()
+        fuori_fonte = 0        # scartate: fonte a bassa reputazione
+        fuori_titolo = 0       # scartate: il tema non è nel titolo
+        fuori_soggetto = 0     # scartate: il club non è nel titolo
+        soggetto = soggetto_tokens(team_name)
         for r in df.itertuples(index=False):
             title = str(getattr(r, "title", "") or "").strip()
             if not title:
@@ -2511,15 +2545,31 @@ class MatchAnalysis:
             desc = "" if desc is None or pd.isna(desc) else str(desc)
             if not is_italian_news(title, desc):
                 continue
-            chiave, _prova = classify_news(title, desc, getattr(r, "source", None))
+            fonte = str(getattr(r, "source", "") or "")
+            # due gate di pertinenza, gli stessi di «Vita del club» (`docs/83` §2):
+            # la fonte a bassa reputazione (fan site, fantacalcio, aggregatori) e il tema
+            # **nel titolo** — che è il testo che la card pubblica: una citazione di un
+            # altro club o una lista TV non fa «clima» solo perché il brano la contiene.
+            if is_low_reputation(fonte):
+                fuori_fonte += 1
+                continue
+            chiave, _prova = classify_news(title, "", fonte)
             if chiave not in self.CLIMA_TEMI:
+                fuori_titolo += 1
+                continue
+            # il club nel titolo e non come oggetto altrui: una notizia della stessa città
+            # o dello stesso giro (il Latina per la Lazio, un'altra panchina per il Torino,
+            # il Real Madrid «a pochi giorni dalla Roma») non è la settimana di questa
+            # squadra. Con l'insieme vuoto il nome non identifica nessuno (nomi finti delle
+            # prove) e il gate non giudica: lasciar passare è l'errore minore.
+            if not club_nel_titolo(title, soggetto):
+                fuori_soggetto += 1
                 continue
             tk = news_title_key(title)
             if not tk or tk in viste:
                 continue          # lo stesso titolo due volte non è una voce in più
             viste.add(tk)
             url = str(getattr(r, "url", "") or "")
-            fonte = str(getattr(r, "source", "") or "")
             voci.append({"key": chiave, "title": title, "url": url, "source": fonte,
                          "published_at": getattr(r, "pubblicata", None),
                          "in_vita": bool(visti) and tk in visti})
@@ -2551,11 +2601,28 @@ class MatchAnalysis:
                                   f"nessuna di pressione ({dettaglio(temi)})"})
         temi_out = [{"key": k, "label": TOPIC_LABELS.get(k, k), "n": int(conta[k]),
                      "voci": per_tema.get(k, [])} for k in temi]
+        # il fatto della settimana: peso del tema + 2 se il titolo dice un fatto grave,
+        # a parità la voce più recente (l'elenco è già ordinato per data decrescente)
+        fatto = None
+        if voci:
+            def _peso(v: dict[str, Any]) -> int:
+                return (TOPIC_WEIGHTS.get(v["key"], 1)
+                        + (3 if fatto_grave(v["title"]) else 0))
+            # solo se pesa abbastanza: tifoseria o stadio da soli non sono «il fatto»
+            # (`CLIMA_FATTO_MIN`). A parità vince la più recente: `max` tiene il primo e
+            # l'elenco è già ordinato per data decrescente.
+            pesante = max((v for v in voci if _peso(v) >= self.CLIMA_FATTO_MIN),
+                          key=_peso, default=None)
+            if pesante is not None:
+                fatto = {k: pesante[k] for k in ("title", "url", "source", "published_at",
+                                                 "key") if k in pesante}
         out.update({"righe": righe, "voci": len(voci), "pressione": pressione,
                     "temi": temi_out, "vuota": not voci,
                     "elencate": sum(len(t["voci"]) for t in temi_out),
                     "oltre": len(voci) - sum(len(t["voci"]) for t in temi_out),
-                    "in_vita": sum(1 for v in elencate if v["in_vita"])})
+                    "in_vita": sum(1 for v in elencate if v["in_vita"]),
+                    "fuori_fonte": fuori_fonte, "fuori_titolo": fuori_titolo,
+                    "fuori_soggetto": fuori_soggetto, "fatto": fatto})
         return out
 
     def expectation_gap(self, team_id: int, team_name: str,
@@ -2626,7 +2693,7 @@ class MatchAnalysis:
         i numeri sono nostri. Le righe escono nell'ordine di lettura: prima la settimana
         (l'ambiente vissuto), poi la pressione da aspettative (la distanza dalle risorse).
         """
-        sett = self.club_week(team_id, kickoff, visti=visti)
+        sett = self.club_week(team_id, team_name, kickoff, visti=visti)
         righe = list(sett["righe"])
         gap = self.expectation_gap(team_id, team_name, kickoff)
         if gap:
@@ -2641,7 +2708,9 @@ class MatchAnalysis:
         return {"righe": righe, "vuota": sett["vuota"], "voci": sett["voci"],
                 "pressione": sett["pressione"], "temi": sett["temi"], "gap": gap,
                 "finestra": sett["finestra"], "elencate": sett["elencate"],
-                "oltre": sett["oltre"], "in_vita": sett["in_vita"]}
+                "oltre": sett["oltre"], "in_vita": sett["in_vita"], "fatto": sett["fatto"],
+                "fuori_fonte": sett["fuori_fonte"], "fuori_titolo": sett["fuori_titolo"],
+                "fuori_soggetto": sett["fuori_soggetto"]}
 
     # ---- tre misure per la card «Fattori» (docs/58 §3-§4): sede, cartellini, arbitro ----------
 

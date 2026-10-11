@@ -287,7 +287,154 @@ ITALIAN_SEARCH_NAMES: dict[str, str] = {
     "FC Porto": '"Porto"',
     "SC Braga": '"Braga"',
     "Vitória SC": '("Vitoria Guimaraes" OR "Vitória SC")',
+    # --- Nomi che nei dati FotMob sono **abbreviati** o accentati in modo diverso dalla
+    # chiave: senza queste voci la ricerca usava il nome secco. Misurato l'11/10/2026 con
+    # `scripts/audit_fonti.py`: «Nottm Forest» e «M'gladbach» avevano **2 notizie in 14
+    # giorni** contro una mediana di 16 e 14,5 nella loro lega (docs/83 §1). ---
+    "Nottm Forest": '("Nottingham Forest" OR "Nottm Forest")',
+    "M'gladbach": '("Gladbach" OR "Borussia Monchengladbach")',
+    "Köln": '("Colonia" OR "FC Koln")',
+    "Augsburg": '("Augusta" OR "Augsburg")',
+    "Frankfurt": '("Eintracht Francoforte" OR "Eintracht")',
+    "Freiburg": '("Friburgo" OR "SC Freiburg")',
+    "Leverkusen": '("Bayer Leverkusen" OR "Leverkusen")',
+    "Dortmund": '("Borussia Dortmund" OR "BVB")',
+    "Union Berlin": '("Union Berlino" OR "Union Berlin")',
+    "Mainz": '("Magonza" OR "Mainz")',
+    "Man City": '("Manchester City" OR "Man City")',
+    "Man United": '("Manchester United" OR "Man United")',
+    "PSG": '("PSG" OR "Paris Saint-Germain")',
+    "Vitória de Guimarães": '("Vitoria Guimaraes" OR "Vitoria SC")',
+    # «Nacional» da solo pesca il vocabolario comune e le altre «Nacional» del mondo:
+    # la stampa italiana scrive il nome per esteso.
+    "Nacional": '"Nacional Madeira"',
 }
+
+
+def _norm_nome(nome: str | None) -> str:
+    """Chiave di confronto dei nomi: minuscole, senza accenti e senza punteggiatura.
+
+    «Atlético Madrid» nei dati e «Atletico Madrid» nella mappa sono lo stesso club;
+    «Köln» e «Koln» pure. Prima dell'11/10/2026 il confronto era esatto e le chiavi
+    accentate risultavano **morte** (nessuna squadra le incontrava): docs/83 §1.
+    """
+    return re.sub(r"[^a-z0-9]+", " ", _strip_accents(str(nome or "").lower())).strip()
+
+
+#: Indice normalizzato della mappa: un solo posto decide la query di una squadra.
+ITALIAN_SEARCH_NAMES_INDEX: dict[str, str] = {
+    _norm_nome(k): v for k, v in ITALIAN_SEARCH_NAMES.items()}
+
+
+def italian_search_name(team_name: str | None) -> str | None:
+    """La ricerca italiana mappata per una squadra, se c'è (altrimenti ``None``)."""
+    return ITALIAN_SEARCH_NAMES_INDEX.get(_norm_nome(team_name))
+
+
+#: Nomi d'edicola che la mappa delle ricerche **non** può coprire: la mappa serve ai club
+#: esteri (lì il problema è la traduzione), mentre questi sono abbreviazioni della stampa
+#: italiana per club già scritti in italiano. Servono al gate di soggetto del clima
+#: (`docs/83` §3): una voce conta solo se il club si vede **nel titolo**, e il titolo di
+#: «Juve-Lazio senza Curva Sud» dice «Juve», non «Juventus».
+SOPRANNOMI: dict[str, tuple[str, ...]] = {
+    "juventus": ("Juve",),
+    "torino": ("Toro",),
+    "inter": ("Internazionale",),
+    # «Barcellona» e «Siviglia» non sono nella mappa (nessuna ricerca le usa: i nomi dei
+    # dati sono già quelli della query), ma sono i nomi con cui la stampa italiana le scrive.
+    "barcelona": ("Barcellona", "Barça"),
+    "sevilla": ("Siviglia",),
+    "atletico madrid": ("Atleti",),
+}
+
+#: Sigle societarie e parole che nei nomi dei club non identificano nessuno.
+SOGGETTO_STOP: frozenset[str] = frozenset({
+    "fc", "ac", "sc", "rb", "cp", "cd", "cf", "vfb", "ado", "az", "den",
+    "calcio", "club", "sport", "the", "of", "and", "del", "della", "delle", "de", "di", "da",
+    "la", "il", "le", "lo",
+})
+
+#: Sotto tre lettere una parola non identifica un club (e nelle prove i nomi finti «S1»).
+SOGGETTO_MIN_PAROLA = 3
+
+
+#: Parole che davanti al nome del club lo rendono l'**oggetto** della notizia di qualcun
+#: altro («a pochi giorni dalla Roma», «protesta contro la Juve»): la notizia è di chi la fa.
+#: Misurato l'11/10/2026 sulle 47 voci della settimana: la guardia ne toglieva **una**
+#: («Real Madrid, alta tensione a pochi giorni dalla Roma…», contata come settimana della
+#: Roma) e **nessuna** delle altre 46 (`docs/83` §3). L'elenco è corto di proposito: «di»,
+#: «del», «al», «con», «per» sono nell'archivio 843 volte davanti a un nome di club e quasi
+#: sempre il club è il soggetto («Statistiche di Arouca», «l'addio al City»), quindi non
+#: entrano nella guardia.
+_OGGETTO_PRIMA = re.compile(
+    r"\b(?:contro|dalla|dal|dai|dalle|verso|vs)\s+"
+    r"(?:l['\u2019]|la\s+|lo\s+|il\s+|le\s+|gli\s+|i\s+|un\s+|una\s+)?$")
+
+
+def club_nel_titolo(title: str | None, soggetto: set[str]) -> bool:
+    """Il club è **nel titolo** e non solo come oggetto della notizia di un altro.
+
+    Falso se l'unica occorrenza di una parola del club è preceduta da una preposizione che
+    la rende oggetto («dalla Roma», «contro la Juve»). Con ``soggetto`` vuoto il gate non
+    giudica e risponde vero: non si buttano voci per un nome che non identifica nessuno.
+    """
+    if not soggetto:
+        return True
+    norm = _norm_nome(title) + " "
+    for parola in soggetto:
+        pos = 0
+        while True:
+            i = norm.find(parola + " ", pos)
+            if i < 0:
+                break
+            if not _OGGETTO_PRIMA.search(norm[:i]):
+                return True
+            pos = i + 1
+    return False
+
+
+#: Le citazioni dentro un titolo: fra virgolette c'è la frase di **qualcun altro**.
+CITAZIONI = re.compile(r"«[^»]*»|\"[^\"]*\"|\u201c[^\u201d]*\u201d|\u2018[^\u2019]*\u2019")
+
+
+#: I fatti **gravi** di un titolo (peso in più nel «fatto della settimana», `docs/83` §4).
+#: Un fatto grave **detto in proprio**, però: «Esonero Inter? Ho vacillato» è la domanda di
+#: un giornalista a un altro club, non un fatto di questo club (misurato l'11/10/2026:
+#: senza questa guardia il fatto della settimana della Juventus era quella citazione).
+#: «plusvalenz» è fuori: le colonne di fantacalcio la usano come tema, non come fatto —
+#: e uno scandalo di plusvalenze resta coperto da «inchiesta», «indagine», «procura».
+FATTO_GRAVE = re.compile(
+    r"scontri|incidenti|daspo|misure cautelari|arrest|ferm[oa] \\d*|sciopero|"
+    r"disertano|contestazion|protesta|striscion|ammutinamento|esonero|esonerat|"
+    r"dimissioni|ultimatum|deferimento|inchiesta|indagine|indagat|perquisizion|"
+    r"sequestr|commissariament|debiti|bilancio|falliment|penalizzazion|multa|"
+    r"vendita|cessione|tribunale|sentenza|procura", re.IGNORECASE)
+
+
+def fatto_grave(title: str | None) -> bool:
+    """Il titolo dice un fatto grave **con parole sue** (le citazioni non contano)."""
+    return bool(FATTO_GRAVE.search(CITAZIONI.sub(" ", str(title or ""))))
+
+
+def soggetto_tokens(team_name: str | None) -> set[str]:
+    """Le parole con cui un titolo può **nominare** quella squadra (gate di soggetto, `docs/83` §3).
+
+    Tre sorgenti, tutte dentro questo file: il nome nei dati, i nomi italiani fra virgolette
+    della mappa delle ricerche («Bayern Monaco», «Colonia», «Marsiglia»: la mappa dice già come
+    la stampa chiama un club estero) e :data:`SOPRANNOMI` per quello che la mappa non copre
+    («Juve»). Parole intere, almeno ``SOGGETTO_MIN_PAROLA`` lettere, senza sigle societarie:
+    senza il confronto a parole intere «Juve» pescherebbe «juventino» e «Toro» «tornerà».
+
+    Un insieme **vuoto** significa «il nome non identifica nessuno» (nelle prove i club si
+    chiamano «S1»): chi usa il gate deve in quel caso lasciar passare, non buttare via tutto.
+    """
+    parti = [_norm_nome(team_name)]
+    ricerca = italian_search_name(team_name)
+    if ricerca:
+        parti += re.findall(r'"([^"]+)"', ricerca)
+    parti += list(SOPRANNOMI.get(_norm_nome(team_name), ()))
+    return {p for parte in parti for p in _norm_nome(parte).split()
+            if len(p) >= SOGGETTO_MIN_PAROLA and p not in SOGGETTO_STOP}
 
 
 def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_IT) -> dict[str, str]:
@@ -297,7 +444,7 @@ def google_news_params(team_name: str, edition: tuple[str, str, str] = EDIZIONE_
     "Betis Siviglia") per intercettare i titoli della stampa sportiva italiana.
     """
     hl, ceid, sport = edition
-    target = ITALIAN_SEARCH_NAMES.get(team_name, f'"{team_name}"')
+    target = italian_search_name(team_name) or ('"' + team_name + '"')
     return {"q": f"{target} {sport}", "hl": hl, "gl": ceid.split(":")[0], "ceid": ceid}
 
 
@@ -719,14 +866,14 @@ TOPIC_RULES: tuple[tuple[str, str, int, re.Pattern[str]], ...] = (
         r"separazione|rescissione|futuro (?:di|del) (?:mister|tecnico|allenatore)|"
         r"crisi (?:nera|tecnica|di risultati)|"
         r"entrenador|t[eé]cnico|banquillo|destituci|despido|cese|"
-        r"renueva|renovaci[oó]n|contrato hasta|futuro de|presi[oó]n|"
+        r"renueva|renovaci[oó]n|contrato hasta|\bfuturo de\b|presi[oó]n|"
         r"manager|head coach|sacked|renewal|vertrag|entlassung|"
         r"entra[iî]neur|\bcontrat\b|treinador|renova[cç][aã]o|trainer", re.IGNORECASE)),
     # Spogliatoio: il gruppo che scricchiola — o che si compatta. Qui l'evidenza sono le
     # parole del malessere, non il nome del club.
     ("spogliatoio", "Spogliatoio", 5, re.compile(
         r"vestuario|spogliatoio|dressing room|kabine|vestiaire|vesti[aá]rio|"
-        r"malestar|tensi[oó]n|enfado|rega[ñn]ina|rifa|pique|lite|litigi\w*|\bclima\b|"
+        r"malestar|tensi[oó]n|enfado|rega[ñn]ina|\brifa\b|pique|\blite\b|litigi\w*|\bclima\b|"
         r"gruppo (?:squadra|spaccato|diviso|unit[oa])|team spirit|friction|dressing|"
         r"ammutinamento|malumore|malcontento|insoddisfazion\w*|incomprension\w*|"
         r"frizion\w*|rottura (?:dei rapporti|con (?:il|la|lo) )|faccia a faccia|chiarimento|"
@@ -735,7 +882,9 @@ TOPIC_RULES: tuple[tuple[str, str, int, re.Pattern[str]], ...] = (
         r"critica la plantilla|se vuelve a quejar|se queja de la plantilla|"
         r"no tiene extremos|sin extremos|\b[uú]nico equipo\b|plantilla corta|"
         r"plantilla muy corta|se queda cort|sin refuerzos|sin fichajes|"
-        r"berlusconi|ammutinamento", re.IGNORECASE)),
+        # «Berlusconi» da solo era categoria: l'11/10/2026 un titolo di opinione («Non è più
+        # il Milan di Berlusconi») entrava fra i segnali di spogliatoio. Misurato in docs/83 §2.
+        r"ammutinamento", re.IGNORECASE)),
     # Società: proprietà, giustizia sportiva e ordinaria, soldi, organizzazione. Qui entra
     # anche il vocabolario italiano che nella prima stesura mancava («indagine», «minacce»,
     # «sentenza», «perquisizioni»): era il motivo per cui le voci più succose del feed
@@ -780,7 +929,8 @@ TOPIC_RULES: tuple[tuple[str, str, int, re.Pattern[str]], ...] = (
         r"afici[oó]n|aficionad\w*|abonados|socios|pe[ñn]a|ultras|supporters|tifosi|"
         r"fans|grada|protesta|manifestaci[oó]n|corteo|banderas|ambientazo|"
         r"hinchas|seguidores|tifo|curva|striscion\w*|contestazione dei tifosi|"
-        r"fischi|fischiato|delusione dei tifosi|assemblea dei tifosi|sostenitori|"
+        r"\\bfischi\\b|\\bfischiato\\b|\\bfischia(?:no)?\\b|delusione dei tifosi|"
+        r"assemblea dei tifosi|sostenitori|"
         r"divieto di trasferta|daspo|questura|ordine pubblico|tessera del tifoso|"
         r"anh[aä]nger|claque|aanhang", re.IGNORECASE)),
     ("stadio", "Stadio e città", 3, re.compile(

@@ -100,6 +100,44 @@ sotto i controlli. Gate (build 2026-10-11 sera): **`pytest` 629** (+2), `ruff` p
 nessuna differenza, `resa_375` **28.487 · 0**, `audit_clima` 0 difetti nuovi. Numeri di
 `docs/82` §8 rigenerati (Juventus 14 voci di pressione: tifoseria 9 · società 4 · panchina 1).
 
+**La raccolta e la pertinenza (richiesta dell'utente, seconda sera; docs/83).** «Puoi verificare
+e revisionare che il sito sappia dove andare a prendere tutto? vorrei cose più precise, più
+importanti o particolari». Due lavori, due misure.
+
+*Raccolta.* Creato **`scripts/audit_fonti.py`** (diagnostico: nessuna rete, nessuna scrittura,
+~20 s, non in CI): 17/17 tabelle, copertura stampa a 14 giorni **per lega**, squadre sotto la
+mediana, query per squadra, e la distinzione fra **difetti bloccanti** (solo «0 notizie in 14
+giorni») e avvisi → **0 difetti, 4 avvisi, exit 0**. Corretti: la mappa delle ricerche
+**49 → 64 chiavi** (Nottm Forest, M'gladbach, Köln, Augsburg, Frankfurt, Freiburg, Leverkusen,
+Dortmund, Union Berlin, Mainz, Man City, Man United, PSG, Vitória de Guimarães, Nacional), il
+confronto dei nomi ora **normalizzato** (`italian_search_name`, minuscole/senza accenti: prima
+23 chiavi accentate erano **morte**) e gli **alias dei feed diretti** in `collect.py` (leggevano
+la mappa col match esatto: una chiave accentata valeva zero alias). Effetto misurato: Nottm
+Forest e M'gladbach avevano **2 notizie in 14 giorni** contro mediane di 16 e 14,5. Dichiarato:
+il fix vale per le **prossime** raccolte, l'archivio di oggi resta quello raccolto.
+
+*Pertinenza.* Chiusa la collisione delle parole chiave (`lite` pescava «Élite», `fischi`
+«fischierà», `rifa` «rifatto», `futuro de` «Futuro del…», e `berlusconi` era un **nome proprio**
+fra i temi): confini `\b…\b`, forme esplicite, nomi propri rimossi. Terzo gate del clima — il
+**club nel titolo**, con i nomi d'edicola (`soggetto_tokens`: «Juve», «Toro», «Colonia»,
+«Gladbach», «Barcellona»…) e la guardia sull'**oggetto** («dalla Roma», «contro la Lazio»: la
+notizia è di chi la scrive). Misure: imbuto **1.612 → 1.315 → 58 → 44** voci, 14 cadute di cui
+**11 senza il nome del club** (due titoli sul Latina per la Lazio, l'intervista al DS senza il
+Cagliari…) e **3 col club come oggetto**; scartata con la prova la variante «club **o**
+avversario» (**0 voci in più**). Il fatto della settimana: bonus fatto grave **+2 → +3** (lo
+sciopero della curva batte una voce di società: 6 > 5, prima pareggiava e decideva l'ora), esce
+**solo se pesa ≥4** (gli 8 lati che pubblicavano un fatto di peso 3 pubblicavano petizioni,
+listicle e polemiche social, e nessuno aveva di meglio), il fatto grave vale **detto in proprio**
+(le citazioni fra virgolette no: era il caso «Esonero Inter? Ho vacillato») e **«plusvalenz»
+esce** dalla lista (tema delle colonne di fantacalcio). Esito: **44 voci elencate** (erano 86),
+**13 marcate**, **138 lati col vuoto dichiarato**, **8 fatti** — tutti fatti veri della
+settimana di quella squadra (Juventus: la Curva Sud diserta Juve-Lazio; Torino: 22 Daspo;
+Lazio: debiti record; Man City: la maxi-multa; Milan: il Tar su San Siro; Cagliari: Pavoletti al
+corso da DS; PSG: la curva si svuota; Atlético: Gilgeous-Alexander azionista). Gate (build #4):
+**`pytest` 637** (+4), `ruff` pulito, `fda build` 493/2.364/7.578, **`verify_site` 0 problemi ·
+238.062 controlli**, `parita_schede` nessuna differenza, `resa_375` 28.482 · 0, `audit_clima`
+0 difetti, `audit_fonti` exit 0. `docs/83` §1-§6.
+
 **Prossimo passo:** PR di sessione per il branch `arena/9912b625` (merge all'utente); coda
 revisione sezione per sezione — Mercato, Vita del club, Previsione del modello ensemble,
 Verifica approfondita, Confronto di stagione.
