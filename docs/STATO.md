@@ -14,7 +14,12 @@ ID squadra mancante o duplicato lega/giorno/squadre. `penaltyblog` trasforma xG 
 in 1/1: serve un fit continuo, non l'arrotondamento. Nessuna misura di prestazione finora.
 **Limiti:** la ricetta modifica la verosimiglianza delle λ; non dimostra da sola il valore
 causale degli xG. Gli xG storici non sono snapshot pre-partita. Nessuna promozione automatica.
-**Prossimo:** implementazione/test → run preregistrato → gate completi → `docs/93`.
+**Implementazione pronta, ancora nessun fit reale:** comando `fda lab-xg`, fit continuo,
+input bloccati per hash, traccia dei prefissi e calibrazione, errore al primo fit fallito,
+confronto obbligatoriamente appaiato e fallback identici. **69 test mirati passati**, Ruff
+pulito. Preparazione senza fit: **5.058 gare eleggibili** su 11.179; 4.810 con xG e 248 fallback.
+I risultati dettagliati andranno solo in `data/cache/lab_xg/`, non nei Parquet pubblici.
+**Prossimo:** un solo run completo preregistrato → gate completi → `docs/93`.
 Poi le sei sezioni. PR #108 resta in bozza e non unita; decisioni StatsBomb/clima aperte.
 
 ## 2026-10-12 — Merge PR #107 verificato: storico e avvio prospettico (docs/91)

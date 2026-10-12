@@ -531,6 +531,34 @@ def lab_cmd(
     store.close()
 
 
+@app.command("lab-xg")
+def lab_xg_cmd(
+    data_dir: str = typer.Option("data/processed", "--data", help="Input CI del protocollo docs/92"),
+    output_dir: str = typer.Option("data/cache/lab_xg", "--output", help="Artefatti separati, non di produzione"),
+) -> None:
+    """Un solo esperimento xG offline, protocollo fisso e nessuna promozione automatica."""
+    from pathlib import Path
+
+    from .models.lab_xg import run
+
+    try:
+        report = run(Path(data_dir), Path(output_dir))
+    except (ValueError, FileNotFoundError) as exc:
+        console.print(f"[red]Esperimento xG interrotto: {exc}[/red]")
+        raise typer.Exit(code=1) from exc
+    console.print(f"Gare appaiate: {report['n']} · con xG: {report['n_xg']} · "
+                  f"fallback senza xG: {report['n_fallback']}")
+    for row in report["per_league"]:
+        delta = f"{row['delta_rps']:+.6f}".replace(".", ",")
+        console.print(f"  {row['league_key']}: {row['n']} gare · ΔRPS {delta}"
+                      f"{' (fallback invariato)' if not row['xg_used'] else ''}")
+    candidate = next(r for r in report["summary"] if r["candidate"] == "dc_xg")
+    interval = f"[{candidate['delta_rps_lo95']:+.6f}; {candidate['delta_rps_hi95']:+.6f}]".replace(".", ",")
+    console.print(f"IC 95%: {interval} · campionati migliori: {report['leagues_better']} su 7")
+    console.print(f"Criterio {'superato' if report['passes'] else 'non superato'}; "
+                  f"produzione invariata. Riepilogo: {output_dir}/report.json")
+
+
 @app.command("lab-xi")
 def lab_xi_cmd(
     step_days: int = typer.Option(90, help="Ampiezza della finestra di valutazione, in giorni"),

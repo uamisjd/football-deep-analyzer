@@ -57,6 +57,24 @@ fda leagues        # elenca i 7 campionati configurati
 pytest -q          # test
 ```
 
+### Esperimento xG isolato
+
+`fda lab-xg` esegue **una sola ricetta preregistrata**, offline, senza cambiare il modello
+in produzione o il riepilogo pubblico del laboratorio. Protocollo e limiti:
+[docs/92](docs/92_protocollo_dc_xg_2026-10-12.md). Previsioni per gara e rapporto vengono
+salvati in `data/cache/lab_xg/` (non versionati); l'esito del giro viene documentato in `docs/93`.
+
+Il comando controlla gli hash degli input: se un nuovo `daily` li ha cambiati, **si ferma**
+invece di ritestare una ricetta su un campione diverso. Per riprodurre lo snapshot originale,
+senza sovrascrivere i dati correnti (il commit deve essere presente nel clone):
+
+```bash
+mkdir -p data/cache/lab_xg_input
+git show 514309d:data/processed/understat_matches.parquet > data/cache/lab_xg_input/understat_matches.parquet
+git show 514309d:data/processed/history.parquet > data/cache/lab_xg_input/history.parquet
+fda lab-xg --data data/cache/lab_xg_input
+```
+
 ## Come funziona (in breve)
 
 `fda daily` = `collect` (FotMob, Understat, ESPN, Google News → `data/processed/*.parquet`) → `calibrate` → `predict` (Dixon-Coles + Elo) → `backtest` → `mercati-monitor` → `simulate` (Monte Carlo stagione) → `build` (sito in `site/`, incluse le schede giocatore). Ogni passo dopo `collect` è isolato: se cade, il run degrada e pubblica comunque.
