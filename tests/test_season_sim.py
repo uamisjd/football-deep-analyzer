@@ -223,3 +223,15 @@ def test_simulate_conditions_gara_assente_o_esito_impossibile():
     pts, gd, pl = _bases(sorted(set(hist.home)))
     with pytest.raises(ValueError, match="non è fra quelle"):
         simulate_conditions(hist, rem, pts, gd, pl, [("T5", "T6", "1")], n_sims=200, seed=1)
+
+
+def test_simulate_conditions_p_outcome_somma_a_uno():
+    from fda.models.season_sim import simulate_conditions
+
+    warnings.filterwarnings("ignore")
+    hist = _synthetic_hist()
+    rem = pd.DataFrame({"home": ["T1"], "away": ["T0"]})
+    pts, gd, pl = _bases(sorted(set(hist.home)))
+    cond = simulate_conditions(hist, rem, pts, gd, pl, [("T1", "T0", o) for o in "1X2"],
+                               n_sims=200, seed=3)
+    assert abs(cond.drop_duplicates("cond_outcome").p_outcome.sum() - 1.0) < 1e-5

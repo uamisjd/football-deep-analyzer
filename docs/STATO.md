@@ -1,3 +1,14 @@
+## 2026-10-12 — Revisione dei 12 punti dell'esperto: chiusura (docs/85)
+
+Punti chiusi: 2 (niente LLM), 3 (semaforo), 4 (radar: PPDA solo se per entrambe), 5 (report
+forme non tradotte), 7 (Locatelli e jolly), 8 (niente pillola «ruolo n.d.»), 9 (probabilità
+condizionate per gara con legge della probabilità totale in `verify_site` [4b]), 11 (frase
+«In breve»), 12 (griglia adattiva). Punto 1 mantenuto. Punto 10 (clima) aperto.
+
+Correzione: gli 8 avvisi ruff che avevo dichiarato preesistenti erano miei; la pipeline `tests`
+falliva per questo. Corretti; `ruff check .` pulito. Gate: `pytest` 650, `verify_site` nessun
+problema. Dettagli e limiti in `docs/85`.
+
 ## 2026-10-11 — Card «Clima del club»: revisione 360° (docs/81)
 
 Richiesta dell'utente: rivedere e verificare la sezione «Clima del club», trovare errori,

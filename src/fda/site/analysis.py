@@ -5230,7 +5230,7 @@ class MatchAnalysis:
             return cached
         rate = None
         try:
-            lu, ps = self.lineup, self.player_stats
+            lu = self.lineup
             subs = lu[lu.role == "sub"][["match_id", "player_id"]]
             w = self._match_player_minutes_xg(subs)
             mins = float(w["min"].sum())
@@ -5241,7 +5241,7 @@ class MatchAnalysis:
         self._sub_pool_cache = rate
         return rate
 
-    def _match_player_minutes_xg(self, keys: "pd.DataFrame") -> "pd.DataFrame":
+    def _match_player_minutes_xg(self, keys: pd.DataFrame) -> pd.DataFrame:
         """Per (partita, giocatore) di ``keys``: minuti, xG, xA dalle statistiche partita FotMob."""
         ps = self.player_stats
         cols = ["match_id", "player_id", "min", "xg", "xa"]
@@ -5403,7 +5403,7 @@ class MatchAnalysis:
     #: Scaglioni del rapporto di valore dei titolari (sempre ≥1: il lato più ricco).
     MARKET_EDGES: ClassVar[tuple[float, ...]] = (1.0, 1.5, 2.0, 3.0, 5.0, float("inf"))
 
-    def _market_table(self) -> "pd.DataFrame":
+    def _market_table(self) -> pd.DataFrame:
         """Gare finite con il valore dei titolari di entrambe le squadre: rapporto e vittoria del più ricco.
 
         Calcolato dall'archivio ad ogni build (mai una cifra scritta a mano nel testo). Cache per oggetto.
@@ -5449,7 +5449,7 @@ class MatchAnalysis:
         i = max(j for j in range(len(edges) - 1) if edges[j] <= rr)
         lo, hi = edges[i], edges[i + 1]
         sel = t[(t.rr >= lo) & (t.rr < hi)]
-        n = int(len(sel))
+        n = len(sel)
         if n == 0:
             return None
         k = int(sel.rich_win.sum())
@@ -5462,12 +5462,12 @@ class MatchAnalysis:
         t = self._market_table()
         if t.empty:
             return "Misura sull'archivio non disponibile. "
-        n = int(len(t))
+        n = len(t)
         sopra = t[t.rr >= 1.5]
         sotto = t[t.rr < 1.5]
 
-        def _pct(df: "pd.DataFrame") -> tuple[int, float, float, float]:
-            k, m_ = int(df.rich_win.sum()), int(len(df))
+        def _pct(df: pd.DataFrame) -> tuple[int, float, float, float]:
+            k, m_ = int(df.rich_win.sum()), len(df)
             a, b = _wilson(k, m_)
             return m_, (k / m_ if m_ else 0.0), a, b
 

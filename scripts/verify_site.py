@@ -1839,6 +1839,33 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"season_sim {lg}: somma P(retrocessione) = {g.p_rel.sum():.3f}")
         print(f"[4] leghe simulate: {sim.league_key.nunique()} · righe {len(sim)}")
 
+    # 4b) probabilità condizionate per gara (punto 9, 2026-10-12): legge della probabilità totale
+    #     P(titolo) = Σ_esito P(esito) · P(titolo | esito), e le tre P(esito) sommano a 1.
+    #     Tolleranza Monte Carlo: 4 errori standard al massimo (sd ≤ 0,5/√n) più arrotondamento.
+    from fda.teams import canonical as _canon
+    cond = st.read("season_sim_cond")
+    if not cond.empty and not sim.empty and "p_outcome" in cond.columns:
+        for (lg, h, a), g in cond.groupby(["league_key", "cond_home", "cond_away"]):
+            checks += 1
+            po = float(g.drop_duplicates("cond_outcome").p_outcome.sum())
+            if abs(po - 1) > 1e-4:
+                fails.append(f"condizionate {lg} {h}–{a}: somma P(esito) = {po:.4f}")
+            n = int(g.n_sims.iloc[0])
+            tol = 4 * 0.5 / np.sqrt(n) + 0.005
+            base = sim[sim.league_key == lg]
+            for team, rows in g.groupby("team"):
+                u = base[base.team.map(_canon) == _canon(team)]
+                if u.empty:
+                    continue
+                checks += 1
+                totale = sum(float(r.p_outcome) * float(r.p_title) for r in rows.itertuples())
+                atteso = float(u.p_title.iloc[0])
+                if abs(totale - atteso) > tol:
+                    fails.append(f"condizionate {lg} {h}–{a} ({team}): Σ P(esito)·P(titolo|esito) "
+                                 f"= {totale:.4f} ≠ P(titolo) {atteso:.4f}")
+        print(f"[4b] probabilità condizionate per gara: {cond.groupby(['cond_home','cond_away']).ngroups} "
+              f"gare · legge della probabilità totale verificata")
+
     # 5) schede «oggi»: ruolo dei giocatori, conteggio indisponibili, archivio dei precedenti
     lineup, fixtures, h2h = st.read("lineup"), st.read("fixtures"), st.read("h2h")
     # codifica FotMob indipendente dal codice del sito: usualPosition parte da 0 (616 formazioni)

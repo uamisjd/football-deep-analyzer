@@ -317,6 +317,12 @@ def simulate_conditions(hist: pd.DataFrame, remaining: pd.DataFrame, base_points
         df.insert(0, "cond_home", h)
         df.insert(1, "cond_away", a)
         df.insert(2, "cond_outcome", o)
+        # P(esito) dalla stessa griglia: serve al verificatore per la legge della probabilità totale
+        grid = fitted["grids"][(h, a)]
+        k = grid.shape[0]
+        ii, jj = np.arange(k)[:, None], np.arange(k)[None, :]
+        keep = {"1": ii > jj, "X": ii == jj, "2": ii < jj}[o]
+        df.insert(3, "p_outcome", round(float(np.where(keep, grid, 0.0).sum()), 6))
         frames.append(df)
     cols = ["cond_home", "cond_away", "cond_outcome"]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols)
