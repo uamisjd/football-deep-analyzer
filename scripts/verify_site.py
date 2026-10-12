@@ -821,7 +821,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "36": ("I", "tabelle dentro .tablewrap"),
     "37": ("I", "didascalie del punteggio coerenti col punteggio"),
     "38": ("I", "importi non azzerati dall'arrotondamento"),
-    "39": ("M", "movimenti di mercato ↔ tabella transfers"),
+    "39": ("M", "finestra dichiarata ↔ transfers; importi/formule, saldi e distinte ricalcolati senza il generatore"),
     "40": ("I", "meteo: valori pubblicati ↔ soglie del codice"),
     "41": ("M", ("struttura e soglie della card dei Fattori; il testo delle soglie è del "
                  "generatore (fattori_soglie_testo)")),
@@ -4058,7 +4058,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # 26) mercato (docs/21 P2-7, rifatto in docs/24 §4): la card mostra la finestra
     # ricavata dai dati, gli importi in forma leggibile e gli arrivi già in distinta.
     # Qui si rifà il conto con le stesse funzioni del build e si confronta con la pagina:
-    # righe, ordine, importi, estremi della finestra, saldo e «già in campo».
+    # righe, importi, estremi della finestra e arrivi. [39] verifica indipendentemente
+    # anche bilancio/copertura e provenienza della distinta: questa riconciliazione è mista.
     n_mkt = 0
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
@@ -4081,13 +4082,15 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             continue
         n_mkt += 1
         # la card è divisa in due colonne, una per squadra: i controlli vanno fatti sulla
-        # colonna, non sull'intera card (la riga «già in campo» di una squadra non è di
+        # colonna, non sull'intera card (la riga «arrivi riconosciuti» di una squadra non è di
         # pertinenza dell'altra)
-        colonne = re.split(r'<h3 style="margin:0 0 8px">', html[html.find('id="mercato"'):])[1:]
-        per_nome = {}
-        for col in colonne:
-            nome_col = html_unescape(col.split("</h3>", 1)[0]).strip()
-            per_nome[nome_col] = col
+        from bs4 import BeautifulSoup
+
+        from fda.site.mercato_checks import CARD as _MERCATO_CARD
+        section = _MERCATO_CARD.search(html)
+        soup = BeautifulSoup(section.group() if section else "", "html.parser")
+        per_nome = {node.h3.get_text(strip=True): str(node) for node in soup.select(".grid > .card")
+                    if node.h3 is not None}
         for tid, mk in attesi26.items():
             if mk is None:
                 continue
@@ -4130,18 +4133,17 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                      f"stampato come calcolato")
             checks += 1
             if mk["in_campo"]:
-                riga = (f"<b>Già in campo:</b> {len(mk['in_campo'])} "
-                        + ("arrivo" if len(mk["in_campo"]) == 1 else "arrivi"))
+                riga = f"<b>Arrivi riconosciuti:</b> {len(mk['in_campo'])} "
                 if riga not in col:
-                    fails.append(f"{pg.name}: {nome}: riga «già in campo» assente o diversa "
+                    fails.append(f"{pg.name}: {nome}: riga «arrivi riconosciuti» assente o diversa "
                                  f"dal calcolo")
                 for p26 in mk["in_campo"]:
                     checks += 1
                     if str(p26["name"]) not in col_txt:
                         fails.append(f"{pg.name}: {nome}: arrivo già in distinta non pubblicato "
                                      f"({p26['name']})")
-            elif "Già in campo:" in col:
-                fails.append(f"{pg.name}: {nome}: riga «già in campo» presente ma nessun "
+            elif "Arrivi riconosciuti:" in col:
+                fails.append(f"{pg.name}: {nome}: riga «arrivi riconosciuti» presente ma nessun "
                              f"arrivo in distinta secondo i dati")
     print(f"[26] card mercato riconciliate: {n_mkt} pagine")
 
@@ -4703,99 +4705,14 @@ def check_importi_mercato(site: Path) -> tuple[list[str], int]:
 # funzione** che la costruisce: coerente e sbagliata. Questa invariante rifà il conto dal
 # Parquet, in modo indipendente, e pretende che una riga per giocatore resti una.
 def check_mercato_movimenti(site: Path, data: Path | None) -> tuple[list[str], int]:
-    """[39] un movimento per giocatore e direzione: niente righe ripetute, conteggi giusti."""
-    import pandas as pd
+    """[39] finestra, copertura delle cifre, bilancio e arrivi: ricalcolo indipendente."""
+    from fda.site.mercato_checks import audit_market
 
-    from fda.store import Store
-    from fda.teams import soft_key
-
-    fails: list[str] = []
-    checks = 0
-    st = Store(data) if data else Store()
-    tr = st.read("transfers")
-    fx = st.read("fixtures")
-    if tr.empty or fx.empty or "player_name" not in tr.columns:
-        return fails, checks
-    date = pd.to_datetime(tr["date"], utc=True, errors="coerce", format="mixed")
-    tr = tr.assign(_dt=date, _pn=tr.player_name.map(lambda v: soft_key(str(v or ""))),
-                   _cn=tr.counterpart.map(lambda v: soft_key(str(v or ""))))
-    tr = tr[tr._dt.notna()]
-    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
-    intestazione = re.compile(r"<b>(\d+)</b> (?:arrivo|arrivi) · <b>(\d+)</b> (?:partenza|partenze) "
-                              r"nella finestra dal <b>(\d{2}/\d{2}/\d{4})</b>")
-    n_pagine = 0
-    for pg in pages:
-        html = pg.read_text(encoding="utf-8")
-        if 'id="mercato"' not in html or "Analisi pre-partita" not in html:
-            continue
-        mid = int(pg.stem)
-        riga_fx = fx[fx.match_id == mid]
-        if riga_fx.empty:
-            continue
-        f = riga_fx.iloc[0]
-        n_pagine += 1
-        # la card finisce alla card successiva: senza il taglio, `<h3>` di altre sezioni
-        # entravano nella scansione (misurato: 255 blocchi invece di 132)
-        inizio = html.find('id="mercato"')
-        dopo = html.find('<div class="card" id="', inizio + 10)
-        card = html[inizio:dopo if dopo > inizio else len(html)]
-        colonne = re.split(r'<h3 style="margin:0 0 8px">', card)[1:]
-        # (a) nessun nome ripetuto nella stessa colonna e direzione
-        for colonna in colonne:
-            pezzi = colonna.split('class="small" style="margin:8px 0 4px;')[1:]
-            for direzione, pezzo in zip(("arrivi", "partenze"), pezzi, strict=False):
-                nomi = re.findall(r"<tr>\s*<td>([^<]+)</td>", pezzo)
-                checks += 1
-                chiavi = [soft_key(html_unescape(n)) for n in nomi]
-                if len(chiavi) != len(set(chiavi)):
-                    doppi = sorted({n for n, k in zip(nomi, chiavi, strict=True)
-                                    if chiavi.count(k) > 1})
-                    fails.append(f"{pg.name}: mercato {direzione}: riga ripetuta "
-                                 f"({', '.join(doppi)})")
-        # (b) i conteggi pubblicati = giocatori distinti nella finestra dichiarata in pagina
-        for tid, nome in ((int(f.home_id), str(f.home_name)), (int(f.away_id), str(f.away_name))):
-            squadra = tr[tr.team_id == tid]
-            if squadra.empty:
-                continue
-            attesi = {}
-            for direzione, chiave in (("in", "n_in"), ("out", "n_out")):
-                d = squadra[squadra.direction == direzione]
-                attesi[chiave] = int(d._pn.nunique()) if not d.empty else 0
-            m = None
-            for col in colonne:
-                if html_unescape(col.split("</h3>", 1)[0]).strip() == nome:
-                    m = intestazione.search(col)
-                    break
-            if m is None:
-                continue
-            for chiave, idx in (("n_in", 1), ("n_out", 2)):
-                pubblicato = int(m.group(idx))
-                checks += 1
-                # la finestra può escludere i movimenti vecchi: il confronto è sulla stessa
-                # porzione di tabella letta dalla pagina
-                inizio = pd.to_datetime(m.group(3), format="%d/%m/%Y", utc=True)
-                direzione = "in" if chiave == "n_in" else "out"
-                d = squadra[(squadra.direction == direzione) & (squadra._dt >= inizio)]
-                distinti = int(d._pn.nunique()) if not d.empty else 0
-                if pubblicato != distinti:
-                    extra = pubblicato - distinti
-                    spiegato = False
-                    if extra > 0:
-                        # eccezione dichiarata dalla card: due movimenti dello stesso
-                        # giocatore verso club diversi a più di 30 giorni l'uno dall'altro
-                        gruppi = 0
-                        for _, g in d.groupby("_pn"):
-                            if len(g) < 2:
-                                continue
-                            span = (g._dt.max() - g._dt.min()).days
-                            if span > 30 and len({c for c in g._cn}) > 1:
-                                gruppi += len(g) - 1
-                        spiegato = gruppi >= extra
-                    if not spiegato:
-                        fails.append(f"{pg.name}: mercato {nome}: {pubblicato} movimenti "
-                                     f"pubblicati contro {distinti} giocatori distinti nei dati")
-    print(f"[39] card mercato senza movimenti ripetuti: {n_pagine} pagine")
-    return fails, checks
+    report = audit_market(site, data if data is not None else Path(__file__).resolve().parents[1] / "data/processed")
+    fails = [f"{e['match_id']}.html: mercato {e['team']}: {e['message']}" for e in report["errors"]]
+    print(f"[39] mercato riconciliato indipendentemente: "
+          f"{report['counts'].get('market_pages', 0)} pagine, {report['checks']} controlli")
+    return fails, report["checks"]
 
 
 # Le soglie del meteo erano scritte in due posti diversi: il testo della card diceva «nella

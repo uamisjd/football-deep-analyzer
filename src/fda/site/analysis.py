@@ -4220,8 +4220,8 @@ class MatchAnalysis:
         return f"{v:.0f} €"
 
     def transfer_window(self, team_id: int, match_id: int | None = None,
-                        n: int = 4) -> dict[str, Any] | None:
-        """Mercato della squadra **della finestra in corso**, come pubblicato da FotMob.
+                        n: int = 4, *, now: Any = None) -> dict[str, Any] | None:
+        """Ultimo gruppo di movimenti della squadra, ricavato dai dati FotMob.
 
         Rifatto in ``docs/24`` §4. La versione precedente pubblicava le 4 voci più recenti
         di tutta la tabella chiamandole «ultima finestra»: misurato sul sito del 2026-09-16,
@@ -4237,17 +4237,33 @@ class MatchAnalysis:
         pubblicano in forma leggibile (``12,5 M€``) e in italiano.
 
         Se la fonte non ha movimenti recenti la card **non sparisce**: dice da quando non
-        ne pubblica. Con ``match_id`` si aggiunge il collegamento con il campo: quali
-        arrivi sono già nella distinta di questa partita.
+        ne pubblica. ``now`` e, se noto, il kickoff delimitano le date prima della
+        deduplicazione; non sono timestamp di conoscenza storica della fonte.
+        Con ``match_id`` si incrociano **tutti** gli arrivi (``n`` è solo un limite grafico)
+        con la distinta raccolta, distinguendo ufficiale, prevista e ultima disponibile.
+        Gratuiti, prestiti senza cifra e dati non dichiarati sono categorie separate;
+        il saldo è parziale e non si calcola inventando lo zero di un lato ignoto.
         """
         out: dict[str, Any] = {"arrivals": [], "departures": [], "n_in": 0, "n_out": 0,
                                "window_start": "", "window_end": "", "stale": False,
                                "spesa": None, "incasso": None, "saldo": None,
                                "importi_noti": 0, "importi_mancanti": 0, "in_campo": [],
+                               "gratuiti": 0, "prestiti_senza_importo": 0,
+                               "lineup_origin": self.transfer_lineup_origin(match_id),
                                "ultimo": ""}
+        out["lineup_label"] = self.TRANSFER_LINEUP_LABELS[out["lineup_origin"]]
         if self.transfers.empty or "player_name" not in self.transfers.columns:
             return None
         df = self.transfers[self.transfers.team_id == team_id].copy()
+        cutoff = pd.to_datetime(now, utc=True) if now is not None else pd.Timestamp.now(tz="UTC")
+        if match_id is not None and not self.fixtures.empty:
+            match = self.fixtures[self.fixtures.match_id == match_id]
+            if not match.empty:
+                ko = pd.to_datetime(match.iloc[0].utc_kickoff, utc=True, errors="coerce")
+                if pd.notna(ko):
+                    cutoff = min(cutoff, ko)
+        # Prima della deduplica: una ripubblicazione futura non deve sostituire la voce pre-partita.
+        df = df[parse_moments(df.get("date")) <= cutoff]
         if df.empty:
             return None
         # due difetti misurati il 2026-10-07 (docs/56 §2): le date della fonte hanno due
@@ -4269,8 +4285,7 @@ class MatchAnalysis:
         out["ultimo"] = ultimo.strftime("%d/%m/%Y")
         out["window_start"] = pd.Timestamp(first).strftime("%d/%m/%Y")
         out["window_end"] = ultimo.strftime("%d/%m/%Y")
-        oggi = pd.Timestamp.now(tz="UTC")
-        if (oggi - ultimo).days > self.TRANSFER_STALE_DAYS:
+        if (cutoff - ultimo).days > self.TRANSFER_STALE_DAYS:
             out["stale"] = True
             return out
 
@@ -4296,10 +4311,14 @@ class MatchAnalysis:
                 return []
             def riga(r: dict[str, Any]) -> dict[str, Any]:
                 date = pd.Timestamp(r["_date"])
+                amount = self.fee_eur(r.get("fee_text"))
+                fee = self.fee_it(r.get("fee_text"))
+                kind = ("numeric" if amount is not None else "free" if fee == "gratuito"
+                        else "loan" if fee == "prestito" else "unknown")
                 return {"name": str(r["player_name"]),
                         "counterpart": str(r.get("counterpart") or ""),
-                        "fee": self.fee_it(r.get("fee_text")),
-                        "fee_eur": self.fee_eur(r.get("fee_text")),
+                        "fee": fee, "fee_eur": amount, "fee_kind": kind,
+                        "is_loan": str(r.get("transfer_type") or "").lower() in {"on loan", "loan", "prestito"},
                         "date_it": date.strftime("%d/%m/%Y"),
                         "date": int(date.timestamp()),
                         "_club": soft_key(str(r.get("counterpart") or ""))}
@@ -4331,27 +4350,53 @@ class MatchAnalysis:
             rows = movimenti[direction]
             out[chiave] = rows[:n]
             out[count] = len(rows)
-        importi = [r["fee_eur"] for r in movimenti["in"] + movimenti["out"]]
-        out["importi_noti"] = sum(1 for v in importi if v)
-        out["importi_mancanti"] = sum(1 for v in importi if not v)
-        spesa = sum(v for v in (r["fee_eur"] for r in movimenti["in"]) if v)
-        incasso = sum(v for v in (r["fee_eur"] for r in movimenti["out"]) if v)
-        out["spesa"] = spesa if out["importi_noti"] else None
-        out["incasso"] = incasso if out["importi_noti"] else None
-        out["saldo"] = (spesa - incasso) if out["importi_noti"] else None
-        out["saldo_it"] = self.fee_it(abs(out["saldo"])) if out["saldo"] is not None else ""
-        out["saldo_segno"] = ("+" if (out["saldo"] or 0) > 0 else "−") if out["saldo"] else ""
-        out["in_campo"] = self.arrivals_on_pitch(team_id, match_id, out["arrivals"]) \
-            if match_id else []
+        # Le formule sono informazioni, non importi mancanti indistinti (docs/95).
+        all_moves = movimenti["in"] + movimenti["out"]
+        out["importi_noti"] = sum(r["fee_kind"] == "numeric" for r in all_moves)
+        out["gratuiti"] = sum(r["fee_kind"] == "free" for r in all_moves)
+        out["prestiti_senza_importo"] = sum(r["fee_kind"] == "loan" for r in all_moves)
+        out["importi_mancanti"] = sum(r["fee_kind"] == "unknown" for r in all_moves)
+
+        def known_total(rows: list[dict[str, Any]]) -> float | None:
+            numeric = [r["fee_eur"] for r in rows if r["fee_kind"] == "numeric"]
+            if numeric:
+                return float(sum(numeric))  # parziale: mai il costo complessivo del mercato
+            # Senza cifre, solo gratuiti o nessun movimento sostengono lo zero.
+            return 0.0 if all(r["fee_kind"] == "free" for r in rows) else None
+
+        out["spesa"], out["incasso"] = known_total(movimenti["in"]), known_total(movimenti["out"])
+        if out["spesa"] is not None and out["incasso"] is not None:
+            out["saldo"] = out["spesa"] - out["incasso"]
+        # Lo zero contabile non è un valore di mercato assente: non passarlo a fee_it(0).
+        for key in ("spesa", "incasso", "saldo"):
+            value = out[key]
+            out[key + "_it"] = ("non quantificabile" if value is None else "0 €" if value == 0
+                                else self.fee_it(abs(value)))
+        out["saldo_segno"] = ("+" if out["saldo"] > 0 else "−") if out["saldo"] else ""
+        # Il limite grafico di quattro righe non restringe i giocatori da incrociare.
+        out["in_campo"] = self.arrivals_on_pitch(team_id, match_id, movimenti["in"]) if match_id else []
         return out
+
+    TRANSFER_LINEUP_LABELS: ClassVar[dict[str, str]] = {
+        "official": "distinta ufficiale", "predicted": "formazione prevista",
+        "previous": "ultima distinta disponibile", "unknown": "distinta raccolta (tipo non dichiarato)",
+    }
+
+    def transfer_lineup_origin(self, match_id: int | None) -> str:
+        if match_id is None or self.info.empty:
+            return "unknown"
+        rows = self.info[self.info.match_id == match_id]
+        raw = str(rows.iloc[0].get("lineup_type", "")) if not rows.empty else ""
+        return {"confirmed": "official", "official": "official", "predicted": "predicted",
+                "probable": "predicted", "lastStarting11": "previous"}.get(raw, "unknown")
 
     def arrivals_on_pitch(self, team_id: int, match_id: int,
                           arrivals: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Quali arrivi della finestra sono già nella distinta di questa partita.
+        """Arrivi riconosciuti per nome nella distinta raccolta, una volta per persona.
 
-        È il collegamento che mancava fra «chi è arrivato» e «chi gioca»: misurato sulle 70
-        schede con card del 2026-09-16, il 58,3% degli arrivi in finestra compare nella
-        distinta (titolare o a disposizione), quindi l'informazione c'è ed è utile.
+        Una distinta può essere prevista o essere l'ultima disponibile: lo stato non è
+        una conferma di impiego. Il chiamante passa tutti gli arrivi, non il top-4 visibile.
+        La tabella trasferimenti non fornisce ID: nessun abbinamento fuzzy inventato.
         """
         if not arrivals or self.lineup.empty:
             return []
@@ -4359,16 +4404,23 @@ class MatchAnalysis:
                            & (self.lineup.role.isin(["starter", "sub"]))]
         if rows.empty:
             return []
+        origin = self.transfer_lineup_origin(match_id)
+        qualifiers = {"official": "", "predicted": " nella previsione",
+                      "previous": " nell’ultima distinta", "unknown": " nella distinta raccolta"}
         per_nome: dict[str, dict[str, Any]] = {}
         for r in rows.itertuples(index=False):
+            status = ("titolare" if r.role == "starter" else "a disposizione") + qualifiers[origin]
             per_nome[soft_key(str(r.player_name))] = {
                 "name": str(r.player_name), "role": str(r.role),
                 "value": float(r.market_value_eur) if pd.notna(r.market_value_eur) else 0.0,
-                "status": "titolare" if r.role == "starter" else "a disposizione"}
+                "status": status}
         out = []
+        seen = set()
         for a in arrivals:
-            hit = per_nome.get(soft_key(str(a["name"])))
-            if hit:
+            name = soft_key(str(a["name"]))
+            hit = per_nome.get(name)
+            if hit and name not in seen:
+                seen.add(name)
                 out.append({"name": hit["name"], "status": hit["status"], "value": hit["value"]})
         out.sort(key=lambda x: (-x["value"], x["name"]))
         return out

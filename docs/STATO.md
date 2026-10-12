@@ -1,3 +1,35 @@
+## 2026-10-12 — Mercato corretto e misurato, gate completi in corso (docs/95)
+
+**Seconda sezione del punto 4.** Su 63 schede / 126 colonne, gli arrivi nelle distinte
+venivano cercati solo fra i quattro esposti: **35 anziché 96 corrispondenze**, 61 omesse in
+14 colonne. Ora incrocio sull'intera finestra, quattro nomi in apertura e dettaglio espandibile.
+Le 15 colonne interessate usano **8 formazioni previste e 7 ultime distinte**, non conferme:
+via «Già in campo / di questa partita», provenienza e ruoli espliciti. Nessun abbinamento fuzzy;
+la tabella trasferimenti non ha ID giocatore.
+
+**Cifre e formule separate:** 866 importi numerici, 459 gratuiti, 922 prestiti senza importo,
+409 altre voci non dichiarate (1.009 arrivi / 1.647 partenze sulle colonne). Non si assume
+un prestito gratuito; corrispettivi noti dei prestiti inclusi ed etichetta aggiunta a 47 righe.
+Saldo = spesa − incasso sui soli importi noti, non bilancio del club; 24 colonne non
+quantificabili, di cui 14 mostravano prima un saldo con un lato senza cifra. Sette veri zeri
+contabili mostrati come 0 €, non importo ignoto. Filtro date prima di deduplica: limite al
+momento della pagina/kickoff; non dimostra la conoscenza storica della fonte.
+
+**Impatto verificato sul frammento:** tutti i 126 elenchi / 897 movimenti visibili conservano
+nomi, controparti, date e ordine. Conteggi e corrispettivi invariati. Nuovo audit reale su HTML,
+con `--site/--data/--json` ed exit 1; [39] senza chiamare il generatore, [26] limitato alla card.
+**1.008 controlli, zero difetti** sulle copie corrette; vecchio [39] 493 controlli senza vedere
+le omissioni. I 248 rilievi del nuovo audit sul vecchio HTML includono le nuove dichiarazioni
+richieste e più controlli sulla stessa cella, non sono 248 errori fattuali distinti.
+
+**Verificati:** 24 nuovi test; **71 mirati** passati, Ruff pulito. **In corso:** prova negativa
+[26]/[39], suite completa, build, verify_site, audit mercato/panchina, parità e resa 375 px.
+Relazione [docs/95](95_mercato_distinte_bilancio_2026-10-12.md). Nessun Parquet modificato,
+compresi `season_sim*`; nessun modello promosso. PR #108 resta in bozza, non unita.
+
+**Prossimo:** chiudere i gate, poi **Vita del club**; dopo: Previsione ensemble, Precedenti,
+Verifica approfondita. StatsBomb e scelta sul clima restano aperti.
+
 ## 2026-10-12 — Panchina e posta in gioco: prima sezione verificata, 7 celle corrette (docs/94)
 
 **Prima sezione del punto 4, misura → correzione → prova.** Su 63 schede / 126 lati,
