@@ -265,5 +265,58 @@
   },
   "new_tests": 24,
   "targeted_tests": 71,
-  "full_gates": "pending"
+  "full_gates": {
+    "tests_passed": 796,
+    "ruff": "passed",
+    "negative_verify_site": {
+      "exit": 1,
+      "overlapping_findings": 324
+    },
+    "build": {
+      "matches": 498,
+      "fixtures": 2364,
+      "players": 7594
+    },
+    "verify_site": {
+      "checks": 240345,
+      "problems": 0
+    },
+    "market_audit": {
+      "checks": 1008,
+      "defects": 0
+    },
+    "panchina_audit_defects": 0,
+    "parity_pages": 63,
+    "mobile_checks": 28667,
+    "mobile_problems": 0,
+    "production_parquets_unchanged": true
+  },
+  "full_render_comparison": {
+    "movement_tables_identical": 126,
+    "visible_moves": 897,
+    "loan_labels_added": 47
+  },
+  "full_audit_after": {
+    "counts": {
+      "prematch_pages": 63,
+      "market_pages": 63,
+      "sides": 126,
+      "numeric": 866,
+      "free": 459,
+      "loan": 922,
+      "unknown": 409,
+      "lineup_matches": 96,
+      "lineup_predicted_sides": 8,
+      "lineup_unknown_sides": 0,
+      "lineup_previous_sides": 7
+    },
+    "checks": 1008,
+    "errors": [],
+    "defects": 0
+  },
+  "code_commit": "b77c048",
+  "ci_success_runs": [
+    38292304131,
+    38292299551
+  ]
 }

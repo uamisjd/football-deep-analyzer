@@ -118,11 +118,12 @@ indipendenza totale della politica di selezione o una verifica dell'esattezza de
 **Prova prima/dopo:** il nuovo audit rifiuta l'HTML precedente e accetta il frammento corretto.
 Le sue 248 segnalazioni iniziali includono obblighi di trasparenza nuovi e controlli multipli
 sulla stessa cella: **non sono 248 errori fattuali distinti**. Verifica positiva attuale:
-**1.008 controlli, zero difetti** sulle 63 schede rigenerate in cache.
+**1.008 controlli, zero difetti** sulle 63 schede: prima sul frammento rigenerato e poi sulla build completa.
 
 ## 6. Impatto e invarianti
 
-- **126 elenchi-squadra / 897 righe visibili:** nomi, controparti, date e ordine identici.
+- **126 elenchi-squadra / 897 righe visibili:** nomi, controparti, date e ordine identici,
+  confronto ripetuto e confermato dopo la build completa.
 - Conteggi **1.009 / 1.647** invariati; importi individuali invariati. Solo 47 etichette di
   prestito aggiunte nelle righe che ne erano prive.
 - Arrivi riconosciuti **35→96**, con la provenienza dichiarata, non un'affermazione che giochino.
@@ -135,11 +136,25 @@ sulla stessa cella: **non sono 248 errori fattuali distinti**. Verifica positiva
 
 ## 7. Gate
 
-**In corso:** prova negativa sul sito precedente, suite completa, build completa,
-`verify_site`, audit mercato/panchina, parità e resa a 375 px. Non dichiarati finiti prima
-dell'esito. PR #108 in bozza, nessun merge.
+**Tutti eseguiti dopo l'ultima modifica al codice:**
+
+- **796 test passati**; `ruff check .` pulito.
+- Prova negativa sul sito precedente: **exit 1**, 324 segnalazioni fra [26] e [39]. Sono
+  controlli sovrapposti e nuove dichiarazioni richieste, non 324 errori distinti.
+- **`fda build`: 498 schede / 2.364 fixture / 7.594 giocatori**.
+- **`verify_site`: 240.345 controlli, 0 problemi** (54 oracoli: 31 I / 19 M / 4 S).
+- **Audit Mercato: 1.008 controlli, 0 difetti**; audit Panchina ancora **0 difetti**.
+- **Parità: 63 schede, nessuna differenza**; resa a 375 px: **28.667 misure, 0 problemi**.
+- CI del codice **`b77c048`** verde: run
+  [38292304131](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38292304131) e
+  [38292299551](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38292299551).
+- `git diff --exit-code -- data/processed` senza differenze, inclusi i due `season_sim*`.
+
+Misura macchina in [`_audit_mercato_2026-10-12.json`](_audit_mercato_2026-10-12.json).
+**Seconda sezione verificata.** PR #108 sempre in bozza, non unita: correzioni sul branch,
+non ancora pubblicate su `main`. Nessuna garanzia sull'esattezza o completezza della fonte.
 
 ## Prossimo passo
 
-Chiudere i gate, poi **Vita del club**; restano dopo: Previsione ensemble, Precedenti,
+Passare a **Vita del club**; restano dopo: Previsione ensemble, Precedenti,
 Verifica approfondita. La scelta sul clima e l'ambito StatsBomb restano decisioni dell'utente.

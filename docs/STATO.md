@@ -1,4 +1,4 @@
-## 2026-10-12 — Mercato corretto e misurato, gate completi in corso (docs/95)
+## 2026-10-12 — Mercato: seconda sezione verificata, distinte e bilanci riconciliati (docs/95)
 
 **Seconda sezione del punto 4.** Su 63 schede / 126 colonne, gli arrivi nelle distinte
 venivano cercati solo fra i quattro esposti: **35 anziché 96 corrispondenze**, 61 omesse in
@@ -22,12 +22,17 @@ con `--site/--data/--json` ed exit 1; [39] senza chiamare il generatore, [26] li
 le omissioni. I 248 rilievi del nuovo audit sul vecchio HTML includono le nuove dichiarazioni
 richieste e più controlli sulla stessa cella, non sono 248 errori fattuali distinti.
 
-**Verificati:** 24 nuovi test; **71 mirati** passati, Ruff pulito. **In corso:** prova negativa
-[26]/[39], suite completa, build, verify_site, audit mercato/panchina, parità e resa 375 px.
-Relazione [docs/95](95_mercato_distinte_bilancio_2026-10-12.md). Nessun Parquet modificato,
-compresi `season_sim*`; nessun modello promosso. PR #108 resta in bozza, non unita.
+**Gate finali verificati:** **796 test**, Ruff pulito; `fda build` **498/2.364/7.594**;
+`verify_site` **240.345 controlli, 0 problemi**; audit Mercato **1.008 controlli / 0 difetti**,
+Panchina ancora **0 difetti**; parità **63 schede**, resa 375 px **28.667 misure / 0 problemi**.
+Prova negativa [26]/[39] sull'HTML precedente: exit 1 (324 segnalazioni sovrapposte, non
+324 errori distinti). Confronto dopo la build completa conferma tutti i 126 elenchi / 897
+righe e le 47 etichette di prestito aggiunte. CI `b77c048` verde: `38292304131`, `38292299551`.
+Relazione [docs/95](95_mercato_distinte_bilancio_2026-10-12.md) e JSON della misura.
+Nessun Parquet modificato, compresi `season_sim*`; nessun modello promosso. PR #108 resta
+in bozza e non unita. **Due sezioni verificate su sei**, non le altre quattro.
 
-**Prossimo:** chiudere i gate, poi **Vita del club**; dopo: Previsione ensemble, Precedenti,
+**Prossimo:** **Vita del club**; dopo: Previsione ensemble, Precedenti,
 Verifica approfondita. StatsBomb e scelta sul clima restano aperti.
 
 ## 2026-10-12 — Panchina e posta in gioco: prima sezione verificata, 7 celle corrette (docs/94)
