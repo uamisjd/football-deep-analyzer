@@ -125,3 +125,72 @@ reportage sul Como ripreso da QuiComo, lettura attribuita e non fatto sintetico 
 
 **Gate ancora da eseguire dopo le correzioni.** Nessun modello o Parquet modificato,
 nessun merge. La copertura delle fonti resta un problema aperto da non nascondere.
+
+
+## 5. Continuazione verificata il 13/10/2026: ricerca primaria e prova in ombra
+
+Recuperato il checkpoint `40d56f8` già sul ramo remoto: i due file di ricerca e le etichette
+non erano nel filesystem ripristinato. Confrontati i restanti file; la copia locale di
+STATO era esattamente il suffisso della versione remota. Recupero senza sovrascrivere codice
+locale divergente. L'ambiente Python è stato ricreato; nessun Parquet modificato.
+
+**Riletti tramite lo strumento web, non tramite la rete del collector del sandbox:** nota
+Udinese del 5 ottobre (intervento alla caviglia, non rissa), comunicato Genoa dell'11 ottobre
+(incarichi), comunicato Atlético (azionariato). Le letture confermano i livelli di prova
+sopra; nessun testo originale è stato importato nel sito o nei dati.
+
+Nuovo riscontro primario: [Polizia di Stato](https://www.poliziadistato.it/articolo/scontri-prima-del-derby-torino-juventus--22-misure-cautelari-e-42-daspo),
+comunicato del **6/10/2026**: **22 misure cautelari e 42 Daspo**, riferiti agli incidenti
+prima del derby del **24 maggio**. I titoli della rassegna citano numeri e grandezze diverse:
+non vengono sommati, uniformati né spacciati per conferme indipendenti. Pubblicazione,
+provvedimento e incidente originario non sono la stessa data.
+
+Ricerche di controllo per le leghe scoperte: la query italiana su Benfica ha restituito
+anche [1](https://www.diretta.it/news/calcio-liga-portugal-rui-costa-domina-le-elezioni-l-ex-giocatore-rieletto-presidente-del-benfica/8GM2cFKE/);
+quella su Ajax anche [1](https://www.tuttomercatoweb.com/calcio-estero/ufficiale-ajax-rivoluzione-in-dirigenza-ad-amsterdam-c-e-un-nuovo-director-of-football-1905961).
+Sono fuori periodo: **non si riciclano per riempire le schede attuali**. La ricerca senza
+riscontro coevo non dimostra che non ci siano eventi; non è una misura di recall.
+
+**Prima di integrare:** `club_signals.py` provato in ombra sulle 31 annotazioni già committate
+prima del codice: **31/31 corrispondenze**. Altri 28 controlli separati, positivi e negativi,
+portano a **59 test** del criterio. È conformità al perimetro di sviluppo, non «100% di
+accuratezza» sul mondo o su notizie future. Fra i controlli separati è emerso che vietare
+«quote» avrebbe escluso quote societarie: il veto è rimasto solo nel contesto delle scommesse.
+
+## 6. Correzioni e presentazione, ancora sotto gate finali
+
+- Collisione `Idrissa`/`rissa` eliminata nel classificatore: confini di parola, controlli su
+  nomi e su vere risse. Non basta nasconderla soltanto in una pagina.
+- Il selettore richiede un **segnale positivo nel titolo**. `Evento segnalato` e
+  `Analisi / dichiarazione` hanno etichette diverse; smentite, ipotesi e citazioni non
+  vengono trasformate in eventi accertati. La porzione di titolo che attiva il segnale
+  rimane visibile. Non si fabbricano sintesi o effetti sulla partita.
+- Il solo nome della stessa persona non è più prova dello stesso evento. I titoli sullo
+  stesso segnale/tema possono stare in un dettaglio di **letture sul tema**, tutti con
+  fonte, data e link. Questo non certifica identità dell'evento o indipendenza delle fonti.
+- Copertura per squadra in apertura: righe raccolte e titoli consultabili. Lo zero è
+  dichiarato, non coperto da frasi generiche. La rassegna resta parziale e solo italiana.
+- «Da sapere» resta consultabile come **Dati di contesto della partita · non sono notizie
+  di stampa**, distinto dalla rassegna. Nessun numero viene eliminato o modificato.
+- Date etichettate come **articolo**, non data certa dell'evento. Le ore al fischio restano
+  una componente interna dell'ordinamento, non un numero che suggerisca impatto predittivo.
+
+Sul campione fisso del 12/10, con gli stessi 1.522 input: **10 titoli principali + 6 letture
+sul tema**, 15 titoli distinti, 10 lati con segnalazioni (9 ITA1, 1 ESP1). Le altre cinque
+leghe restano senza voci esposte. I 5 titoli non presenti nelle annotazioni iniziali sono
+stati riletti dopo la selezione: tutte ulteriori riprese dei provvedimenti sul derby, non
+nuovi eventi dimostrati. Questo secondo controllo **non è validazione cieca** e non entra
+nel 31/31. I titoli con numeri diversi restano attribuiti alle fonti, senza riconciliazioni
+arbitrarie.
+
+Misura ripetibile: `scripts/audit_vita_editoriale.py --reference-date 2026-10-12`.
+Audit tecnico sul frammento: **946 controlli, 0 difetti**. Test mirati complessivi:
+**299 passati**, Ruff pulito. In attesa dei gate completi e dell'anteprima ricostruita.
+
+## Prossimo passo
+
+Eseguire suite completa, build, verify_site, audit e resa mobile; mostrare l'anteprima.
+**Non dichiarare risolta la copertura per tutte le partite:** non lo è. Decidere poi come
+estendere e verificare la raccolta italiana via CI, senza inventare notizie, cambiare i
+Parquet qui o aggirare protezioni. La revisione di Vita del club resta aperta su questo
+punto; non si passa automaticamente all'ensemble. PR #108 in bozza, nessun merge.

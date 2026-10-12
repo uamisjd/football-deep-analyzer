@@ -1,30 +1,33 @@
-## 2026-10-12 — Vita del club riaperta: verifica editoriale e fonti (docs/97)
+## 2026-10-13 — Vita del club: qualità editoriale migliorata, copertura ancora insufficiente
 
-**Richiesta esplicita dell'utente:** non bastano test verdi; controllare accuratezza,
-utilità, intuibilità e copertura per tutte le partite. La precedente formula «terza sezione
-verificata» era troppo netta: copriva la coerenza tecnica, non la qualità editoriale.
-**Non si passa ancora all'ensemble.** PR #108 resta in bozza, nessun merge.
+**Richiesta utente:** verificare davvero accuratezza, utilità, intuibilità e tutte le partite.
+Riaperta la sezione, senza avanzare all'ensemble. Recuperati dal ramo remoto `40d56f8` la
+ricerca docs/97 e i 31 titoli annotati prima del nuovo codice. Nessuna perdita di file.
 
-**Misure prima di modificare il codice:** 63 schede / 126 lati, 35 voci esposte / 31 titoli
-distinti. Solo 18 lati con notizie; cinque leghe (ENG1, GER1, FRA1, NED1, POR1) senza alcuna
-voce selezionata. Annotati manualmente tutti i 31 titoli: 7 con evento specifico, 3 analisi/
-dichiarazioni ammissibili, 21 fuori perimetro o insufficienti. Campione di sviluppo,
-non precisione futura né recall certificata. Le due riprese sui provvedimenti del derby
-non sono due eventi dimostrati.
+**Ricerca e misura:** nota primaria Udinese riletta: Idrissa Gueye, intervento alla caviglia;
+la regex trovava «rissa» nel nome. Conferme primarie su Genoa/Atlético; Polizia di Stato:
+22 misure cautelari + 42 Daspo, comunicato 6/10 sugli scontri del 24/5. Date e conteggi non
+vengono confusi o sommati. Ricerche Benfica/Ajax hanno anche restituito articoli del 2025/2023:
+scartati perché fuori periodo, senza dedurre che non esistano eventi recenti.
 
-**Errore certo riprodotto:** `classify_news` trova «rissa» dentro «Idrissa» e assegna
-«Fuori dal campo» a «Nota ufficiale: Idrissa Gueye». Ricerca esterna: nota ufficiale omonima
- e coeva riguarda un intervento alla caviglia. Conferme primarie su incarichi Genoa e
-azionariato Atlético; lettura originale dell'analisi Atalanta/Sarri; riscontri su provvedimenti
-Torino-Juve, stadio Venezia e altri casi. Limiti/citazioni in
-[docs/97](97_vita_club_qualita_copertura_2026-10-12.md); nessun contenuto web riversato nei Parquet.
+**Prima dell'integrazione:** criterio positivo provato in ombra, 31/31 etichette manuali di
+sviluppo rispettate + 28 controlli separati. Non precisione futura né recall certificata.
+**Ora implementato:** confini di parola per rissa; segnale esplicito di evento o analisi;
+modalità distinta e prova nel titolo; letture sul tema tutte consultabili (non equivalgono
+a eventi/conferme indipendenti); copertura per squadra visibile; dati numerici separati
+come contesto, non notizie. Nessun punteggio di sentiment o modifica ai modelli.
 
-**Piano, ancora da validare:** criterio positivo di evento/analisi espliciti, classificazione
-prudente, trasparenza della copertura, separazione dei dati numerici dalle notizie e letture
-correlate consultabili. Prima della modifica del selettore salvate le etichette in
-`tests/fixtures/vita_editorial_review_2026-10-12.json`. Nessuna garanzia per tutte le partite
-finché resta il vuoto di fonti. Seguiranno test, Ruff, build, verify_site, audit e anteprima.
-Modelli e dati di produzione invariati; decisioni StatsBomb/sentiment non prese.
+**Misura sul campione fisso:** 63 schede / 126 lati, 1.522 voci; 10 principali + 6 sul tema,
+15 titoli distinti, solo 10 lati con segnalazioni (9 ITA1, 1 ESP1). **ENG1, GER1, FRA1,
+NED1 e POR1 ancora senza voci selezionate.** Non risolto, non mascherato da riempitivi.
+Relazione [docs/97](97_vita_club_qualita_copertura_2026-10-12.md).
+
+**Verificati:** 299 test mirati, Ruff pulito; audit frammento 946/0. **Da eseguire:** suite
+completa, build, verify_site, audit Vita/editoriale/Mercato/Panchina, parità e resa mobile.
+Parquet di produzione intatti, compresi `season_sim*`. PR #108 in bozza, nessun merge.
+**Anteprima da riavviare** su una scheda italiana e una lega scoperta dopo i gate.
+**Prossimo:** chiudere i gate; copertura delle fonti ancora da affrontare prima di dichiarare
+Vita del club risolta per tutti. Decisioni StatsBomb/clima ancora aperte.
 
 ## 2026-10-12 — Vita del club: terza sezione verificata, anteprima ripristinata (docs/96)
 

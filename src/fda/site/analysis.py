@@ -51,6 +51,7 @@ from .advanced import (
     xg_race,
 )
 from .club_news import title_exclusion, whole_phrase
+from .club_signals import club_signal
 from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_int, pct_triple
 from .laboratorio import laboratorio as whatif_laboratorio
 from .rates import (
@@ -392,7 +393,8 @@ def _no_news() -> dict[str, Any]:
             "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0,
             "vecchie": 0, "pertinenti": 0, "lingua": 0,
             "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0, "bassa_reputazione": 0,
-            "fuori_ambito": 0, "oltre_categoria": 0, "oltre_capienza": 0}
+            "fuori_ambito": 0, "oltre_categoria": 0, "oltre_capienza": 0,
+            "senza_segnale": 0, "correlate": 0}
 
 
 #: Voci dell'imbuto della card «Vita del club» che entrano nella riga unica quando non c'è
@@ -407,6 +409,7 @@ NEWS_FUNNEL_ORDER: tuple[tuple[str, str], ...] = (
     ("annunci", "annunci o logistica"),
     ("piatti", "senza un fatto specifico nel titolo"),
     ("fuori_ambito", "fuori ambito prima squadra"),
+    ("senza_segnale", "senza evento o analisi espliciti"),
     ("altre", "su un'altra squadra"),
     ("doppioni", "già raccontati da un'altra voce"),
     ("oltre", "oltre i limiti di esposizione"),
@@ -3574,7 +3577,7 @@ class MatchAnalysis:
                                "scartate": 0, "oltre": 0, "annunci": 0, "piatti": 0,
                                "altre": 0, "doppioni": 0, "vecchie": 0, "pertinenti": 0,
                                "lingua": 0, "bassa_reputazione": 0, "fuori_ambito": 0,
-                               "oltre_categoria": 0, "oltre_capienza": 0,
+                               "oltre_categoria": 0, "oltre_capienza": 0, "senza_segnale": 0, "correlate": 0,
                                "finestra": days, "limite": limit,
                                "categoria_limite": self.NEWS_CATEGORY_LIMIT,
                                "riserva_limite": self.NEWS_RESERVE_LIMIT}
@@ -3630,15 +3633,6 @@ class MatchAnalysis:
             if not self.fixtures.empty:
                 for nm in pd.concat([self.fixtures.home_name, self.fixtures.away_name]).dropna():
                     self._club_tokens |= self.team_tokens(str(nm))
-
-        def soggetti(title: str) -> set[str]:
-            """Soggetto della notizia (vedi :func:`news_subjects`).
-
-            Fra i nomi esclusi ci sono quelli dei club — tutti, non solo i due di questa
-            partita: «Inter» apre qualunque titolo della colonna di Inter e non distingue
-            una notizia dall'altra.
-            """
-            return news_subjects(title, set(self._club_tokens or ()) | tokens)
 
         def subject_ok(title: str) -> bool:
             key = soft_key(title or "")
@@ -3747,31 +3741,31 @@ class MatchAnalysis:
             if is_low_reputation(r.get("source")):
                 out["bassa_reputazione"] += 1
                 continue
-            exclusion = title_exclusion(title)
-            if exclusion is not None:
-                out[exclusion] += 1
+            if altra_squadra(title):
+                out["altre"] += 1
                 continue
-            topic, _evidence = classify_news(title, r.get("description"), r.get("source"))
-            if topic is None:
-                out["scartate"] += 1
+            signal = club_signal(title)
+            if signal is None:
+                # Vecchi filtri solo per spiegare l'esclusione; non possono autorizzare
+                # la pubblicazione in assenza di segnale positivo.
+                exclusion = title_exclusion(title)
+                old_topic = classify_news(title, r.get("description"), r.get("source"))[0]
+                old_reason = news_value(title, r.get("description"), r.get("source"))
+                if exclusion:
+                    out[exclusion] += 1
+                elif old_topic is None or old_topic in self.NEWS_ALTROVE:
+                    out["scartate"] += 1
+                elif old_reason:
+                    out["annunci" if old_reason == "annuncio" else "piatti"] += 1
+                else:
+                    out["senza_segnale"] += 1
                 continue
+            topic = signal.topic
             if not key or not subject_ok(title):
                 out["scartate"] += 1
                 continue
             if key in visti:
                 out["doppioni"] += 1
-                continue
-            if topic in self.NEWS_ALTROVE:
-                # infortuni, squalifiche e mercato hanno già la loro card in questa pagina:
-                # ripeterli qui era una delle cose che l'utente non voleva più leggere
-                out["scartate"] += 1
-                continue
-            motivo = news_value(title, r.get("description"), r.get("source"))
-            if motivo is not None:
-                out["annunci" if motivo == "annuncio" else "piatti"] += 1
-                continue
-            if altra_squadra(title):
-                out["altre"] += 1
                 continue
             # Solo candidati idonei prenotano il titolo: una copia più recente ma
             # fuori lingua/a bassa reputazione non cancella la versione ammissibile.
@@ -3797,69 +3791,46 @@ class MatchAnalysis:
                            "url": str(r.get("url") or ""), "published_at": published,
                            "topic": topic, "topic_label": TOPIC_LABELS.get(topic, topic),
                            "sintesi": sintesi, "why": nota(title), "ore": ore,
-                           "punteggio": punteggio, "_key": key})
-
-        def un_soggetto(voci: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            """Una voce per categoria e soggetto, nell'ordine in cui arrivano.
-
-            Due voci della stessa categoria sullo stesso nome proprio sono lo stesso fatto
-            raccontato due volte. Il filtro va applicato **dopo** l'ordinamento per
-            (punteggio, data): le righe del Parquet arrivano in ordine di data crescente e
-            filtrando in lettura restava la voce più vecchia.
-            """
-            tenute: list[dict[str, Any]] = []
-            visti_sog: dict[str, set[str]] = {}
-            for v in voci:
-                sog = soggetti(v["title"])
-                if sog and sog & visti_sog.get(v["topic"], set()):
-                    continue
-                visti_sog.setdefault(v["topic"], set()).update(sog)
-                tenute.append(v)
-            return tenute
-
-        def un_evento(voci: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            """Un fatto per evento, anche fra categorie diverse (docs/24 §3, regola 8).
-
-            `un_soggetto` guarda dentro la stessa categoria; ma lo stesso episodio può
-            arrivare con due categorie diverse — misurato il 2026-09-17 sui titoli della
-            seconda edizione: per il Betis la difesa di Pellegrini su Abde compariva due
-            volte, come «Dichiarazioni» e come «Club». Qui la chiave è la **persona di
-            questa partita** (allenatore o giocatore della distinta) nominata nel titolo:
-            se un fatto la nomina e un altro fatto tenuto la nomina già, è lo stesso
-            evento raccontato due volte e resta solo il primo (i fatti sono in ordine di
-            punteggio). Niente persone nel titolo = nessun vincolo.
-            """
-            tenute: list[dict[str, Any]] = []
-            gia: set[str] = set()
-            for v in voci:
-                low = str(v["title"]).lower()
-                persone = {nm for nm in entities if len(nm) >= 5 and whole_phrase(low, nm)}
-                if persone & gia:
-                    out["doppioni"] += 1
-                    continue
-                gia |= persone
-                tenute.append(v)
-            return tenute
+                           "punteggio": punteggio, "_key": key,
+                           "kind": signal.kind,
+                           "kind_label": "Evento segnalato" if signal.kind == "event" else "Analisi / dichiarazione",
+                           "signal_label": signal.label, "evidence": signal.evidence,
+                           "signal_family": signal.family, "related": []})
 
         scelte.sort(key=lambda v: (-v["punteggio"], -v["published_at"].value))
-        per_soggetto = un_soggetto(scelte)
-        out["doppioni"] += len(scelte) - len(per_soggetto)
-        tenute = un_evento(per_soggetto)
-        out["pertinenti"] = len(tenute)
+        # Stesso segnale specifico = letture sul tema, NON identità provata dell'evento.
+        # Tutti i titoli restano consultabili. Il solo nome di una persona non è dedup.
+        groups: dict[tuple[str, str], dict[str, Any]] = {}
+        tenute: list[dict[str, Any]] = []
+        for voce in scelte:
+            cue = re.sub(r"\bmultat[oaie]\b", "multa", soft_key(voce["evidence"]))
+            # Daspo e misure cautelari sono letture sul tema dei provvedimenti,
+            # non eventi indipendenti né conferme fra fonti: non si sommano i numeri.
+            grouping = (voce["signal_family"], "provvedimenti" if voce["signal_family"] == "supporters_orders" else cue)
+            if voce["kind"] == "event" and grouping in groups:
+                groups[grouping]["related"].append(voce)
+            else:
+                tenute.append(voce)
+                if voce["kind"] == "event":
+                    groups[grouping] = voce
+        out["pertinenti"] = len(scelte)
         # diversità: non più di due fatti della stessa categoria — il punteggio decide quali
         # due (prima i più freschi e più sostanziosi), e chi resta fuori si conta a parte
         pubblicabili: list[dict[str, Any]] = []
         per_categoria: dict[str, int] = {}
         for v in tenute:
             if per_categoria.get(v["topic"], 0) >= self.NEWS_CATEGORY_LIMIT:
-                out["oltre_categoria"] += 1
+                out["oltre_categoria"] += 1 + len(v["related"])
                 continue
             per_categoria[v["topic"]] = per_categoria.get(v["topic"], 0) + 1
             pubblicabili.append(v)
-        out["oltre_capienza"] = max(0, len(pubblicabili) - limit - self.NEWS_RESERVE_LIMIT)
+        out["oltre_capienza"] = sum(1 + len(v["related"]) for v in pubblicabili[limit + self.NEWS_RESERVE_LIMIT:])
         out["oltre"] = out["oltre_categoria"] + out["oltre_capienza"]
         for v in pubblicabili[:limit + self.NEWS_RESERVE_LIMIT]:
             visti.add(v["_key"])
+            for related in v["related"]:
+                visti.add(related.pop("_key"))
+            out["correlate"] += len(v["related"])
         for v in pubblicabili[:limit]:
             v.pop("_key", None)
             out["notizie"].append(v)

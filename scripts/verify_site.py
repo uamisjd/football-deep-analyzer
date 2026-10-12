@@ -2618,7 +2618,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     fm19 = st.read("fotmob_standings")
     mi19 = st.read("match_info")
     from fda.site.analysis import MatchAnalysis as _MA
-    from fda.sources.news import JUNK_NEWS, is_italian_news, news_value
+    from fda.sources.news import is_italian_news
     ma19 = _MA(st)
     _lg19 = {lg.fotmob_id: lg.key for lg in _leagues19()}
     _ucl19 = {lg.key: lg.ucl_spots for lg in _leagues19()}
@@ -3208,6 +3208,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                      r"· (\d+) già raccontat[oi] da un'altra voce"),
                     ("senza fatto specifico", atteso["piatti"], r"· (\d+) senza un fatto specifico"),
                     ("fuori ambito", atteso["fuori_ambito"], r"· (\d+) fuori ambito prima squadra"),
+                    ("segnale assente", atteso["senza_segnale"], r"· (\d+) senza evento o analisi espliciti"),
+                    ("letture sul tema", atteso["correlate"], r"· (\d+) letture sul tema"),
                     ("oltre il limite", atteso["oltre"], r"· (\d+) oltre i limiti"),
                     ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):
                 checks += 1
@@ -3221,16 +3223,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if (int(m.group(1)) if m else 0) != len(atteso["riserva"]):
                 fails.append(f"{pg.name}: «in riserva» di {team_name[:20]} non corrisponde "
                              f"ai dati ({len(atteso['riserva'])})")
-            stampati = re.findall(r'<a href="(https?://[^"]+)" rel="noopener noreferrer nofollow">'
-                                  r'(.*?)</a>', blocco.split("In riserva", 1)[0])
+            from bs4 import BeautifulSoup
+
+            parsed20 = BeautifulSoup(blocco, "html.parser")
+            primary20 = parsed20.select("ul.news-list > li")
+            stampati = [(str(li.find("a").get("href")), li.find("a").get_text(strip=True))
+                        for li in primary20 if li.find("a")]
             attesi = [(str(n["url"]), str(n["title"])) for n in atteso["notizie"]]
             checks += 1
             if [(u, html_unescape(t)) for u, t in stampati] != attesi:
                 fails.append(f"{pg.name}: voci della card di {team_name[:20]} diverse da "
                              f"quelle calcolate ({len(stampati)} stampate, {len(attesi)} attese)")
                 continue
-            etichette = [html_unescape(x) for x in
-                         re.findall(r'<span class="topic">(.*?)</span>', blocco.split("In riserva", 1)[0])]
+            etichette = [li.select_one(".topic").get_text(strip=True) for li in primary20
+                          if li.select_one(".topic") is not None]
             attese_et = [str(n["topic_label"]) for n in atteso["notizie"]]
             checks += 1
             if etichette != attese_et:
@@ -3242,8 +3248,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: più di {atteso['categoria_limite']} voci della stessa "
                              f"categoria per {team_name[:20]}")
             # «in riserva»: le voci dichiarate devono essere quelle calcolate
-            ris = re.findall(r'In riserva, fuori dai tre per regola: <a href="([^"]+)"',
-                             blocco)
+            ris = [str(div.find("a").get("href")) for div in parsed20.select(".news-reserve")
+                   if div.find("a") is not None]
+            related20 = [str(li.find("a").get("href")) for li in parsed20.select("details.news-related li")
+                         if li.find("a") is not None]
+            expected_related20 = [r["url"] for n in atteso["notizie"] + atteso["riserva"] for r in n["related"]]
+            if related20 != expected_related20:
+                fails.append(f"{pg.name}: letture sul tema di {team_name[:20]} diverse dai dati")
             checks += 1
             if ris != [str(n["url"]) for n in atteso["riserva"]]:
                 fails.append(f"{pg.name}: riserva di {team_name[:20]} diversa dai dati "
@@ -3258,11 +3269,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             for _u, t in stampati:
                 titolo = html_unescape(t)
                 estratto = desc19.get(titolo, "")
-                if JUNK_NEWS.search(titolo):
-                    fails.append(f"{pg.name}: voce di servizio pubblicata in card "
-                                 f"(«{titolo[:60]}»)")
-                if news_value(titolo) is not None:
-                    fails.append(f"{pg.name}: voce senza sostanza pubblicata in card "
+                from fda.site.club_signals import club_signal
+
+                if club_signal(titolo) is None:
+                    fails.append(f"{pg.name}: voce senza segnale positivo nel perimetro "
                                  f"(«{titolo[:60]}»)")
                 if not is_italian_news(titolo, estratto):
                     fails.append(f"{pg.name}: voce non in lingua italiana pubblicata in card "

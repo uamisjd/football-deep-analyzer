@@ -922,7 +922,7 @@ TOPIC_RULES: tuple[tuple[str, str, int, re.Pattern[str]], ...] = (
         r"etilometro|alcoltest|positivo (?:ad|al|a) (?:alcol|alcool|stupefacenti|drog)|"
         r"tossicolog\w*|"
         r"alcoltest|tasso alcolemico|stupefacenti|patente ritirata|arrestat\w*|arresto|denunciat\w*|querela|"
-        r"indagato|colluttazione|rissa|"
+        r"indagato|colluttazione|\briss[ae]\b|"
         r"detenido|imputado|juicio|condena|accidente de tr[aá]fico|"
         r"arrested|charged with|drink-?driving|court date", re.IGNORECASE)),
     ("tifo", "Tifoseria", 3, re.compile(

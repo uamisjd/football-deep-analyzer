@@ -27,6 +27,7 @@ COUNTERS = {
     "bassa_reputazione": r"· (\d+) fonte a bassa reputazione",
     "oltre": r"· (\d+) oltre (?:i limiti|il limite)",
     "fuori_ambito": r"· (\d+) fuori ambito prima squadra",
+    "senza_segnale": r"· (\d+) senza evento o analisi espliciti",
 }
 
 
@@ -114,7 +115,8 @@ def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
                 match = re.search(pattern, text)
                 values[key] = int(match.group(1)) if match else 0
             primary = node.select("ul.news-list > li")
-            reserve = [p for p in node.find_all("p") if p.get_text(strip=True).startswith("In riserva,")]
+            reserve = node.select(".news-reserve")
+            related = node.select("details.news-related li")
             eligible = news[news.team_id.eq(tid) & news._date.ge(lower) & news._date.le(min(kickoff, as_of))]
             checks += 3
             if values["esaminate"] != len(eligible):
@@ -122,11 +124,15 @@ def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
             if values["pubblicate"] != len(primary):
                 error(mid, "published", "numero pubblicato diverso dall'elenco visibile", team)
             rejected = sum(values[k] for k in values if k not in {"esaminate", "pubblicate"})
-            if values["esaminate"] != len(primary) + len(reserve) + rejected:
-                error(mid, "funnel", "imbuto non chiuso: pubblicate + riserva + escluse ≠ esaminate", team)
+            if values["esaminate"] != len(primary) + len(reserve) + len(related) + rejected:
+                error(mid, "funnel", "imbuto non chiuso: principali + riserva + letture sul tema + escluse ≠ esaminate", team)
             counts["examined"] += values["esaminate"]
             counts["published"] += len(primary)
             counts["reserve"] += len(reserve)
+            counts["related"] += len(related)
+            declared_related = re.search(r"· (\d+) letture sul tema", text)
+            if (int(declared_related.group(1)) if declared_related else 0) != len(related):
+                error(mid, "related", "conteggio delle letture sul tema diverso dall'elenco", team)
             counts["empty_sides"] += not (primary or reserve)
             checks += 1
             if len(primary) > 3 or len(reserve) > 2:
@@ -134,13 +140,20 @@ def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
             topics = [v.get_text(strip=True) for item in primary for v in item.select(".topic")]
             if topics and max(Counter(topics).values()) > 2:
                 error(mid, "caps", "superato il limite di due titoli per categoria", team)
-            for item in primary + reserve:
+            for item in primary + reserve + related:
                 link, timestamp, source = item.find("a"), item.find("time"), item.select_one(".news-source")
                 checks += 1
                 if link is None or timestamp is None or source is None:
                     error(mid, "provenance", "titolo, fonte, data o URL mancanti", team)
                     continue
                 title, url = link.get_text(strip=True), str(link.get("href", ""))
+                kind = item.get("data-news-kind")
+                label = item.select_one(".news-kind")
+                expected_kind = {"event": "Evento segnalato", "analysis": "Analisi / dichiarazione"}.get(kind)
+                checks += 1
+                if expected_kind is None or label is None or label.get_text(strip=True) != expected_kind:
+                    error(mid, "kind", "evento segnalato e analisi/dichiarazione non distinguibili", team)
+                counts[kind or "kind_missing"] += 1
                 stamp = pd.to_datetime(timestamp.get("datetime"), utc=True, errors="coerce")
                 checks += 2
                 if pd.isna(stamp) or not lower <= stamp <= min(kickoff, as_of):

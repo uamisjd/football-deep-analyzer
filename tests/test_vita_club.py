@@ -14,7 +14,7 @@ from fda.store import Store
 NOW = pd.Timestamp("2026-10-12T12:00:00Z")
 KO = NOW + pd.Timedelta(days=2)
 BUCKETS = ("pubblicate", "scartate", "annunci", "piatti", "altre", "doppioni", "lingua",
-           "bassa_reputazione", "oltre", "fuori_ambito")
+           "bassa_reputazione", "oltre", "fuori_ambito", "senza_segnale", "correlate")
 
 
 def seed(tmp_path, rows):
@@ -113,9 +113,11 @@ def many_candidates(tmp_path, monkeypatch):
              "published_at": NOW - pd.Timedelta(hours=i + 1)} for i in range(8)]
     st, ma = seed(tmp_path, rows)
     monkeypatch.setattr(module, "is_italian_news", lambda *a: True)
-    monkeypatch.setattr(module, "news_value", lambda *a: None)
+    from fda.site.club_signals import ClubSignal
+
     topics = ["societa", "allenatore", "tifo", "stadio"] * 2
-    monkeypatch.setattr(module, "classify_news", lambda title, *a: (topics[int(title.split()[-1])], "test"))
+    monkeypatch.setattr(module, "club_signal", lambda title: ClubSignal(
+        "event", topics[int(title.split()[-1])], "Controllo strutturale", title, title))
     return st, ma
 
 

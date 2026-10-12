@@ -335,8 +335,11 @@ def test_bollettino_un_soggetto_per_categoria(tmp_path):
          "source": "S3", "description": ""},
     ])
     nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
-    assert nw["pertinenti"] == 2 and nw["doppioni"] == 1 and nw["scartate"] == 0
+    # Stessa persona non dimostra lo stesso evento: club e lega possono sanzionare
+    # separatamente. La seconda lettura resta consultabile, non viene cancellata.
+    assert nw["pertinenti"] == 3 and nw["correlate"] == 1 and nw["doppioni"] == 0
     assert "Calhanoglu" in nw["notizie"][0]["title"]
+    assert nw["notizie"][0]["related"]
     st.close()
 
 
@@ -388,7 +391,8 @@ def test_bollettino_rilevanza_per_questa_partita(tmp_path):
     titoli = [n["title"] for n in nw["notizie"]]
     # avversario citato (+5) contro altro club citato (−4): vince il primo
     assert titoli[0].startswith("Inter-Lazio")
-    punteggi = {n["title"]: n["punteggio"] for n in nw["notizie"] + nw["riserva"]}
+    esposte = nw["notizie"] + nw["riserva"]
+    punteggi = {n["title"]: n["punteggio"] for n in esposte + [r for n in esposte for r in n["related"]]}
     assert punteggi["Inter-Lazio, ricorso respinto: la multa resta"] > \
         punteggi["Inter, il Milan: ricorso sul tetto ingaggi"]
     st.close()
@@ -414,7 +418,8 @@ def test_bollettino_perche_conta_collega_la_notizia_ai_nostri_dati(tmp_path):
     an = MatchAnalysis(st)
     nw = an.team_news(2, "Inter", KO("2026-09-15 12:00"), squad=an.match_squad(4, 2),
                       coach="Coach Nuovo")
-    voce = next(n for n in nw["notizie"] if "Marco" in n["title"])
+    esposte = nw["notizie"] + nw["riserva"]
+    voce = next(n for n in esposte + [r for n in esposte for r in n["related"]] if "Marco" in n["title"])
     assert voce["why"].startswith("«Marco Ferrante» è nella lista indisponibili")
     coach_voce = next(n for n in nw["notizie"] if "Coach Nuovo" in n["title"])
     assert "allenatore" in coach_voce["why"]
