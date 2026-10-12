@@ -1,3 +1,21 @@
+## 2026-10-12 — Anteprima navigabile richiesta dall'utente
+
+**Preferenza utente:** vedere anche l'anteprima delle modifiche, non soltanto la relazione.
+Avviato nel sandbox un server statico su **0.0.0.0:8000**, limitato alla cartella `site/`:
+la pagina iniziale apre **Frosinone–Sassuolo**, `partite/5749704.html#mercato` (16 e 8 arrivi
+riconosciuti nell'ultima distinta disponibile, con dettaglio espandibile). `index.html`
+resta raggiungibile per navigare il resto del sito. Server temporaneo in
+`data/cache/preview_server.py`, escluso da Git; URL dell'anteprima dipendente dal sandbox.
+
+**Verificato via HTTP con Host/Origin del proxy:** scheda, homepage, CSS e font CSS rispondono
+200; presenti gli arrivi riconosciuti e il dettaglio degli altri 12. Servita la build già
+verificata in `docs/95`: nessuna nuova build, modifica applicativa, modifica ai Parquet o
+pubblicazione su `main`. PR #108 resta in bozza. I gate applicativi restano quelli della
+voce precedente (796 test, 240.345 controlli).
+
+**Prossimo:** Vita del club, mostrando anche l'anteprima; poi Previsione ensemble,
+Precedenti e Verifica approfondita. Decisioni StatsBomb/clima ancora aperte.
+
 ## 2026-10-12 — Mercato: seconda sezione verificata, distinte e bilanci riconciliati (docs/95)
 
 **Seconda sezione del punto 4.** Su 63 schede / 126 colonne, gli arrivi nelle distinte
