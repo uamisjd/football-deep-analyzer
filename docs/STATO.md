@@ -1,4 +1,4 @@
-## 2026-10-12 — Panchina e posta in gioco: 7 celle corrette, gate in corso (docs/94)
+## 2026-10-12 — Panchina e posta in gioco: prima sezione verificata, 7 celle corrette (docs/94)
 
 **Prima sezione del punto 4, misura → correzione → prova.** Su 63 schede / 126 lati,
 l'audit vecchio dava zero scostamenti ma ricopiava due errori: **5 false salvezze** (pari
@@ -19,12 +19,16 @@ posizione del gruppo a pari punti/DR (35 scenari su 34 lati), non gli spareggi c
 Nessuna nuova fonte o dato inventato: precedenti coach ancora vuoti nel campione, storico
 FotMob assente. Dettagli in [docs/94](94_panchina_salvezza_precisione_2026-10-12.md).
 
-**Verificati:** 29 nuovi test e 102 mirati passati; Ruff pulito; confronto prima/dopo del
-frammento reale. **In corso:** prova negativa [19], suite completa, `fda build`, `verify_site`,
-audit completo, parità e resa a 375 px. Non dichiarati conclusi. PR #108 resta in bozza,
-nessun merge; `season_sim*` non modificati né da committare.
+**Gate finali verificati:** **772 test**, Ruff pulito; `fda build` **498/2.364/7.594**;
+`verify_site` **239.769 controlli, 0 problemi**; audit panchina **0 difetti**; parità **63 schede**
+pulite; resa a 375 px **28.657 misure, 0 problemi**. Prova negativa sul sito precedente:
+**14 segnalazioni sulle 7 celle**, exit 1; sito nuovo exit 0. Confronto sulla build completa:
+solo le 7 celle attese cambiano, le **63 tabelle condizionate restano identiche**.
+CI `9c038ae` verde (`38283708700`, `38283703373`). Nessun Parquet modificato, compresi
+`season_sim*`; PR #108 ancora in bozza, nessun merge. **Prima delle sei sezioni verificata**,
+non le altre cinque. Correzioni sul branch, non ancora in `main`.
 
-**Prossimo:** chiudere i gate, poi **Mercato**; dopo: Vita del club, Previsione ensemble,
+**Prossimo:** **Mercato**; dopo: Vita del club, Previsione ensemble,
 Precedenti, Verifica approfondita. StatsBomb e scelta sul clima restano decisioni aperte.
 
 ## 2026-10-12 — `dc_xg` misurato: criterio non superato (docs/92–93)

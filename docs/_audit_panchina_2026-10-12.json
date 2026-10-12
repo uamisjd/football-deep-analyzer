@@ -111,5 +111,46 @@
   "audit_exit_after_with_corrupted_ppg": 1,
   "new_tests": 29,
   "targeted_tests_passed": 102,
-  "full_gates": "pending"
+  "full_gates": {
+    "tests_passed": 772,
+    "ruff": "passed",
+    "build": {
+      "matches": 498,
+      "fixtures": 2364,
+      "players": 7594
+    },
+    "verify_site": {
+      "checks": 239769,
+      "problems": 0
+    },
+    "panchina_defects": 0,
+    "parity_pages": 63,
+    "mobile_checks": 28657,
+    "mobile_problems": 0,
+    "production_parquets_unchanged": true
+  },
+  "full_render_comparison": {
+    "Allenatore_identiche": 126,
+    "Allenatore_modificate": 0,
+    "Posta in gioco_identiche": 119,
+    "Posta in gioco_modificate": 7,
+    "Età media titolari_identiche": 126,
+    "Età media titolari_modificate": 0
+  },
+  "conditional_tables": {
+    "presenti": 63,
+    "uguali": 63,
+    "presenza_uguale": 63
+  },
+  "negative_verify_site": {
+    "exit": 1,
+    "semantic_findings": 7,
+    "format_findings": 7,
+    "affected_cells": 7
+  },
+  "ci_code": "9c038ae",
+  "ci_success_runs": [
+    38283708700,
+    38283703373
+  ]
 }

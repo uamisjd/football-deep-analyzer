@@ -113,9 +113,11 @@ Rigenerato il solo frammento Jinja sulle stesse 63 schede (copie in cache, non `
 | Posta in gioco | **119** | **7** |
 | Età media titolari | **126** | 0 |
 
-Le sette celle cambiate sono esattamente quelle delle due tabelle sopra. I chiarimenti
-sono nelle note e nei tooltip; nessun nuovo segnale di clima, nessuna modifica a previsioni,
-probabilità o dati. L'intervento non elimina numeri utili per sostituirli con supposizioni.
+Le sette celle cambiate sono esattamente quelle delle due tabelle sopra. Il confronto è
+stato ripetuto dopo la **build completa**, con lo stesso esito; anche le **63 tabelle di
+probabilità condizionate** restano identiche. I chiarimenti sono nelle note e nei tooltip;
+nessun nuovo segnale di clima, nessuna modifica a previsioni, probabilità o dati.
+Riepilogo macchina: [`_audit_panchina_2026-10-12.json`](_audit_panchina_2026-10-12.json).
 
 **Test:** 29 nuovi casi su parità di punti, soglia diretta/spareggio per le sette leghe,
 classifica non monotona, MC con N diverso o mancante, limite SE, testo delle cautele e
@@ -124,12 +126,25 @@ Con i test panchina/notizie preesistenti: **102 passati**.
 
 ## 6. Gate e stato
 
-**In corso:** suite completa, Ruff, prova negativa di [19] sul sito precedente, build
-completa, `verify_site`, audit su tutto il sito, parità e resa a 375 px. Non dichiarati
-conclusi prima dell'esecuzione. PR #108 sempre in bozza, nessun merge.
+**Tutti eseguiti dopo l'ultima modifica al codice:**
+
+- **`pytest`: 772 passati**; `ruff check .` pulito.
+- **Prova negativa di `verify_site` sull'intero sito precedente:** exit 1, **14 segnalazioni
+  sulle stesse 7 celle** (7 semantiche + 7 del confronto testuale). Non sono 14 difetti distinti.
+- **`fda build`: 498 schede / 2.364 fixture / 7.594 giocatori**.
+- **`verify_site`: 239.769 controlli, 0 problemi**; 54 oracoli, 31 I / 19 M / 4 S.
+- **`audit_panchina`: 0 difetti** sull'intero sito rigenerato.
+- **Parità: 63 schede, nessuna differenza**; resa a 375 px: **28.657 misure, 0 problemi**.
+- CI del codice **`9c038ae`** verde: run
+  [38283708700](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38283708700) e
+  [38283703373](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38283703373).
+- Nessun Parquet modificato, inclusi `season_sim.parquet` e `season_sim_cond.parquet`.
+
+**Prima sezione verificata.** PR #108 sempre in bozza, nessun merge: correzioni sul branch,
+non ancora pubblicate su `main`. I limiti dichiarati non diventano accuratezza garantita.
 
 ## Prossimo passo
 
-Chiudere i gate; poi passare a **Mercato**, seconda delle sei sezioni. Restano dopo Mercato:
+Passare a **Mercato**, seconda delle sei sezioni. Restano dopo Mercato:
 Vita del club, Previsione ensemble, Precedenti, Verifica approfondita. StatsBomb e decisione
 sul clima restano aperti; nessuna decisione presa al posto dell'utente.
