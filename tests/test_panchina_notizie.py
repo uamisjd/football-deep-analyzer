@@ -335,7 +335,7 @@ def test_bollettino_un_soggetto_per_categoria(tmp_path):
          "source": "S3", "description": ""},
     ])
     nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
-    assert nw["pertinenti"] == 2 and nw["scartate"] == 1
+    assert nw["pertinenti"] == 2 and nw["doppioni"] == 1 and nw["scartate"] == 0
     assert "Calhanoglu" in nw["notizie"][0]["title"]
     st.close()
 
@@ -1257,8 +1257,8 @@ def test_riga_unica_quando_nessuna_squadra_ha_titoli_pubblicabili():
         _bollettino(esaminate=7, scartate=6, lingua=1),
         "Roma", "Inter")
     assert quieta is not None
-    assert quieta["riga"].startswith("Nessun titolo pubblicabile su Roma e Inter negli ultimi 7 giorni")
-    assert "27 titoli esaminati e scartati con criterio" in quieta["riga"]
+    assert quieta["riga"].startswith("Nessun titolo selezionato su Roma e Inter nella finestra pre-partita di 7 giorni")
+    assert "27 voci esaminate, escluse dai filtri" in quieta["riga"]
     assert "18 servizio o cronaca" in quieta["riga"]      # 12 + 6
     assert "5 annunci o logistica" in quieta["riga"]
     assert "1 in un'altra lingua" in quieta["riga"]
@@ -1277,7 +1277,7 @@ def test_riga_unica_non_scatta_se_una_squadra_ha_qualcosa():
 def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
     """Nessun titolo in finestra: la riga dice anche quanti ne sono stati guardati oltre."""
     quieta = news_quiet_line(_bollettino(vecchie=2), _bollettino(vecchie=1), "Roma", "Inter")
-    assert "Nessun titolo in lingua italiana raccolto su Roma e Inter negli ultimi 7 giorni" \
+    assert "Nessuna voce raccolta su Roma e Inter nella finestra pre-partita di 7 giorni" \
         in quieta["riga"]
     assert "3 titoli più vecchi oltre la finestra" in quieta["riga"]
 
@@ -1285,7 +1285,7 @@ def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
     assert "1 titolo più vecchio oltre la finestra" in solo_uno["riga"]
 
     niente = news_quiet_line(_bollettino(), _bollettino(), "Roma", "Inter")
-    assert niente["riga"].endswith("negli ultimi 7 giorni.")
+    assert niente["riga"].endswith("nella finestra pre-partita di 7 giorni.")
 
 
 # ---- card «Fattori»: i due fattori aggiunti il 2026-10-08 (docs/58 §3-§4) ----------------------

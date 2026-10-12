@@ -837,12 +837,12 @@ def test_ogni_controllo_dichiara_il_suo_oracolo():
         assert len(nota) >= 15, f"[{etichetta}]: la nota deve dire da dove viene il valore atteso"
 
     conta = _Counter(categoria for categoria, _ in mod.ORACOLI.values())
-    assert conta["S"] <= 4, ("gli specchi possono solo diminuire: per aggiungerne uno serve una "
-                             "ragione scritta in docs/79 e aggiornare il ratchet")
-    assert conta["M"] <= 19, ("il 19º misto è [48], le percentuali intere di Accuratezza — cifre "
-                              "che nessun oracolo copriva (docs/78 §15): da qui in poi vale il "
-                              "limite di prima (docs/79)")
-    assert conta["I"] >= 29, ("gli oracoli indipendenti possono solo crescere (docs/79): "
+    # Docs/96: [20] passa da S a M, non nasce un nuovo controllo debole. Il totale
+    # non indipendente non aumenta; il tetto agli specchi si restringe da 4 a 3.
+    assert conta["S"] <= 3, "gli specchi non possono risalire dopo la revisione di Vita del club"
+    assert conta["M"] <= 20, "il 20º misto è [20], promosso da specchio (docs/96)"
+    assert conta["S"] + conta["M"] <= 23, "non retrocedere un oracolo indipendente"
+    assert conta["I"] >= 31, ("gli oracoli indipendenti possono solo crescere (docs/79): "
                               "[1b] è la ripartizione DC/Elo, la coppia affiancata che deve "
                               "chiudere 100")
 

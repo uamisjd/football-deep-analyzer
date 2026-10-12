@@ -731,13 +731,13 @@ def test_vita_del_club_in_una_riga_quando_non_c_e_nulla(tmp_path):
     SiteBuilder(store=st, out_dir=out).build()
     html = (out / "partite/5749669.html").read_text(encoding="utf-8")
 
-    assert "Nessun titolo pubblicabile su Udinese e Lazio negli ultimi 7 giorni" in html
-    assert "3 titoli esaminati e scartati con criterio" in html
+    assert "Nessun titolo selezionato su Udinese e Lazio nella finestra pre-partita di 7 giorni" in html
+    assert "3 voci esaminate, escluse dai filtri" in html
     # la tendina c'è, e l'imbuto per squadra (i numeri del verificatore [20]) è dentro di lei
     inizio = html.find('id="notizie"')
     assert inizio != -1 and '<details class="news-more">' in html[inizio:]
     dentro = html[html.find('<details class="news-more">', inizio):]
-    assert "Niente che possa spostare qualcosa" in dentro
+    assert "Nessun titolo selezionato per questa squadra" in dentro
     assert "Fonte: Google News RSS per squadra" in dentro
     # sopra la tendina resta la riga (più gli eventuali «Da sapere»): l'imbuto per squadra no
     visibile = re.sub(r"<[^>]+>", " ", html[inizio:html.find('<details class="news-more">', inizio)])
@@ -745,8 +745,8 @@ def test_vita_del_club_in_una_riga_quando_non_c_e_nulla(tmp_path):
     assert '<p style="margin:12px 0 6px"><b>' not in visibile
     assert "Niente che possa spostare qualcosa" not in visibile
     assert len(visibile) < 900, f"la card visibile è ancora lunga: {len(visibile)} caratteri"
-    assert visibile.startswith('id="notizie"> Vita del club Nessun titolo pubblicabile su '
-                               "Udinese e Lazio")
+    assert "Finestra pre-partita:" in visibile
+    assert "Nessun titolo selezionato su Udinese e Lazio" in visibile
     st.close()
 
 

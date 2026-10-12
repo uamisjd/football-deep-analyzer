@@ -799,7 +799,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "19": ("M", ("rango/salvezza e precisione MC controllati semanticamente; classifica e "
                  "posizione virtuale ricalcolate; percentuali dal Parquet con la formattazione "
                  "del generatore, confrontata con Proiezioni")),
-    "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
+    "20": ("M", "selezione ricalcolata dal generatore; periodo, imbuto e tuple fonte controllati indipendentemente"),
     "21": ("I", ("stato della squadra (ex «Clima del club»): strisce di campionato, xPTS "
                  "(Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, "
                  "infermeria dai Parquet")),
@@ -3188,22 +3188,27 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: intestazione card di squadra sconosciuta ({team_name[:30]})")
                 continue
             co = ma19.coach(tid, kickoff) or {}
+            stamp20 = re.search(r'data-as-of="([^"]+)"', card)
+            as_of20 = pd.to_datetime(html_unescape(stamp20.group(1)), utc=True) if stamp20 else None
+            meta20 = mi19[mi19.match_id == mid] if not mi19.empty else mi19
+            tipo20 = meta20.iloc[0].get("lineup_type") if not meta20.empty else None
             atteso = ma19.team_news(tid, team_name, kickoff,
                                     squad=ma19.match_squad(mid, tid), seen=visti20,
-                                    opponent=opp, coach=co.get("name"))
+                                    opponent=opp, coach=co.get("name"), now=as_of20, lineup_type=tipo20)
             head = blocco.split("<ul", 1)[0]
             # ogni numero stampato nell'intestazione deve essere quello calcolato
             for etichetta, valore, schema in (
                     ("titoli esaminati", atteso["esaminate"],
-                     r"· (\d+) titol[oi] (?:esaminato|esaminati)"),
+                     r"· (\d+) (?:voce esaminata|voci esaminate)"),
                     ("pubblicati", atteso["pubblicate"], r"· (\d+) pubblicat[oi]"),
                     ("annunci o logistica", atteso["annunci"], r"· (\d+) annunc"),
                     ("servizio o cronaca", atteso["scartate"], r"· (\d+) servizio o cronaca"),
                     ("altra squadra", atteso["altre"], r"· (\d+) su un'altra squadra"),
                     ("già raccontato da un'altra voce", atteso["doppioni"],
                      r"· (\d+) già raccontat[oi] da un'altra voce"),
-                    ("non spostano nulla", atteso["piatti"], r"· (\d+) non (?:sposta|spostano) nulla"),
-                    ("oltre il limite", atteso["oltre"], r"· (\d+) oltre il limite"),
+                    ("senza fatto specifico", atteso["piatti"], r"· (\d+) senza un fatto specifico"),
+                    ("fuori ambito", atteso["fuori_ambito"], r"· (\d+) fuori ambito prima squadra"),
+                    ("oltre il limite", atteso["oltre"], r"· (\d+) oltre i limiti"),
                     ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):
                 checks += 1
                 m = re.search(schema, head)
@@ -3264,14 +3269,21 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                  f"(«{titolo[:60]}»)")
             if not atteso["notizie"] and atteso["esaminate"]:
                 checks += 1
-                if "Niente che possa spostare qualcosa" not in testo_card:
+                if "Nessun titolo selezionato" not in testo_card:
                     fails.append(f"{pg.name}: card vuota di {team_name[:20]} senza riga di "
                                  f"trasparenza")
             titoli_pagina.extend(t for _u, t in stampati)
         checks += 1
         if len(titoli_pagina) != len(set(titoli_pagina)):
             fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
-    print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
+    from fda.site.club_news_checks import audit_club_life
+
+    independent_news = audit_club_life(site, st.base_dir)
+    checks += independent_news["checks"]
+    fails.extend(f"{e['match_id']}.html: Vita del club ({e['team']}) {e['message']}"
+                 for e in independent_news["errors"])
+    print(f"[20] card «Vita del club» riconciliate: {n_news} pagine; "
+          f"{independent_news['checks']} controlli indipendenti su periodo/conti/fonte")
 
     # 21) stato della squadra (docs/21 P2-6, «Clima del club» fino all'11/10/2026): **oracolo
     # indipendente** dal 2026-10-11 (`docs/81` §5). Il nome è cambiato con `docs/82` §5 — il

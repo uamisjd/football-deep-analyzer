@@ -1,3 +1,33 @@
+## 2026-10-12 — Vita del club: misura e correzioni, gate completi in corso (docs/96)
+
+**Terza sezione del punto 4.** Sandbox ripristinato: confrontati 33 file con il ramo remoto,
+zero differenze; riallineamento Git mixed senza toccare il lavoro. Venv ricreato, baseline
+63 schede rigenerata dal codice `1d85ae4`. Sito/server temporanei da ricreare, dati CI invariati.
+
+**Misura su 63 schede / 126 lati:** 1.522 voci esaminate, prima 47 pubblicate + 9 riserve.
+Invertire le righe cambiava 5 colonne; due imbuti perdevano una voce ciascuno. Ora ordine
+stabile delle versioni ammissibili, insieme condiviso limitato a ciò che viene esposto,
+contatori di doppioni/categoria/capienza distinti: **0 differenze d'ordine, 0 imbuti aperti**.
+Veti circoscritti per titoli di servizio, convocati, conferenze, compleanni, Academy e frasi
+senza fatto; parole intere con elisioni italiane e club d'apertura riconosciuto. Regole e pesi
+Clima invariati (cambiano solo eventuali marcatori di presenza nella rassegna).
+
+**Dopo, sullo stesso campione:** 32 pubblicate + 3 riserve, 23 uscite / 2 entrate; non è una
+metrica di qualità. Date assolute e fase della finestra dichiarate (58 aperte, 5 terminate).
+Non si promette assenza di fatti importanti quando la selezione è vuota. Nessuna data futura
+rispetto al match o al build; tipo distinta esplicito in «Perché conta». Nessun modello o Parquet
+modificato. I filtri sono euristiche, non una verifica giornalistica o di impatto predittivo.
+
+**Verificati:** 54 nuovi test; **153 mirati** passati, Ruff pulito; audit sul frammento
+**987 controlli / 0 difetti**. Oracolo senza `team_news`: periodo, conti, tuple fonte. [20]
+diventa M da S; tetto S 4→3, S+M≤23 e I≥31. **In corso:** suite completa, build,
+verify_site, audit Vita/Mercato/Panchina, parità e resa 375 px. PR #108 in bozza, nessun merge.
+Relazione [docs/96](96_vita_club_finestra_imbuto_2026-10-12.md).
+
+**Anteprima da aggiornare** a fine gate su Torino–Udinese, `partite/5749699.html#notizie`.
+**Prossimo:** Previsione ensemble, poi Precedenti e Verifica approfondita. Scelte StatsBomb
+ e clima ancora all'utente; non avviato sentiment né una nuova fonte.
+
 ## 2026-10-12 — Anteprima navigabile richiesta dall'utente
 
 **Preferenza utente:** vedere anche l'anteprima delle modifiche, non soltanto la relazione.
