@@ -1,26 +1,30 @@
-## 2026-10-12 — `dc_xg`: protocollo fissato prima della misura (docs/92)
+## 2026-10-12 — `dc_xg` misurato: criterio non superato (docs/92–93)
 
-**In corso — nessun risultato ancora.** Su richiesta «procedi», il giro riguarda il punto 3.
-Protocollo in [docs/92](92_protocollo_dc_xg_2026-10-12.md), salvato e pushato prima dei fit:
-un solo candidato, xG continui (la libreria li troncherebbe a interi), ξ 0,0018, shrink 8,
-peso 0,7, ρ dai gol dello stesso prefisso; finestre 90 giorni / min_train 800; calibrazione
-solo dalle finestre precedenti, nessuna lettura della calibrazione corrente. Input CI
-`514309d`, 11.179 gare prima del 12/10 13:10 UTC: Understat per cinque leghe, riferimento
-inalterato e marcato come fallback per NED1/POR1. Criterio invariato 200 gare / IC < 0 / 5 su 7;
-anche 200 gare realmente previste con xG. Il laboratorio pubblico e i Parquet restano separati.
+**Fatto, fuori campione temporale e offline:** protocollo [docs/92](92_protocollo_dc_xg_2026-10-12.md)
+pushato in `fbc811b` prima dei fit; codice `ad07059` con 69 test mirati; **un solo run** completo.
+11.179 gare CI in input, **5.058 appaiate**, 4.810 con xG / 248 fallback NED1-POR1 identici.
+**ΔRPS −0,000393, IC 95% [−0,001109; +0,000332], RPS più basso in 3/7 leghe: non passa**.
+Nessuna promozione, nessun tuning dopo l'esito. Riferimento riaddestrato sullo stesso campione,
+non previsioni storicamente pubblicate; risultato non generalizzabile a tutti i modelli xG.
 
-**Misura preliminare verificata:** 9.201 gare finite Understat, NED1 990 / POR1 988; nessun
-ID squadra mancante o duplicato lega/giorno/squadre. `penaltyblog` trasforma xG 1,25/1,75
-in 1/1: serve un fit continuo, non l'arrotondamento. Nessuna misura di prestazione finora.
-**Limiti:** la ricetta modifica la verosimiglianza delle λ; non dimostra da sola il valore
-causale degli xG. Gli xG storici non sono snapshot pre-partita. Nessuna promozione automatica.
-**Implementazione pronta, ancora nessun fit reale:** comando `fda lab-xg`, fit continuo,
-input bloccati per hash, traccia dei prefissi e calibrazione, errore al primo fit fallito,
-confronto obbligatoriamente appaiato e fallback identici. **69 test mirati passati**, Ruff
-pulito. Preparazione senza fit: **5.058 gare eleggibili** su 11.179; 4.810 con xG e 248 fallback.
-I risultati dettagliati andranno solo in `data/cache/lab_xg/`, non nei Parquet pubblici.
-**Prossimo:** un solo run completo preregistrato → gate completi → `docs/93`.
-Poi le sei sezioni. PR #108 resta in bozza e non unita; decisioni StatsBomb/clima aperte.
+- `fda lab-xg`: ricetta isolata, xG continui senza troncamento a interi, ρ dai gol dello stesso
+  prefisso, calibrazione solo su finestre precedenti, input bloccati per hash, errore al primo
+  fit fallito e confronto obbligatoriamente appaiato. Criterio sempre 200 gare / IC < 0 / 5 su 7.
+- Metriche e bootstrap ricalcolati con un oracolo separato dai gol originali: coincidono entro
+  10⁻¹². Cagliari–Lecce: usata la riga di gara per ID, mai i lati-squadra duplicati.
+- Riepilogo in [docs/93](93_esito_dc_xg_2026-10-12.md) e `docs/_lab_xg_2026-10-12.json`;
+  dettagli rigenerabili in `data/cache/lab_xg/` (non versionati). Nessun Parquet di produzione
+  modificato, compresi `season_sim*`; laboratorio pubblico ancora sul campione CI di 1.654.
+  Il prospettico γ resta separato: nessun nuovo run su dati reali.
+
+**Gate verificati:** **743 test** passati, Ruff pulito; CI del codice verde (run `38277105600`,
+`38277101042`, commit `ad07059`). **Build completa, verify_site, parità e resa ancora in corso**:
+non dichiarati conclusi. PR #108 sempre in bozza, nessun merge; tutti i commit sul ramo della sessione.
+
+**Prossimo:** chiudere i gate, poi punto 4: Panchina e posta in gioco → Mercato → Vita del club
+→ Previsione ensemble → Precedenti → Verifica approfondita. Metodo: misura → correzione →
+invariante/test. **Decisioni aperte:** campionati/stagioni StatsBomb; conferma card clima basata
+su regole e sentiment rinviato. Nessuna scelta fatta al posto dell'utente.
 
 ## 2026-10-12 — Merge PR #107 verificato: storico e avvio prospettico (docs/91)
 

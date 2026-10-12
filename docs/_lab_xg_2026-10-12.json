@@ -1,0 +1,356 @@
+{
+  "protocol": "dc_xg_v1",
+  "cutoff_utc": "2026-10-12T13:10:00+00:00",
+  "settings": {
+    "step_days": 90,
+    "min_train": 800,
+    "bootstrap_draws": 2000,
+    "bootstrap_seed": 11,
+    "rho_shift": 0.0,
+    "self_calibrate": true,
+    "strict_fits": true,
+    "min_eval": 200,
+    "min_leagues_better": 5,
+    "xi": 0.0018,
+    "shrink": 8.0,
+    "w_dc": 0.7
+  },
+  "input_games": 11179,
+  "input_by_season": [
+    {
+      "league_key": "ENG1",
+      "season": 2021,
+      "n": 380
+    },
+    {
+      "league_key": "ENG1",
+      "season": 2022,
+      "n": 380
+    },
+    {
+      "league_key": "ENG1",
+      "season": 2023,
+      "n": 380
+    },
+    {
+      "league_key": "ENG1",
+      "season": 2024,
+      "n": 380
+    },
+    {
+      "league_key": "ENG1",
+      "season": 2025,
+      "n": 380
+    },
+    {
+      "league_key": "ENG1",
+      "season": 2026,
+      "n": 59
+    },
+    {
+      "league_key": "ESP1",
+      "season": 2021,
+      "n": 380
+    },
+    {
+      "league_key": "ESP1",
+      "season": 2022,
+      "n": 380
+    },
+    {
+      "league_key": "ESP1",
+      "season": 2023,
+      "n": 380
+    },
+    {
+      "league_key": "ESP1",
+      "season": 2024,
+      "n": 380
+    },
+    {
+      "league_key": "ESP1",
+      "season": 2025,
+      "n": 380
+    },
+    {
+      "league_key": "ESP1",
+      "season": 2026,
+      "n": 77
+    },
+    {
+      "league_key": "FRA1",
+      "season": 2021,
+      "n": 380
+    },
+    {
+      "league_key": "FRA1",
+      "season": 2022,
+      "n": 380
+    },
+    {
+      "league_key": "FRA1",
+      "season": 2023,
+      "n": 306
+    },
+    {
+      "league_key": "FRA1",
+      "season": 2024,
+      "n": 306
+    },
+    {
+      "league_key": "FRA1",
+      "season": 2025,
+      "n": 306
+    },
+    {
+      "league_key": "FRA1",
+      "season": 2026,
+      "n": 54
+    },
+    {
+      "league_key": "GER1",
+      "season": 2021,
+      "n": 306
+    },
+    {
+      "league_key": "GER1",
+      "season": 2022,
+      "n": 306
+    },
+    {
+      "league_key": "GER1",
+      "season": 2023,
+      "n": 306
+    },
+    {
+      "league_key": "GER1",
+      "season": 2024,
+      "n": 306
+    },
+    {
+      "league_key": "GER1",
+      "season": 2025,
+      "n": 306
+    },
+    {
+      "league_key": "GER1",
+      "season": 2026,
+      "n": 45
+    },
+    {
+      "league_key": "ITA1",
+      "season": 2021,
+      "n": 380
+    },
+    {
+      "league_key": "ITA1",
+      "season": 2022,
+      "n": 380
+    },
+    {
+      "league_key": "ITA1",
+      "season": 2023,
+      "n": 380
+    },
+    {
+      "league_key": "ITA1",
+      "season": 2024,
+      "n": 380
+    },
+    {
+      "league_key": "ITA1",
+      "season": 2025,
+      "n": 380
+    },
+    {
+      "league_key": "ITA1",
+      "season": 2026,
+      "n": 58
+    },
+    {
+      "league_key": "NED1",
+      "season": 2023,
+      "n": 306
+    },
+    {
+      "league_key": "NED1",
+      "season": 2024,
+      "n": 306
+    },
+    {
+      "league_key": "NED1",
+      "season": 2025,
+      "n": 306
+    },
+    {
+      "league_key": "NED1",
+      "season": 2026,
+      "n": 72
+    },
+    {
+      "league_key": "POR1",
+      "season": 2023,
+      "n": 306
+    },
+    {
+      "league_key": "POR1",
+      "season": 2024,
+      "n": 306
+    },
+    {
+      "league_key": "POR1",
+      "season": 2025,
+      "n": 306
+    },
+    {
+      "league_key": "POR1",
+      "season": 2026,
+      "n": 70
+    }
+  ],
+  "n": 5058,
+  "n_xg": 4810,
+  "n_fallback": 248,
+  "excluded_burnin_or_unseen": 6121,
+  "eval_from_utc": "2023-09-16 12:00:00",
+  "eval_to_utc": "2026-10-11 19:30:00",
+  "summary": [
+    {
+      "candidate": "dc_xg",
+      "label": "DC+Elo con λ da xG continui (protocollo docs/92)",
+      "kind": "production",
+      "family": "xg_poisson_dc",
+      "n": 5058,
+      "grid_dichiarata": "",
+      "n_tentativi": 1,
+      "leagues": 7,
+      "rps": 0.199270314548841,
+      "logloss": 0.986909115722597,
+      "brier_1x2": 0.587833570488183,
+      "hit": 0.524713325425069,
+      "pareggio_previsto": 0.244421386298425,
+      "pareggio_osservato": 0.257413997627521,
+      "lambda_media": 2.870434088707742,
+      "bias_lambda": 0.035321395943804,
+      "scala_media": 0.988703378039402,
+      "brier_mercati": 0.203418615447376,
+      "over25_previsto": 0.542026107610862,
+      "over25_osservato": 0.539936733886912,
+      "delta_rps": -0.000392712954695,
+      "delta_rps_lo95": -0.001108771905501,
+      "delta_rps_hi95": 0.000331501048086,
+      "migliore_in": 0.454329774614472,
+      "peggiore_in": 0.496638987742191,
+      "riferimento": "dc_elo_prod"
+    },
+    {
+      "candidate": "dc_elo_prod",
+      "label": "DC+Elo in produzione (w 0,7, gol attesi invariati)",
+      "kind": "production",
+      "family": "dixon_coles",
+      "n": 5058,
+      "grid_dichiarata": "",
+      "n_tentativi": 1,
+      "leagues": 7,
+      "rps": 0.199663027503535,
+      "logloss": 0.987260417573834,
+      "brier_1x2": 0.588431992621837,
+      "hit": 0.522538552787663,
+      "pareggio_previsto": 0.247592772502833,
+      "pareggio_osservato": 0.257413997627521,
+      "lambda_media": 2.796414537627283,
+      "bias_lambda": -0.038698155136656,
+      "scala_media": 1.029423486815838,
+      "brier_mercati": 0.204344447273906,
+      "over25_previsto": 0.522930003974062,
+      "over25_osservato": 0.539936733886912,
+      "delta_rps": 0.0,
+      "delta_rps_lo95": 0.0,
+      "delta_rps_hi95": 0.0,
+      "migliore_in": 0.0,
+      "peggiore_in": 0.0,
+      "riferimento": "dc_elo_prod"
+    }
+  ],
+  "per_league": [
+    {
+      "league_key": "ENG1",
+      "n": 1030,
+      "xg_used": true,
+      "rps_ref": 0.20241121382429328,
+      "rps_xg": 0.20119895689968187,
+      "delta_rps": -0.0012122569246114095
+    },
+    {
+      "league_key": "ESP1",
+      "n": 1162,
+      "xg_used": true,
+      "rps_ref": 0.1941655239727298,
+      "rps_xg": 0.19421224988201005,
+      "delta_rps": 4.672590928030519e-05
+    },
+    {
+      "league_key": "FRA1",
+      "n": 831,
+      "xg_used": true,
+      "rps_ref": 0.20923531109610932,
+      "rps_xg": 0.20857137013297622,
+      "delta_rps": -0.0006639409631330771
+    },
+    {
+      "league_key": "GER1",
+      "n": 638,
+      "xg_used": true,
+      "rps_ref": 0.20194088457685344,
+      "rps_xg": 0.20134751882308635,
+      "delta_rps": -0.0005933657537671058
+    },
+    {
+      "league_key": "ITA1",
+      "n": 1149,
+      "xg_used": true,
+      "rps_ref": 0.19619911161075104,
+      "rps_xg": 0.19631946782675413,
+      "delta_rps": 0.00012035621600306415
+    },
+    {
+      "league_key": "NED1",
+      "n": 175,
+      "xg_used": false,
+      "rps_ref": 0.1950854210564489,
+      "rps_xg": 0.1950854210564489,
+      "delta_rps": 0.0
+    },
+    {
+      "league_key": "POR1",
+      "n": 73,
+      "xg_used": false,
+      "rps_ref": 0.1850157289180292,
+      "rps_xg": 0.1850157289180292,
+      "delta_rps": 0.0
+    }
+  ],
+  "leagues_better": 3,
+  "leagues_required": 7,
+  "passes": false,
+  "promoted": false,
+  "input_sha256": {
+    "understat_matches.parquet": "687d76830e96ff9dea6672764aa1e20e326ca679361114071ff03af798bb5047",
+    "history.parquet": "3927c7dfdfefdf1ff8d703524949659cfead26385871b1952522250811a4174c"
+  },
+  "versions": {
+    "numpy": "2.4.6",
+    "pandas": "3.0.6",
+    "scipy": "1.17.1",
+    "penaltyblog": "1.13.1",
+    "python": "3.11.2"
+  },
+  "code_sha256": {
+    "xg.py": "873f201c464458c34ef2506a1ac675cea6ee41b3cb6269607fa6adb98f25ea72",
+    "lab_xg.py": "ef914d7109e498b4e9adb52cf11239c8392ce9996d6f4112d6f8b2ed9b02ec65",
+    "lab.py": "a2dd7a93ef4b711e4689048735de5d4ed6a6fa3420b53b954a6e2971042a39dd",
+    "predict.py": "4db4f6baf0c9e299b53afc1a5514a70b28f7681adaa0e75ddc0c3d22b4a7a210",
+    "calibration.py": "09f7523a006139df30c4083fadcad584225fc8f903c225d0ec9c3f0dd2fbde01",
+    "dc_grid.py": "0c55c85d339d9dc3d91475b59011f9fae3a48b012972a8d2ea5fad5a56c6380c"
+  }
+}
