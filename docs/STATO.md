@@ -1,3 +1,22 @@
+## 2026-10-12 — `dc_xg`: protocollo fissato prima della misura (docs/92)
+
+**In corso — nessun risultato ancora.** Su richiesta «procedi», il giro riguarda il punto 3.
+Protocollo in [docs/92](92_protocollo_dc_xg_2026-10-12.md), salvato e pushato prima dei fit:
+un solo candidato, xG continui (la libreria li troncherebbe a interi), ξ 0,0018, shrink 8,
+peso 0,7, ρ dai gol dello stesso prefisso; finestre 90 giorni / min_train 800; calibrazione
+solo dalle finestre precedenti, nessuna lettura della calibrazione corrente. Input CI
+`514309d`, 11.179 gare prima del 12/10 13:10 UTC: Understat per cinque leghe, riferimento
+inalterato e marcato come fallback per NED1/POR1. Criterio invariato 200 gare / IC < 0 / 5 su 7;
+anche 200 gare realmente previste con xG. Il laboratorio pubblico e i Parquet restano separati.
+
+**Misura preliminare verificata:** 9.201 gare finite Understat, NED1 990 / POR1 988; nessun
+ID squadra mancante o duplicato lega/giorno/squadre. `penaltyblog` trasforma xG 1,25/1,75
+in 1/1: serve un fit continuo, non l'arrotondamento. Nessuna misura di prestazione finora.
+**Limiti:** la ricetta modifica la verosimiglianza delle λ; non dimostra da sola il valore
+causale degli xG. Gli xG storici non sono snapshot pre-partita. Nessuna promozione automatica.
+**Prossimo:** implementazione/test → run preregistrato → gate completi → `docs/93`.
+Poi le sei sezioni. PR #108 resta in bozza e non unita; decisioni StatsBomb/clima aperte.
+
 ## 2026-10-12 — Merge PR #107 verificato: storico e avvio prospettico (docs/91)
 
 **Fatto e verificato sui dati CI:** PR #107 unita (`1bc3a71`), primo `daily` post-merge
