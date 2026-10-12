@@ -45,6 +45,18 @@
 </table></div>
 
 <div class="card" style="margin-top:14px">
+  <h2>Test prospettico: γ 1,12</h2>
+  <p>Il test misura su partite <b>non ancora giocate</b> al momento della previsione la stessa correzione che il laboratorio ha trovato migliore sul passato. Le λ pubblicate vengono registrate prima del calcio d'inizio; la variante le corregge con γ 1,12. Regola fissata in anticipo: promozione solo con almeno {{ prosp.min_n }} partite, IC interamente negativo e migliore in almeno {{ prosp.min_leagues }} campionati su 7.</p>
+  {% if prosp and prosp.n %}
+  <p><b>Partite valutate: {{ prosp.n|it_num }}</b> su {{ prosp.min_n }} necessarie.
+  {% if prosp.delta is not none %}Δ RPS medio {{ prosp.delta|dec(4, true) }}, IC 95% [{{ prosp.lo|dec(4, true) }}; {{ prosp.hi|dec(4, true) }}], migliore in {{ prosp.leagues_better }} campionati su {{ prosp.n_leagues }}.{% endif %}
+  {% if prosp.passes %}Il criterio è superato: la decisione di promozione resta a parte.{% else %}Il criterio non è ancora superato.{% endif %}</p>
+  {% else %}
+  <p class="mut">Nessuna partita ancora valutata: il test è iniziato con il run di previsione che lo ha introdotto (docs/89).</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:14px">
   <h2>Come leggere</h2>
   <ul style="padding-left:20px;margin:0">
     <li><b>Criterio di promozione:</b> IC appaiato interamente negativo e migliore in almeno 5 campionati su 7. Una variante che lo supera va comunque discussa e verificata su partite nuove prima di entrare in produzione.</li>

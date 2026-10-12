@@ -275,6 +275,9 @@ def predict_cmd(
             pred, dc, _ = predict_matches(hist, up, calibration=cal, xi=xi_lg)
             n = store.upsert("predictions", pred)
             total += n
+            # test prospettico γ 1,12 (docs/89): stesse λ pubblicate, registrate al momento della previsione
+            from .models import prospettico
+            prospettico.record(store, pred)
             console.print(f"{lg.name}: storico {len(hist)} partite → {n} previsioni "
                           f"(home adv {dc.model.get_params().get('home_advantage', 0):.3f}"
                           f" · ξ {xi_lg}"

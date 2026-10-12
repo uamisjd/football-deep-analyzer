@@ -1019,9 +1019,12 @@ class SiteBuilder:
 
     def build_laboratorio(self) -> None:
         """Pagina pubblica del laboratorio: verdetti dal Parquet, mai scritti a mano."""
+        from ..models import prospettico
         from .lab_page import lab_leaderboard
 
-        self._render("laboratorio.html", "laboratorio.html", lab=lab_leaderboard(self.store.read("model_lab")))
+        prosp = prospettico.evaluate(self.store, self.store.read("fixtures"))
+        self._render("laboratorio.html", "laboratorio.html", lab=lab_leaderboard(self.store.read("model_lab")),
+                     prosp=prosp)
 
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")

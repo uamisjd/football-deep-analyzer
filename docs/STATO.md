@@ -1,3 +1,14 @@
+## 2026-10-12 — Test prospettico γ 1,12, verifica StatsBomb, clima (docs/89)
+
+Decisioni dell'utente: (1) rivedere il clima; (2) StatsBomb su tutti i campionati, 4–5 stagioni precedenti; (3) procedere con le sezioni della scheda; (4) test prospettico γ 1,12.
+
+- **Test prospettico** (`src/fda/models/prospettico.py`, tabella `prospettico`, hook in `fda predict`, sezione in «Laboratorio»): registra produzione e γ 1,12 sulle λ pubblicate prima del calcio d'inizio; promozione solo con 200 partite, IC interamente negativo, 5/7 campionati. 5 test. Nessun risultato ancora.
+- **StatsBomb (2): non realizzabile come chiesto.** La Liga 2004/05–2020/21; altri campionati solo poche stagioni; Eredivisie e Primeira nessuna; stagioni recenti assenti. Proposta alternativa: backfill Understat 2021–2025 via CI (da decidere).
+- **Clima (1): revisione.** Notizie disponibili solo due settimane, testo vuoto, VADER inglese: sentiment non misurabile oggi. Card resta regola-based; archivio titoli già in accumulo.
+- **Sezioni scheda (3): da fare** nel prossimo giro.
+
+**Gate:** `pytest` 662 passati, `ruff` pulito, `fda build` completo, `verify_site` 0 problemi · 235.696 controlli. Nessuna richiesta a fonti esterne in questa tranche, salvo la verifica di StatsBomb.
+
 ## 2026-10-12 — Audit completo del sito e unità dei margini (docs/88)
 
 Audit misurato: nessun errore in console, nessuna richiesta fallita, nessun overflow, lingua e H1 a posto su 8 pagine. Trovato e corretto un difetto di chiarezza: «+48 punti sul secondo» ora dice «punti percentuali» (anche nel segnale DC/Elo). Controlli allineati in `verify_site`, `audit_match_sections`, `render_preview` e tre test.
