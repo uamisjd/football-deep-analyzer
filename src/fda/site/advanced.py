@@ -236,6 +236,7 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         prev = steps[-1]["top_disp"] if steps else None
         steps.append({"label": label, "note": note, "p_home": v[0], "p_draw": v[1], "p_away": v[2],
                       "top": _top_name(v), "top_disp": top_disp,
+                      "disp": [float(x) for x in disp],
                       "delta_pp": None if prev is None else round(top_disp - prev, 1)})
 
     dc = _vec("dc_p_")
@@ -293,6 +294,46 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         _append("Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)", note, pub)
     # un solo passo non è una scomposizione: la scheda non mostra un blocco vuoto
     return steps if len(steps) >= 2 else []
+
+
+def probability_summary(steps: list[dict[str, Any]], home_name: str, away_name: str) -> str:
+    """Una frase che dice come il modello è arrivato al risultato, con i numeri delle barre.
+
+    Risponde alla domanda del lettore («perché questa percentuale?») senza il gergo del grafico:
+    dice chi partiva favorito nel modello sui gol, di quanto lo spostano il rating e la calibrazione
+    (stessi valori stampati nelle barre, arrotondati a un decimale) e chi è favorito alla fine.
+    Se i passi sono meno di due, o l'esito di partenza non si ritrova alla fine, non dice nulla.
+    """
+    from .fmt import dec
+
+    if len(steps) < 2:
+        return ""
+    first, last = steps[0], steps[-1]
+    disp0, disp1 = first.get("disp"), last.get("disp")
+    if not disp0 or not disp1:
+        return ""
+    nome = {"1": home_name, "2": away_name, "X": "il pareggio"}
+    idx = {"1": 0, "X": 1, "2": 2}
+    fav0 = first["top"]
+    if fav0 not in idx:
+        return ""
+    i0 = idx[fav0]
+    p_start, p_end = float(disp0[i0]), float(disp1[i0])
+    delta = round(p_end - p_start, 1)
+    partenza = f"Il modello sui gol dava {nome[fav0]} favorito, al {dec(p_start, 1)}%."
+    if abs(delta) < 0.1:
+        movimento = " Il rating e la calibrazione non spostano questa percentuale."
+    else:
+        verbo = "sale" if delta > 0 else "scende"
+        # «1,0 punti» è plurale in italiano: un decimale vuole sempre il plurale
+        movimento = (f" Con il rating e la calibrazione la probabilità {verbo} di "
+                     f"{dec(abs(delta), 1)} punti, a {dec(p_end, 1)}%.")
+    finale = ""
+    fav1 = last["top"]
+    if fav1 != fav0 and fav1 in idx:
+        finale = (f" Alla fine l'esito più probabile è {nome[fav1]}, al "
+                  f"{dec(disp1[idx[fav1]], 1)}%.")
+    return partenza + movimento + finale
 
 
 def _top_name(v: tuple[float, float, float]) -> str:

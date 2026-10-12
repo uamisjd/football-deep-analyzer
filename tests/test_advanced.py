@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -451,3 +453,46 @@ def test_match_analysis_goals_view(tmp_path):
     assert ma.goals_view(ma.prediction(2)) is None      # previsione senza λ → nessun grafico
     assert ma.goals_view(None) is None
     st.close()
+
+
+def test_probability_summary_racconta_la_catena_con_i_numeri_delle_barre():
+    """La frase sotto il grafico usa i valori stampati nelle barre e il segno vero del movimento.
+
+    Caso reale della review: il modello sui gol dà la casa favorita, il rating e la calibrazione
+    riducono il divario. La frase deve dire «scende» con il Δ corretto, e nominare la squadra.
+    """
+    from fda.site.advanced import probability_summary
+    from fda.site.fmt import dec
+
+    base = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
+            "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
+            "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
+            "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
+            "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
+    steps = probability_steps({**base, "ensemble_mode": "tilt", "tilt": 1.0832})
+    frase = probability_summary(steps, "Parma", "Monza")
+    primo = steps[0]["disp"][0]          # la percentuale stampata nella prima barra
+    ultimo = steps[-1]["disp"][0]
+    assert f"Il modello sui gol dava Parma favorito, al {dec(primo, 1)}%." in frase
+    assert ("scende" if ultimo < primo else "sale") in frase
+    assert f"a {dec(ultimo, 1)}%" in frase
+    assert re.search(r"\d\.\d", frase) is None  # virgola decimale italiana, mai il punto
+    # senza passi sufficienti non si dice nulla
+    assert probability_summary(steps[:1], "A", "B") == ""
+    assert probability_summary([], "A", "B") == ""
+
+
+def test_probability_summary_se_il_favorito_cambia_lo_dice():
+    from fda.site.advanced import probability_summary
+
+    passi = [
+        {"top": "1", "disp": [40.0, 30.0, 30.0]},
+        {"top": "2", "disp": [35.0, 28.0, 37.0]},
+    ]
+    frase = probability_summary(passi, "Casa", "Ospite")
+    assert "dava Casa favorito, al 40,0%" in frase
+    assert "scende di 5,0 punti, a 35,0%" in frase
+    assert "Alla fine l'esito più probabile è Ospite, al 37,0%." in frase
+    fermo = probability_summary([{"top": "1", "disp": [40.0, 30.0, 30.0]},
+                                 {"top": "1", "disp": [40.0, 30.0, 30.0]}], "Casa", "Ospite")
+    assert "non spostano" in fermo and "Alla fine" not in fermo

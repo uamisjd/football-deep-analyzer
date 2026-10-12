@@ -43,6 +43,7 @@ from ..teams import canonical, soft_key
 from .advanced import (
     goals_view,
     probability_steps,
+    probability_summary,
     score_matrix,
     shot_quality,
     style_rows,
@@ -2957,6 +2958,18 @@ class MatchAnalysis:
                          "delta": delta, "impact": impact, "tone": tone,
                          "weight": float(weight), "help": help_})
 
+        def _calma(icon: str, label: str, home: str, away: str, delta: str, soglia: str,
+                   help_: str, near: bool) -> None:
+            """Fattore calcolato e **sotto soglia**: resta in tabella, grigio o ambra.
+
+            Prima finiva in una frase («Sotto soglia…»), e il lettore non sapeva se il fattore fosse
+            stato controllato o fosse mancante. Ora la riga dice «nei parametri» (grigia) o «vicino
+            alla soglia» (ambra), con i valori delle due squadre.
+            """
+            stato = "vicino alla soglia" if near else "nei parametri"
+            _riga(icon, label, home, away, delta, f"{stato} · {soglia}",
+                  "near" if near else "calm", 0.0, help_)
+
         # 0. Contesto di classifica e forma recente (era «EPV pre-match»: seconda previsione
         #    col termine di sede costante, declassata a riga di contesto — docs/56 §4)
         try:
@@ -3019,8 +3032,14 @@ class MatchAnalysis:
                       "Brier 0,612 → 0,591) e non cambia la previsione salvata "
                       "(scripts/audit_fattori.py).")
             else:
-                sotto.append(f"valore dei titolari {_f(ratio, 2)}× (soglia "
-                             f"{_f(self.FACTOR_MARKET_RATIO, 2).rstrip('0').rstrip(',')}×)")
+                near = max(ratio, 1 / ratio) >= self.FACTOR_NEAR_SHARE * self.FACTOR_MARKET_RATIO
+                _calma("💰", "Valore di mercato titolari", self.fee_it(home_val), self.fee_it(away_val),
+                       f"{_f(max(ratio, 1 / ratio), 2)}×",
+                       f"soglia {_f(self.FACTOR_MARKET_RATIO, 1)}×",
+                       "Valore di mercato dei titolari (FotMob), rapporto fra le due formazioni. "
+                       f"Soglia {_f(self.FACTOR_MARKET_RATIO, 2)}× (o 1/{_f(self.FACTOR_MARKET_RATIO, 2)}×). "
+                       "Sotto la soglia il valore non segnala squilibrio: la riga c'è per dire che il "
+                       "dato è stato controllato.", near)
         else:
             sotto.append("valore dei titolari non pubblicato dalla fonte")
 
@@ -3087,9 +3106,20 @@ class MatchAnalysis:
                   "che manca alla squadra di casa meno quella che manca alla trasferta.")
         else:
             if ab["home"] is not None and ab["away"] is not None:
-                sotto.append(f"indisponibili {int(ab['home'].get('n') or 0)} e "
-                             f"{int(ab['away'].get('n') or 0)} (soglia {self.FACTOR_ABSENCE_MIN} "
-                             "assenti o 1 titolare abituale)")
+                lh0 = float(ab["home"].get("contrib_lost_p90") or 0)
+                la0 = float(ab["away"].get("contrib_lost_p90") or 0)
+                near = any(int((ab[k] or {}).get("n") or 0) >= 1
+                           or float((ab[k] or {}).get("contrib_lost_p90") or 0)
+                           >= self.FACTOR_NEAR_SHARE * self.FACTOR_ABSENCE_LOST
+                           for k in ("home", "away"))
+                _calma("🏥", "Indisponibili", _cella_assenti(ab["home"], home_id),
+                       _cella_assenti(ab["away"], away_id),
+                       f"{_sgn(lh0 - la0)} xG+xA/90" if (lh0 or la0) else "—",
+                       f"soglia {self.FACTOR_ABSENCE_MIN} assenti o 1 titolare abituale",
+                       "Assenze pesate sui numeri di stagione (gol+assist e xG+xA per 90). Soglia: "
+                       f"{self.FACTOR_ABSENCE_MIN} assenti, oppure 1 titolare abituale, oppure "
+                       f"{_f(self.FACTOR_ABSENCE_LOST)} xG+xA/90 persi. Sotto soglia la riga dice "
+                       "quanti assenti ci sono e quanto pesano.", near)
             else:
                 sotto.append("indisponibili non pubblicati (distinta non disponibile)")
 
@@ -3115,7 +3145,7 @@ class MatchAnalysis:
             _riga("🛌", "Riposo corto",
                   it_plural(rh, "giorno") if rh is not None else "n.d.",
                   it_plural(ra, "giorno") if ra is not None else "n.d.",
-                  f"{_sgn(rh - ra, 0)} giorni" if rh is not None and ra is not None else "—",
+                  f"{_sgn(rh - ra, 0)} {'giorno' if abs(rh - ra) == 1 else 'giorni'}" if rh is not None and ra is not None else "—",
                   f"{nomi} " + ("hanno" if len(corti) == 2 else "ha") + " ≤4 giorni",
                   tone, 2.0 if min(x for x in (rh, ra) if x is not None) <= 2 else 1.5,
                   "Riposo dall'ultima gara (campionato e coppe): sotto i 5 giorni il rischio di "
@@ -3128,9 +3158,22 @@ class MatchAnalysis:
                   "(scripts/audit_fattori.py). Una sosta lunga uguale per le due squadre non è un "
                   "fattore: i giorni di entrambe sono nella card «Le due squadre».")
         else:
-            rtxt = (" e ".join(it_plural(x, "giorno") for x in (rh, ra)) if rh is not None and ra is not None
-                    else "non calcolabile")
-            sotto.append(f"riposo {rtxt} (soglia ≤{self.FACTOR_REST_SHORT})")
+            # riga solo se una squadra è vicina alla soglia (ambra). Riposo lungo o normale per
+            # entrambe: nella nota «sotto soglia», come da decisione documentata — la stessa sosta
+            # non è un fattore (dava verdetti opposti alle due squadre).
+            near = (rh is not None and ra is not None
+                    and min(rh, ra) <= self.FACTOR_REST_SHORT / self.FACTOR_NEAR_SHARE)
+            if near:
+                _calma("🛌", "Riposo corto", it_plural(rh, "giorno"), it_plural(ra, "giorno"),
+                       f"{_sgn(rh - ra, 0)} {'giorno' if abs(rh - ra) == 1 else 'giorni'}",
+                       f"soglia ≤{self.FACTOR_REST_SHORT} giorni",
+                       "Riposo dall'ultima gara (campionato e coppe). Sotto i 5 giorni il rischio "
+                       "muscolare sale (studio UEFA, RR 1,32). La riga compare quando una squadra "
+                       "è vicina alla soglia.", True)
+            else:
+                rtxt = (" e ".join(it_plural(x, "giorno") for x in (rh, ra)) if rh is not None and ra is not None
+                        else "non calcolabile")
+                sotto.append(f"riposo {rtxt} (soglia ≤{self.FACTOR_REST_SHORT})")
 
         # 4. Pressing (PPDA) — una riga, entrambe le colonne (il verso «ospite pressa di più»
         #    scatta quanto quello opposto: la vecchia soglia scritta a mano nel testo diceva
@@ -3165,9 +3208,17 @@ class MatchAnalysis:
                     # calcolabile ma vicino alla pari: si dice **anche questo**, altrimenti il
                     # fattore sparisce dalla scheda senza che il lettore possa distinguere
                     # «squadre simili» da «dato mancante» (19 schede su 66 il 7/10/2026).
-                    sotto.append(f"pressing {_f(ratio, 2)}× (soglia ≤"
-                                 f"{_f(self.FACTOR_PRESS_RATIO, 2)}× o ≥"
-                                 f"{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×)")
+                    near = (ratio <= self.FACTOR_PRESS_RATIO / self.FACTOR_NEAR_SHARE
+                            or ratio >= (1 / self.FACTOR_PRESS_RATIO) * self.FACTOR_NEAR_SHARE)
+                    _calma("🔥", "Pressing (PPDA)",
+                           f"{_f(hs['ppda'], 1)} ({it_plural(hs.get('played') or 0, 'gara')})",
+                           f"{_f(aws['ppda'], 1)} ({it_plural(aws.get('played') or 0, 'gara')})",
+                           f"{_f(ratio, 2)}×",
+                           f"soglia ≤{_f(self.FACTOR_PRESS_RATIO, 2)}× o ≥{_f(1 / self.FACTOR_PRESS_RATIO, 2)}×",
+                           "PPDA (passaggi concessi per azione difensiva): più basso = pressing più alto. "
+                           "Valori di stagione di entrambe le squadre (Understat, numero di gare in cella). "
+                           "Sotto soglia: pressing simile, nessuna squadra pressa nettamente più dell'altra.",
+                           near)
             else:
                 sotto.append("pressing non calcolabile")
         except Exception:
@@ -3361,6 +3412,10 @@ class MatchAnalysis:
     #: azzecca il favorito nel 49,3% dei casi (`scripts/audit_epv.py`) — quindi una direzione si
     #: dichiara solo oltre il rumore. Misurata sulle 66 schede: 11 «pari», 55 con una direzione.
     FACTOR_CONTEXT_PARITY: ClassVar[float] = 0.15
+    #: «vicino alla soglia»: il valore è entro il 20% della soglia (80% della distanza dal punto
+    #: neutro). Regola dichiarata nel ⓘ della riga, non un giudizio: il colore descrive la distanza
+    #: dalla soglia, non l'esito della partita.
+    FACTOR_NEAR_SHARE: ClassVar[float] = 0.8
     #: Ordine fisso delle righe, dichiarato in pagina: prima ciò che toglie produzione misurabile,
     #: poi i fattori con effetto misurato sull'archivio (dal più forte), per ultimo il contesto.
     #: Le misure che hanno fissato l'ordine sono in `docs/58` §6 (script `audit_fattori.py`).
@@ -7024,6 +7079,7 @@ class MatchAnalysis:
                              if status != "finished" else None)
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])
+        ctx["prob_summary"] = probability_summary(ctx["prob_steps"], f["home_name"], f["away_name"])
         # card «laboratorio» (docs/73): idee misurate e non usate, solo sulle partite ancora
         # da giocare — su una gara finita il «cosa cambierebbe» non ha più senso di essere
         # mostrato accanto al risultato.

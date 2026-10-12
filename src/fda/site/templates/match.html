@@ -98,7 +98,7 @@
       sola qui invece di ripetersi in una lista sotto la tabella.
       `docs/58` (2026-10-08) aggiunge due fattori misurati (rendimento per sede, disciplina e
       arbitro), il numero di gare nelle celle dei fattori di stagione e l'ordine fisso delle righe. -#}
-  <p class="small mut">Sei fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe hanno un ordine fisso e dichiarato: prima ciò che toglie produzione misurabile, poi i fattori con effetto misurato sul nostro archivio, per ultimo il contesto. Dove il fattore è una media di stagione la cella dice su quante gare è calcolata; per il rendimento per sede dà anche la media della stessa lega («lega»), così il numero si legge contro la sua base e non da solo.</p>
+  <p class="small mut">Sei fattori quantitativi con soglie dichiarate — {{ c.fattori_chiave.soglie_testo }} — più una riga di contesto (classifica e forma recente), dichiarata come tale. Le righe hanno un ordine fisso e dichiarato: prima ciò che toglie produzione misurabile, poi i fattori con effetto misurato sul nostro archivio, per ultimo il contesto. Ogni fattore calcolato ha una riga, anche quando è sotto soglia: in grigio «nei parametri» (controllato, in equilibrio), in ambra «vicino alla soglia» (entro il 20% dalla soglia), in verde o rosso il vantaggio di un lato (verde casa, rosso trasferta). Dove il fattore è una media di stagione la cella dice su quante gare è calcolata; per il rendimento per sede dà anche la media della stessa lega («lega»), così il numero si legge contro la sua base e non da solo.</p>
   <p class="small mut" style="margin:6px 0 0">Non sono un secondo pronostico e non cambiano la previsione salvata (Dixon-Coles + Elo): la spiegano con numeri già raccolti. I punti contro gli xPTS stanno in «Le due squadre», in un posto solo. Distanza della trasferta, età dei titolari e turnover per impegno ravvicinato sono stati misurati e <b>non</b> pubblicati, perché la misura non li sostiene: i punti dell'ospite non cambiano con i chilometri, la correlazione fra età e punti è 0,02, e le gare con un impegno entro 3 giorni sono 16 — poche e sbilanciate verso le squadre più forti.</p>
   <div class="tablewrap"><table>
     <tr><th scope="col">Fattore</th><th scope="col">{{ c.home_name }}</th><th scope="col">{{ c.away_name }}</th><th scope="col">Delta</th><th scope="col">Impatto <span class="help" title="Verde: il fattore giova alla squadra di casa; rosso: giova alla trasferta. Nessun colore = vantaggio non misurabile o non attribuibile a un lato, non «nessun fattore».">ⓘ</span></th></tr>
@@ -107,7 +107,7 @@
       <td class="small">{{ f.home }}</td>
       <td class="small">{{ f.away }}</td>
       <td class="small"><b>{{ f.delta }}</b></td>
-      <td class="small {% if f.tone == 'bad' %}warn{% elif f.tone == 'good' %}good{% else %}mut{% endif %}">{{ f.impact }}</td>
+      <td class="small {% if f.tone == 'bad' %}bad{% elif f.tone == 'good' %}good{% elif f.tone == 'near' %}near{% else %}mut{% endif %}">{{ f.impact }}</td>
     </tr>{% endfor %}
   </table></div>
   {% if c.fattori_chiave.modello %}<p class="small mut" style="margin:10px 0 0">🧮 {{ c.fattori_chiave.modello.testo }}</p>{% endif %}
@@ -683,6 +683,7 @@
   vettore 1 / X / 2 di quel passaggio, «Δ pp» è di quanto si sposta l'esito più probabile rispetto al passo
   precedente. Sono i valori salvati nella previsione al momento del calcolo, non una ricostruzione a posteriori:
   se un passaggio non è tracciato nei dati, qui non compare.</p>
+  {% if c.prob_summary %}<p style="margin:6px 0 10px"><b>In breve:</b> {{ c.prob_summary }}</p>{% endif %}
   <ol class="steps">
     {% for st in c.prob_steps %}<li>
       <div class="step-head"><strong>{{ loop.index }} · {{ st.label }}</strong>

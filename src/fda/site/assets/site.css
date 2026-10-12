@@ -144,6 +144,8 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 /* ---- Utility testo ---- */
 .mut{color:var(--mut)}.mut2{color:var(--mut2)}.small{font-size:12.5px}
 .good{color:var(--win)}.bad{color:var(--lose)}.warn{color:var(--amber)}
+/* «vicino alla soglia» nella card dei Fattori: ambra, il rosso è solo per il vantaggio di un lato */
+.near{color:var(--amber)}
 .big{font-size:32px;font-weight:800;font-family:var(--font-head)}
 .score{font-weight:800;font-family:var(--font-head);font-size:18px;background:var(--surface3);
   border:1px solid var(--line);border-radius:9px;padding:3px 12px;display:inline-block;white-space:nowrap}

@@ -523,8 +523,11 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
     assert any("rapporto xG 9,99×" in f for f in rotta(sballato))
 
     # 6) fonti miste nella stessa scheda (il difetto degli alias Understat non agganciati)
-    assert any("mescolano fonti xG diverse" in f or "fonte xG stampata" in f
-               for f in rotta(originale.replace("(Understat, ", "(FotMob, ", 1)))
+    # la sostituzione va dentro la card «Le due squadre» (dopo la sua ancora): la prima
+    # occorrenza nella pagina può stare in un tooltip della card dei Fattori (riga PPDA)
+    i_card = originale.index('id="squadre"')
+    misto = originale[:i_card] + originale[i_card:].replace("(Understat, ", "(FotMob, ", 1)
+    assert any("mescolano fonti xG diverse" in f or "fonte xG stampata" in f for f in rotta(misto))
 
     # 7) verdetto xPTS incoerente con la banda di rumore misurata
     assert any("verdetto xPTS" in f
