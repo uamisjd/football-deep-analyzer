@@ -807,10 +807,15 @@ def insight_drop_stats() -> dict[str, Any] | None:
         return None
     top_key, top_n = (max(INSIGHT_DROP_LOG.items(), key=lambda kv: kv[1])
                       if INSIGHT_DROP_LOG else ("", 0))
+    # elenco completo delle forme non tradotte (le più frequenti): è il report da cui si
+    # decide quali traduzioni aggiungere, non solo la forma in cima
+    top_shapes = [{"shape": k, "n": n} for k, n in
+                  sorted(INSIGHT_DROP_LOG.items(), key=lambda kv: (-kv[1], kv[0]))[:15]]
     return {"tradotti": INSIGHT_SEEN["tradotti"], "scartati": INSIGHT_SEEN["scartati"],
             "forma_ricalcolata": INSIGHT_SEEN["forma_ricalcolata"],
             "record_rifiutati": INSIGHT_SEEN["record_rifiutati"],
-            "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n}
+            "n_shapes": len(INSIGHT_DROP_LOG), "top_shape": top_key, "top_n": top_n,
+            "top_shapes": top_shapes}
 
 
 def allineamento_fonti(store: Any) -> dict[str, int]:
@@ -6473,6 +6478,15 @@ class MatchAnalysis:
                 return max(0, min(100, (v - 10) / 50 * 100))
             h_ppda = h_style.get("ppda"); a_ppda = a_style.get("ppda")
             h_deep = h_style.get("deep"); a_deep = a_style.get("deep")
+            # PPDA e profondità vengono entrambi da Understat, che non copre tutte le leghe e può
+            # avere il dato per una sola squadra. Un asse con una squadra sola non si confronta:
+            # si mostra n.d. per entrambe (regola «entrambe o nessuna», decisione del 2026-10-12).
+            ppda_ok = h_ppda is not None and a_ppda is not None
+            deep_ok = h_deep is not None and a_deep is not None
+            if not ppda_ok:
+                h_ppda = a_ppda = None
+            if not deep_ok:
+                h_deep = a_deep = None
             # quota set-piece da season_style split
             def _quota(st):
                 op = st.get("open_pm"); sp = st.get("set_pm")
@@ -6486,8 +6500,10 @@ class MatchAnalysis:
             helps = [
                 "Rapporto fra gol fatti a gara e media gol della lega: ancora 0,5×→0 e 1,5×→100 (più alto = più prolifico)",
                 "Rapporto fra gol subiti a gara e media gol subiti della lega, invertito: 1,5×→0 e 0,5×→100 (più alto = subisce meno)",
-                "PPDA (Understat) invertito: 8→100 e 20→0 (più alto = pressing più alto)",
-                "Passaggi profondi a gara (Understat): 2→0 e 10→100 (più alto = arriva più vicino all'area)",
+                ("PPDA (Understat) invertito: 8→100 e 20→0 (più alto = pressing più alto). "
+                 + ("" if ppda_ok else "Non mostrato: il dato manca per almeno una squadra, quindi non si confronta.")),
+                ("Passaggi profondi a gara (Understat): 2→0 e 10→100 (più alto = arriva più vicino all'area). "
+                 + ("" if deep_ok else "Non mostrato: il dato manca per almeno una squadra, quindi non si confronta.")),
                 "Quota degli xG creati da palle inattive (FotMob): 10%→0 e 60%→100 — più alta = più dipendenza dalle palle inattive, non un giudizio di qualità",
             ]
             return {"labels": labels, "helps": helps, "home": h_vals, "away": a_vals,

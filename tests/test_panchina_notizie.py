@@ -1859,3 +1859,56 @@ def test_soggetto_edicola_e_fatto_grave_in_proprio():
     assert fatto_grave('Gasperini: "Esonero Inter? Ho vacillato"') is False
     assert fatto_grave("Statistiche Fantacampionato: le tre plusvalenze maggiori") is False
     assert fatto_grave("Lazio, l'analisi dei conti del club: debiti record") is True
+
+
+def test_radar_pressing_e_profondita_solo_se_per_entrambe(mood_analysis, monkeypatch):
+    """Regola «entrambe o nessuna» (richiesta del 2026-10-12): PPDA e profondità vengono da
+    Understat. Se il dato manca per una sola squadra, l'asse non si confronta: n.d. per entrambe
+    e il testo di aiuto dice perché. Con il dato per entrambe l'asse resta.
+    """
+    monkeypatch.setattr(MatchAnalysis, "standing",
+                        lambda self, name: {"goals_for": 20, "goals_against": 10, "played": 10,
+                                            "points": 20, "rank": 3})
+    monkeypatch.setattr(MatchAnalysis, "_league_averages",
+                        lambda self, st: {"gf": 1.5, "ga": 1.5})
+
+    def stile_sbilanciato(self, name, tid, before):
+        return {"ppda": 10.0 if name == "Lazio" else None, "deep": 5.0 if name == "Lazio" else None,
+                "open_pm": 1.0, "set_pm": 1.0}
+
+    monkeypatch.setattr(MatchAnalysis, "season_style", stile_sbilanciato)
+    r = mood_analysis.clash_radar("Lazio", 8, "Milan", 3)
+    assert r is not None
+    assert r["home"][2] is None and r["away"][2] is None          # PPDA: n.d. per entrambe
+    assert r["home"][3] is None and r["away"][3] is None          # profondità: n.d. per entrambe
+    assert "Non mostrato" in r["helps"][2] and "Non mostrato" in r["helps"][3]
+    assert r["home"][1] is not None and r["away"][1] is not None  # difesa: nessuna regola
+
+    def stile_completo(self, name, tid, before):
+        return {"ppda": 10.0, "deep": 5.0, "open_pm": 1.0, "set_pm": 1.0}
+
+    monkeypatch.setattr(MatchAnalysis, "season_style", stile_completo)
+    r2 = mood_analysis.clash_radar("Lazio", 8, "Milan", 3)
+    assert r2["home"][2] is not None and r2["away"][2] is not None
+    assert "Non mostrato" not in r2["helps"][2]
+
+
+def test_insight_drop_stats_elenca_tutte_le_forme_non_tradotte(monkeypatch):
+    """Report delle stringhe non tradotte (richiesta del 2026-10-12): elenco completo, più
+    frequente prima, cifre normalizzate. Un testo tradotto non entra nel report."""
+    from fda.site import analysis as an
+
+    monkeypatch.setattr(an, "INSIGHT_DROP_LOG", {})
+    monkeypatch.setitem(an.INSIGHT_SEEN, "tradotti", 0)
+    monkeypatch.setitem(an.INSIGHT_SEEN, "scartati", 0)
+    monkeypatch.setitem(an.INSIGHT_SEEN, "forma_ricalcolata", 0)
+    monkeypatch.setitem(an.INSIGHT_SEEN, "record_rifiutati", 0)
+    for testo in ["Scored 2 goals at home", "Scored 3 goals at home", "Booked 4 players", "Booked 5 players",
+                  "Booked 6 players", "Rare thing"]:
+        an.insight_dropped(testo)
+    stats = an.insight_drop_stats()
+    shapes = stats["top_shapes"]
+    assert shapes[0] == {"shape": "Booked N players", "n": 3}
+    assert shapes[1] == {"shape": "Scored N goals at home", "n": 2}
+    assert shapes[2] == {"shape": "Rare thing", "n": 1}
+    assert stats["n_shapes"] == 3

@@ -23,6 +23,10 @@
 {% for t in tables %}<tr><td>{{ t.table }}</td><td class="r">{{ t.rows|it_num }}</td><td class="r">{{ t.kb|dec(1) }}</td></tr>{% endfor %}
 </table></div>
 {% if insight_stats %}<p class="small mut">Fatti FotMob (blocco «Fatti rilevanti»): {{ insight_stats.tradotti|it_num }} tradotti · {{ insight_stats.scartati|it_num }} scartati · {{ insight_stats.forma_ricalcolata|it_num }} della famiglia «forma recente» non pubblicati da FotMob perché ricalcolati da noi · {{ insight_stats.record_rifiutati|it_num }} record rifiutati perché non tornavano coi nostri risultati.{% if insight_stats.top_n %} Scarto più frequente ({{ insight_stats.top_n }}×, template originale): <code>{{ insight_stats.top_shape }}</code> — se cresce di colpo, FotMob ha cambiato un template e va aggiunta la traduzione.{% else %} Nessuno scarto registrato: tutti i fatti visti sono tradotti.{% endif %}</p>{% endif %}
+{% if insight_stats and insight_stats.top_shapes %}<details class="small"><summary>Forme non tradotte, più frequenti prima ({{ insight_stats.n_shapes|it_num }} forme distinte; le cifre sono sostituite da N)</summary>
+<div class="tablewrap"><table><thead><tr><th scope="col">Forma (testo FotMob originale)</th><th scope="col">Occorrenze</th></tr></thead><tbody>
+{% for r in insight_stats.top_shapes %}<tr><td><code>{{ r.shape }}</code></td><td>{{ r.n|it_num }}</td></tr>
+{% endfor %}</tbody></table></div></details>{% endif %}
 </div>
 </div>
 <div class="card">
