@@ -1915,7 +1915,27 @@ class MatchAnalysis:
         # «63%»: 4 numeri diversi fra le due pagine nella build del 2026-10-11
         # (`docs/78` §12).
         p_e_pct = None if p_e is None else mc_percent_str(p_e)
+        # La CLI consente numerosità diverse dal default. Non dichiarare sempre 10.000
+        # né un SE di 0,5 pp: il massimo MC è 50/√N pp, distinto dall'incertezza del modello.
+        raw_ns = r.get("n_sims")
+        try:
+            ns = float(raw_ns)
+        except (TypeError, ValueError):
+            ns = float("nan")
+        n_sims = (int(ns) if math.isfinite(ns) and ns > 0 and ns.is_integer()
+                  and not isinstance(raw_ns, (bool, np.bool_)) else None)
+        if n_sims is not None:
+            # Arrotondare verso l'alto: con 9.000 estrazioni il massimo è 0,527…,
+            # quindi «fino a 0,5» prometterebbe una precisione che non abbiamo.
+            se_max_pp = math.ceil(500 / math.sqrt(n_sims)) / 10
+            n_text = f"{n_sims:,}".replace(",", ".")
+            mc_line = (f"{n_text} simulazioni Monte Carlo del resto del campionato: "
+                       f"errore standard fino a {_dec1(se_max_pp)} punti percentuali")
+        else:
+            mc_line = ("simulazioni Monte Carlo del resto del campionato: numerosità non dichiarata, "
+                       "precisione non quantificabile")
         return {"p_title": p_t, "p_top_n": p_e, "p_top4": p_e, "p_rel": p_r,
+                "n_sims": n_sims, "mc_precision_line": mc_line,
                 "ucl_spots": top_n, "ucl_legacy": legacy_top,
                 "p_title_pct": mc_percent_str(p_t),
                 "p_top_n_pct": p_e_pct, "p_top4_pct": p_e_pct,
@@ -1996,9 +2016,10 @@ class MatchAnalysis:
           sempre **prima** di questa partita. Il bilancio fra i due **club** sta nella card
           «Precedenti» e non viene mai attribuito all'allenatore;
         - **posta in gioco di classifica**: distacco reale dalla zona retrocessione
-          (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18) e dal 4º posto
-          (linea Europa minima in tutte e 7 le leghe), dalla classifica FotMob viva;
-        - **cosa succede**: posizione virtuale in caso di vittoria/sconfitta, per punti e
+          (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18), dalla salvezza
+          diretta (17ª su 20, 15ª su 18 con spareggio) e dall'ultimo posto UCL configurato,
+          dalla classifica FotMob viva; pari punti non cambia la zona del rango;
+        - **cosa succede**: posizione virtuale in caso di vittoria/pareggio/sconfitta, per punti e
           differenza reti con le altre partite in sospeso (etichettato «virtuale»);
         - **probabilità di stagione** da ``season_sim`` (Monte Carlo) come prima.
         """
@@ -2209,15 +2230,24 @@ class MatchAnalysis:
             if n_teams >= 4 and st.get("points") is not None and not pd.isna(st["points"]):
                 pts, gd, rank = int(st["points"]), int(st.get("goal_diff") or 0), int(st["rank"])
                 releg_start = n_teams - 2 if n_teams == 20 else n_teams - 1
+                last_safe = releg_start - 1
+                if n_teams == 18 and code in {"GER1", "FRA1", "NED1", "POR1"}:
+                    last_safe -= 1  # il 16º è lo spareggio, il 15º l'ultima salvezza diretta
                 by_rank = tab.set_index("rank")
                 if releg_start in by_rank.index and rank < releg_start:
                     marg = pts - int(by_rank.loc[releg_start, "points"])
                     gap_rel = (f"{marg} {'punto' if marg == 1 else 'punti'} sopra la zona "
                                f"retrocessione" if marg > 0 else "a pari punti con la zona retrocessione")
-                elif releg_start - 1 in by_rank.index:
-                    need = int(by_rank.loc[releg_start - 1, "points"]) - pts
-                    gap_rel = (f"{need} {'punto' if need == 1 else 'punti'} dalla salvezza diretta"
-                               if need > 0 else "in zona salvezza diretta")
+                elif rank >= releg_start and last_safe in by_rank.index:
+                    need = int(by_rank.loc[last_safe, "points"]) - pts
+                    if need > 0:
+                        gap_rel = f"{need} {'punto' if need == 1 else 'punti'} dalla salvezza diretta"
+                    elif need == 0:
+                        # Il rango resta in zona retrocessione: pari punti non significa salva.
+                        gap_rel = f"a pari punti con il {last_safe}º posto (salvezza diretta)"
+                    else:
+                        # Classifica non monotona per punti: non inventare una distanza o salvezza.
+                        gap_rel = "in zona retrocessione diretta"
                 else:
                     gap_rel = None
                 ucl_n = self.ucl_spots(code)

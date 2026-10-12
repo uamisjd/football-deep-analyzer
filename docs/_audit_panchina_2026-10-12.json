@@ -1,0 +1,115 @@
+{
+  "code_before": "6eeb535",
+  "before": {
+    "snapshot": "514309d",
+    "pages": 63,
+    "sides": 126,
+    "false_safe": [
+      {
+        "match_id": 5749703,
+        "team": "Fiorentina",
+        "rank": 19,
+        "old_gap": 0,
+        "safe_gap": 0,
+        "safe_rank": 17
+      },
+      {
+        "match_id": 5749707,
+        "team": "Parma",
+        "rank": 18,
+        "old_gap": 0,
+        "safe_gap": 0,
+        "safe_rank": 17
+      },
+      {
+        "match_id": 5795468,
+        "team": "Coventry",
+        "rank": 19,
+        "old_gap": 0,
+        "safe_gap": 0,
+        "safe_rank": 17
+      },
+      {
+        "match_id": 5795484,
+        "team": "Tottenham",
+        "rank": 18,
+        "old_gap": 0,
+        "safe_gap": 0,
+        "safe_rank": 17
+      },
+      {
+        "match_id": 5795484,
+        "team": "Coventry",
+        "rank": 19,
+        "old_gap": 0,
+        "safe_gap": 0,
+        "safe_rank": 17
+      }
+    ],
+    "wrong_safe_gap": [
+      {
+        "match_id": 5781768,
+        "team": "Willem II",
+        "rank": 18,
+        "old_gap": 2,
+        "safe_gap": 4,
+        "safe_rank": 15
+      },
+      {
+        "match_id": 5781776,
+        "team": "ADO Den Haag",
+        "rank": 17,
+        "old_gap": 1,
+        "safe_gap": 3,
+        "safe_rank": 15
+      }
+    ],
+    "virtual_tie_cases": 35,
+    "virtual_tie_cells": 34,
+    "mc_actual_n_sims": 10000
+  },
+  "comparison": {
+    "Allenatore_identiche": 126,
+    "Allenatore_modificate": 0,
+    "Posta in gioco_identiche": 119,
+    "Posta in gioco_modificate": 7,
+    "Età media titolari_identiche": 126,
+    "Età media titolari_modificate": 0
+  },
+  "corrected_cells": [
+    {
+      "match_id": 5749703,
+      "team": "Fiorentina"
+    },
+    {
+      "match_id": 5749707,
+      "team": "Parma"
+    },
+    {
+      "match_id": 5781768,
+      "team": "Willem II"
+    },
+    {
+      "match_id": 5781776,
+      "team": "ADO Den Haag"
+    },
+    {
+      "match_id": 5795468,
+      "team": "Coventry"
+    },
+    {
+      "match_id": 5795484,
+      "team": "Tottenham"
+    },
+    {
+      "match_id": 5795484,
+      "team": "Coventry"
+    }
+  ],
+  "mini_audit_defects_after": 0,
+  "audit_exit_before_with_corrupted_ppg": 0,
+  "audit_exit_after_with_corrupted_ppg": 1,
+  "new_tests": 29,
+  "targeted_tests_passed": 102,
+  "full_gates": "pending"
+}

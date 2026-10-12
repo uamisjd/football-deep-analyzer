@@ -1,3 +1,32 @@
+## 2026-10-12 — Panchina e posta in gioco: 7 celle corrette, gate in corso (docs/94)
+
+**Prima sezione del punto 4, misura → correzione → prova.** Su 63 schede / 126 lati,
+l'audit vecchio dava zero scostamenti ma ricopiava due errori: **5 false salvezze** (pari
+punti non cambia il rango in retrocessione) e **2 distanze sbagliate** dalla salvezza diretta
+(nei campionati a 18 il riferimento è il 15º, non il 16º dello spareggio). Nuovi controlli
+semantici indipendenti: sull'HTML precedente **7 difetti / exit 1**, sul frammento rigenerato
+**0**; cambiano esattamente 7 celle di posta in gioco, restano identici 126 allenatori,
+126 età e le altre 119 celle di posta. Numeri/probabilità dei modelli e Parquet invariati.
+
+**Audit corretto anche nel comportamento:** prima restituiva exit 0 pur segnalando errori
+(prova con PPG falsificato); ora exit 1. Opzioni `--site`, `--data`, `--json`, controlli
+rango/salvezza e precisione MC condivisi con [19] di `verify_site`, non col generatore.
+**Latente riprodotto:** il template dichiarava sempre 10.000 simulazioni / SE 0,5 pp, anche
+con N=1.000. Ora usa il metadato e 50/√N arrotondato per eccesso; N assente dichiarato.
+Sui dati reali N è sempre 10.000: nessun cambiamento alle percentuali. Note chiarite:
+permanenza include distinte future (10 lati con altra gara non finita); virtuale usa prima
+posizione del gruppo a pari punti/DR (35 scenari su 34 lati), non gli spareggi completi.
+Nessuna nuova fonte o dato inventato: precedenti coach ancora vuoti nel campione, storico
+FotMob assente. Dettagli in [docs/94](94_panchina_salvezza_precisione_2026-10-12.md).
+
+**Verificati:** 29 nuovi test e 102 mirati passati; Ruff pulito; confronto prima/dopo del
+frammento reale. **In corso:** prova negativa [19], suite completa, `fda build`, `verify_site`,
+audit completo, parità e resa a 375 px. Non dichiarati conclusi. PR #108 resta in bozza,
+nessun merge; `season_sim*` non modificati né da committare.
+
+**Prossimo:** chiudere i gate, poi **Mercato**; dopo: Vita del club, Previsione ensemble,
+Precedenti, Verifica approfondita. StatsBomb e scelta sul clima restano decisioni aperte.
+
 ## 2026-10-12 — `dc_xg` misurato: criterio non superato (docs/92–93)
 
 **Fatto, fuori campione temporale e offline:** protocollo [docs/92](92_protocollo_dc_xg_2026-10-12.md)

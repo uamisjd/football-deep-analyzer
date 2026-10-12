@@ -796,8 +796,9 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "16": ("M", "posizione di lega dai Parquet; somma stampata ricalcolata"),
     "17": ("M", "conteggi da events; le probabilità con la formula del verificatore"),
     "18": ("I", "etichette d'impatto dell'infermeria e tooltip richiesti"),
-    "19": ("M", ("classifica e posizione virtuale ricalcolate; posta in gioco dal Parquet "
-                 "con la formattazione del generatore, confrontata con Proiezioni")),
+    "19": ("M", ("rango/salvezza e precisione MC controllati semanticamente; classifica e "
+                 "posizione virtuale ricalcolate; percentuali dal Parquet con la formattazione "
+                 "del generatore, confrontata con Proiezioni")),
     "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
     "21": ("I", ("stato della squadra (ex «Clima del club»): strisce di campionato, xPTS "
                  "(Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, "
@@ -2602,6 +2603,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     from fda.config import leagues as _leagues19
     from fda.config import load_leagues_config
     from fda.models.season_sim import mc_percent_str
+    from fda.site.panchina_checks import monte_carlo_findings, safety_findings
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
@@ -2677,11 +2679,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             # dall'HTML grezzo, non da `txt`: l'unescape prima dei tag mangerebbe «&lt;1»
             card19 = PANCHINA_CARD.search(html)
             righe19 = {}
+            grezze19 = {}
             if card19:
                 for nome_riga, corpo in PANCHINA_ROW.findall(card19.group(1)):
                     celle = PANCHINA_TD.findall(corpo)
                     if len(celle) == 2:
                         righe19[nome_riga] = [panchina_cella(c) for c in celle]
+                        grezze19[nome_riga] = celle
             for lato, (tid, tname, oid, oname) in enumerate((
                     (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
                     (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name)))):
@@ -2890,6 +2894,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 cella_st = (righe19.get("Posta in gioco") or ["", ""])[lato]
                 if sr is not None:
                     checks += 1
+                    raw_st = (grezze19.get("Posta in gioco") or ["", ""])[lato]
+                    fails.extend(f"{pg.name}: panchina ({tname}) {error}"
+                                 for error in monte_carlo_findings(raw_st, getattr(sr, "n_sims", None)))
+                    checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
                     if raw_top is None or pd.isna(raw_top):
                         raw_top = getattr(sr, "p_top4", None)
@@ -2961,17 +2969,25 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pts19, gd19, rank19 = int(r19.points), int(r19.goal_diff or 0), int(r19["rank"])
                     by_rank19 = tab19.set_index("rank")
                     releg19 = n19 - 2 if n19 == 20 else n19 - 1
+                    # Vincolo semantico indipendente: rango in zona rossa ≠ salvezza,
+                    # anche quando i punti pareggiano quelli dell'ultima squadra salva.
+                    checks += 1
+                    fails.extend(f"{pg.name}: panchina ({tname}) {error}"
+                                 for error in safety_findings(cella_st, tab19, tid))
                     pezzi = [f"{rank19}º con {pts19} punt{'o' if pts19 == 1 else 'i'}"]
                     if releg19 in by_rank19.index and rank19 < releg19:
                         marg19 = pts19 - int(by_rank19.loc[releg19, "points"])
                         pezzi.append(
                             f"{marg19} punt{'o' if marg19 == 1 else 'i'} sopra la zona retrocessione"
                             if marg19 > 0 else "a pari punti con la zona retrocessione")
-                    elif releg19 - 1 in by_rank19.index:
-                        need19 = int(by_rank19.loc[releg19 - 1, "points"]) - pts19
-                        pezzi.append(
-                            f"{need19} punt{'o' if need19 == 1 else 'i'} dalla salvezza diretta"
-                            if need19 > 0 else "in zona salvezza diretta")
+                    elif rank19 >= releg19:
+                        safe19 = n19 - 3 if n19 in (18, 20) else releg19 - 1
+                        if safe19 in by_rank19.index:
+                            need19 = int(by_rank19.loc[safe19, "points"]) - pts19
+                            pezzi.append(
+                                f"{need19} punt{'o' if need19 == 1 else 'i'} dalla salvezza diretta"
+                                if need19 > 0 else f"a pari punti con il {safe19}º posto (salvezza diretta)"
+                                if need19 == 0 else "in zona retrocessione diretta")
                     ucl19 = _ucl19.get(code19) if code19 else None
                     if ucl19 is not None and ucl19 in by_rank19.index:
                         if rank19 <= ucl19:
@@ -2983,7 +2999,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                 if ge19 > 0 else f"a pari punti col {ucl19}º posto")
                     checks += 1
                     atteso_tab = " · ".join(pezzi)
-                    if atteso_tab not in txt:
+                    if atteso_tab not in cella_st:
                         fails.append(f"{pg.name}: distanze di classifica ({tname}) «{atteso_tab}» "
                                      f"assenti o diverse")
 
