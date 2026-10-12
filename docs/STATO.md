@@ -1,3 +1,31 @@
+## 2026-10-12 — Vita del club riaperta: verifica editoriale e fonti (docs/97)
+
+**Richiesta esplicita dell'utente:** non bastano test verdi; controllare accuratezza,
+utilità, intuibilità e copertura per tutte le partite. La precedente formula «terza sezione
+verificata» era troppo netta: copriva la coerenza tecnica, non la qualità editoriale.
+**Non si passa ancora all'ensemble.** PR #108 resta in bozza, nessun merge.
+
+**Misure prima di modificare il codice:** 63 schede / 126 lati, 35 voci esposte / 31 titoli
+distinti. Solo 18 lati con notizie; cinque leghe (ENG1, GER1, FRA1, NED1, POR1) senza alcuna
+voce selezionata. Annotati manualmente tutti i 31 titoli: 7 con evento specifico, 3 analisi/
+dichiarazioni ammissibili, 21 fuori perimetro o insufficienti. Campione di sviluppo,
+non precisione futura né recall certificata. Le due riprese sui provvedimenti del derby
+non sono due eventi dimostrati.
+
+**Errore certo riprodotto:** `classify_news` trova «rissa» dentro «Idrissa» e assegna
+«Fuori dal campo» a «Nota ufficiale: Idrissa Gueye». Ricerca esterna: nota ufficiale omonima
+ e coeva riguarda un intervento alla caviglia. Conferme primarie su incarichi Genoa e
+azionariato Atlético; lettura originale dell'analisi Atalanta/Sarri; riscontri su provvedimenti
+Torino-Juve, stadio Venezia e altri casi. Limiti/citazioni in
+[docs/97](97_vita_club_qualita_copertura_2026-10-12.md); nessun contenuto web riversato nei Parquet.
+
+**Piano, ancora da validare:** criterio positivo di evento/analisi espliciti, classificazione
+prudente, trasparenza della copertura, separazione dei dati numerici dalle notizie e letture
+correlate consultabili. Prima della modifica del selettore salvate le etichette in
+`tests/fixtures/vita_editorial_review_2026-10-12.json`. Nessuna garanzia per tutte le partite
+finché resta il vuoto di fonti. Seguiranno test, Ruff, build, verify_site, audit e anteprima.
+Modelli e dati di produzione invariati; decisioni StatsBomb/sentiment non prese.
+
 ## 2026-10-12 — Vita del club: terza sezione verificata, anteprima ripristinata (docs/96)
 
 **Terza sezione del punto 4.** Sandbox ripristinato: confrontati 33 file con il ramo remoto,

@@ -1,0 +1,222 @@
+{
+  "scope": "Titoli del campione di sviluppo, etichette manuali di pertinenza, non verità o misura di recall",
+  "cases": [
+    {
+      "case": 1,
+      "title": "Atalanta-Venezia dirà se la squadra segue davvero Sarri",
+      "source": "Corriere Bergamo",
+      "expected": "analysis",
+      "reason": "Analisi sul rapporto squadra-allenatore, da attribuire e non chiamare fatto accertato."
+    },
+    {
+      "case": 2,
+      "title": "Ajax-Atalanta, 2.229 tifosi nerazzurri nel settore ospiti della Johan Cruyff Arena",
+      "source": "BergamoNews",
+      "expected": "reject",
+      "reason": "Numero di tifosi per un altro impegno: contesto logistico, non provvedimento o conflitto."
+    },
+    {
+      "case": 3,
+      "title": "Caldara a L’Eco: «Atalanta, il cammino sarà lungo e difficile. Il Venezia va rispettato»",
+      "source": "L'Eco di Bergamo",
+      "expected": "reject",
+      "reason": "Dichiarazione generica di rispetto e prospettiva, senza fatto specifico."
+    },
+    {
+      "case": 4,
+      "title": "I tifosi nerazzurri all’Atalanta: ritirare la maglia numero 7 del mitico Glenn Stromberg",
+      "source": "Quotidiano Sportivo",
+      "expected": "reject",
+      "reason": "Richiesta commemorativa: fuori dal perimetro operativo scelto, non notizia falsa."
+    },
+    {
+      "case": 5,
+      "title": "Venezia, Stroppa suona la carica: «Con l'Atalanta ora servono punti»",
+      "source": "La Piazza Web",
+      "expected": "reject",
+      "reason": "Motivazione e bisogno di punti: non evento specifico di club."
+    },
+    {
+      "case": 6,
+      "title": "Calcio: a Venezia variante al progetto stadio, costi su di un milione",
+      "source": "ANSA",
+      "expected": "event",
+      "reason": "Variante/costi dello stadio: decisione infrastrutturale e finanziaria."
+    },
+    {
+      "case": 7,
+      "title": "Torino, sfida sulla destra: Belghali vuole la maglia, Patterson insegue",
+      "source": "Toro.it",
+      "expected": "reject",
+      "reason": "Ballottaggio di formazione, già nelle sezioni tecniche."
+    },
+    {
+      "case": 8,
+      "title": "Scontri Torino-Juve, misure cautelari per tantissimi tifosi coinvolti: la decisione della Digos",
+      "source": "Tuttosport",
+      "expected": "event",
+      "reason": "Provvedimenti cautelari e Daspo; distinguere aggiornamento e vecchi scontri."
+    },
+    {
+      "case": 9,
+      "title": "Torino, minutaggi in Nazionale: granata in top cinque in Serie A",
+      "source": "Toro.it",
+      "expected": "reject",
+      "reason": "Minutaggi in Nazionale: statistiche, non vita societaria."
+    },
+    {
+      "case": 10,
+      "title": "Torino, in campo per i bambini malati di tumore: al Pertusa vince la solidarietà",
+      "source": "Torino Cronaca",
+      "expected": "reject",
+      "reason": "Evento benefico: reale ma fuori da questo perimetro, non prova di impatto sulla gara."
+    },
+    {
+      "case": 11,
+      "title": "Torino-Juventus, oltre 20 misure cautelari fra i tifosi di entrambi i club",
+      "source": "Gazzetta di Parma",
+      "expected": "event",
+      "reason": "Stessa vicenda dei provvedimenti del caso 8, fonte aggiuntiva non altro evento provato."
+    },
+    {
+      "case": 12,
+      "title": "Camolese presenta Torino-Udinese: «Partita delicata, due squadre che devono crescere in fretta",
+      "source": "Messaggero Veneto",
+      "expected": "reject",
+      "reason": "Presentazione generica della partita da un opinionista."
+    },
+    {
+      "case": 13,
+      "title": "Nota ufficiale: Idrissa Gueye",
+      "source": "Udinese",
+      "expected": "reject",
+      "reason": "Titolo non informativo; rissa è una collisione con Idrissa. Nota omonima e coeva ufficiale medica."
+    },
+    {
+      "case": 14,
+      "title": "Gasperini sbotta dopo Como-Roma: «Il calcio non è fatto di fotogrammi» - Quotidiano La Voce",
+      "source": "Quotidiano la Voce",
+      "expected": "reject",
+      "reason": "Polemica arbitrale post-partita senza provvedimento; per Como anche attribuzione debole."
+    },
+    {
+      "case": 15,
+      "title": "Como-Roma, i tifosi giallorossi tornano in trasferta dopo 10 mesi",
+      "source": "Corriere dello Sport",
+      "expected": "event",
+      "reason": "Cambio osservabile nella presenza/accesso dei tifosi in trasferta; non dedurre norme non citate."
+    },
+    {
+      "case": 16,
+      "title": "Roma, Carica Gasp: «L’entusiasmo ci contagia»",
+      "source": "Il Messaggero",
+      "expected": "reject",
+      "reason": "Motivazione/entusiasmo generici, non evento documentabile."
+    },
+    {
+      "case": 17,
+      "title": "UFFICIALE | Genoa, Modesto e Melissano entrano nell’organigramma del club. La nota",
+      "source": "Buon Calcio a Tutti",
+      "expected": "event",
+      "reason": "Nuovi incarichi nell’organigramma, confermati dal comunicato del Genoa."
+    },
+    {
+      "case": 18,
+      "title": "Lecce-Bologna, reazione salentina ma vincono i rossoblù. Le parole di Fatah, Di Francesco e Palladino",
+      "source": "Leccenews24",
+      "expected": "reject",
+      "reason": "Cronaca e dichiarazioni post-partita; già coperte altrove."
+    },
+    {
+      "case": 19,
+      "title": "TRIBUNA.COM * SERIE A: «GIOCA L'INTER, A SAN SIRO C'È IL GOTHA DEL CALCIO ITALIANO ED EUROPEO: IL VIP INATTESO AL FIANCO DI MAROTTA E ZANETTI",
+      "source": "agenzia giornalistica opinione",
+      "expected": "reject",
+      "reason": "Ospite VIP, non decisione o vincolo societario."
+    },
+    {
+      "case": 20,
+      "title": "Inter-Parma, la regia si perde il gol di Sucic: polemiche dei tifosi sui social per Dazn e Sky",
+      "source": "Il Messaggero",
+      "expected": "reject",
+      "reason": "Problema della regia TV/social: non un evento interno del club."
+    },
+    {
+      "case": 21,
+      "title": "Il Times racconta il boom del Como 1907, ma avverte: \"I tifosi rischiano di essere lasciati indietro\"",
+      "source": "QuiComo",
+      "expected": "analysis",
+      "reason": "Reportage sulle tensioni club/città/tifosi; analisi attribuita, non fatto sintetico verificato."
+    },
+    {
+      "case": 22,
+      "title": "Como, i seggiolini della vecchia curva demolita diventano oggetti da collezione",
+      "source": "la Repubblica",
+      "expected": "reject",
+      "reason": "Collezionismo/memorabilia, non provvedimento operativo."
+    },
+    {
+      "case": 23,
+      "title": "Serie A: Alvini, 'vittoria Napoli meritata, rigore morbido ma passiamo oltre'",
+      "source": "ANSA",
+      "expected": "reject",
+      "reason": "Commento tecnico/arbitrale dopo una partita, senza conseguenza documentata nel titolo."
+    },
+    {
+      "case": 24,
+      "title": "Il Frosinone guarda il Napoli dall’alto. Al Maradona con la spinta di 2000 tifosi",
+      "source": "Il Messaggero",
+      "expected": "reject",
+      "reason": "Attesa di gara/numero tifosi, non provvedimento o cambio di assetto."
+    },
+    {
+      "case": 25,
+      "title": "Sassuolo-Milan, Amorim: «La difesa a 4? Dipende dalle partite. Camarda? Avrà le sue occasioni»",
+      "source": "Il Messaggero",
+      "expected": "reject",
+      "reason": "Tattica e possibili impieghi, con allenatore dell’avversaria."
+    },
+    {
+      "case": 26,
+      "title": "Spalletti-Pisacane: lite, quasi rissa e doppio rosso. \"Bravi. Anche a perder tempo\". \"Quale tempo?\"",
+      "source": "La Gazzetta dello Sport",
+      "expected": "event",
+      "reason": "Confronto e doppio rosso ai tecnici: episodio disciplinare concreto, non diagnosi psicologica."
+    },
+    {
+      "case": 27,
+      "title": "Immobile tifoso speciale per la Lazio allo stadio: \"Mio figlio me lo chiedeva da un po'...\"",
+      "source": "Corriere dello Sport",
+      "expected": "reject",
+      "reason": "Visita allo stadio con il figlio, non evento di club rilevante in questo perimetro."
+    },
+    {
+      "case": 28,
+      "title": "Lazio record e adesso la Champions",
+      "source": "il Giornale",
+      "expected": "reject",
+      "reason": "Prestazioni e ambizioni sportive generiche, già nelle analisi numeriche."
+    },
+    {
+      "case": 29,
+      "title": "Calcio: De Laurentiis 'mai avuto dubbi su Allegri'",
+      "source": "ANSA",
+      "expected": "analysis",
+      "reason": "Sostegno pubblico della proprietà al tecnico: dichiarazione attribuita, non garanzia di stabilità."
+    },
+    {
+      "case": 30,
+      "title": "Gilgeous-Alexander diventa azionista dell’Atlético Madrid",
+      "source": "Il Globo",
+      "expected": "event",
+      "reason": "Ingresso nell’azionariato, confermato dal club."
+    },
+    {
+      "case": 31,
+      "title": "Dybala si emoziona prima di Roma-Real Madrid: \"I nostri tifosi in casa ci daranno una spinta in più. Vorrei finire la carriera in Italia\"",
+      "source": "Corriere dello Sport",
+      "expected": "reject",
+      "reason": "Dichiarazione generica di un giocatore Roma nella colonna Real Madrid: pertinenza insufficiente."
+    }
+  ]
+}
