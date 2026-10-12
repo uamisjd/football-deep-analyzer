@@ -1,3 +1,10 @@
+## 2026-10-12 — Merge PR #107 e passaggio di sessione
+
+- **PR #107 unita in `main`** (merge commit `1bc3a71`) su richiesta dell'utente. Prima del merge: il clone era superficiale (`git fetch --unshallow`), `season_sim.parquet` locale ripristinato (copia in `/tmp`, non committato), conflitto risolto su `model_lab.parquet` a favore della versione CI di `main`. Test sul tree unito: 664 passati, ruff pulito.
+- **Correzione importante:** la run CI su `main` valuta 1.654 gare e l'IC di γ 1,24 include lo zero (hi95 +0,00045). La run locale precedente (3.157 gare) mostrava 5 varianti che passavano. **Il risultato dipende dal campione: nessuna variante è robusta.** Il test prospettico resta la prova da seguire. Va detto anche in `docs/86`.
+- **Workflow `understat-storico`** ora è su `main`, ma il lancio dal sandbox dà 403 (il token non ha permessi di dispatch). Va lanciato a mano: Actions → understat-storico → Run workflow.
+- **Aperti:** sei sezioni della scheda partita; StatsBomb (scelta campionati/stagioni dell'utente); clima (conferma dell'utente sulla regola-based).
+
 ## 2026-10-12 — Storico Understat e PR #107 (docs/90)
 
 - Comando `fda understat-storico` (stagioni 2021–2025, 5 leghe) e workflow manuale `understat-storico.yml` (commit dei Parquet solo se cambiano, `[skip ci]`). Test pianificazione: 2.
