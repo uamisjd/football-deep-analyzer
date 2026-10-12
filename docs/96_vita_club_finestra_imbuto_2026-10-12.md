@@ -150,12 +150,35 @@ data, titolo, link, testata, periodo e copertura, con il generatore reso inutili
 **da S a M**, non a I. Il ratchet si stringe sugli specchi **4→3**, con massimo invariato
 **S+M≤23** e **I≥31**: non si autorizza alcuna retrocessione di controlli indipendenti.
 
-**Verificato sul frammento:** 987 controlli, zero difetti. Test: **54 nuovi casi**, **153 mirati passati**; Ruff pulito.
-**Ancora da chiudere:** suite completa, Ruff finale, build completa, `verify_site`, audit
-Vita del club / Mercato / Panchina, parità e resa 375 px. Nessun esito presunto.
+**Gate finali eseguiti:**
+
+- **850 test passati**, `ruff check .` pulito.
+- **`fda build`: 498 schede / 2.364 fixture / 7.594 giocatori**.
+- **`verify_site`: 241.464 controlli, 0 problemi**; 54 oracoli, 31 I / 20 M / 3 S.
+- **Audit Vita del club: 987 controlli, 0 difetti**, sia sul frammento sia sul sito completo;
+  anche audit Mercato (1.008 controlli), Panchina e Clima superati.
+- **Parità: 63 schede, nessuna differenza**; resa a 375 px **28.669 misure, 0 problemi**.
+- Confronto sul sito completo: **63 card Mercato e 63 Panchina identiche** nel testo visibile
+  alla baseline. Nessun Parquet modificato, inclusi i due `season_sim*`.
+- CI del codice **`5e45f35`** verde: run
+  [38307602678](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38307602678) e
+  [38307597677](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38307597677).
+
+La prima suite completa aveva intercettato 19 fallimenti nel test del frammento Mercato:
+il suo delimitatore dipendeva dall'`if` della card successiva. Corretto il test per chiudere
+sulla propria card (senza indebolire le asserzioni); tutti i gate sono stati poi rieseguiti.
+
+Misura macchina: [`_audit_vita_club_2026-10-12.json`](_audit_vita_club_2026-10-12.json).
+**Anteprima ripristinata** su 0.0.0.0:8000: pagina iniziale → Torino–Udinese, `#notizie`.
+Scheda, homepage, CSS e font CSS verificati HTTP 200 con Host/Origin del proxy. Il dominio
+è cambiato con il nuovo sandbox: il link precedente non identifica questa istanza.
+La preview mostra i dati CI dello snapshot, non un nuovo aggiornamento delle fonti.
+
+**Terza sezione verificata**, con i limiti editoriali sopra dichiarati. PR #108 ancora in
+bozza, nessun merge o pubblicazione su `main`.
 
 ## Prossimo passo
 
-Chiudere i gate e aggiornare l'anteprima navigabile su **Torino–Udinese / Vita del club**.
-Poi **Previsione ensemble**, seguita da Precedenti e Verifica approfondita. StatsBomb e
+Passare a **Previsione ensemble**, seguita da Precedenti e Verifica approfondita,
+mantenendo disponibile anche l'anteprima. StatsBomb e
 la scelta sul clima restano decisioni aperte dell'utente. PR #108 in bozza, nessun merge.

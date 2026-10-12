@@ -785,5 +785,56 @@
   },
   "new_tests": 54,
   "targeted_tests_passed": 153,
-  "full_gates": "pending"
+  "full_gates": {
+    "tests_passed": 850,
+    "ruff": "passed",
+    "build": {
+      "matches": 498,
+      "fixtures": 2364,
+      "players": 7594
+    },
+    "verify_site": {
+      "checks": 241464,
+      "problems": 0
+    },
+    "vita_audit": {
+      "checks": 987,
+      "defects": 0
+    },
+    "mercato_audit": {
+      "checks": 1008,
+      "defects": 0
+    },
+    "panchina_defects": 0,
+    "clima": "passed",
+    "parity_pages": 63,
+    "mobile_checks": 28669,
+    "mobile_problems": 0,
+    "production_parquets_unchanged": true
+  },
+  "previous_sections_unchanged": {
+    "mercato_identiche": 63,
+    "panchina_identiche": 63
+  },
+  "full_audit_after": {
+    "counts": {
+      "prematch_pages": 63,
+      "news_pages": 63,
+      "windows_ended": 5,
+      "sides": 126,
+      "examined": 1522,
+      "published": 32,
+      "reserve": 3,
+      "empty_sides": 108,
+      "windows_open": 58
+    },
+    "checks": 987,
+    "errors": [],
+    "defects": 0
+  },
+  "code_commit": "5e45f35",
+  "ci_success_runs": [
+    38307602678,
+    38307597677
+  ]
 }

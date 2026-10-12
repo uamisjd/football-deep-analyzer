@@ -1,4 +1,4 @@
-## 2026-10-12 — Vita del club: misura e correzioni, gate completi in corso (docs/96)
+## 2026-10-12 — Vita del club: terza sezione verificata, anteprima ripristinata (docs/96)
 
 **Terza sezione del punto 4.** Sandbox ripristinato: confrontati 33 file con il ramo remoto,
 zero differenze; riallineamento Git mixed senza toccare il lavoro. Venv ricreato, baseline
@@ -18,15 +18,21 @@ Non si promette assenza di fatti importanti quando la selezione è vuota. Nessun
 rispetto al match o al build; tipo distinta esplicito in «Perché conta». Nessun modello o Parquet
 modificato. I filtri sono euristiche, non una verifica giornalistica o di impatto predittivo.
 
-**Verificati:** 54 nuovi test; **153 mirati** passati, Ruff pulito; audit sul frammento
-**987 controlli / 0 difetti**. Oracolo senza `team_news`: periodo, conti, tuple fonte. [20]
-diventa M da S; tetto S 4→3, S+M≤23 e I≥31. **In corso:** suite completa, build,
-verify_site, audit Vita/Mercato/Panchina, parità e resa 375 px. PR #108 in bozza, nessun merge.
-Relazione [docs/96](96_vita_club_finestra_imbuto_2026-10-12.md).
+**Gate finali verificati:** **850 test**, Ruff pulito; build **498/2.364/7.594**; verify_site
+**241.464 controlli / 0 problemi**; audit Vita **987 / 0**, Mercato **1.008 / 0**, Panchina
+ e Clima superati. Parità **63 schede**; resa 375 px **28.669 misure / 0 problemi**.
+**63 card Mercato e 63 Panchina identiche** alla baseline. Oracolo senza `team_news`: periodo,
+conti, tuple fonte. [20] diventa M da S; tetto S 4→3, S+M≤23 e I≥31. CI `5e45f35` verde
+(`38307602678`, `38307597677`). Il delimitatore del test Mercato è stato disaccoppiato dalla
+card successiva; suite e gate rifatti. Nessun Parquet modificato, nessun modello promosso.
+Relazione [docs/96](96_vita_club_finestra_imbuto_2026-10-12.md) e JSON della misura.
 
-**Anteprima da aggiornare** a fine gate su Torino–Udinese, `partite/5749699.html#notizie`.
-**Prossimo:** Previsione ensemble, poi Precedenti e Verifica approfondita. Scelte StatsBomb
- e clima ancora all'utente; non avviato sentiment né una nuova fonte.
+**Anteprima attiva** su 0.0.0.0:8000, server ignorato `data/cache/preview_server.py`:
+Torino–Udinese, `partite/5749699.html#notizie`. HTTP 200 su scheda, homepage e CSS/font;
+nuovo dominio del sandbox, non il vecchio link. Build locale, non nuova raccolta dati.
+PR #108 resta in bozza, nessun merge. **Tre sezioni verificate su sei**, non le ultime tre.
+**Prossimo:** Previsione ensemble, poi Precedenti e Verifica approfondita, con anteprima.
+Scelte StatsBomb/clima ancora all'utente; non avviato sentiment né una nuova fonte.
 
 ## 2026-10-12 — Anteprima navigabile richiesta dall'utente
 
