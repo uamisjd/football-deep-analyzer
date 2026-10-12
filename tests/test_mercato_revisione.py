@@ -39,7 +39,10 @@ def render(tmp_path, st):
     context = {"home_market": mk, "away_market": None, "home_name": "Roma", "away_name": "Inter", "status": "scheduled"}
     template = (Path(__file__).parents[1] / "src/fda/site/templates/match.html").read_text()
     start = template.index("  {% if (c.home_market or c.away_market) and c.status != 'finished' %}\n")
-    end = template.index("  {% if (c.home_news", start)
+    # Il frammento finisce con la propria card: non dipende dalla condizione di
+    # visibilità della sezione successiva (Vita del club è ora sempre presente).
+    closing = '\n  </div>\n  {% endif %}'
+    end = template.index(closing, start) + len(closing)
     builder = SiteBuilder(store=st, out_dir=tmp_path / "site")
     text = builder.env.from_string(template[start:end]).render(c=context)
     directory = tmp_path / "html/partite"
