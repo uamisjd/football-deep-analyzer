@@ -1,3 +1,10 @@
+## 2026-10-12 — Storico Understat e PR #107 (docs/90)
+
+- Comando `fda understat-storico` (stagioni 2021–2025, 5 leghe) e workflow manuale `understat-storico.yml` (commit dei Parquet solo se cambiano, `[skip ci]`). Test pianificazione: 2.
+- Il workflow non è lanciabile finché non è su `main`: GitHub risponde 404 su un workflow manuale che non esiste sul branch di default. PR #107 in bozza, non unita: il merge è dell'utente.
+- Non verificato: il recupero reale da Understat (la sandbox non lo raggiunge). Non ancora misurato alcun risultato sul candidato `dc_xg`.
+- Aperti: sei sezioni della scheda, StatsBomb (decisione utente), clima (decisione utente).
+
 ## 2026-10-12 — Test prospettico γ 1,12, verifica StatsBomb, clima (docs/89)
 
 Decisioni dell'utente: (1) rivedere il clima; (2) StatsBomb su tutti i campionati, 4–5 stagioni precedenti; (3) procedere con le sezioni della scheda; (4) test prospettico γ 1,12.
