@@ -1222,6 +1222,7 @@ class MatchAnalysis:
         self.weather_forecast = store.read("weather_forecast")
         self.backtest = store.read("backtest")
         self.season_sim = store.read("season_sim")
+        self.season_sim_cond = store.read("season_sim_cond")  # probabilità condizionate per gara (punto 9)
         self.cup_fixtures = store.read("cup_fixtures")
         self.news_df = store.read("news")
         self.transfers = store.read("transfers")
@@ -1819,6 +1820,40 @@ class MatchAnalysis:
         if not parti:
             return pd.DataFrame(columns=colonne)
         return pd.concat(parti, ignore_index=True).drop_duplicates("match_id")
+
+    def conditional_stakes(self, home_name: str, away_name: str) -> dict[str, Any] | None:
+        """Titolo, UCL e retrocessione di entrambe le squadre **se** la gara finisce 1, X o 2.
+
+        Le altre gare sono simulate per intero (`season_sim.simulate_conditions`), quindi la cifra
+        è la probabilità condizionata, non la posizione a punti fermi della riga «virtuale».
+        Tutto o niente: se manca un esito o una squadra, non si mostra una tabella a metà.
+        """
+        cs = getattr(self, "season_sim_cond", None)
+        if cs is None or cs.empty or "cond_outcome" not in cs.columns:
+            return None
+        h, a = canonical(home_name), canonical(away_name)
+        sub = cs[(cs.cond_home.map(canonical) == h) & (cs.cond_away.map(canonical) == a)]
+        if sub.empty:
+            return None
+        righe = []
+        for o, etich in (("1", f"vince {home_name}"), ("X", "pareggio"), ("2", f"vince {away_name}")):
+            parte = sub[sub.cond_outcome == o]
+            if parte.empty:
+                return None
+            cella: dict[str, Any] = {"outcome": etich}
+            for lato, nome in (("home", h), ("away", a)):
+                r = parte[parte.team.map(canonical) == nome]
+                if r.empty:
+                    return None
+                r = r.iloc[0]
+                ucl = None if pd.isna(r.p_top_n) else mc_percent_str(float(r.p_top_n))
+                cella[lato] = {"title": mc_percent_str(float(r.p_title)), "ucl": ucl,
+                               "rel": mc_percent_str(float(r.p_rel))}
+            righe.append(cella)
+        ucl_n = sub.top_n.iloc[0] if "top_n" in sub.columns else None
+        return {"rows": righe, "home": home_name, "away": away_name,
+                "ucl_spots": None if ucl_n is None or pd.isna(ucl_n) else int(ucl_n),
+                "n_sims": int(sub.n_sims.iloc[0])}
 
     def stakes(self, team_name: str) -> dict[str, Any] | None:
         """Cosa vale la stagione della squadra: Monte Carlo di ``season_sim``.
@@ -6962,6 +6997,8 @@ class MatchAnalysis:
             "away_bench": self.bench_deep(away_id, f["away_name"], home_id, f["home_name"],
                                           kickoff, _val(info, "away_avg_starter_age"))
                           if status != "finished" else None,
+            "cond_stakes": (self.conditional_stakes(f["home_name"], f["away_name"])
+                            if status != "finished" else None),
             "home_mood": self.club_mood(match_id, home_id, f["home_name"], kickoff)
                           if status != "finished" else [],
             "away_mood": self.club_mood(match_id, away_id, f["away_name"], kickoff)

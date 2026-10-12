@@ -1912,3 +1912,23 @@ def test_insight_drop_stats_elenca_tutte_le_forme_non_tradotte(monkeypatch):
     assert shapes[1] == {"shape": "Scored N goals at home", "n": 2}
     assert shapes[2] == {"shape": "Rare thing", "n": 1}
     assert stats["n_shapes"] == 3
+
+
+def test_conditional_stakes_tutto_o_niente(mood_analysis):
+    """Tabella condizionata per gara: tre esiti × due squadre, altrimenti niente (mai a metà)."""
+    rows = []
+    for o, (pt_home, pt_away) in {"1": (0.30, 0.01), "X": (0.12, 0.05), "2": (0.02, 0.22)}.items():
+        for team, pt in (("Lazio", pt_home), ("Milan", pt_away)):
+            rows.append({"cond_home": "Lazio", "cond_away": "Milan", "cond_outcome": o, "team": team,
+                         "p_title": pt, "p_top_n": 0.5, "p_rel": 0.02, "top_n": 4, "n_sims": 10000})
+    mood_analysis.season_sim_cond = pd.DataFrame(rows)
+    cs = mood_analysis.conditional_stakes("Lazio", "Milan")
+    assert cs and [r["outcome"] for r in cs["rows"]] == ["vince Lazio", "pareggio", "vince Milan"]
+    assert cs["rows"][0]["home"]["title"] == "30" and cs["rows"][0]["away"]["title"] == "1"  # senza % (lo mette il template)
+    assert cs["ucl_spots"] == 4 and cs["n_sims"] == 10000
+    # un esito mancante: niente tabella invece di una a metà
+    mood_analysis.season_sim_cond = pd.DataFrame(rows).query("cond_outcome != 'X'")
+    assert mood_analysis.conditional_stakes("Lazio", "Milan") is None
+    # gara non presente: niente
+    mood_analysis.season_sim_cond = pd.DataFrame(rows)
+    assert mood_analysis.conditional_stakes("Roma", "Inter") is None

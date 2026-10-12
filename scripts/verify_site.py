@@ -1050,7 +1050,7 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
     * **infermeria** — il totale «xG+xA a partita in meno» è la **somma esatta** della colonna
       «impatto» stampata sotto (`docs/64` §8: prima sommava le stime mentre le righe
       mostravano il grezzo, e non tornava in 101 pannelli su 118), e ogni riga dichiara il
-      ruolo (o «ruolo n.d.»);
+      ruolo; senza ruolo la riga non mostra la pillola, e «ruolo n.d.» non compare mai;
     * **forza nella forma** — nomi, risultati, sede e ordine delle gare dal calendario;
       ranghi ed Elo storici da un oracolo cronologico indipendente da ``team_elo`` e
       ``league_elo``; media, riferimento e giudizio senza chiamare ``form_strength``;
@@ -1480,12 +1480,10 @@ def check_due_squadre(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if abs(sum(voci) - num(tot.group(1))) > 0.011:
                     fails.append(f"{pg.name}: infermeria, totale {tot.group(1)} ≠ somma della "
                                  f"colonna {sum(voci):.2f}")
-            nomi = re.findall(r"<td><b>[^<]+</b>(.*?)</td>", tabella)
             checks += 1
-            senza = [n for n in nomi if "border-radius:999px" not in n]
-            if senza:
-                fails.append(f"{pg.name}: infermeria, {len(senza)} righe senza la pillola "
-                             "del ruolo (neanche «ruolo n.d.»)")
+            if "ruolo n.d." in tabella:
+                fails.append(f"{pg.name}: infermeria, compare «ruolo n.d.» (decisione 2026-10-12: "
+                             "senza ruolo nessuna pillola)")
     print(f"[44] schede con «Le due squadre» verificate: {n_pagine} pagine, "
           f"{n_pannelli} riquadri di squadra, {n_rif} riferimenti di lega")
     return fails, checks

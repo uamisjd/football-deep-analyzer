@@ -600,9 +600,10 @@ def test_verify_site_due_squadre_su_ogni_scheda(tmp_path):
     fails = rotta(infermeria("0,80", due))
     assert any("totale 0,80 ≠ somma della colonna 1.00" in f for f in fails)
 
-    # 11) una riga senza la pillola del ruolo (nemmeno «ruolo n.d.»): la cella resta muta
+    # 11) senza ruolo la riga non ha pillola (legittimo); «ruolo n.d.» in pagina non è mai ammesso
     muta = due.replace(pillola, "", 1)
-    assert any("senza la pillola del ruolo" in f for f in rotta(infermeria("1,00", muta)))
+    assert rotta(infermeria("1,00", muta)) == []
+    assert any("ruolo n.d." in f for f in rotta(infermeria("1,00", due.replace(pillola, "ruolo n.d.", 1))))
 
     # 12) attacco contro difesa (docs/76 §2): numero manomesso, striscia rimossa, striscia
     # pubblicata su una gara che non è più pre-partita (i requisiti non sono più soddisfatti)
