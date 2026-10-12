@@ -780,6 +780,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "3": ("M", "RPS ricalcolato dal verificatore; il campione è selezionato dai Parquet"),
     "3b": ("I", "Δ = RPS − naive sui numeri stampati e somma delle leghe = riga «Tutti»"),
     "4": ("I", "vincoli della simulazione: somme per lega = 1 e alias deprecati"),
+    "4b": ("I", "vincoli delle probabilità condizionate: legge della probabilità totale e somma delle P(esito)"),
     "5": ("I", "ruoli, indisponibili e precedenti ↔ distinta e archivio"),
     "6": ("I", "assist e xG 1T/2T ↔ events e team_stats"),
     "7": ("M", "intervallo di Wilson ricalcolato; il segnale viene dal Parquet"),
