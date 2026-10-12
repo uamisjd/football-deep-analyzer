@@ -17,11 +17,13 @@ non previsioni storicamente pubblicate; risultato non generalizzabile a tutti i 
   modificato, compresi `season_sim*`; laboratorio pubblico ancora sul campione CI di 1.654.
   Il prospettico γ resta separato: nessun nuovo run su dati reali.
 
-**Gate verificati:** **743 test** passati, Ruff pulito; CI del codice verde (run `38277105600`,
-`38277101042`, commit `ad07059`). **Build completa, verify_site, parità e resa ancora in corso**:
-non dichiarati conclusi. PR #108 sempre in bozza, nessun merge; tutti i commit sul ramo della sessione.
+**Gate finali verificati:** **743 test** passati, Ruff pulito; CI del codice verde (run `38277105600`,
+`38277101042`, commit `ad07059`); `fda build` **498/2.364/7.594**; `verify_site`
+**239.517 controlli, 0 problemi**; parità **63 schede, nessuna differenza**; resa a 375 px
+**28.657 misure, 0 problemi**. Nessun Parquet modificato. PR #108 sempre in bozza, nessun merge;
+tutti i commit sul ramo della sessione. **Punto 3 verificato, criterio di promozione non superato.**
 
-**Prossimo:** chiudere i gate, poi punto 4: Panchina e posta in gioco → Mercato → Vita del club
+**Prossimo:** punto 4: Panchina e posta in gioco → Mercato → Vita del club
 → Previsione ensemble → Precedenti → Verifica approfondita. Metodo: misura → correzione →
 invariante/test. **Decisioni aperte:** campionati/stagioni StatsBomb; conferma card clima basata
 su regole e sentiment rinviato. Nessuna scelta fatta al posto dell'utente.
