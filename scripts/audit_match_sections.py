@@ -46,7 +46,7 @@ def _league_map() -> dict[int, str]:
 def _hero_margin(page: str) -> tuple[int, int, float] | None:
     """(percentuale favorito stampata, percentuale seconda, margine pubblicato)."""
     m = re.search(r"hero-pick.*?<strong>[^<]*<em>(\d+)%</em></strong>"
-                  r".*?\+(\d+(?:,\d+)?) punti sul secondo — [^<]*? (\d+)%", page, re.DOTALL)
+                  r".*?\+(\d+(?:,\d+)?) punti percentuali sul secondo — [^<]*? (\d+)%", page, re.DOTALL)
     if not m:
         return None
     top, margin, second = int(m.group(1)), float(m.group(2).replace(",", ".")), int(m.group(3))

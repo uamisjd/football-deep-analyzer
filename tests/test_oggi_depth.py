@@ -844,7 +844,7 @@ def test_prediction_meta_signal_names_both_engines_with_recomputeable_numbers():
          "w_dc": 0.7, "ensemble_mode": "tilt"}, "Alpha", "Beta")
     assert agree["signal_tone"] == "agree"
     assert agree["signal_label"] == ("DC ed Elo sullo stesso preferito (Alpha): "
-                                     "DC 40,2% · Elo 39,4% · distanza 0,8 punti")
+                                     "DC 40,2% · Elo 39,4% · distanza 0,8 punti percentuali")
     split = prediction_meta(
         {"p_home": 0.478, "p_draw": 0.281, "p_away": 0.241,
          "dc_p_home": 0.478, "dc_p_draw": 0.281, "dc_p_away": 0.241,

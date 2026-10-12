@@ -1,3 +1,9 @@
+## 2026-10-12 — Audit completo del sito e unità dei margini (docs/88)
+
+Audit misurato: nessun errore in console, nessuna richiesta fallita, nessun overflow, lingua e H1 a posto su 8 pagine. Trovato e corretto un difetto di chiarezza: «+48 punti sul secondo» ora dice «punti percentuali» (anche nel segnale DC/Elo). Controlli allineati in `verify_site`, `audit_match_sections`, `render_preview` e tre test.
+
+**Gate:** `pytest` 657 passati, `ruff` pulito, `fda build` completo, `verify_site` 0 problemi · 235.696 controlli. Restano aperti (docs/88 §4): sezioni della scheda da revisionare, «forza avv.» anacronistica, tilt non cablati, clima (decisione utente), StatsBomb (decisione utente).
+
 ## 2026-10-12 — Pagina pubblica «Laboratorio dei modelli» (docs/87)
 
 Integrazione richiesta dall'utente: il verdetto del laboratorio (docs/86) è ora una pagina del sito, `laboratorio.html`, linkata da «Accuratezza». I verdetti vengono da `model_lab.parquet` con il criterio di docs/13 §6.5 (`src/fda/site/lab_page.py`, test `tests/test_lab_page.py`). Esito pubblicato: produzione invariata, 5 varianti superano il criterio, nessuna promossa.

@@ -964,7 +964,7 @@ def prediction_meta(pred: dict[str, Any] | None, home_name: str | None = None,
             signal_label = (f"DC ed Elo sullo stesso preferito ({names[dc_top]}): "
                             f"DC {_comma(float(dc_values[dc_top]) * 100)}% · "
                             f"Elo {_comma(float(elo_values[elo_top]) * 100)}% · "
-                            f"distanza {_comma(elo_gap_top_pp)} punti")
+                            f"distanza {_comma(elo_gap_top_pp)} punti percentuali")
             signal_tone = "agree"
         else:
             signal_label = (f"Preferiti diversi: DC {names[dc_top]} "

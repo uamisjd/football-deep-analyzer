@@ -88,7 +88,7 @@ def test_parser_della_home_legge_i_campi_veri():
       <div class="match-team away-team">
         <a href="p.html">PEC Zwolle</a><span class="team-rank">16ª · 4 pt</span></div>
       <div class="projection-copy"><strong>FC Groningen <span class="projection-p">54%</span></strong>
-        <span class="projection-note">favorito · +29 punti sul secondo (Pareggio 25%)</span></div>
+        <span class="projection-note">favorito · +29 punti percentuali sul secondo (Pareggio 25%)</span></div>
       <span class="h" style="width:54%"></span><span class="d" style="width:25%"></span>
       <span class="a" style="width:21%"></span>
       <div class="signal signal-agree">✓ DC ed Elo sullo stesso preferito</div>

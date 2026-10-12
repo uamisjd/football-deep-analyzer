@@ -2170,7 +2170,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # non corrispondevano e venivano saltate in silenzio (`if not m: continue`), cioè la
     # correzione della concordanza toglieva copertura invece di essere verificata (18/09/2026).
     hero_re = re.compile(r'<strong>([^<]*)<em>(\d+)%</em>.*?'
-                         r'\+(\d+(?:,\d+)?) (punti|punto) sul secondo — (.*?) (\d+)%'
+                         r'\+(\d+(?:,\d+)?) (punti percentuali|punto percentuale) sul secondo — (.*?) (\d+)%'
                          r' · 1 (\d+)% · X (\d+)% · 2 (\d+)%', re.DOTALL)
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
@@ -2182,7 +2182,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
         checks += 1
         n_margini += 1
         # la concordanza è ora verificata, non solo tollerata
-        attesa = "punto" if int(margine) == 1 else "punti"
+        attesa = "punto percentuale" if int(margine) == 1 else "punti percentuali"
         if m.group(4) != attesa:
             fails.append(f"{pg.name}: «+{margine:g} {m.group(4)} sul secondo», voleva «{attesa}»")
         if (top_v - second_v) != int(margine):

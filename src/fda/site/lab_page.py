@@ -9,9 +9,8 @@ solo**: la promozione è una decisione a parte (``docs/86``), e la pagina lo dic
 
 from __future__ import annotations
 
-from typing import Any
-
 import re
+from typing import Any
 
 import numpy as np
 import pandas as pd
