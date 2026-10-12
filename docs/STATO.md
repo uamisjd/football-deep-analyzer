@@ -1,3 +1,9 @@
+## 2026-10-12 — Rilancio del laboratorio modelli (docs/86)
+
+Richiesta dell'utente: uso privato e personale, iniziare a migliorare il progetto. Prima la misura: `fda lab` rilanciato sullo storico attuale (7.522 gare, 3.157 valutate, 29 candidati) — il riepilogo era fermo al 14/09. Esito: nessun candidato migliora la produzione in modo rilevante (migliore ΔRPS −0,00095, circa 0,5%). `gamma_112`, `gamma_124` e `tau_110` superano il criterio di `docs/13` §6.5 su questo campione, ma la γ-sharpening era già respinta in `docs/19` §1.3 e il risultato è sensibile alla griglia e alla molteplicità: **produzione invariata**. Proposta: test prospettico con una sola ipotesi pre-registrata (`gamma_112`), in attesa di decisione dell'utente.
+
+**Gate:** `fda build` 493/2.364/7.586, `verify_site` 0 problemi · 235.684 controlli, `ruff` pulito, test lab 39 passati. Nessuna richiesta alle fonti esterne. File: `docs/86`, `data/processed/model_lab.parquet`.
+
 ## 2026-10-12 — Revisione dei 12 punti dell'esperto: chiusura (docs/85)
 
 Punti chiusi: 2 (niente LLM), 3 (semaforo), 4 (radar: PPDA solo se per entrambe), 5 (report
