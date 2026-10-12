@@ -148,7 +148,17 @@ su dati passati e dichiarare la copertura: Understat copre **5 leghe**, non NED1
 ## 6. Gate e confini
 
 - Baseline prima della modifica: **664 test passati**.
-- Gate finali: **in esecuzione**; aggiornare questa sezione con gli esiti, non presumerli.
+- **Gate finali eseguiti:** `pytest` **700 passati**; `ruff check .` pulito;
+  `fda build` completo (**498 schede / 2.364 fixture / 7.594 giocatori**);
+  `scripts/verify_site.py` **239.517 controlli, 0 problemi**;
+  `audit_understat_storico` **0 difetti**; parità **63 schede, nessuna differenza**;
+  resa a 375 px **28.657 misure, 0 problemi**.
+- [CI `tests` del codice sul branch](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38273582240):
+  **success**, commit `836a0a2`. Il commit finale successivo aggiorna solo la documentazione.
+- `git diff --exit-code -- data/processed` riuscito: nessun dato modificato dai gate.
+- **[PR #108](https://github.com/uamisjd/football-deep-analyzer/pull/108) aperta in bozza**:
+  blocco verificato, ma coda dell'handoff ancora aperta; nessuna richiesta di merge e nessun
+  merge eseguito. Lavoro pushato solo su `arena/8d89284f-football-deep-analyzer`.
 - Nessuna richiesta a Understat o football-data; nessun `predict` sullo store reale.
 - Nessun Parquet modificato; `season_sim.parquet` e `season_sim_cond.parquet` esclusi dal lavoro.
   Nota di allineamento: nel checkout `514309d` risultano **entrambi già tracciati**; questo

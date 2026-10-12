@@ -19,8 +19,13 @@
   oltre alle 16:30 corrette: possibile residuo di aggiornamento d'orario. Non riguarda lo
   storico 2021–2025; non cancellato per deduzione. Dettagli e limiti in `docs/91`.
 
-**Gate in corso:** 700 test passati; `ruff check .` pulito; audit storico 0 difetti.
-`fda build`, `verify_site`, parità e resa in esecuzione: non dichiarati conclusi.
+**Gate finali verificati:** **700 test** passati; `ruff check .` pulito; audit storico 0 difetti;
+`fda build` **498/2.364/7.594**; `verify_site` **239.517 controlli, 0 problemi**;
+parità **63 schede, nessuna differenza**; resa a 375 px **28.657 misure, 0 problemi**.
+CI `tests` del codice verde: run `38273582240`, commit `836a0a2`.
+**PR [#108](https://github.com/uamisjd/football-deep-analyzer/pull/108) in bozza**, aperta
+per conservare questo blocco e proseguire la coda sullo stesso ramo; **non unita**.
+Il commit finale dei gate e del numero PR aggiorna solo la documentazione.
 Nessun Parquet modificato; i due `season_sim*` restano fuori dal lavoro (in questo checkout
 sono entrambi già tracciati). Nessuna richiesta alle fonti; API GitHub lette, log integrali
 Actions non raggiungibili.
