@@ -35,6 +35,19 @@ def _key(title: str) -> str:
     return re.sub(r"[^a-z0-9]+", " ", title.lower()).strip()
 
 
+def primary_titles(html: str) -> set[str]:
+    """Titoli principali letti dal DOM, indipendenti da attributi/classi extra sui li.
+
+    Non include riserve o letture sul tema: preserva la definizione dei marcatori Clima.
+    """
+    card = CARD.search(html)
+    if card is None:
+        return set()
+    soup = BeautifulSoup(card.group(), "html.parser")
+    return {item.find("a").get_text(strip=True) for item in soup.select("ul.news-list > li")
+            if item.find("a") is not None}
+
+
 def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
     """Rilegge il significato dei numeri e le tuple della fonte; sola lettura."""
     paths = {name: data / f"{name}.parquet" for name in ("fixtures", "news")}

@@ -90,6 +90,29 @@ def test_i_dati_numerici_sono_etichettati_come_contesto_non_notizie(tmp_path):
     assert not card.select('.news-list .sapere')
 
 
+def test_copertura_singolare_e_titoli_principali_letti_dal_dom(tmp_path):
+    from fda.site.club_news_checks import primary_titles
+
+    st, ma = seed(tmp_path, [{"title": "Inter, la polizia esegue misure cautelari dopo gli scontri tra i tifosi"}])
+    path = render_card(tmp_path, st, ma)
+    html = path.read_text()
+    assert "1 titolo consultabile" in html and "1 titoli" not in html
+    assert "1 voce archiviata" in html and "1 voci" not in html
+    assert primary_titles(html) == {"Inter, la polizia esegue misure cautelari dopo gli scontri tra i tifosi"}
+
+
+def test_marcatore_clima_non_include_letture_sul_tema_o_riserve(tmp_path):
+    from fda.site.club_news_checks import primary_titles
+
+    st, ma = seed(tmp_path, [
+        {"title": "Inter, misure cautelari: primo articolo sui tifosi", "url": "https://example.org/1"},
+        {"title": "Inter, misure cautelari: un altro articolo sui tifosi", "url": "https://example.org/2"},
+    ])
+    path = render_card(tmp_path, st, ma)
+    expected = {n["title"] for n in news(ma)["notizie"]}
+    assert len(expected) == 1 and primary_titles(path.read_text()) == expected
+
+
 @pytest.mark.parametrize("field", ["kind", "related_count"])
 def test_audit_rifiuta_etichette_o_contatori_non_veri(tmp_path, field):
     st, ma = seed(tmp_path, [

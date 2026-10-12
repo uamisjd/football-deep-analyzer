@@ -592,7 +592,7 @@
       {% endif %}</p>
     <div class="grid news-coverage" aria-label="Copertura della rassegna">
       {% for side in ('home','away') %}{% set nw = c[side ~ '_news'] %}
-      <p class="small imbuto" style="margin:0 0 8px"><b>{{ c[side ~ '_name'] }}</b>: {{ nw.esaminate }} voci archiviate nella finestra · <b>{{ nw.pubblicate + nw.riserva|length + nw.correlate }} titoli consultabili</b>.
+      <p class="small imbuto" style="margin:0 0 8px"><b>{{ c[side ~ '_name'] }}</b>: {{ nw.esaminate|it_plural('voce archiviata', 'voci archiviate') }} nella finestra · {% set consultabili = nw.pubblicate + nw.riserva|length + nw.correlate %}<b>{{ consultabili|it_plural('titolo consultabile', 'titoli consultabili') }}</b>.
       {% if not nw.esaminate %}<span class="mut">Nessuna voce raccolta: copertura non disponibile, non quiete dimostrata.</span>
       {% elif not nw.notizie and not nw.riserva %}<span class="mut">Nessuna segnalazione nel perimetro; non abbassiamo la soglia per riempire la pagina.</span>
       {% else %}<span class="mut">Rassegna parziale della stampa italiana raccolta, non copertura completa.</span>{% endif %}</p>

@@ -3767,13 +3767,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if frammento not in nota49:
                     fails.append(f"{pg.name}: la nota del clima non dichiara «{frammento}»")
             # i titoli pubblicati in «Vita del club» sulla stessa pagina (per i marcatori)
-            _in49 = html.find('id="notizie"')
-            _fine49 = html.find('<div class="card"', _in49 + 10) if _in49 != -1 else -1
-            blocco_not49 = html[_in49:_fine49 if _fine49 != -1 else len(html)]
-            pubblicate49 = {html_unescape(x) for x in re.findall(
-                r'<li><span class="topic">.*?<br><a href="[^"]*"[^>]*>(.*?)</a>',
-                blocco_not49, re.DOTALL)}
-            pubblicate49 = {_tl49(x) for x in pubblicate49 if x}
+            from fda.site.club_news_checks import primary_titles
+
+            pubblicate49 = {_tl49(x) for x in primary_titles(html)}
             fr49 = fx19[fx19.match_id == int(pg.stem)].iloc[0]
             ko49 = pd.Timestamp(fr49.utc_kickoff)
             for parte in parti49[1:]:
