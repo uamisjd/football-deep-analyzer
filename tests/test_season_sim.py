@@ -179,3 +179,59 @@ def test_simulate_league_accepts_calibration():
     assert len(df) == len(teams)
     assert abs(df.p_title.sum() - 1.0) < 1e-3
     assert (df.exp_points >= df.points).all()
+
+
+def test_simulate_conditions_rispetta_la_probabilita_totale():
+    """Legge della probabilità totale: P(titolo) = Σ_esito P(esito) · P(titolo | esito).
+
+    Le P(esito) vengono dalla stessa griglia del modello, quindi il test non dipende da numeri
+    scritti a mano. Il risultato fissato deve anche cambiare davvero la probabilità: se la
+    condizione fosse ignorata, le tre cifre coinciderebbero con quella non condizionata.
+    """
+    from fda.models.season_sim import _fit_league, simulate_conditions
+
+    warnings.filterwarnings("ignore")
+    hist = _synthetic_hist()
+    teams = sorted(set(hist.home))
+    rem = pd.DataFrame({"home": ["T1", "T2"], "away": ["T0", "T3"]})
+    pts, gd, pl = _bases(teams)
+    fitted = _fit_league(hist, 0.0018, 0.7, None, rem)
+    m = fitted["grids"][("T1", "T0")]
+    p = {"1": float(np.tril(m, -1).sum()), "X": float(np.trace(m)), "2": float(np.triu(m, 1).sum())}
+    assert abs(sum(p.values()) - 1.0) < 1e-9
+
+    cond = simulate_conditions(hist, rem, pts, gd, pl, [("T1", "T0", o) for o in "1X2"],
+                               n_sims=20000, seed=11, rel_count=3)
+    uncond = simulate_league(hist, rem, pts, gd, pl, n_sims=20000, seed=11, rel_count=3)
+    assert set(cond.cond_outcome) == {"1", "X", "2"}
+    for team in teams:
+        per = {o: float(cond[(cond.cond_outcome == o) & (cond.team == team)].p_title.iloc[0]) for o in "1X2"}
+        total = sum(p[o] * per[o] for o in "1X2")
+        u = float(uncond[uncond.team == team].p_title.iloc[0])
+        assert abs(total - u) < 0.03, (team, total, u)
+    # la condizione conta: la vittoria della casa non può dare lo stesso titolo del pareggio
+    t1 = {o: float(cond[(cond.cond_outcome == o) & (cond.team == "T1")].p_title.iloc[0]) for o in "1X2"}
+    assert t1["1"] > t1["2"]
+
+
+def test_simulate_conditions_gara_assente_o_esito_impossibile():
+    from fda.models.season_sim import simulate_conditions
+
+    warnings.filterwarnings("ignore")
+    hist = _synthetic_hist()
+    rem = pd.DataFrame({"home": ["T1"], "away": ["T0"]})
+    pts, gd, pl = _bases(sorted(set(hist.home)))
+    with pytest.raises(ValueError, match="non è fra quelle"):
+        simulate_conditions(hist, rem, pts, gd, pl, [("T5", "T6", "1")], n_sims=200, seed=1)
+
+
+def test_simulate_conditions_p_outcome_somma_a_uno():
+    from fda.models.season_sim import simulate_conditions
+
+    warnings.filterwarnings("ignore")
+    hist = _synthetic_hist()
+    rem = pd.DataFrame({"home": ["T1"], "away": ["T0"]})
+    pts, gd, pl = _bases(sorted(set(hist.home)))
+    cond = simulate_conditions(hist, rem, pts, gd, pl, [("T1", "T0", o) for o in "1X2"],
+                               n_sims=200, seed=3)
+    assert abs(cond.drop_duplicates("cond_outcome").p_outcome.sum() - 1.0) < 1e-5

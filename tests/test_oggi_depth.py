@@ -441,7 +441,8 @@ def test_arrival_trend_publishes_the_numbers_behind_the_judgement():
         a = ma.arrival_trend("Alpha", 10, n=6)
         assert a["trend"] == "in calo"
         assert a["trend_recent"] == pytest.approx(0.8) and a["trend_before"] == pytest.approx(2.4)
-        assert a["trend_threshold"] == 0.15
+        # margine di significatività: 2 errori standard con σ 0,83, 3 gare contro 3 precedenti
+        assert a["trend_threshold"] == pytest.approx(1.36, abs=0.005)
 
 
 def test_arrival_trend_da_cinque_gare_su_entrambi_i_lati():
@@ -469,7 +470,9 @@ def test_arrival_trend_da_cinque_gare_su_entrambi_i_lati():
         assert a["trend"] == "in calo"                       # creati: 2,40 → 0,80
         assert a["trend_n_before"] == 2                       # ultime 3 contro le 2 precedenti
         assert a["trend_before"] == pytest.approx(2.4) and a["trend_recent"] == pytest.approx(0.8)
-        assert a["trend_xga"] == "in crescita"               # concessi: 0,50 → 2,00
+        # concessi: 0,50 → 2,00 è un salto di 1,50, sotto il margine di 1,52 (2 errori standard
+        # con 3 gare contro 2): non è una tendenza, lo dice la pagina con i numeri
+        assert a["trend_xga"] == "nessuna tendenza chiara"
         assert a["trend_xga_before"] == pytest.approx(0.5)
         assert a["trend_xga_recent"] == pytest.approx(2.0)
 
@@ -841,7 +844,7 @@ def test_prediction_meta_signal_names_both_engines_with_recomputeable_numbers():
          "w_dc": 0.7, "ensemble_mode": "tilt"}, "Alpha", "Beta")
     assert agree["signal_tone"] == "agree"
     assert agree["signal_label"] == ("DC ed Elo sullo stesso preferito (Alpha): "
-                                     "DC 40,2% · Elo 39,4% · distanza 0,8 punti")
+                                     "DC 40,2% · Elo 39,4% · distanza 0,8 punti percentuali")
     split = prediction_meta(
         {"p_home": 0.478, "p_draw": 0.281, "p_away": 0.241,
          "dc_p_home": 0.478, "dc_p_draw": 0.281, "dc_p_away": 0.241,
@@ -1292,3 +1295,158 @@ def test_fattori_infermeria_con_un_solo_assente_concorda(tmp_path, monkeypatch):
     vs = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(vs)
     assert not vs.AGREEMENT.search(testo), testo
+
+
+def test_trend_label_serve_un_margine_di_significativita():
+    """Il trend non dichiara una direzione per differenze entro il rumore misurato.
+
+    Misura (2026-10-12, 554 gare-squadra Understat): con l'ordine delle gare mescolato a caso la
+    vecchia soglia ±0,15 produceva «in crescita»/«in calo» nell'84% dei casi. Ora la differenza
+    deve superare 2 errori standard della differenza di medie (σ 0,83).
+    """
+    from fda.site.analysis import MatchAnalysis
+
+    lab = MatchAnalysis._trend_label
+    assert lab(0.15, 1.36) == "nessuna tendenza chiara"     # la vecchia soglia non basta più
+    assert lab(-0.9, 1.36) == "nessuna tendenza chiara"
+    assert lab(1.6, 1.36) == "in crescita"
+    assert lab(-1.6, 1.36) == "in calo"
+    assert lab(1.36, 1.36) == "nessuna tendenza chiara"     # al bordo non si dichiara nulla
+
+
+def test_trend_sotto_il_rumore_non_e_una_tendenza_su_dati_reali_mescolati(tmp_path):
+    """Con gare in ordine casuale la frazione di etichette direzionali deve restare bassa.
+
+    Replica la misura del 2026-10-12 in piccolo: stessa xG, ordine mescolato, nessun trend vero.
+    La soglia è fissata a 2 errori standard, quindi i falsi positivi attesi sono intorno al 5%
+    (anche meno per il test a 5 gare). Tolleranza larga: il test fissa l'ordine di grandezza.
+    """
+    from fda.site.analysis import MatchAnalysis
+
+    rng = np.random.default_rng(7)
+    xg = [1.0, 1.4, 0.6, 1.1, 0.9, 1.6, 0.4, 1.2, 0.8, 1.3, 0.7, 1.5]   # 12 gare, media ~1
+    veri = 0
+    prove = 2000
+    for _ in range(prove):
+        x = rng.permutation(xg)[:5]
+        if MatchAnalysis._trend_label(x[-3:].mean() - x[:-3].mean(),
+                                      2 * 0.83 * np.sqrt(1 / 3 + 1 / 2)) != "nessuna tendenza chiara":
+            veri += 1
+    assert veri / prove < 0.10
+
+
+def test_indisponibile_nella_prossima_gara_esce_dai_decisivi():
+    """Un giocatore indisponibile nella gara in programma non compare fra i decisivi.
+
+    Caso reale (2026-10-12): Locatelli è «unavailable» nella distinta di Juventus–Lazio (gara
+    futura). La partita passata Cagliari–Juventus resta «scheduled» nei dati: non deve essere
+    scelta come «prossima». Un giocatore indisponibile solo in una gara passata resta in gioco.
+    """
+    from fda.site.analysis import MatchAnalysis
+
+    ora = pd.Timestamp.now(tz="UTC")
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ma.fixtures = pd.DataFrame([
+        # passata da 2 giorni, ancora «scheduled» nei dati: NON è la prossima
+        {"match_id": 1, "utc_kickoff": ora - pd.Timedelta(days=2), "home_id": 10, "away_id": 30,
+         "status": "scheduled"},
+        {"match_id": 2, "utc_kickoff": ora + pd.Timedelta(days=6), "home_id": 10, "away_id": 40,
+         "status": "scheduled"},
+        {"match_id": 3, "utc_kickoff": ora + pd.Timedelta(days=13), "home_id": 50, "away_id": 10,
+         "status": "scheduled"},
+    ])
+    ma.lineup = pd.DataFrame([
+        {"match_id": 1, "team_id": 10, "player_id": 7, "role": "unavailable"},    # fuori nella passata
+        {"match_id": 2, "team_id": 10, "player_id": 8, "role": "unavailable"},    # fuori nella prossima
+        {"match_id": 2, "team_id": 10, "player_id": 9, "role": "starter"},
+        {"match_id": 1, "team_id": 10, "player_id": 9, "role": "starter"},
+    ])
+    assert ma._unavailable_next_match(10) == {8}
+    # senza distinta per la prossima gara nessuno viene escluso
+    ma.lineup = ma.lineup[ma.lineup.match_id != 2]
+    assert ma._unavailable_next_match(10) == set()
+
+
+def test_jolly_dalla_panchina_soglie_e_stima_stabilizzata():
+    """Jolly = subentrato ripetuto (≥5 con minuti, media ≥10′), sopra la media dei subentrati.
+
+    Costruito a mano: il giocatore 1 è un jolly; il 2 ha solo 4 subentri; il 3 gioca 6′ di media;
+    il 4 è indisponibile nella prossima gara; il 5 è sotto la media dei subentrati.
+    """
+    from fda.site.analysis import MatchAnalysis
+
+    ora = pd.Timestamp.now(tz="UTC")
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    ids = {1: "Jolly Uno", 2: "Quattro Volte", 3: "Brevi Minuti", 4: "Infortunato", 5: "Scarso"}
+    righe_lu, righe_ps = [], []
+    mid = 100
+    def sub_match(pid, minuti, xg, xa, team=10):
+        nonlocal mid
+        mid += 1
+        righe_lu.append({"match_id": mid, "team_id": team, "player_id": pid,
+                         "player_name": ids[pid], "role": "sub"})
+        righe_ps.append({"match_id": mid, "player_id": pid, "key": "minutes_played", "value": float(minuti)})
+        righe_ps.append({"match_id": mid, "player_id": pid, "key": "expected_goals", "value": xg})
+        righe_ps.append({"match_id": mid, "player_id": pid, "key": "expected_assists", "value": xa})
+    for _ in range(5):
+        sub_match(1, 20, 0.5, 0.3)              # 5 subentri, 20′ a gara, molto produttivo
+    for _ in range(4):
+        sub_match(2, 25, 0.9, 0.5)              # solo 4 subentri: fuori
+    for _ in range(6):
+        sub_match(3, 6, 0.5, 0.2)               # 6′ di media: fuori
+    for _ in range(5):
+        sub_match(4, 20, 0.8, 0.4)              # ottimo ma indisponibile nella prossima gara
+    for _ in range(5):
+        sub_match(5, 20, 0.02, 0.01)            # sotto la media dei subentrati: non è un jolly
+    # pool dei subentrati dell'archivio: altre squadre con ritmo medio
+    for _ in range(12):
+        sub_match(1, 20, 0.2, 0.1, team=99)
+    # prossima gara della squadra 10: il giocatore 4 è indisponibile lì
+    ma.fixtures = pd.DataFrame([{"match_id": 900, "utc_kickoff": ora + pd.Timedelta(days=3),
+                                 "home_id": 10, "away_id": 40, "status": "scheduled"}])
+    righe_lu.append({"match_id": 900, "team_id": 10, "player_id": 4, "player_name": ids[4], "role": "unavailable"})
+    ma.lineup = pd.DataFrame(righe_lu)
+    ma.player_stats = pd.DataFrame(righe_ps)
+    jol = ma.bench_jolly(10)
+    nomi = [j["name"] for j in jol]
+    assert nomi == ["Jolly Uno"], nomi
+    j = jol[0]
+    assert j["n_sub"] == 5 and j["avg_min"] == pytest.approx(20.0)
+    assert j["raw90"] == pytest.approx((0.5 + 0.3) * 5 / (100 / 90), abs=0.01)
+    # stima stabilizzata: più bassa della grezza (5 gare = 100′ contro 270′ di peso)
+    assert j["shrunk90"] < j["raw90"]
+    # il pool è il tasso di tutti i subentrati in archivio: 4 e 5 non sono «jolly» per costruzione
+    assert ma._sub_pool_rate() is not None
+
+
+def test_effetto_valore_titolari_si_calcola_dall_archivio_e_non_e_monotono_per_forza():
+    """Il rapporto di valore dei titolari si misura sull'archivio: nessuna cifra scritta a mano.
+
+    Costruito a mano: 4 gare con rapporto 2× (la più ricca vince 3 volte su 4) e 2 gare con 6×
+    (vince 1 volta su 2). Le gare senza valori o non finite non entrano.
+    """
+    from fda.site.analysis import MatchAnalysis, _wilson
+
+    ma = MatchAnalysis.__new__(MatchAnalysis)
+    righe = []
+    for hg, ag in [(2, 0), (1, 0), (0, 1), (3, 1)]:                  # casa 2× più ricca: 3 vittorie
+        righe.append({"status": "finished", "home_goals": hg, "away_goals": ag,
+                      "home_starters_value_eur": 200.0, "away_starters_value_eur": 100.0})
+    for hg, ag in [(1, 0), (0, 2)]:                                  # trasferta 6× più ricca: 1 vittoria
+        righe.append({"status": "finished", "home_goals": hg, "away_goals": ag,
+                      "home_starters_value_eur": 100.0, "away_starters_value_eur": 600.0})
+    righe.append({"status": "scheduled", "home_goals": None, "away_goals": None,
+                  "home_starters_value_eur": 300.0, "away_starters_value_eur": 100.0})
+    righe.append({"status": "finished", "home_goals": 1, "away_goals": 1,
+                  "home_starters_value_eur": 0.0, "away_starters_value_eur": 100.0})
+    ma.info = pd.DataFrame(righe)
+    b = ma.market_bucket(2.0)
+    assert b["n"] == 4 and b["p"] == pytest.approx(0.75)
+    b6 = ma.market_bucket(6.0)
+    assert b6["n"] == 2 and b6["p"] == pytest.approx(0.5)
+    assert ma.market_bucket(1.2) is None                              # nessuna gara nello scaglione
+    a, c = _wilson(3, 4)
+    assert a < 0.75 < c and 0 <= a and c <= 1
+    frase = ma.market_sentence()
+    assert "sulle 6 gare" in frase and "non cresce in modo regolare" in frase
+    assert "monotono" not in frase

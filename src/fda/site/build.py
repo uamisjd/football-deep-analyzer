@@ -296,7 +296,8 @@ class SiteBuilder:
     # mappa pagina → voce di nav attiva (aria-current)
     NAV_SECTIONS: ClassVar[dict[str, str]] = {
         "index.html": "oggi", "prossime.html": "prossime", "risultati.html": "risultati",
-        "accuratezza.html": "accuratezza", "stagione.html": "stagione", "stato.html": "stato",
+        "accuratezza.html": "accuratezza", "laboratorio.html": "accuratezza",
+        "stagione.html": "stagione", "stato.html": "stato",
         "info.html": "info",
     }
     NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori")]
@@ -1016,6 +1017,15 @@ class SiteBuilder:
         ("p_away_clean_sheet", "Porta inviolata trasferta", "cs_a"),
     )
 
+    def build_laboratorio(self) -> None:
+        """Pagina pubblica del laboratorio: verdetti dal Parquet, mai scritti a mano."""
+        from ..models import prospettico
+        from .lab_page import lab_leaderboard
+
+        prosp = prospettico.evaluate(self.store, self.store.read("fixtures"))
+        self._render("laboratorio.html", "laboratorio.html", lab=lab_leaderboard(self.store.read("model_lab")),
+                     prosp=prosp)
+
     def build_accuracy(self, fx: pd.DataFrame) -> None:
         preds = self.store.read("predictions")
         # baseline naive = frequenze reali per lega (docs/19 §1.6); chiave = league_key
@@ -1276,7 +1286,7 @@ class SiteBuilder:
         build_date = self.now.strftime("%Y-%m-%d")
         urls: list[tuple[str, str]] = [
             ("", build_date), ("prossime.html", build_date), ("risultati.html", build_date),
-            ("accuratezza.html", build_date), ("stagione.html", build_date),
+            ("accuratezza.html", build_date), ("laboratorio.html", build_date), ("stagione.html", build_date),
             ("stato.html", build_date), ("info.html", build_date),
             ("giocatori/index.html", build_date),
         ]
@@ -1354,6 +1364,7 @@ class SiteBuilder:
         built = self.build_match_pages(ids)
         n_players = self.build_players(built)
         self.build_accuracy(fx)
+        self.build_laboratorio()
         self.build_stagione()
         self.build_status()
         # info.html ora riceve la calibrazione live e il riepilogo lab per mostrare badge e dettagli misurati

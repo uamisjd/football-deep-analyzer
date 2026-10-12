@@ -47,7 +47,7 @@
     <div class="projection-copy">
       <span class="eyebrow">Lettura del modello</span>
       {% if meta %}<strong>{{ meta.top_name }} <span class="projection-p">{{ meta.top_pct }}%</span></strong>
-      <span class="projection-note">favorito · +{{ meta.margin_pp|it_plural('punto','punti') }} sul secondo ({{ meta.second_name }} {{ meta.second_pct }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
+      <span class="projection-note">favorito · +{{ meta.margin_pp|it_plural('punto percentuale','punti percentuali') }} sul secondo ({{ meta.second_name }} {{ meta.second_pct }}%)</span>{% else %}<strong>Probabilità disponibili</strong>{% endif %}
     </div>
     <div class="mini-probability">
       {# 1X2 corretto una volta sola: larghezze, etichette, aria-label e favorito leggono gli

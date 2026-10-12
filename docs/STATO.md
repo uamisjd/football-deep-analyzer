@@ -1,3 +1,50 @@
+## 2026-10-12 — Storico Understat e PR #107 (docs/90)
+
+- Comando `fda understat-storico` (stagioni 2021–2025, 5 leghe) e workflow manuale `understat-storico.yml` (commit dei Parquet solo se cambiano, `[skip ci]`). Test pianificazione: 2.
+- Il workflow non è lanciabile finché non è su `main`: GitHub risponde 404 su un workflow manuale che non esiste sul branch di default. PR #107 in bozza, non unita: il merge è dell'utente.
+- Non verificato: il recupero reale da Understat (la sandbox non lo raggiunge). Non ancora misurato alcun risultato sul candidato `dc_xg`.
+- Aperti: sei sezioni della scheda, StatsBomb (decisione utente), clima (decisione utente).
+
+## 2026-10-12 — Test prospettico γ 1,12, verifica StatsBomb, clima (docs/89)
+
+Decisioni dell'utente: (1) rivedere il clima; (2) StatsBomb su tutti i campionati, 4–5 stagioni precedenti; (3) procedere con le sezioni della scheda; (4) test prospettico γ 1,12.
+
+- **Test prospettico** (`src/fda/models/prospettico.py`, tabella `prospettico`, hook in `fda predict`, sezione in «Laboratorio»): registra produzione e γ 1,12 sulle λ pubblicate prima del calcio d'inizio; promozione solo con 200 partite, IC interamente negativo, 5/7 campionati. 5 test. Nessun risultato ancora.
+- **StatsBomb (2): non realizzabile come chiesto.** La Liga 2004/05–2020/21; altri campionati solo poche stagioni; Eredivisie e Primeira nessuna; stagioni recenti assenti. Proposta alternativa: backfill Understat 2021–2025 via CI (da decidere).
+- **Clima (1): revisione.** Notizie disponibili solo due settimane, testo vuoto, VADER inglese: sentiment non misurabile oggi. Card resta regola-based; archivio titoli già in accumulo.
+- **Sezioni scheda (3): da fare** nel prossimo giro.
+
+**Gate:** `pytest` 662 passati, `ruff` pulito, `fda build` completo, `verify_site` 0 problemi · 235.696 controlli. Nessuna richiesta a fonti esterne in questa tranche, salvo la verifica di StatsBomb.
+
+## 2026-10-12 — Audit completo del sito e unità dei margini (docs/88)
+
+Audit misurato: nessun errore in console, nessuna richiesta fallita, nessun overflow, lingua e H1 a posto su 8 pagine. Trovato e corretto un difetto di chiarezza: «+48 punti sul secondo» ora dice «punti percentuali» (anche nel segnale DC/Elo). Controlli allineati in `verify_site`, `audit_match_sections`, `render_preview` e tre test.
+
+**Gate:** `pytest` 657 passati, `ruff` pulito, `fda build` completo, `verify_site` 0 problemi · 235.696 controlli. Restano aperti (docs/88 §4): sezioni della scheda da revisionare, «forza avv.» anacronistica, tilt non cablati, clima (decisione utente), StatsBomb (decisione utente).
+
+## 2026-10-12 — Pagina pubblica «Laboratorio dei modelli» (docs/87)
+
+Integrazione richiesta dall'utente: il verdetto del laboratorio (docs/86) è ora una pagina del sito, `laboratorio.html`, linkata da «Accuratezza». I verdetti vengono da `model_lab.parquet` con il criterio di docs/13 §6.5 (`src/fda/site/lab_page.py`, test `tests/test_lab_page.py`). Esito pubblicato: produzione invariata, 5 varianti superano il criterio, nessuna promossa.
+
+**Gate:** `fda build` completo, `verify_site` 0 problemi · 235.696 controlli, `ruff` pulito, 5 test nuovi passati, verifica visiva a 1280 e 390 px. Nessuna richiesta a fonti esterne.
+
+## 2026-10-12 — Rilancio del laboratorio modelli (docs/86)
+
+Richiesta dell'utente: uso privato e personale, iniziare a migliorare il progetto. Prima la misura: `fda lab` rilanciato sullo storico attuale (7.522 gare, 3.157 valutate, 29 candidati) — il riepilogo era fermo al 14/09. Esito: nessun candidato migliora la produzione in modo rilevante (migliore ΔRPS −0,00095, circa 0,5%). `gamma_112`, `gamma_124` e `tau_110` superano il criterio di `docs/13` §6.5 su questo campione, ma la γ-sharpening era già respinta in `docs/19` §1.3 e il risultato è sensibile alla griglia e alla molteplicità: **produzione invariata**. Proposta: test prospettico con una sola ipotesi pre-registrata (`gamma_112`), in attesa di decisione dell'utente.
+
+**Gate:** `fda build` 493/2.364/7.586, `verify_site` 0 problemi · 235.684 controlli, `ruff` pulito, test lab 39 passati. Nessuna richiesta alle fonti esterne. File: `docs/86`, `data/processed/model_lab.parquet`.
+
+## 2026-10-12 — Revisione dei 12 punti dell'esperto: chiusura (docs/85)
+
+Punti chiusi: 2 (niente LLM), 3 (semaforo), 4 (radar: PPDA solo se per entrambe), 5 (report
+forme non tradotte), 7 (Locatelli e jolly), 8 (niente pillola «ruolo n.d.»), 9 (probabilità
+condizionate per gara con legge della probabilità totale in `verify_site` [4b]), 11 (frase
+«In breve»), 12 (griglia adattiva). Punto 1 mantenuto. Punto 10 (clima) aperto.
+
+Correzione: gli 8 avvisi ruff che avevo dichiarato preesistenti erano miei; la pipeline `tests`
+falliva per questo. Corretti; `ruff check .` pulito. Gate: `pytest` 650, `verify_site` nessun
+problema. Dettagli e limiti in `docs/85`.
+
 ## 2026-10-11 — Card «Clima del club»: revisione 360° (docs/81)
 
 Richiesta dell'utente: rivedere e verificare la sezione «Clima del club», trovare errori,

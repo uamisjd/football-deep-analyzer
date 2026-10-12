@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Laboratorio dei modelli — CalcioMetro{% endblock %}
+{% block content %}
+<p class="crumb"><a href="{{ root }}index.html">Oggi</a> · <a href="{{ root }}accuratezza.html">Accuratezza</a> · Laboratorio</p>
+<h1>Laboratorio dei <span class="mut2">modelli</span></h1>
+<p class="mut" style="font-size:17px;max-width:760px">Ogni variante del modello viene addestrata solo sulle partite precedenti e valutata su quelle successive (walk-forward). Il confronto usa lo stesso insieme di partite per tutti, e misura la differenza con la ricetta in produzione con un intervallo di confidenza al 95%.</p>
+
+{% if lab %}
+<div class="card" style="margin:14px 0">
+  <h2>Esito attuale</h2>
+  <p>La ricetta in produzione resta <b>DC+Elo</b> (Dixon-Coles con peso 0,7). Su <b>{{ lab.n_eval|it_num }}</b> partite valutate fuori campione, delle <b>{{ lab.n_candidates - 1 }}</b> varianti testate
+  {% if lab.n_passes %}<b>{{ lab.n_passes }}</b> superano il criterio di promozione (IC interamente negativo e migliori in almeno 5 campionati su 7), ma <b>nessuna è stata promossa</b>: il guadagno è inferiore allo 0,5% sul punteggio RPS e le varianti sono correzioni quasi identiche tra loro.
+  {% else %}nessuna supera il criterio di promozione.{% endif %}
+  La scelta è documentata in <a href="{{ root }}info.html">Metodologia</a>.</p>
+  <p class="small mut">RPS: più basso è, meglio è. Δ RPS: negativo = la variante è migliore della produzione. Produzione: RPS {{ lab.baseline_rps|dec(4) }}.</p>
+</div>
+
+<h2>Tutte le varianti</h2>
+<div class="tablewrap"><table>
+  <tr><th scope="col">Variante</th><th scope="col" class="r">Partite</th><th scope="col" class="r">RPS</th><th scope="col" class="r">Δ RPS vs produzione</th><th scope="col" class="r">IC 95%</th><th scope="col" class="r">Campionati migliori</th><th scope="col">Verdetto</th></tr>
+  {% for x in lab.rows %}
+  <tr>
+    <td>{{ x.label }}<br><span class="small mut"><code>{{ x.candidate }}</code></span></td>
+    <td class="r">{{ x.n|it_num }}</td>
+    <td class="r">{{ x.rps|dec(4) }}</td>
+    {% if x.baseline %}
+    <td class="r">—</td><td class="r">—</td><td class="r">—</td><td>{{ x.verdict }}</td>
+    {% else %}
+    <td class="r">{{ x.delta|dec(4, true) }}</td>
+    <td class="r">[{{ x.lo|dec(4, true) }}; {{ x.hi|dec(4, true) }}]</td>
+    <td class="r">{{ x.leagues_better }} su {{ x.n_leagues }}</td>
+    <td>{{ x.verdict }}</td>
+    {% endif %}
+  </tr>
+  {% endfor %}
+</table></div>
+
+<h2>RPS per campionato</h2>
+<p class="small mut">Le colonne sono la produzione e le varianti più in alto nella tabella precedente. Un valore più basso è migliore: il confronto si legge in verticale, per campionato.</p>
+<div class="tablewrap"><table>
+  <tr><th scope="col">Campionato</th>{% for k in lab.detail_keys %}<th scope="col" class="r"><code>{{ k }}</code></th>{% endfor %}</tr>
+  {% for d in lab.detail %}
+  <tr><td>{{ d.league }}</td>{% for k in lab.detail_keys %}<td class="r">{{ d.cells[k]|dec(4) }}</td>{% endfor %}</tr>
+  {% endfor %}
+</table></div>
+
+<div class="card" style="margin-top:14px">
+  <h2>Test prospettico: γ 1,12</h2>
+  <p>Il test misura su partite <b>non ancora giocate</b> al momento della previsione la stessa correzione che il laboratorio ha trovato migliore sul passato. Le λ pubblicate vengono registrate prima del calcio d'inizio; la variante le corregge con γ 1,12. Regola fissata in anticipo: promozione solo con almeno {{ prosp.min_n }} partite, IC interamente negativo e migliore in almeno {{ prosp.min_leagues }} campionati su 7.</p>
+  {% if prosp and prosp.n %}
+  <p><b>Partite valutate: {{ prosp.n|it_num }}</b> su {{ prosp.min_n }} necessarie.
+  {% if prosp.delta is not none %}Δ RPS medio {{ prosp.delta|dec(4, true) }}, IC 95% [{{ prosp.lo|dec(4, true) }}; {{ prosp.hi|dec(4, true) }}], migliore in {{ prosp.leagues_better }} campionati su {{ prosp.n_leagues }}.{% endif %}
+  {% if prosp.passes %}Il criterio è superato: la decisione di promozione resta a parte.{% else %}Il criterio non è ancora superato.{% endif %}</p>
+  {% else %}
+  <p class="mut">Nessuna partita ancora valutata: il test è iniziato con il run di previsione che lo ha introdotto (docs/89).</p>
+  {% endif %}
+</div>
+
+<div class="card" style="margin-top:14px">
+  <h2>Come leggere</h2>
+  <ul style="padding-left:20px;margin:0">
+    <li><b>Criterio di promozione:</b> IC appaiato interamente negativo e migliore in almeno 5 campionati su 7. Una variante che lo supera va comunque discussa e verificata su partite nuove prima di entrare in produzione.</li>
+    <li><b>Molteplicità:</b> testando molte varianti, qualche risultato positivo arriva per caso. Per questo la produzione non cambia dopo un solo risultato favorevole.</li>
+    <li><b>Limiti:</b> il laboratorio misura la qualità delle probabilità, non il guadagno di chi scommette. Il modello non garantisce risultati.</li>
+  </ul>
+</div>
+{% else %}
+<p class="mut">Il riepilogo del laboratorio non è ancora disponibile.</p>
+{% endif %}
+{% endblock %}

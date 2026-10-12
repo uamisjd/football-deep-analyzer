@@ -67,7 +67,7 @@
 <div class="card">
   <h2>Laboratorio analitico (come si calcolano)</h2>
   <ul style="padding-left:20px;margin:0">
-    <li><b>Matrice dei punteggi</b> — Poisson bivariato con correzione τ di Dixon-Coles (ρ stimato). Coda oltre 5 gol dichiarata; ρ fuori bound clampato, mai inventato. <code>GRID_SIZE=11</code> unica (fix: prima 10 vs 11).</li>
+    <li><b>Matrice dei punteggi</b> — Poisson bivariato con correzione τ di Dixon-Coles (ρ stimato). Coda dichiarata in entrambe le viste: la matrice mostra 0–5 gol per lato con il resto indicato a parte, le barre dei gol si allargano fino a 11 gol finché la massa oltre il cap scende sotto l’1%; ρ fuori bound clampato, mai inventato. <code>GRID_SIZE=11</code> unica (fix: prima 10 vs 11).</li>
     <li><b>Scontro tattico</b> — parametri attacco/difesa; xG azione manovrata / palle inattive media FotMob (parità 7/7); PPDA da Understat dove copre.</li>
     <li><b>Corsa xG</b> — somma cumulativa xG tiri, autogol esclusi.</li>
     <li><b>Qualità dei tiri</b> — xG/tiro; split manovrata/contropiede vs corner/punizioni/rimesse vs rigori; gol−xG e gol−xGOT.</li>

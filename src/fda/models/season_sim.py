@@ -161,21 +161,12 @@ def _match_grid(dc: DixonColesModel, elo: EloModel, home: str, away: str, w_dc: 
     return m / m.sum(), lm, la
 
 
-def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: dict[str, float],
-                    base_gd: dict[str, float], base_played: dict[str, int], w_dc: float = 0.7,
-                    xi: float = 0.0018, n_sims: int = DEFAULT_N_SIMS, seed: int | None = None,
-                    rel_count: int = 3, calibration: Calibration | None = None,
-                    base_gf: dict[str, float] | None = None,
-                    top_n: int | None = DEFAULT_TOP_N) -> pd.DataFrame:
-    """Simula `n_sims` volte il resto di stagione; ritorna una riga per squadra.
+def _fit_league(hist: pd.DataFrame, xi: float, w_dc: float, calibration: Calibration | None,
+                remaining: pd.DataFrame) -> dict[str, Any]:
+    """Fit DC + Elo una volta per lega, poi griglie delle gare restanti una volta sola.
 
-    `remaining`: colonne home/away (nomi canonici); `base_*`: stato attuale dal
-    calendario; `rel_count`: quante squadre retrocedono in questa lega. Campiona i
-    punteggi dalla griglia DC (ρ compreso) così i tie-break usano la differenza reti
-    simulata. Il secondo spareggio è sui gol fatti; gli scontri diretti non sono
-    simulati e il nome alfabetico rende deterministico l'ultimo caso di parità.
-    `top_n` è il numero configurato di posizioni per l'accesso UCL ordinario; ``None``
-    lascia il relativo contenuto non pubblicato invece di inventare una soglia.
+    Le simulazioni condizionate (`simulate_conditions`) riusano questo stato: il fit è il
+    costo grosso, le griglie no.
     """
     warnings.filterwarnings("ignore", category=DeprecationWarning)
     dc = DixonColesModel(xi=xi).fit(hist)
@@ -185,6 +176,25 @@ def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: di
         float(np.clip(hist["home_goals"].mean(), lo_neutral, hi_neutral)),
         float(np.clip(hist["away_goals"].mean(), lo_neutral, hi_neutral)),
     )
+    grids: dict[tuple[str, str], np.ndarray] = {}
+    for f in remaining.itertuples(index=False):
+        if (f.home, f.away) not in grids:
+            m, _, _ = _match_grid(dc, elo, f.home, f.away, w_dc, neutral, calibration)
+            grids[(f.home, f.away)] = m
+    return {"n_train": int(dc.n_matches), "grids": grids}
+
+
+def _run_league(fitted: dict[str, Any], remaining: pd.DataFrame, base_points: dict[str, float],
+                base_gd: dict[str, float], base_played: dict[str, int], n_sims: int,
+                seed: int | None, rel_count: int, base_gf: dict[str, float] | None,
+                top_n: int | None, condition: tuple[str, str, str] | None = None) -> pd.DataFrame:
+    """Una simulazione completa del resto di stagione, con l'esito di una gara fissato se richiesto.
+
+    ``condition = (casa, trasferta, esito)`` con esito in «1», «X», «2»: la griglia di quella gara
+    viene tagliata sulle celle di quell'esito e rinormalizzata, quindi le altre gare restano
+    simulate per intero. È la probabilità condizionata P(titolo | esito), non la classifica
+    congelata con i punti aggiunti.
+    """
     # Universo simulato = le squadre della stagione corrente (con punti o con gare da
     # giocare); chi non ha storico DC viene comunque simulata con parametri neutri.
     teams = sorted(set(base_points) | set(remaining["home"]) | set(remaining["away"]))
@@ -202,11 +212,21 @@ def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: di
     pts = np.zeros((n_sims, n))
     gd = np.zeros((n_sims, n))
     gf = np.zeros((n_sims, n))
+    applied = condition is None
     for f in remaining.itertuples(index=False):
         h, a = f.home, f.away
         if h not in ti or a not in ti:
             continue  # gara fuori perimetro (squadra non simulabile): esclusa
-        m, _, _ = _match_grid(dc, elo, h, a, w_dc, neutral, calibration)
+        m = fitted["grids"][(h, a)]
+        if condition is not None and (h, a) == (condition[0], condition[1]):
+            k = m.shape[0]
+            ii, jj = np.arange(k)[:, None], np.arange(k)[None, :]
+            keep = {"1": ii > jj, "X": ii == jj, "2": ii < jj}[condition[2]]
+            m = np.where(keep, m, 0.0)
+            if m.sum() <= 0:
+                raise ValueError(f"esito {condition[2]} impossibile per {h}–{a}")
+            m = m / m.sum()
+            applied = True
         cum = m.ravel().cumsum()
         idx = np.searchsorted(cum, rng.random(n_sims))
         k = m.shape[1]
@@ -219,6 +239,8 @@ def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: di
         gd[:, ti[a]] += ag - hg
         gf[:, ti[h]] += hg
         gf[:, ti[a]] += ag
+    if not applied:
+        raise ValueError(f"la gara {condition[0]}–{condition[1]} non è fra quelle da simulare")
 
     bp = np.array([base_points.get(t, 0.0) for t in teams])
     bg = np.array([base_gd.get(t, 0.0) for t in teams])
@@ -247,9 +269,63 @@ def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: di
         # più come un TOP-4 universale.
         "p_top4": p_top_n.round(4),
         "p_rel": (pos > (n - rel_count)).mean(0).round(4),
-        "n_sims": n_sims, "n_train": dc.n_matches, "model_version": MODEL_VERSION,
+        "n_sims": n_sims, "n_train": fitted["n_train"], "model_version": MODEL_VERSION,
         "made_at": datetime.now(UTC),
     })
+
+
+def simulate_league(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: dict[str, float],
+                    base_gd: dict[str, float], base_played: dict[str, int], w_dc: float = 0.7,
+                    xi: float = 0.0018, n_sims: int = DEFAULT_N_SIMS, seed: int | None = None,
+                    rel_count: int = 3, calibration: Calibration | None = None,
+                    base_gf: dict[str, float] | None = None,
+                    top_n: int | None = DEFAULT_TOP_N,
+                    condition: tuple[str, str, str] | None = None) -> pd.DataFrame:
+    """Simula `n_sims` volte il resto di stagione; ritorna una riga per squadra.
+
+    `remaining`: colonne home/away (nomi canonici); `base_*`: stato attuale dal
+    calendario; `rel_count`: quante squadre retrocedono in questa lega. Campiona i
+    punteggi dalla griglia DC (ρ compreso) così i tie-break usano la differenza reti
+    simulata. Il secondo spareggio è sui gol fatti; gli scontri diretti non sono
+    simulati e il nome alfabetico rende deterministico l'ultimo caso di parità.
+    `top_n` è il numero configurato di posizioni per l'accesso UCL ordinario; ``None``
+    lascia il relativo contenuto non pubblicato invece di inventare una soglia.
+    `condition` fissa l'esito di una gara (vedi `_run_league`).
+    """
+    fitted = _fit_league(hist, xi, w_dc, calibration, remaining)
+    return _run_league(fitted, remaining, base_points, base_gd, base_played, n_sims, seed,
+                       rel_count, base_gf, top_n, condition)
+
+
+def simulate_conditions(hist: pd.DataFrame, remaining: pd.DataFrame, base_points: dict[str, float],
+                        base_gd: dict[str, float], base_played: dict[str, int],
+                        conditions: list[tuple[str, str, str]], w_dc: float = 0.7,
+                        xi: float = 0.0018, n_sims: int = DEFAULT_N_SIMS, seed: int | None = None,
+                        rel_count: int = 3, calibration: Calibration | None = None,
+                        base_gf: dict[str, float] | None = None,
+                        top_n: int | None = DEFAULT_TOP_N) -> pd.DataFrame:
+    """Una tabella per ciascuna condizione «gara × esito», con un solo fit del modello.
+
+    Colonne in più: ``cond_home``, ``cond_away``, ``cond_outcome``. Lo stesso `seed` per tutte le
+    condizioni: le differenze fra esiti dipendono dall'esito, non dal rumore di campionamento.
+    """
+    fitted = _fit_league(hist, xi, w_dc, calibration, remaining)
+    frames = []
+    for h, a, o in conditions:
+        df = _run_league(fitted, remaining, base_points, base_gd, base_played, n_sims, seed,
+                         rel_count, base_gf, top_n, (h, a, o))
+        df.insert(0, "cond_home", h)
+        df.insert(1, "cond_away", a)
+        df.insert(2, "cond_outcome", o)
+        # P(esito) dalla stessa griglia: serve al verificatore per la legge della probabilità totale
+        grid = fitted["grids"][(h, a)]
+        k = grid.shape[0]
+        ii, jj = np.arange(k)[:, None], np.arange(k)[None, :]
+        keep = {"1": ii > jj, "X": ii == jj, "2": ii < jj}[o]
+        df.insert(3, "p_outcome", round(float(np.where(keep, grid, 0.0).sum()), 6))
+        frames.append(df)
+    cols = ["cond_home", "cond_away", "cond_outcome"]
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=cols)
 
 
 def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int = DEFAULT_N_SIMS,
@@ -304,6 +380,26 @@ def simulate_all(keys: list[str] | None = None, store: Any = None, n_sims: int =
             # della squadra (es. «Nottm Forest» → «Nottingham Forest») rimaste da un run
             # precedente, invece di lasciarle concorrere alla somma delle probabilità.
             store.upsert("season_sim", df.to_dict("records"), replace_by="league_key")
+            # Probabilità condizionate per le gare dei prossimi 14 giorni (punto 9 della review,
+            # 2026-10-12): per ogni gara, la tabella se la gara finisce 1, X o 2, con tutte le
+            # altre gare simulate. Un problema qui non deve fermare la tabella di stagione.
+            try:
+                now = pd.Timestamp.now(tz="UTC")
+                ko = pd.to_datetime(fixtures.utc_kickoff, utc=True, errors="coerce")
+                soon = fixtures[(fixtures.league_id == lg.fotmob_id) & (fixtures.status == "scheduled")
+                                & (ko >= now) & (ko <= now + pd.Timedelta(days=14))]
+                conds = [(canonical(r.home_name), canonical(r.away_name), o)
+                         for r in soon.itertuples(index=False) for o in "1X2"]
+                if conds:
+                    cdf = simulate_conditions(
+                        hist, rem, base_pts, base_gd, base_played, conds, w_dc=w_dc,
+                        n_sims=n_sims, seed=seed, rel_count=REL_COUNTS.get(lg.key, 3),
+                        calibration=calibration, base_gf=base_gf,
+                        top_n=getattr(lg, "ucl_spots", DEFAULT_TOP_N))
+                    cdf.insert(0, "league_key", lg.key)
+                    store.upsert("season_sim_cond", cdf.to_dict("records"), replace_by="league_key")
+            except Exception as exc:
+                log.warning("%s: condizionate saltate (%s: %s)", lg.name, type(exc).__name__, exc)
             out.append(df)
             top = df.sort_values("exp_points", ascending=False).head(3)
             log.info("%s: %d simulazioni su %d gare restanti — %s", lg.name, n_sims, len(rem),

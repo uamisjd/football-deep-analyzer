@@ -89,11 +89,31 @@ def heat_opacity(p: float, max_p: float) -> float:
     return round(0.12 + 0.88 * min(max(p / max_p, 0.0), 1.0), 3)
 
 
-GOALS_CAP = 6          # barre 0–6 gol; il resto è dichiarato come «7+»
+# Barre dei gol totali: la scala non è più un numero fisso. Si mostrano barre finché la coda
+# residua scende sotto ``GOALS_TAIL_TARGET``; il minimo evita di vuotare le partite sobrie, il
+# massimo è la griglia ragionevole per il totale (λ totale 5 → 11 gol). Misura (Poisson sul
+# totale): con cap fisso 6 la barra «7+» conteneva il 6,5% della massa a λ 3,5 e il 16,9% a
+# λ 4,5 — troppa per una barra di coda.
+GOALS_TAIL_TARGET = 0.01
+GOALS_CAP_MIN = 6
+GOALS_CAP_MAX = 11
 GOAL_DOTS = 20         # quantile dotplot: 1 punto = 5 partite su 100
 
 
-def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
+def adaptive_goals_cap(total_mass: np.ndarray) -> int:
+    """Primo totale ``k`` (in [GOALS_CAP_MIN, GOALS_CAP_MAX]) con coda oltre k sotto l'1%.
+
+    ``total_mass[t]`` è la probabilità che il totale sia esattamente ``t``. Se nemmeno
+    ``GOALS_CAP_MAX`` basta, si ferma al massimo: la coda resta dichiarata come «N+».
+    """
+    cum = np.cumsum(total_mass)
+    for k in range(GOALS_CAP_MIN, GOALS_CAP_MAX + 1):
+        if 1.0 - float(cum[k]) < GOALS_TAIL_TARGET:
+            return k
+    return GOALS_CAP_MAX
+
+
+def goals_view(lh: float, la: float, rho: float = 0.0, cap: int | None = None,
                dots: int = GOAL_DOTS) -> dict[str, Any]:
     """Distribuzione dei gol totali e quantile dotplot, dalla stessa griglia dei mercati.
 
@@ -102,15 +122,19 @@ def goals_view(lh: float, la: float, rho: float = 0.0, cap: int = GOALS_CAP,
     discrete — «1 punto = 5 partite su 100» — si leggono meglio di una densità continua
     e non invitano a cercare un valore «vero» dove c'è solo una distribuzione.
 
-    ``cap`` è l'ultimo totale mostrato come barra; la massa oltre finisce in «7+».
+    ``cap`` è l'ultimo totale mostrato come barra; la massa oltre finisce nella coda «N+».
+    Se ``cap`` è omesso la scala è adattiva (vedi :func:`adaptive_goals_cap`).
 
     ``copertura`` è la massa che cade davvero fra ``q10`` e ``q90``: sempre > 80% per costruzione,
     ma non esattamente 80% né 90%, quindi è quella che va scritta in didascalia.
     """
-    g = dixon_coles_grid(lh, la, rho, max_goals=max(cap + 9, 15))
+    g = dixon_coles_grid(lh, la, rho, max_goals=GOALS_CAP_MAX + 9)
     ii, jj = np.indices(g.shape)
     tot = ii + jj
-    p = np.array([float(g[tot == t].sum()) for t in range(cap + 1)])
+    total_mass = np.array([float(g[tot == t].sum()) for t in range(int(tot.max()) + 1)])
+    if cap is None:
+        cap = adaptive_goals_cap(total_mass)
+    p = total_mass[:cap + 1]
     tail = max(0.0, 1.0 - float(p.sum()))
     coda = f"{cap + 1}+"
     # La scala dell'istogramma deve essere il massimo DELLE barre che si disegnano, coda compresa.
@@ -212,6 +236,7 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         prev = steps[-1]["top_disp"] if steps else None
         steps.append({"label": label, "note": note, "p_home": v[0], "p_draw": v[1], "p_away": v[2],
                       "top": _top_name(v), "top_disp": top_disp,
+                      "disp": [float(x) for x in disp],
                       "delta_pp": None if prev is None else round(top_disp - prev, 1)})
 
     dc = _vec("dc_p_")
@@ -269,6 +294,46 @@ def probability_steps(pred: dict[str, Any] | None) -> list[dict[str, Any]]:
         _append("Calibrazione" if calibrated else "Pubblicato (nessuna calibrazione)", note, pub)
     # un solo passo non è una scomposizione: la scheda non mostra un blocco vuoto
     return steps if len(steps) >= 2 else []
+
+
+def probability_summary(steps: list[dict[str, Any]], home_name: str, away_name: str) -> str:
+    """Una frase che dice come il modello è arrivato al risultato, con i numeri delle barre.
+
+    Risponde alla domanda del lettore («perché questa percentuale?») senza il gergo del grafico:
+    dice chi partiva favorito nel modello sui gol, di quanto lo spostano il rating e la calibrazione
+    (stessi valori stampati nelle barre, arrotondati a un decimale) e chi è favorito alla fine.
+    Se i passi sono meno di due, o l'esito di partenza non si ritrova alla fine, non dice nulla.
+    """
+    from .fmt import dec
+
+    if len(steps) < 2:
+        return ""
+    first, last = steps[0], steps[-1]
+    disp0, disp1 = first.get("disp"), last.get("disp")
+    if not disp0 or not disp1:
+        return ""
+    nome = {"1": home_name, "2": away_name, "X": "il pareggio"}
+    idx = {"1": 0, "X": 1, "2": 2}
+    fav0 = first["top"]
+    if fav0 not in idx:
+        return ""
+    i0 = idx[fav0]
+    p_start, p_end = float(disp0[i0]), float(disp1[i0])
+    delta = round(p_end - p_start, 1)
+    partenza = f"Il modello sui gol dava {nome[fav0]} favorito, al {dec(p_start, 1)}%."
+    if abs(delta) < 0.1:
+        movimento = " Il rating e la calibrazione non spostano questa percentuale."
+    else:
+        verbo = "sale" if delta > 0 else "scende"
+        # «1,0 punti» è plurale in italiano: un decimale vuole sempre il plurale
+        movimento = (f" Con il rating e la calibrazione la probabilità {verbo} di "
+                     f"{dec(abs(delta), 1)} punti, a {dec(p_end, 1)}%.")
+    finale = ""
+    fav1 = last["top"]
+    if fav1 != fav0 and fav1 in idx:
+        finale = (f" Alla fine l'esito più probabile è {nome[fav1]}, al "
+                  f"{dec(disp1[idx[fav1]], 1)}%.")
+    return partenza + movimento + finale
 
 
 def _top_name(v: tuple[float, float, float]) -> str:

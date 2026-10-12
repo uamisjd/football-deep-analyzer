@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -321,14 +323,49 @@ def test_goals_view_coda_non_supera_il_contenitore():
     massa di qualunque singolo totale. La scala ora include la coda, quindi nessuna barra straborda
     e le altezze restano proporzionali alle probabilità (nessun clamp che falserebbe il grafico).
     """
-    gv = goals_view(1.84, 3.66)                    # la gara peggiore misurata: 5781741 (NED1)
-    coda = gv["bars"][-1]
-    assert coda["tail"] and coda["p"] > max(b["p"] for b in gv["bars"][:-1]), "caso non significativo"
+    # precondizione del bug: con il vecchio limite fisso 6 la coda supera ogni singolo totale
+    gv_fisso = goals_view(1.84, 3.66, cap=6)        # la gara peggiore misurata: 5781741 (NED1)
+    coda = gv_fisso["bars"][-1]
+    assert coda["tail"] and coda["p"] > max(b["p"] for b in gv_fisso["bars"][:-1]), "caso non significativo"
     assert coda["h"] == 1.0 and round(coda["h"] * 100) == 100
+    # con il limite adattivo la coda è sotto l'1% e nessuna barra trabocca
+    gv = goals_view(1.84, 3.66)
+    # a λ totale 5,5 il massimo (11 gol) non basta a scendere sotto 1%: la coda resta dichiarata
+    assert gv["p_coda"] < 0.01 or gv["cap"] == 11
+    coda = gv["bars"][-1]
     assert all(0.0 <= b["h"] <= 1.0 for b in gv["bars"])
-    # con la coda come estremità superiore, l'intervallo è aperto e va scritto «7+», non «7»
-    assert gv["q90_label"] == gv["coda_label"] == "7+" and gv["q10"] == 3 and gv["mediana"] == 5
-    assert gv["copertura"] > 90.0
+    # con la coda come estremità superiore, l'intervallo è aperto e va scritto «N+», non «N»
+    # (dal 2026-10-12 il limite è adattivo: con λ totale 5,5 la scala arriva a 11 gol)
+    atteso = gv["coda_label"] if gv["q90"] == gv["cap"] + 1 else str(gv["q90"])
+    assert gv["q90_label"] == atteso and gv["coda_label"] == f"{gv['cap'] + 1}+"
+    assert gv["q10"] == 3 and gv["mediana"] == 5
+    assert 80.0 < gv["copertura"] <= 100.0      # copertura reale, mai un tondo dichiarato
+
+
+def test_goals_cap_adattivo_tiene_la_coda_sotto_l_uno_per_cento():
+    """Il limite delle barre non è più 6 fisso: la coda oltre il cap deve restare sotto l'1%.
+
+    Regola misurata (Poisson sul totale): a λ 3,5 la coda oltre 6 gol pesa 14%, oltre 7 gol
+    6,5%: una barra «7+» così grande non è una coda. La scala si allarga finché la coda scende
+    sotto 1%, con minimo 6 e massimo 11 (oltre, la coda resta dichiarata «N+»).
+    """
+    from fda.site.advanced import GOALS_CAP_MAX, GOALS_CAP_MIN, adaptive_goals_cap, goals_view
+
+    casi = {(1.0, 1.0): 6, (1.2, 1.1): 6, (1.4, 1.2): 7, (1.8, 1.7): 8, (2.5, 2.5): 9}
+    for (lh, la), atteso_min in casi.items():
+        gv = goals_view(lh, la)
+        assert GOALS_CAP_MIN <= gv["cap"] <= GOALS_CAP_MAX
+        assert gv["p_coda"] < 0.01 or gv["cap"] == GOALS_CAP_MAX, f"{lh}+{la}: coda {gv['p_coda']}"
+        assert gv["cap"] >= atteso_min, f"{lh}+{la}: cap {gv['cap']} < {atteso_min}"
+    # una partita a 2 gol di media non deve più mostrare barre vuote fino a 6 mentre il grosso
+    # è altrove, e la coda per λ 3,5 non può tornare a «7+» come nel vecchio limite fisso
+    gv = goals_view(2.0, 1.5)
+    assert gv["p_coda"] < 0.01
+    assert goals_view(2.0, 1.5, cap=6)["p_coda"] > 0.01   # il limite fisso lasciava una coda grossa
+    # la funzione di regola è esplicita e testabile senza la griglia
+    massa = np.zeros(20)
+    massa[:20] = 1.0 / 20
+    assert adaptive_goals_cap(massa) == GOALS_CAP_MAX      # coda piatta: si ferma al massimo
 
 
 def test_goals_view_agrees_with_the_published_markets():
@@ -416,3 +453,46 @@ def test_match_analysis_goals_view(tmp_path):
     assert ma.goals_view(ma.prediction(2)) is None      # previsione senza λ → nessun grafico
     assert ma.goals_view(None) is None
     st.close()
+
+
+def test_probability_summary_racconta_la_catena_con_i_numeri_delle_barre():
+    """La frase sotto il grafico usa i valori stampati nelle barre e il segno vero del movimento.
+
+    Caso reale della review: il modello sui gol dà la casa favorita, il rating e la calibrazione
+    riducono il divario. La frase deve dire «scende» con il Δ corretto, e nominare la squadra.
+    """
+    from fda.site.advanced import probability_summary
+    from fda.site.fmt import dec
+
+    base = {"dc_p_home": 0.4612, "dc_p_draw": 0.2684, "dc_p_away": 0.2704,
+            "elo_p_home": 0.5242, "elo_p_draw": 0.2445, "elo_p_away": 0.2313,
+            "blend_p_home": 0.4801, "blend_p_draw": 0.2612, "blend_p_away": 0.2587,
+            "w_dc": 0.7, "p_home": 0.4691, "p_draw": 0.2742, "p_away": 0.2567,
+            "calibration_version": "grid-cal-1.0", "lambda_scale": 0.94, "calibration_n_fit": 5791}
+    steps = probability_steps({**base, "ensemble_mode": "tilt", "tilt": 1.0832})
+    frase = probability_summary(steps, "Parma", "Monza")
+    primo = steps[0]["disp"][0]          # la percentuale stampata nella prima barra
+    ultimo = steps[-1]["disp"][0]
+    assert f"Il modello sui gol dava Parma favorito, al {dec(primo, 1)}%." in frase
+    assert ("scende" if ultimo < primo else "sale") in frase
+    assert f"a {dec(ultimo, 1)}%" in frase
+    assert re.search(r"\d\.\d", frase) is None  # virgola decimale italiana, mai il punto
+    # senza passi sufficienti non si dice nulla
+    assert probability_summary(steps[:1], "A", "B") == ""
+    assert probability_summary([], "A", "B") == ""
+
+
+def test_probability_summary_se_il_favorito_cambia_lo_dice():
+    from fda.site.advanced import probability_summary
+
+    passi = [
+        {"top": "1", "disp": [40.0, 30.0, 30.0]},
+        {"top": "2", "disp": [35.0, 28.0, 37.0]},
+    ]
+    frase = probability_summary(passi, "Casa", "Ospite")
+    assert "dava Casa favorito, al 40,0%" in frase
+    assert "scende di 5,0 punti, a 35,0%" in frase
+    assert "Alla fine l'esito più probabile è Ospite, al 37,0%." in frase
+    fermo = probability_summary([{"top": "1", "disp": [40.0, 30.0, 30.0]},
+                                 {"top": "1", "disp": [40.0, 30.0, 30.0]}], "Casa", "Ospite")
+    assert "non spostano" in fermo and "Alla fine" not in fermo

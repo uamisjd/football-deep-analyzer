@@ -105,6 +105,40 @@ def fotmob_table_cmd(league_key: str = typer.Argument("ITA1")) -> None:
     console.print(f"richieste={fm.http.stats.requests} cache={fm.http.stats.cache_hits}")
 
 
+def understat_storico_pianifica(yr: int, back: int) -> list[int]:
+    """Stagioni precedenti da scaricare: ``back`` anni prima dell'anno corrente, esclusa la corrente."""
+    return list(range(yr - back, yr))
+
+
+@app.command("understat-storico")
+def understat_storico_cmd(
+    seasons_back: int = typer.Option(5, help="Stagioni precedenti da scaricare (5 con la corrente 2026: 2021–2025)"),
+) -> None:
+    """Storico xG Understat per le 5 leghe coperte: stagioni precedenti a quella in corso (docs/90)."""
+    from .config import leagues, season_start_year
+    from .sources.understat import UnderstatClient, to_dicts
+    from .store import Store
+
+    store = Store()
+    uc = UnderstatClient()
+    yr = season_start_year()
+    stagioni = understat_storico_pianifica(yr, seasons_back)
+    for lg in leagues():
+        if not lg.has_understat:
+            continue
+        for s_ in stagioni:
+            try:
+                raw = uc.league_raw(lg.understat_slug, s_)
+                n_m = store.upsert("understat_matches", to_dicts(uc.parse_matches(lg.understat_slug, s_, raw)))
+                n_t = store.upsert("understat_team_matches",
+                                   to_dicts(uc.parse_team_matches(lg.understat_slug, s_, raw)))
+                console.print(f"{lg.name} {s_}/{(s_ + 1) % 100:02d}: {n_m} partite · {n_t} righe squadra")
+            except Exception as exc:  # una stagione assente non deve fermare le altre
+                console.print(f"[yellow]{lg.name} {s_}: saltata ({type(exc).__name__}: {exc})[/yellow]")
+    console.print(f"richieste={uc.http.stats.requests} cache={uc.http.stats.cache_hits}")
+    store.close()
+
+
 @app.command("understat-table")
 def understat_table_cmd(league_key: str = typer.Argument("ITA1")) -> None:
     """Tabella xG di stagione da Understat (solo 5 grandi leghe)."""
@@ -275,6 +309,9 @@ def predict_cmd(
             pred, dc, _ = predict_matches(hist, up, calibration=cal, xi=xi_lg)
             n = store.upsert("predictions", pred)
             total += n
+            # test prospettico γ 1,12 (docs/89): stesse λ pubblicate, registrate al momento della previsione
+            from .models import prospettico
+            prospettico.record(store, pred)
             console.print(f"{lg.name}: storico {len(hist)} partite → {n} previsioni "
                           f"(home adv {dc.model.get_params().get('home_advantage', 0):.3f}"
                           f" · ξ {xi_lg}"
