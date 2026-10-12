@@ -1,3 +1,9 @@
+## 2026-10-12 — Pagina pubblica «Laboratorio dei modelli» (docs/87)
+
+Integrazione richiesta dall'utente: il verdetto del laboratorio (docs/86) è ora una pagina del sito, `laboratorio.html`, linkata da «Accuratezza». I verdetti vengono da `model_lab.parquet` con il criterio di docs/13 §6.5 (`src/fda/site/lab_page.py`, test `tests/test_lab_page.py`). Esito pubblicato: produzione invariata, 5 varianti superano il criterio, nessuna promossa.
+
+**Gate:** `fda build` completo, `verify_site` 0 problemi · 235.696 controlli, `ruff` pulito, 5 test nuovi passati, verifica visiva a 1280 e 390 px. Nessuna richiesta a fonti esterne.
+
 ## 2026-10-12 — Rilancio del laboratorio modelli (docs/86)
 
 Richiesta dell'utente: uso privato e personale, iniziare a migliorare il progetto. Prima la misura: `fda lab` rilanciato sullo storico attuale (7.522 gare, 3.157 valutate, 29 candidati) — il riepilogo era fermo al 14/09. Esito: nessun candidato migliora la produzione in modo rilevante (migliore ΔRPS −0,00095, circa 0,5%). `gamma_112`, `gamma_124` e `tau_110` superano il criterio di `docs/13` §6.5 su questo campione, ma la γ-sharpening era già respinta in `docs/19` §1.3 e il risultato è sensibile alla griglia e alla molteplicità: **produzione invariata**. Proposta: test prospettico con una sola ipotesi pre-registrata (`gamma_112`), in attesa di decisione dell'utente.
