@@ -1,3 +1,41 @@
+## 2026-10-13 — Revisione totale del progetto e del sito (docs/104): salute confermata, tre decisioni all'utente
+
+**Richiesta utente:** *«controlla vita morte e miracoli del progetto e del sito, vedi a che punto
+siamo arrivati, se c'è qualcosa da fare, da rivedere, da migliorare. fai delle ricerche e studia
+tutto»*. Relazione completa in [`docs/104`](104_revisione_totale_2026-10-13.md).
+
+**Misurato da zero in questa sessione** (storia completa recuperata: 713 commit; build locale dai
+dati di `17b46b3`): `pytest` **943**, `ruff` **0 errori**, `fda build` **498 schede / 2.364 fixture /
+7.602 giocatori**, `verify_site` **241.754 controlli · 0 problemi**, parità **58 schede** (struttura
+identica, indice 16 voci, testo min 31.876 · mediana 37.508), resa 375 px **28.728 misure · 0**;
+sito **4.316 pagine HTML / 153 MB**; anteprima attiva su `0.0.0.0:8000`. GitHub: **0 issue, 0 PR**,
+daily 3/3 verdi dopo la PR #110, `lab`/`benchmark`/`understat-storico` verdi. Sito pubblicato:
+0 partite oggi (sosta nazionali), messaggio onesto, ripresa **venerdì 16/10/2026 con 5 partite**.
+Nessun numero pubblicato smentito dai dati.
+
+**Contenuti — «Vita del club» sulle 58 pre-partita:** 33/58 con voci (ITA1 10/10, ESP1 7/10,
+GER1 6/9, ENG1 5/10, FRA1 5/9, **NED1 0/9, POR1 0/1**). Ricerca web di conferma: la stampa italiana
+copre le leghe estere solo per i club maggiori → il buco di NED1/POR1 è **di fonte**, non di filtro.
+
+**Rischio nuovo, misurato:** il repository cresce di **~24,8 MB/giorno** (743,8 MB negli ultimi 30
+giorni; pack **722,85 MiB**; news.parquet 45%, backtest 27%, predictions 12%; blob massimo 4,9 MB,
+nessun file vicino ai limiti 50/100 MiB). A questo ritmo **1 GB ~24/10/2026** e 5 GB ~7/4/2027. Opzioni con numeri in `docs/104` §3: **A** commit dei dati 1×/giorno (−80%), **B** stop agli
+snapshot derivati, **C** compattazione periodica con `git filter-repo`, **D** LFS (insufficiente da
+sola: 1 GB gratis). Il checkout della CI è shallow e non è toccato. **Decisione dell'utente, non
+presa d'ufficio.**
+
+**Coda confermata:** restano le **ultime 2 sezioni** della scheda partita («Previsione del modello
+ensemble»; «Verifica approfondita» — «Precedenti» chiusa con `docs/103`); decisioni aperte su
+StatsBomb e clima; `dc_xg` non promosso (in attesa di accumulo); igiene documentale: l'indice di
+briefing/README diceva «92 file `.md` / 83 numerati», oggi sono **114 / 104**.
+
+**Ricerca:** limiti GitHub (file 50/100 MiB; repo ideale <1 GB, <5 GB raccomandato; LFS 1 GB),
+`git filter-repo`/`git-sizer` per il contenimento, stampa italiana delle leghe estere (Sky Sport,
+Eurosport, Diretta.it: coprono i club grandi e gli eventi di lega).
+
+**Prossimo:** tre decisioni all'utente (politica del repository; le 2 sezioni; feed di lega per
+NED1/POR1). PR aperta con questo documento (`docs/104`), nessun merge.
+
 ## 2026-10-13 — Merge PR #111 su ordine esplicito dell'utente (docs/102 + docs/103)
 
 **Merge PR #111 (`arena/3bafce48-football-deep-analyzer` → `main`):**

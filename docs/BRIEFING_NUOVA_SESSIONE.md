@@ -8,6 +8,18 @@
 
 ## Handoff operativo corrente — 2026-10-13 (il più recente: leggere questo e `docs/101` per primi)
 
+**Revisione totale del 13/10 sera — [`docs/104`](104_revisione_totale_2026-10-13.md).** Su richiesta
+dell'utente («controlla vita morte e miracoli del progetto e del sito») tutto è stato rimisurato da
+zero su una build locale: `pytest` **943**, `ruff` **0**, `fda build` **498/2.364/7.602**,
+`verify_site` **241.754 · 0 problemi**, parità **58 schede**, resa 375 px **28.728 · 0**; sito
+**4.316 pagine / 153 MB**; 0 issue, 0 PR, daily verdi dopo la #110; «Vita del club» **33/58** schede
+con voci (NED1 0/9 e POR1 0/1 — buco **di fonte**, confermato da ricerca web). **Rischio nuovo
+misurato:** il repo cresce di **~24,8 MB/giorno** (pack 722,85 MiB): 1 GB attorno al 25/10/2026.
+Opzioni con numeri in `docs/104` §3 (A: commit dati 1×/giorno −80%; C: `git filter-repo` periodico;
+D: LFS insufficiente). **Tre decisioni attendono l'utente:** politica del repository, le ultime 2
+sezioni della scheda partita, feed di lega per NED1/POR1. Nessuna modifica di codice in questa
+sessione: solo misure, `docs/104` e aggiornamenti di indice (`README`, questo briefing).
+
 **Sessione `arena/079933b1-football-deep-analyzer` chiusa con la PR #110 fusa su `main`** (merge eseguito dall'agente su ordine esplicito dell'utente *«ok fai merge»*, deroga registrata in `docs/13` §9.26 e `docs/STATO.md`).
 
 - **Cosa contiene `main` dopo PR #110:**
@@ -274,7 +286,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (92 file `.md` + `_audit_modelli.json` all'11/10/2026: **83** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **5** archivi + 2 audit datati) | |
+| **`docs/` — indice completo** (114 file `.md` al 13/10/2026: **104** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **6** archivi + 2 audit datati, più i 6 file `.json` di audit e `preview/`) | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |
