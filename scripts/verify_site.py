@@ -297,13 +297,25 @@ ENGLISH = re.compile(
 # sito di oggi (4.205 pagine): il ramo intercetta le 17, 0 falsi positivi — «N i
 # <parola>» non occorre in nessun altro testo. Il singolare «1 i titolo» sparisce col
 # fix del template e resta verificato dalla misura a sito intero, non dalla regex.
+# Terzo ramo (13/10/2026, docs/102): i nomi dei due difetti residui della stessa classe
+# del guasto del `daily` («Altri 1 arrivi riconosciuti» su 5 schede pre-partita, «UCL (prime
+# 1)» e «nelle prime 1 posizioni» sulla pagina Proiezioni di POR1) più i plurali misurati
+# a **zero** occorrenze legittime sul sito di 4.316 pagine: nessuno di questi segue mai un
+# «1» corretto (le forme singolari — «1 assente», «1 occasione», «1 voce», «1 fonte», «1
+# rigore», «1 punto» — non sono in lista). I plurali delle tabelle di confronto (es. «1
+# Ammonizioni 3», dove l'1 è la cella della squadra e non il contatore) restano fuori
+# perché in maiuscolo: la regex è case-sensitive.
 AGREEMENT = re.compile(
     r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
-    r"giocatori|campionati|cartellini|allenatori|letture)\b"
+    r"giocatori|campionati|cartellini|allenatori|letture|arrivi|posizioni|occasioni|presenze|"
+    r"partenze|reti|trasferte|ammonizioni|espulsioni|parate|legni|angoli|sostituzioni|"
+    r"giornate|rimonte)\b"
     r"|(?<![\d,])\b\d+ i (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
-    r"giocatori|campionati|cartellini|allenatori|letture)\b")
+    r"giocatori|campionati|cartellini|allenatori|letture|arrivi|posizioni|occasioni|presenze|"
+    r"partenze|reti|trasferte|ammonizioni|espulsioni|parate|legni|angoli|sostituzioni|"
+    r"giornate|rimonte)\b")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
 # Attributi che un lettore di schermo pronuncia: il testo lì dentro è a tutti gli effetti
 # testo nostro, ma i controlli di lingua giravano solo sul testo visibile (audit 18/09/2026).
@@ -2906,7 +2918,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pt = mc_percent_str(float(sr.p_title))
                     pe = None if raw_top is None or pd.isna(raw_top) else mc_percent_str(float(raw_top))
                     pr = mc_percent_str(float(sr.p_rel))
-                    atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
+                    # etichetta della soglia UCL ricomposta dai Parquet: «prime N», e «1ª»
+                    # quando il posto è uno (POR1) — la stessa forma di `ucl_label` (docs/102)
+                    ucl_att = "UCL (1ª)" if top_n == 1 else f"UCL (prime {top_n})"
+                    atteso = (f"titolo {pt}% · {ucl_att} {pe}%"
                               if pe is not None else f"titolo {pt}%")
                     if atteso not in cella_st or f"retrocessione {pr}%" not in cella_st:
                         fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
@@ -2953,9 +2968,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                 fails.append(
                                     f"{pg.name}: {nome_num} di {tname} non torna fra scheda e "
                                     f"pagina Proiezioni (Proiezioni «{frase_pg}»)")
-                        if r_pg["ucl"] is not None and "UCL (prime" in cella_st:
+                        if r_pg["ucl"] is not None and ucl_att in cella_st:
                             checks += 1
-                            if f"UCL (prime {top_n}) {r_pg['ucl']}" not in cella_st:
+                            if f"{ucl_att} {r_pg['ucl']}" not in cella_st:
                                 fails.append(
                                     f"{pg.name}: UCL di {tname} non torna fra scheda e pagina "
                                     f"Proiezioni (Proiezioni «{r_pg['ucl']}%»)")
@@ -2991,7 +3006,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     ucl19 = _ucl19.get(code19) if code19 else None
                     if ucl19 is not None and ucl19 in by_rank19.index:
                         if rank19 <= ucl19:
-                            pezzi.append(f"in zona UCL (prime {ucl19})")
+                            pezzi.append("in zona UCL (1ª)" if ucl19 == 1
+                                         else f"in zona UCL (prime {ucl19})")
                         else:
                             ge19 = int(by_rank19.loc[ucl19, "points"]) - pts19
                             pezzi.append(

@@ -31,6 +31,7 @@ from .fmt import (
     it_plural,
     pct_int,
     pct_triple,
+    ucl_label,
 )
 from .players import PlayerCatalog
 
@@ -248,6 +249,9 @@ class SiteBuilder:
         # somma di due valori già stampati: «1,40 + 0,99» deve dare «2,39», non «2,38»
         self.env.filters["dec_sum"] = dec_sum
         self.env.filters["it_plural"] = it_plural
+        # etichetta della soglia UCL: «UCL (prime 4)» / «UCL (1ª)» con un posto solo,
+        # così la concordanza non dipende più dal numero di posti della lega (docs/102)
+        self.env.filters["ucl_label"] = ucl_label
         # importi di mercato leggibili e in italiano (docs/24 §4): 12500000 → «12,5 M€»
         self.env.filters["fee_it"] = MatchAnalysis.fee_it
         self.env.filters["it_utc"] = lambda ts: it_from_utc(ts, self.tz)

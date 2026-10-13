@@ -1,3 +1,13 @@
+## 2026-10-13 — Chiusa la classe ««1» + plurale» su UCL e arrivi (`docs/102`), dopo la verifica d'ingresso del daily
+
+**Verifica d'ingresso:** il log incollato dall'utente corrisponde ai run `38381687223`/`38391444901` su `6a0034c`, già corretti da `b021aeb` (PR #110); daily `38414127388` **success** su `b6d7cc3` + commit dati `1364678`, issue #109 chiusa automaticamente alle 14:47:42Z. Nessun intervento ulteriore sui due errori del log ([`docs/102`](102_concordanza_ucl_e_arrivi_2026-10-13.md) §1).
+
+**Misura della stessa classe sulle 4.316 pagine pubblicate** (parser del gate; §2): 331 bigrammi «1 <parola>» distinti, quasi tutti falsi positivi strutturali (etichette di colonna in maiuscolo, celle di confronto). Due difetti veri: «Altri 1 arrivi riconosciuti» (5 schede pre-partita) e «UCL (prime 1)» / «nelle prime 1 posizioni» (POR1, `ucl_spots: 1`, 4 occorrenze).
+
+**Correzioni (§3):** fonte unica `ucl_label(spots)` in `src/fda/site/fmt.py` (1 → «UCL (1ª)», N ≥ 2 → «UCL (prime N)», soglia ignota → «UCL»), registrata come filtro Jinja in `build.py` e usata da `match.html` (Posta in gioco + legenda), `stagione.html` (intestazione e nota «nella 1ª posizione») e `analysis.py` («in zona UCL (…)»); tendina Mercato con «Un altro arrivo riconosciuto» quando ne resta uno; `verify_site.py` e `audit_panchina.py` ricompongono la forma nuova in modo indipendente; `AGREEMENT` esteso con 15 plurali misurati a zero occorrenze legittime.
+
+**Misure dopo:** «prime 1» 0 · «1 arrivi» 0 · «UCL (1ª)» presente dove serve. **Gate:** `pytest` 943 passati · `ruff` pulito · build 498/2.364/7.602 · `verify_site` **240.691 controlli · 0 problemi** · `parita_schede` nessuna differenza · `resa_375` 28.722 misure · 0 problemi. **Punto aperto dichiarato (§6.1):** `[20]` legge ancora l'HTML grezzo per il contatore letture; da valutare la lettura sul testo.
+
 ## 2026-10-13 — Merge PR #110 su ordine esplicito dell'utente e handoff per la nuova sessione (`docs/101`)
 
 **Merge PR #110 (`arena/079933b1-football-deep-analyzer` → `main`):**
