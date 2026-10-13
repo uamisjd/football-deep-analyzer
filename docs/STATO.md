@@ -5,6 +5,7 @@
 - **Contenuto fuso su `main`:** concordanza ««1» + plurale» rimasta sul sito (`docs/102`) e revisione misurata della sezione «Precedenti» (`docs/103`).
 - **Verifica pre-merge (controllo d'ordine `docs/00` §D eseguito):** `git log --oneline origin/main..HEAD` = solo i commit della PR, `git status --porcelain` vuoto · `pytest` **943** · `ruff` pulito · build **498/2.364/7.602** · `verify_site` **241.619 · 0** · `parita_schede` nessuna differenza · `resa_375` **28.722 · 0** · CI `tests` verde (`38432135717`).
 - **Prossimo passo:** le due sezioni restanti della coda `docs/101` §4 (Previsione del modello ensemble; Verifica approfondita), e la verifica all'ingresso del `daily` post-merge su `main`.
+- **Esito (verificato nello stesso turno):** merge `1cc4e16` (16:56:29Z, eseguito da `uamisjd` su autorizzazione dell'agente); `daily` **38434603128** su `main` = **success** (`run` + `deploy`, run 16:56 → 17:15Z) con commit dati **`c073c90`** («data: run 2026-10-13 17:15 UTC»); nessuna issue aperta. Il deploy Pages ha pubblicato il sito coi fix `docs/102`/`docs/103`.
 
 ## 2026-10-13 — Revisione di «Precedenti» (`#precedenti`): misurata, tre difetti chiusi (`docs/103`)
 
