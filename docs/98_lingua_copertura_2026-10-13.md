@@ -92,3 +92,29 @@ Vanno ripetuti benchmark e replay reale e va misurato separatamente l'effetto ed
 Valutare V2 prima di integrarla. Tre italiani del benchmark restano difficili per V1
 (nome con ß, un prestito lessicale e un titolo telegrafico): non sono dichiarati stranieri
 con certezza. Non si cerca di risolverli riducendo alla cieca la soglia statistica.
+
+
+## 5. V2: utile sul benchmark, ma troppo drastica sul corpus
+
+V2 resta a 3 errori senza regressioni nei 149 casi e mantiene l'evento Atlético, ma respinge
+149 coppie che prima passavano. Fra queste sono presenti titoli italiani telegrafici
+(«LAZIO – MONZA: INFO BIGLIETTI», «LAZIO-MONZA AFFIDATA A COLLU»): non pertinenti a Vita del
+club, ma non per questo stranieri. **Non si integra V2 fingendo che il resto sia rumore.**
+
+V3, dichiarata prima della nuova misura: conserva il controllo precedente quando il titolo
+è già ammesso da solo; recupera un titolo prima respinto solo con l'evidenza italiana di
+Lingua al margine **0,15**, immutato. Se la vecchia decisione dipende dalla descrizione,
+si blocca quando **entrambi i rilevatori del solo titolo** concordano su una lingua non
+italiana: langdetect con primo punteggio almeno 0,90 e Lingua con margine almeno 0,15.
+Negli altri casi si conserva la decisione precedente, dichiarando che non è una garanzia
+universale. Questo impedisce le regressioni imposte da una sola stima incerta sui nomi.
+I percorsi senza alcun rilevatore devono fallire chiusi, non autorizzare testo sconosciuto.
+
+V3 non corregge per supposizione tutti i titoli telegrafici o ambigui e non interpreta i
+punteggi come probabilità calibrate. Il benchmark e le differenze del corpus saranno
+pubblicati anche se residuano errori; nessuna soglia viene allentata per un articolo.
+
+## Prossimo passo aggiornato (V3)
+
+Misurare errori, regressioni e titoli realmente utili recuperati da V3; quindi decidere se
+integrare. La copertura resta un problema distinto dal filtro linguistico.
