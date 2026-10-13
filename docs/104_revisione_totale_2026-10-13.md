@@ -107,7 +107,11 @@ Copertura della rassegna stampa di «Vita del club» sulle **58 schede pre-parti
 
 **Raccomandazione:** **A** subito (una riga nel workflow, reversibile) e **C** come manutenzione
 periodica se si vuole restare sotto 1 GB senza perdere la disponibilità dei dati nel repo.
-Decisione dell'utente, non presa d'ufficio: cambia cosa finisce su `main`.
+
+> **Aggiornamento dello stesso giorno:** l'utente ha scelto l'**opzione A**, che è stata
+> implementata e provata in [`docs/105`](105_una_fotografia_al_giorno_2026-10-13.md)
+> (`scripts/fotografia_dati.py`, 20 test, modifica a `daily.yml`, input `forza_commit`).
+> La **C** resta preparabile a parte, senza force push, quando servirà.
 
 ## 4. Coda aggiornata (cosa c'è da fare)
 

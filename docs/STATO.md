@@ -1,3 +1,34 @@
+## 2026-10-13 — Una fotografia dei dati al giorno: opzione A adottata (docs/105), −80% di crescita
+
+**Decisione dell'utente (via domande di sessione): opzione A** — i Parquet entrano in `main`
+**una volta al giorno** invece di ~5, con un'unica eccezione motivata (il registro preregistrato).
+Il sito resta identico: cinque build e cinque deploy al giorno, stessi gate, stesse richieste.
+
+**Implementato:**
+- `scripts/fotografia_dati.py`: decisione pura (`decide()`), stato letto dalla cronologia del
+  repository (`gh api`, ripiego `requests`), fail-open su qualunque errore.
+  Regola: prima fotografia → sì; fotografia di **oggi** (UTC) → no; altrimenti sì se
+  **ora UTC ≥ 20** (run serale) **oppure** se sono passate **≥ 24 ore** (rete di sicurezza).
+- `tests/test_fotografia_dati.py`: **20 test** (giornata a cinque run con una sola fotografia,
+  confine delle 24 ore, fail-open, ripiego su `requests`, output a una riga per `$GITHUB_OUTPUT`).
+- `.github/workflows/daily.yml`: nuovo passo «Fotografia dei dati — decidere se questo run
+  committa», commit condizionale, e nuovo input di dispatch **`forza_commit`** (default `false`).
+  Quando la fotografia è già salvata si committa **solo** `data/processed/prospettico.parquet`
+  se è cambiato (il suo valore di prova è la data di registrazione: costo misurato 0,5 MB/30 gg).
+
+**Prove:** estrazione del passo dal YAML ed esecuzione in un repository di prova con origine
+locale — cinque scenari, tutti corretti: con «fotografia già salvata» i Parquet grandi **non**
+sono su origine e il registro sì; nei casi serali si committa `data: run …`. Prova dal vivo dal
+sandbox: lo script legge il commit dati delle 17:33 UTC e risponde `commit=false`.
+
+**Effetto atteso** (`docs/105` §4): da ~155 fotografie e 743,8 MB/mese a **~30 fotografie e
+~150 MB/mese (−80%)**; 1 GB spostato da ~24/10/2026 a ~metà dicembre 2026, 5 GB oltre il 2029.
+**Da verificare dopo il merge:** il primo run serale (fotografia presente) e i run intermedi
+(solo registro o «niente da fare») — è la verifica che i gate offline non possono dare.
+
+**Prossimo:** merge delle due cose insieme (la revisione `docs/104` e questa), poi la verifica
+d'ingresso del `daily`; in coda le 2 sezioni della scheda e l'esperimento notizie NED1/POR1.
+
 ## 2026-10-13 — Revisione totale del progetto e del sito (docs/104): salute confermata, tre decisioni all'utente
 
 **Richiesta utente:** *«controlla vita morte e miracoli del progetto e del sito, vedi a che punto
