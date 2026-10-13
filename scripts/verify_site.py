@@ -855,6 +855,10 @@ ORACOLI: dict[str, tuple[str, str]] = {
                  "settimana, marcatori «anche in «Vita del club»» e rango per valore ricalcolati "
                  "dai Parquet; la classificazione dei temi e i gate di pertinenza (tema, club, "
                  "fonte, fatto grave) sono quelli dichiarati dalla fonte (`docs/83` §3-§4)")),
+    "50": ("I", ("stampa in lingua originale (`docs/106`): ogni voce resa esiste in archivio "
+                 "per quella squadra **e in quella lingua**, l'etichetta italiana appartiene al "
+                 "vocabolario chiuso, la prova citata è dentro il titolo originale e i conteggi "
+                 "dell'intestazione sono quelli della lista")),
 }
 
 
@@ -5779,6 +5783,82 @@ def check_laboratorio(site: Path, data: Path | None) -> tuple[list[str], int]:
     return fails, checks
 
 
+def check_stampa_estera(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[50] Card «stampa in lingua originale» (docs/106): controllo **indipendente**.
+
+    Il generatore pubblica, per le leghe che dichiarano un'edizione locale, una sintesi in
+    italiano scritta da noi (etichetta di tema da vocabolario chiuso) accanto al titolo
+    **originale** e alla lingua dichiarata. Qui si rifà il lavoro dai Parquet e da
+    `config/leagues.yaml`, senza chiamare il generatore: ogni voce resa in pagina deve
+    esistere in archivio per quella squadra **e in quella lingua**, l'etichetta deve stare
+    nel vocabolario, la prova citata deve essere dentro il titolo originale e i conteggi
+    dell'intestazione devono corrispondere alla lista. Nessuna voce = nessun controllo
+    inventato: le pagine senza il blocco si saltano.
+    """
+    import yaml
+
+    from fda.site.estero import TEMI
+
+    fails: list[str] = []
+    checks = 0
+    base = data or Path("data/processed")
+    news_path = Path(base) / "news.parquet"
+    if not news_path.exists():
+        return fails, checks
+    import pandas as pd
+
+    news = pd.read_parquet(news_path)
+    cfg = yaml.safe_load((Path("config") / "leagues.yaml").read_text(encoding="utf-8"))
+    lingue = {str(lg.get("news", {}).get("lingua", "")).lower(): str(lg.get("news", {}).get("label", ""))
+              for lg in cfg.get("leagues", []) if lg.get("news")}
+    if not lingue:
+        return fails, checks
+    etichette = {t[1] for t in TEMI}
+    if "language" in news.columns:
+        news["lingua"] = news.language.fillna("it").astype(str).str.lower()
+    else:
+        news["lingua"] = "it"
+    titoli_per_squadra = {(int(tid), str(lin), str(tit).strip())
+                          for tid, lin, tit in zip(news.team_id, news.lingua, news.title, strict=True)}
+    blocchi = re.compile(r'<div class="news-estera" data-team-id="(\d+)">(.*?)</div>\s*</div>',
+                         re.DOTALL)
+    voce = re.compile(r'<li data-news-kind="([^"]+)"><span class="topic">([^<]+)</span>.*?'
+                      r'<p style="margin:4px 0 0" lang="([a-z]{2})"><b>(.*?)</b></p>.*?'
+                      r'lingua originale: ([^·<]+)· riconosciuto da «(.*?)»', re.DOTALL)
+    intestazione = re.compile(r'stampa in lingua originale \(([^)]*)\): (\d+) voci? su (\d+)')
+    for pg in sorted((site / "partite").glob("*.html")):
+        html = pg.read_text(encoding="utf-8")
+        if 'aria-label="Stampa in lingua originale"' not in html:
+            continue
+        checks += 1
+        for tid, blocco in blocchi.findall(html):
+            testa = intestazione.search(blocco)
+            if not testa:
+                fails.append(f"{pg.name}: intestazione del blocco lingua originale assente")
+                continue
+            pubblicate = int(testa.group(2))
+            voci = voce.findall(blocco)
+            checks += 1
+            if pubblicate != len(voci):
+                fails.append(f"{pg.name}: squadra {tid} dichiara {pubblicate} voci e ne rende {len(voci)}")
+            for _chiave, etichetta, lang, titolo, label_voce, prova in voci:
+                checks += 1
+                titolo = html_unescape(titolo).strip()
+                if etichetta not in etichette:
+                    fails.append(f"{pg.name}: squadra {tid} etichetta fuori vocabolario: {etichetta!r}")
+                if lang not in {c for c in ("it", *lingue)}:
+                    fails.append(f"{pg.name}: lingua {lang!r} non dichiarata in config/leagues.yaml")
+                if (int(tid), lang, titolo) not in titoli_per_squadra:
+                    fails.append(f"{pg.name}: squadra {tid} titolo {lang} non presente in archivio: {titolo[:60]!r}")
+                if html_unescape(prova).strip().lower() not in titolo.lower():
+                    fails.append(f"{pg.name}: la prova citata non è nel titolo: {prova[:40]!r}")
+                if label_voce.strip() != lingue.get(lang, ""):
+                    fails.append(f"{pg.name}: lingua dichiarata {label_voce.strip()!r} ≠ {lingue.get(lang)!r}")
+    if checks:
+        print(f"[50] card «stampa in lingua originale»: {checks} controlli su voci, lingue e archivi")
+    return fails, checks
+
+
 def check_confronto_stagione(site: Path, data: Path | None) -> tuple[list[str], int]:
     """[45] card «Confronto di stagione»: ogni numero ricalcolato dalle classifiche (docs/76 §8).
 
@@ -6060,6 +6140,9 @@ def main() -> int:
             site, Path(args.data) if args.data else None)
         fails += confronto
         checks += confronto_checks
+        estera, estera_checks = check_stampa_estera(site, Path(args.data) if args.data else None)
+        fails += estera
+        checks += estera_checks
         numeric, numeric_checks = check_numbers(site, Path(args.data) if args.data else None)
         fails += numeric
         checks += numeric_checks

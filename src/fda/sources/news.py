@@ -37,33 +37,47 @@ ESPN_NEWS = "https://site.api.espn.com/apis/site/v2/sports/soccer/{code}/news"
 RSS_ACCEPT = "application/rss+xml, application/xml;q=0.9, */*;q=0.8"
 
 
-#: Edizioni Google News per campionato: il portale adotta rigorosamente la sola
-#: edizione italiana (EDIZIONE_IT, ``hl=it&gl=IT``).
-#: Come specificato nelle regole di progetto (docs/00_regole_di_lavoro.md regola E,
-#: docs/01 §6, docs/BRIEFING_NUOVA_SESSIONE.md), l'interfaccia, i report e tutti i
-#: contenuti mostrati all'utente devono essere in lingua italiana. Interrogare edizioni
-#: locali estere (es, en, de, fr, nl, pt) produce titoli in lingua straniera che non
-#: possono essere pubblicati senza traduzione. La stampa sportiva italiana copre
-#: ampiamente anche i club internazionali (Real Madrid, City, PSG, Bayern, ecc.).
-GOOGLE_EDITIONS: dict[str, tuple[str, str, str]] = {
-    "ITA": ("it", "IT:it", "calcio"),
-    "ENG": ("it", "IT:it", "calcio"),
-    "ESP": ("it", "IT:it", "calcio"),
-    "GER": ("it", "IT:it", "calcio"),
-    "FRA": ("it", "IT:it", "calcio"),
-    "NED": ("it", "IT:it", "calcio"),
-    "POR": ("it", "IT:it", "calcio"),
+#: Edizioni Google News dichiarate (docs/106). L'edizione italiana è quella del portale;
+#: le edizioni locali sono ammesse **solo** per le leghe che le dichiarano in
+#: `config/leagues.yaml` e servono alla card «stampa in lingua originale» della scheda
+#: partita, che conserva titolo, testata e lingua del testo raccolto. Il portale non
+#: traduce e non riscrive: la sintesi è una riga in italiano composta da noi a partire da
+#: segnali verificabili, con fonte e lingua originale dichiarate.
+EDITIONS: dict[str, tuple[str, str, str]] = {
+    "it": ("it", "IT:it", "calcio"),
+    "nl": ("nl", "NL:nl", "voetbal"),
+    "pt": ("pt", "PT:pt", "futebol"),
 }
-EDIZIONE_IT: tuple[str, str, str] = ("it", "IT:it", "calcio")
+EDIZIONE_IT: tuple[str, str, str] = EDITIONS["it"]
+
+#: Etichette delle lingue ammesse nelle sintesi (la chiave è il codice dell'edizione).
+LINGUE: dict[str, str] = {"it": "italiano", "nl": "olandese", "pt": "portoghese"}
 
 
-def editions_for(country: str | None = None) -> list[tuple[str, str, str]]:
-    """Edizioni da interrogare per una squadra: solo quella italiana (hl=it&gl=IT).
+def editions_for(country: str | None = None,
+                 editions: list[str] | None = None) -> list[tuple[str, str, str]]:
+    """Edizioni da interrogare per una squadra.
 
-    Garantisce che tutto il materiale raccolto sia in lingua italiana, nel pieno rispetto
-    delle specifiche del progetto.
+    L'edizione italiana c'è sempre (è quella su cui il portale costruisce la rassegna
+    principale); le edizioni locali si aggiungono solo se la lega le dichiara in
+    configurazione. ``country`` resta per compatibilità di firma ma non decide più nulla:
+    la scelta vive in `config/leagues.yaml`, dove è leggibile e verificabile.
     """
-    return [EDIZIONE_IT]
+    codes: list[str] = []
+    for code in ["it", *(editions or [])]:
+        c = str(code).lower()
+        if c in EDITIONS and c not in codes:
+            codes.append(c)
+    return [EDITIONS[c] for c in codes]
+
+
+def edition_language(edition: tuple[str, str, str]) -> str:
+    """Codice di lingua di un'edizione (``it``/``nl``/``pt``), per la colonna ``language``."""
+    for code, value in EDITIONS.items():
+        if value == edition:
+            return code
+    return "it"
+
 
 
 import unicodedata
@@ -610,7 +624,8 @@ def clean_text(value: str | None, limit: int = 240) -> str:
 
 
 def parse_rss(xml_text: str | bytes, team_id: int,
-              diag: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+              diag: dict[str, Any] | None = None,
+              language: str = "it") -> list[dict[str, Any]]:
     """Parse di un feed RSS di Google News in righe pronte per la tabella ``news``.
 
     Il titolo di Google News è «Titolo - Testata»: la testata viene separata e tenuta in
@@ -656,6 +671,10 @@ def parse_rss(xml_text: str | bytes, team_id: int,
             "url": (item.findtext("link") or "").strip(),
             "source": source,
             "description": clean_text(item.findtext("description")),
+            # Lingua dichiarata dell'edizione da cui arriva la riga (docs/106): la
+            # rassegna italiana pubblica solo «it»; la card «stampa in lingua originale»
+            # pubblica le altre con fonte e lingua dichiarate.
+            "language": language,
         })
     return out
 
@@ -777,17 +796,21 @@ class NewsClient:
 
     def team_news(self, team_id: int, team_name: str,
                   diag: dict[str, Any] | None = None,
-                  country: str | None = None) -> list[dict[str, Any]]:
-        """Titoli della squadra dall'edizione italiana di Google News.
+                  country: str | None = None,
+                  editions: list[str] | None = None) -> list[dict[str, Any]]:
+        """Titoli della squadra: edizione italiana più le eventuali edizioni locali.
 
         Ogni richiesta è contata in ``diag["ricerche"]``: il numero sul report deve
-        corrispondere alle richieste vere, non alle squadre.
+        corrispondere alle richieste vere, non alle squadre. Le edizioni locali
+        (docs/106) producono righe con la lingua dell'edizione, perché la scheda partita
+        le tratti per quello che sono: titoli in lingua originale, mai pubblicati come se
+        fossero italiani.
         """
         out: list[dict[str, Any]] = []
-        for edition in editions_for(country):
+        for edition in editions_for(country, editions):
             bump(diag, "ricerche", 1)
             raw = self.team_rss_raw(team_name, edition)
-            out.extend(parse_rss(raw, team_id, diag))
+            out.extend(parse_rss(raw, team_id, diag, language=edition_language(edition)))
         return out
 
     def league_news_raw(self, espn_code: str, http: HttpClient | None = None) -> Any:

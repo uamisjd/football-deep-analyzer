@@ -474,10 +474,13 @@ def collect_news(store: Store, keys: list[str] | None = None,
     """Notizie per squadra (docs/21, P1-5): Google News RSS + ESPN news di lega.
 
     Una richiesta RSS per squadra della stagione, sempre edizione italiana (cache 12 h:
-    i run successivi dello stesso giorno non ridownloadano). La doppia edizione
-    IT+locale di docs/24 §3.5 è stata abbandonata per la regola della lingua
-    (`editions_for()` restituisce solo `EDIZIONE_IT`): 132 squadre = 132 richieste,
-    dentro il tetto di 200. Più una JSON ESPN per campionato. Le righe
+    i run successivi dello stesso giorno non ridownloadano), più una per squadra delle
+    leghe che dichiarano un'edizione locale (docs/106; NED1 e POR1 oggi: +36). La doppia
+    edizione IT+locale di docs/24 §3.5 era stata abbandonata per la regola della lingua
+    (`editions_for()` restituiva solo `EDIZIONE_IT`): oggi è tornata, ma **solo** per le
+    leghe configurate e **solo** per la card che dichiara lingua e fonte, senza tradurre
+    né riscrivere nulla. Totale nel run completo: 132 + 36 = 168 richieste, dentro il
+    tetto di 200. Più una JSON ESPN per campionato. Le righe
     vecchie oltre ``window_days`` vengono potate **dall'archivio**, non solo scartate in
     arrivo: senza quel passo il Parquet cresceva senza limite (docs/26 §2). Fonte isolata
     come le altre: se Google non è raggiungibile il run continua e ``source_status`` mostra
@@ -507,12 +510,14 @@ def collect_news(store: Store, keys: list[str] | None = None,
     # articoli senza titolo, articoli ESPN visti e attribuiti a una squadra. Le ricerche
     # sono contate dal client (una per squadra, solo edizione italiana — docs/53 §3.3)
     diag: dict[str, Any] = {}
-    paesi = {int(lg.fotmob_id): lg.country for lg in leagues()}
+    # Edizioni locali dichiarate in `config/leagues.yaml` (docs/106): solo le leghe che
+    # le dichiarano consumano una richiesta in più per squadra (NED1 e POR1: +36).
+    edizioni = {int(lg.fotmob_id): list((lg.news or {}).get("editions", [])) for lg in leagues()}
     for tid, name, lid in teams.itertuples(index=False):
-        paese = paesi.get(int(lid))          # edizione locale del campionato (docs/24 §3.5)
+        locali = edizioni.get(int(lid)) or None
         items = _safe(f"news rss {name}",
-                      lambda t=tid, n=name, c=paese:
-                          nc.team_news(int(t), str(n), diag, country=c), report)
+                      lambda t=tid, n=name, e=locali:
+                          nc.team_news(int(t), str(n), diag, editions=e), report)
         if items:
             rows.extend(items)
     # ESPN news di lega: passa dal client ESPN (contabilità separata) e attribuisce ogni

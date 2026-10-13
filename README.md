@@ -49,7 +49,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/104_revisione_totale_2026-10-13.md`](docs/104_revisione_totale_2026-10-13.md) — **revisione totale del 13/10**: salute misurata da zero (943 test, 241.754 controlli), copertura della rassegna per lega, crescita del repository con le opzioni di contenimento.
 - [`docs/105_una_fotografia_al_giorno_2026-10-13.md`](docs/105_una_fotografia_al_giorno_2026-10-13.md) — **politica adottata**: i dati entrano in `main` una volta al giorno (−80% di crescita, sito invariato), con il registro preregistrato fuori dalla regola.
 
-> L'**indice completo** dei 114 file `.md` di `docs/` (104 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 6 archivi + 2 audit datati, più i 6 file `.json` di audit) è nel briefing, sezione 6. La revisione totale più recente è [`docs/104`](docs/104_revisione_totale_2026-10-13.md).
+> L'**indice completo** dei 115 file `.md` di `docs/` (105 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 6 archivi + 2 audit datati, più i 6 file `.json` di audit) è nel briefing, sezione 6. La revisione totale più recente è [`docs/104`](docs/104_revisione_totale_2026-10-13.md).
 
 ## Avvio rapido (sviluppo)
 

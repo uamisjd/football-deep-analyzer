@@ -8,6 +8,17 @@
 
 ## Handoff operativo corrente — 2026-10-13 (il più recente: leggere questo e `docs/101` per primi)
 
+**Stampa in lingua originale — [`docs/106`](106_stampa_in_lingua_originale_2026-10-13.md) (13/10, in PR #113).**
+Su domanda e decisione dell'utente («fonti estere + sintesi nostra»): NED1 e POR1 raccolgono anche
+l'edizione locale di Google News; la card «Vita del club» mostra un blocco separato con **titolo
+originale citato**, **fonte, data e lingua dichiarate** e una **riga di sintesi in italiano scritta
+da noi** (etichetta di tema da vocabolario chiuso, `src/fda/site/estero.py`). Nessuna traduzione,
+nessuna riscrittura. Misura: 0 voci su 10 schede prima, 1–3 per club sul campione reale del 13/10
+(`tests/fixtures/estero_2026-10-13.json`). Oracolo indipendente **[50]** in `verify_site.py`.
+Da verificare dopo il merge al primo run: righe `nl`/`pt` in archivio, blocco in pagina, +36
+richieste in `stato.html`.
+
+
 **Revisione totale del 13/10 sera — [`docs/104`](104_revisione_totale_2026-10-13.md).** Su richiesta
 dell'utente («controlla vita morte e miracoli del progetto e del sito») tutto è stato rimisurato da
 zero su una build locale: `pytest` **943**, `ruff` **0**, `fda build` **498/2.364/7.602**,

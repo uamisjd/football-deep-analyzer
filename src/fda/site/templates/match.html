@@ -616,9 +616,28 @@
     {% endif %}
     </div>
     {% endfor %}{% endset %}
-    {% set news_metodo %}    <p class="small mut" style="margin-top:10px">Fonte: Google News RSS per squadra, <b>edizione italiana</b>, più i feed diretti della stampa sportiva italiana (ANSA, Sky Sport). Le notizie ESPN di lega sono <b>in inglese</b>: non sono pubblicabili in una scheda in lingua italiana, e oggi la fonte è anche sospesa (HTTP 403 su tutte e 7 le leghe, vedi <a href="../stato.html">Stato fonti</a>). La finestra è di {{ c.home_news.finestra }} giorni prima del calcio d'inizio, con date esplicite: non entrano voci datate dopo la gara o dopo la costruzione della pagina. Voci esaminate = titoli principali + in riserva + letture sul tema + escluse; le copie dello stesso titolo si contano come doppioni e le voci vecchie sono esterne a quel totale. Per i duplicati resta la versione più recente indicata dalla fonte: non è una nuova notizia né una prova della data originale. L’insieme fra le due squadre riserva solo i titoli effettivamente esposti. La data è dell’articolo indicata dalla fonte, non necessariamente del fatto. Le letture che condividono lo stesso segnale specifico sono accostate come tema: non si certifica che siano lo stesso evento né fonti indipendenti, e restano tutte apribili. Numeri e aggiornamenti nei titoli possono differire: non vengono sommati né riscritti. Chi resta fuori per il limite dei tre si vede: i primi due finiscono «in riserva». L'ordine nasce da quattro punteggi: freschezza (ore al fischio d'inizio), rilevanza per questa partita (avversario, allenatore, giocatori della distinta; penalità se il titolo parla di un'altra squadra), sostanza (numeri e decisioni sopra le dichiarazioni) e categoria. Titolo, testata, data e link come pubblicati in lingua italiana; nessun testo è inventato. «Collegamento ai dati» richiama l’archivio, non dimostra un effetto causale. Le formazioni previste o precedenti non sono conferme d’impiego. Filtri su parole chiave e nomi possono sbagliare: titolo, fonte, data e link restano consultabili.</p>{% endset %}
+    {% set news_metodo %}    <p class="small mut" style="margin-top:10px">Fonte: Google News RSS per squadra, <b>edizione italiana</b>, più i feed diretti della stampa sportiva italiana (ANSA, Sky Sport). Le notizie ESPN di lega sono <b>in inglese</b>: non sono pubblicabili in una scheda in lingua italiana, e oggi la fonte è anche sospesa (HTTP 403 su tutte e 7 le leghe, vedi <a href="../stato.html">Stato fonti</a>). La finestra è di {{ c.home_news.finestra }} giorni prima del calcio d'inizio, con date esplicite: non entrano voci datate dopo la gara o dopo la costruzione della pagina. Voci esaminate = titoli principali + in riserva + letture sul tema + escluse; le copie dello stesso titolo si contano come doppioni e le voci vecchie sono esterne a quel totale. Per i duplicati resta la versione più recente indicata dalla fonte: non è una nuova notizia né una prova della data originale. L’insieme fra le due squadre riserva solo i titoli effettivamente esposti. La data è dell’articolo indicata dalla fonte, non necessariamente del fatto. Le letture che condividono lo stesso segnale specifico sono accostate come tema: non si certifica che siano lo stesso evento né fonti indipendenti, e restano tutte apribili. Numeri e aggiornamenti nei titoli possono differire: non vengono sommati né riscritti. Chi resta fuori per il limite dei tre si vede: i primi due finiscono «in riserva». L'ordine nasce da quattro punteggi: freschezza (ore al fischio d'inizio), rilevanza per questa partita (avversario, allenatore, giocatori della distinta; penalità se il titolo parla di un'altra squadra), sostanza (numeri e decisioni sopra le dichiarazioni) e categoria. Titolo, testata, data e link come pubblicati in lingua italiana{% if c.get('home_estera') and (c.home_estera.attiva or c.away_estera.attiva) %}; per le leghe che lo dichiarano c'è in più il blocco <b>«stampa in lingua originale»</b>, dove il titolo resta nella lingua della testata e l'unica parte scritta da noi è l'etichetta di tema, dichiarata come tale e verificabile dalle parole citate{% endif %}; nessun testo è inventato. «Collegamento ai dati» richiama l’archivio, non dimostra un effetto causale. Le formazioni previste o precedenti non sono conferme d’impiego. Filtri su parole chiave e nomi possono sbagliare: titolo, fonte, data e link restano consultabili.</p>{% endset %}
+    {% set news_estera %}{# il blocco esiste solo quando la lega dichiara un'edizione locale: contesti parziali (test della card) non lo hanno e non devono cambiare #}{% if c.get('home_estera') and c.get('away_estera') and (c.home_estera.attiva or c.away_estera.attiva) %}
+    <div class="grid news-coverage" aria-label="Stampa in lingua originale">
+      {% for side in ('home','away') %}{% set pe = c[side ~ '_estera'] %}
+      <div class="news-estera" data-team-id="{{ c[side ~ '_id'] }}">
+        <p class="imbuto" style="margin:10px 0 4px"><b>{{ c[side ~ '_name'] }}</b> <span class="small mut">· stampa in lingua originale ({{ pe.label }}): {{ pe.pubblicate }} {{ 'voce' if pe.pubblicate == 1 else 'voci' }} su {{ pe.esaminate }} {{ 'voce esaminata' if pe.esaminate == 1 else 'voci esaminate' }}</span></p>
+        {% if pe.voci %}<ul class="news-estera-list">
+          {% for v in pe.voci %}<li data-news-kind="{{ v.chiave }}"><span class="topic">{{ v.etichetta }}</span> <span class="small mut">· {{ v.nota }}</span>
+            <p style="margin:4px 0 0" lang="{{ pe.lingua }}"><b>{{ v.titolo }}</b></p>
+            <p class="small mut" style="margin:2px 0 0">{{ v.fonte }}{% if v.data %}, {{ v.data.strftime('%d/%m/%Y') }}{% endif %} · lingua originale: {{ pe.label }} · riconosciuto da «{{ v.evidenza }}»{% if v.url %} · <a href="{{ v.url }}" rel="nofollow noopener" target="_blank">apri la fonte</a>{% endif %}</p>
+          </li>{% endfor %}
+        </ul>
+        {% elif pe.esaminate %}<p class="small mut imbuto">Nessuna voce pubblicabile: {{ pe.non_classificate }} non riconosciute dal vocabolario, {{ pe.fuori_ambito }} su altre squadre, {{ pe.doppioni }} doppioni, {{ pe.oltre_tema + pe.oltre_capienza }} oltre i limiti.</p>
+        {% else %}<p class="small mut imbuto">Nessuna voce della stampa locale nella finestra pre-partita.</p>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    <p class="small mut">Qui la sintesi è nostra e sta nell'<b>etichetta in italiano</b> (vocabolario dichiarato: infortunio, squalifica, contratto, mercato, panchina, società, stadio, dichiarazione, forma); il titolo è quello <b>originale</b>, nella lingua della testata, e non viene tradotto né riscritto. Pubblicata solo la voce che parla di questa squadra o di un suo tesserato. Un'etichetta non è una notizia verificata: la fonte è a un clic.</p>
+    {% endif %}{% endset %}
     {% if c.news_quiet %}
     <p class="small" style="margin:0">{{ c.news_quiet.riga }} <span class="mut">Il lavoro fatto per arrivarci, squadra per squadra, è nella tendina qui sotto.</span></p>
+    {{ news_estera }}
     <details class="news-more">
       <summary>Che cosa è stato esaminato, e con quali criteri</summary>
       {{ news_intro }}
@@ -628,6 +647,7 @@
     {% else %}
     {{ news_intro }}
     {{ news_imbuto }}
+    {{ news_estera }}
     {{ news_metodo }}
     {% endif %}
     {% if c.news_sapere %}<details class="news-context" open><summary>Dati di contesto della partita · non sono notizie di stampa</summary>{{ news_sapere }}</details>{% endif %}

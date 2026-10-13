@@ -1,3 +1,25 @@
+## 2026-10-13 — Stampa in lingua originale: fonti estere con sintesi nostra (docs/106, PR #113)
+
+**Decisione dell'utente (13/10, `ask_user`):** «cambio politica: fonti estere + sintesi nostra» —
+risposta alla sua domanda «perché per le squadre estere non usiamo fonti estere?».
+
+**Misura che motiva la deroga** (`docs/106` §1): sulle 58 schede pre-partita la card «Vita del
+club» era vuota in **10 su 10** fra NED1 e POR1; togliendo il filtro lingua le voci pubblicabili
+restavano **0** — le 46 voci non italiane in archivio sono pagine di servizio di testate italiane
+e siti di pronostici, non stampa estera. La stampa italiana non scrive dei club di queste leghe.
+
+**Implementato:** edizioni locali dichiarate per lega (`config/leagues.yaml`), lingua nelle righe
+raccolte (colonna `language`), vocabolario chiuso di 9 temi con priorità fissa
+(`src/fda/site/estero.py`), card `news-estera` con titolo originale citato + fonte + lingua
+dichiarate, riga unica che dichiara anche le voci in lingua originale, **oracolo indipendente
+[50]** in `verify_site.py`. Costo: 168 richieste per run (tetto 200).
+
+**Misura sul campione reale (27 titoli, feed del 13/10):** prima 0 voci → dopo **1–3 voci per
+club** (Heerenveen 3, Sparta 3, AZ 1, Braga 1). Titoli conservati in
+`tests/fixtures/estero_2026-10-13.json`, resa congelata in un test.
+
+**Gate:** pytest **988** (+25) · ruff 0 · build/verify/parità/resa al run di verifica.
+
 ## 2026-10-13 — Una fotografia dei dati al giorno: opzione A adottata (docs/105), −80% di crescita
 
 **Decisione dell'utente (via domande di sessione): opzione A** — i Parquet entrano in `main`

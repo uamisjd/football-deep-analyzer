@@ -50,9 +50,10 @@ openmeteo:
   cache_ttl_h: 3
 
 news:
-  # Google News RSS per squadra (edizione italiana) + ESPN news di lega (docs/21, P1-5).
+  # Google News RSS per squadra: edizione italiana per tutte + edizione locale per le
+  # leghe che la dichiarano in leagues.yaml (docs/106) + ESPN news di lega (docs/21, P1-5).
   # Cache 12 h: con 5 run/giorno solo ~2 fetch reali per squadra al giorno.
-  # Il tetto copre una richiesta per squadra: 132 squadre × 1 = 132 richieste.
+  # Il tetto copre una richiesta per squadra e per edizione: 132 × 1 + 36 locali = 168.
   rate_limit_s: 1.0
   max_requests_per_run: 200
   cache_ttl_h: 12
