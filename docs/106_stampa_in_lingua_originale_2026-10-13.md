@@ -114,3 +114,45 @@ Dopo il merge: al primo run serale verificare (a) che l'archivio contenga righe 
 `pt`, (b) che le schede NED1/POR1 mostrino il blocco, (c) il conteggio di richieste in
 `stato.html` (atteso: +36). Se la resa reale è sotto 1 voce per scheda, il vocabolario va esteso — non
 allargato il gate.
+
+---
+
+## 6. Il primo run in produzione: cosa ha funzionato e cosa ho sbagliato (13/10)
+
+Il merge della PR #113 ha attivato il `daily` #267 (`38470105610`, push del merge `cdfc85c`):
+**fallito in 13m10s**, sito non ridepoyato, issue di allerta **#114** aperta dai gate stessi. Due
+fatti, uno buono e uno mio.
+
+**Ha funzionato la cosa che serviva.** La pagina costruita conteneva voci in lingua originale vere,
+una per club, con titolo citato — per esempio `Cathline leidt FC Utrecht naar zege op Willem II`,
+`Kees Smit en AZ naderen akkoord over contractverlenging`, `Fortuna Sittard meldt transfernieuws`.
+Cioè: la raccolta delle edizioni locali, il vocabolario e la card hanno fatto il loro lavoro al
+primo colpo, sui dati veri del weekend di Eredivisie.
+
+**Ho sbagliato l'oracolo [50]**, e il gate ha fermato il run per 32 problemi **falsi**. La prima
+stesura ritagliava i due riquadri di squadra con un'espressione regolare non golosa
+(`<div class="news-estera" …>(.*?)</div>\s*</div>`): i due `div` sono **adiacenti dello stesso
+livello**, quindi la cattura del primo si portava dietro anche il secondo. Effetto: le voci del NEC
+attribuite al Fortuna Sittard, «squadra 8464 dichiara 0 voci e ne rende 3», e la seconda squadra
+mai verificata. Tutte le voci in pagina erano corrette: sbagliata era la misura.
+
+**Perché non si era visto in locale.** Le prove erano state fatte su pagine con l'archivio **senza**
+righe `nl`/`pt`: riquadri vuoti, «0 voci su 0» da confrontare con 0 renderizzate — il difetto era
+invisibile per costruzione. È la stessa lezione di `docs/79` §1 (un controllo provato solo dove non
+può fallire è uno specchio): la correzione non è solo il parser, sono i tre test nuovi che costruiscono
+il caso vero.
+
+**Correzione (PR di fix, `docs/106` §6):**
+
+- i riquadri si leggono con il parser HTML (`.news-estera[data-team-id]`), uno per squadra;
+- controlli in più: la chiave del tema pubblicata deve corrispondere all'etichetta, e la lingua di
+  lega dichiarata nell'intestazione deve essere una di quelle configurate;
+- se i riquadri non sono **due** (uno per squadra) l'oracolo lo dice: una pagina non può promettere
+  una copertura che non ha;
+- **tre test nuovi** in `tests/test_stampa_estera.py`: voci su entrambe le squadre (il caso del
+  run rosso), una squadra vuota e l'altra piena (l'altro caso osservato), e una pagina manomessa di
+  proposito (conteggio, titolo, lingua, riquadro mancante) che l'oracolo **deve** respingere.
+
+**Effetto sui dati:** il run è caduto prima del passo che committa, quindi le righe `nl` di quel giro
+non sono in archivio; la cache del run successivo le riraccoglie. Il sito pubblicato non è cambiato
+(il deploy è a valle dei gate).

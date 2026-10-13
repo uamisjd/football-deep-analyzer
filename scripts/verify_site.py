@@ -5792,10 +5792,19 @@ def check_stampa_estera(site: Path, data: Path | None) -> tuple[list[str], int]:
     `config/leagues.yaml`, senza chiamare il generatore: ogni voce resa in pagina deve
     esistere in archivio per quella squadra **e in quella lingua**, l'etichetta deve stare
     nel vocabolario, la prova citata deve essere dentro il titolo originale e i conteggi
-    dell'intestazione devono corrispondere alla lista. Nessuna voce = nessun controllo
-    inventato: le pagine senza il blocco si saltano.
+    dell'intestazione devono corrispondere alla lista.
+
+    **Corretto il 2026-10-13 dopo il primo run in produzione** (`docs/106` §6): la prima
+    stesura ritagliava i riquadri con un'espressione regolare, ma i due blocchi di squadra
+    sono `div` adiacenti dello stesso livello e la cattura non golosa del primo si portava
+    dietro anche il secondo. Effetto misurato sul `daily` #267: 32 problemi falsi — «squadra
+    8614 dichiara 2 voci e ne rende 3», con i titoli dell'altra squadra attribuiti alla
+    prima — mentre ogni voce in pagina era corretta. Ora i riquadri si leggono con il
+    parser (`.news-estera[data-team-id]`) e il difetto è coperto da un test
+    (`tests/test_stampa_estera.py`, riquadri con voci reali su entrambe le squadre).
     """
     import yaml
+    from bs4 import BeautifulSoup
 
     from fda.site.estero import TEMI
 
@@ -5814,46 +5823,74 @@ def check_stampa_estera(site: Path, data: Path | None) -> tuple[list[str], int]:
     if not lingue:
         return fails, checks
     etichette = {t[1] for t in TEMI}
+    etichette_per_chiave = {t[0]: t[1] for t in TEMI}
     if "language" in news.columns:
-        news["lingua"] = news.language.fillna("it").astype(str).str.lower()
+        lin = news.language.fillna("it").astype(str).str.lower()
     else:
-        news["lingua"] = "it"
-    titoli_per_squadra = {(int(tid), str(lin), str(tit).strip())
-                          for tid, lin, tit in zip(news.team_id, news.lingua, news.title, strict=True)}
-    blocchi = re.compile(r'<div class="news-estera" data-team-id="(\d+)">(.*?)</div>\s*</div>',
-                         re.DOTALL)
-    voce = re.compile(r'<li data-news-kind="([^"]+)"><span class="topic">([^<]+)</span>.*?'
-                      r'<p style="margin:4px 0 0" lang="([a-z]{2})"><b>(.*?)</b></p>.*?'
-                      r'lingua originale: ([^·<]+)· riconosciuto da «(.*?)»', re.DOTALL)
-    intestazione = re.compile(r'stampa in lingua originale \(([^)]*)\): (\d+) voci? su (\d+)')
+        lin = pd.Series("it", index=news.index)
+    titoli_per_squadra = {(int(tid), str(lg), str(tit).strip())
+                          for tid, lg, tit in zip(news.team_id, lin, news.title, strict=True)}
+    intestazione = re.compile(r"stampa in lingua originale \(([^)]*)\):\s*(\d+) voci? su (\d+)")
+    prova_rx = re.compile(r"lingua originale: ([^·<]+)· riconosciuto da «(.*?)»")
     for pg in sorted((site / "partite").glob("*.html")):
         html = pg.read_text(encoding="utf-8")
         if 'aria-label="Stampa in lingua originale"' not in html:
             continue
         checks += 1
-        for tid, blocco in blocchi.findall(html):
-            testa = intestazione.search(blocco)
-            if not testa:
-                fails.append(f"{pg.name}: intestazione del blocco lingua originale assente")
-                continue
-            pubblicate = int(testa.group(2))
-            voci = voce.findall(blocco)
+        soup = BeautifulSoup(html, "html.parser")
+        blocchi = soup.select("div.news-estera[data-team-id]")
+        # Il blocco esiste per entrambe le squadre della partita: se ne manca una, la
+        # pagina promette una copertura che non ha.
+        if len(blocchi) != 2:
+            fails.append(f"{pg.name}: riquadri di stampa in lingua originale {len(blocchi)} invece di 2")
+        for blocco in blocchi:
+            tid = str(blocco.get("data-team-id"))
+            testa = blocco.select_one("p.imbuto")
+            testa_txt = re.sub(r"\s+", " ", testa.get_text(" ", strip=True)) if testa else ""
+            m = intestazione.search(testa_txt)
             checks += 1
+            if not m:
+                fails.append(f"{pg.name}: intestazione del blocco lingua originale assente "
+                             f"(squadra {tid})")
+                continue
+            label_lega, pubblicate = m.group(1).strip(), int(m.group(2))
+            voci = blocco.select("ul.news-estera-list > li")
             if pubblicate != len(voci):
                 fails.append(f"{pg.name}: squadra {tid} dichiara {pubblicate} voci e ne rende {len(voci)}")
-            for _chiave, etichetta, lang, titolo, label_voce, prova in voci:
+            for li in voci:
                 checks += 1
-                titolo = html_unescape(titolo).strip()
+                topic = li.select_one(".topic")
+                etichetta = topic.get_text(strip=True) if topic else ""
+                chiave = str(li.get("data-news-kind") or "")
+                titolo_el = li.find("p", attrs={"lang": True})
+                lang = str(titolo_el.get("lang") or "") if titolo_el else ""
+                titolo = titolo_el.get_text(strip=True) if titolo_el else ""
+                meta_el = next((p for p in li.find_all("p")
+                                if "riconosciuto da" in p.get_text()), None)
+                meta = re.sub(r"\s+", " ", meta_el.get_text(" ", strip=True)) if meta_el else ""
+                pm = prova_rx.search(meta)
+                if not titolo_el or not pm:
+                    fails.append(f"{pg.name}: squadra {tid} voce senza titolo originale o prova ({etichetta!r})")
+                    continue
+                prova, label_voce = pm.group(2).strip(), pm.group(1).strip()
                 if etichetta not in etichette:
+
                     fails.append(f"{pg.name}: squadra {tid} etichetta fuori vocabolario: {etichetta!r}")
-                if lang not in {c for c in ("it", *lingue)}:
+                elif etichette_per_chiave.get(chiave) != etichetta:
+                    # la chiave del tema è quella che l'oracolo usa per i conteggi: se non
+                    # corrisponde all'etichetta pubblicata, la pagina racconta un tema e ne
+                    # dichiara un altro
+                    fails.append(f"{pg.name}: squadra {tid} tema {chiave!r} ≠ etichetta {etichetta!r}")
+                if label_lega not in set(lingue.values()):
+                    fails.append(f"{pg.name}: squadra {tid} lingua di lega non dichiarata: {label_lega!r}")
+                if lang not in lingue:
                     fails.append(f"{pg.name}: lingua {lang!r} non dichiarata in config/leagues.yaml")
                 if (int(tid), lang, titolo) not in titoli_per_squadra:
                     fails.append(f"{pg.name}: squadra {tid} titolo {lang} non presente in archivio: {titolo[:60]!r}")
-                if html_unescape(prova).strip().lower() not in titolo.lower():
+                if prova.lower() not in titolo.lower():
                     fails.append(f"{pg.name}: la prova citata non è nel titolo: {prova[:40]!r}")
-                if label_voce.strip() != lingue.get(lang, ""):
-                    fails.append(f"{pg.name}: lingua dichiarata {label_voce.strip()!r} ≠ {lingue.get(lang)!r}")
+                if label_voce != lingue.get(lang, ""):
+                    fails.append(f"{pg.name}: lingua dichiarata {label_voce!r} ≠ {lingue.get(lang)!r}")
     if checks:
         print(f"[50] card «stampa in lingua originale»: {checks} controlli su voci, lingue e archivi")
     return fails, checks

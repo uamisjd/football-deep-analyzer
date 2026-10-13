@@ -33,6 +33,23 @@ verifica d'ordine con i comandi: `git log --oneline origin/main..HEAD` = solo i 
 `git status --porcelain` vuoto, nessun commit non pushato. Commit di merge e run del `daily` registrati nella
 voce di chiusura qui sotto.
 
+**Esito del merge, ore 21:22 UTC:** merge commit **`cdfc85c`**; il push ha attivato `tests` (**verde**, 3m48s)
+e `daily` **#267** (`38470105610`) che è **fallito in 13m10s**: issue di allerta **#114**, sito non ridepoyato
+(il deploy è a valle dei gate). **Causa: un mio difetto nell'oracolo [50]**, non nella funzione — la card in
+pagina aveva le voci giuste (titoli olandesi reali: `Cathline leidt FC Utrecht naar zege op Willem II`,
+`Kees Smit en AZ naderen akkoord over contractverlenging`), ma il controllo ritagliava i due riquadri di
+squadra con un'espressione regolare e il primo si portava dietro il secondo: 32 problemi falsi, del tipo
+«squadra 8464 dichiara 0 voci e ne rende 3». Non si vedeva in locale perché le prove erano su pagine
+**senza** righe `nl` (vuoto contro vuoto). Dettaglio in `docs/106` §6.
+
+**Fix pronto (PR nuova, ramo di sessione):** riquadri letti con il parser HTML, controlli in più (chiave
+del tema ↔ etichetta, lingua di lega configurata, presenza dei **due** riquadri) e **tre test nuovi** che
+costruiscono il caso vero, compresa una pagina manomessa che l'oracolo deve respingere. Gate: `pytest`
+**990** (+2) · `ruff` 0 · build **498/2.364/7.602** · `verify_site` **241.784 · 0 problemi** · parità identica ·
+resa 375 **28.728 · 0**. La issue #114 si chiude da sola al primo `daily` verde (`docs/41` §4).
+**Prossimo passo:** merge del fix e verifica d'ingresso sul primo `daily` verde (righe `nl`/`pt` in archivio,
+blocco in pagina, +36 richieste in `stato.html`).
+
 ## 2026-10-13 — Una fotografia dei dati al giorno: opzione A adottata (docs/105), −80% di crescita
 
 **Decisione dell'utente (via domande di sessione): opzione A** — i Parquet entrano in `main`
