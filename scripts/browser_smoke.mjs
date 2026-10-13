@@ -62,9 +62,11 @@ try {
       if (file === 'prossime.html') {
         const search=page.locator('[data-match-search]');
         await search.fill('zzzz_no_team_zzzz');
-        const visible=await page.locator('[data-match-card]').evaluateAll(rows=>rows.filter(e=>!e.hidden && getComputedStyle(e).display!=='none').length);
-        if(visible) failures.push({file,width,theme,type:'search-filter',visible});
+        // La ricerca ha debounce 120 ms + requestAnimationFrame: osservare l'esito,
+        // non fotografare il DOM prima che il filtro abbia avuto tempo di applicarsi.
+        await page.waitForFunction(() => [...document.querySelectorAll('[data-match-card]')].every(e=>e.hidden), null, {timeout:5000});
         await search.fill('');
+        await page.waitForFunction(() => [...document.querySelectorAll('[data-match-card]')].some(e=>!e.hidden), null, {timeout:5000});
       }
       if (file.startsWith('partite/')) {
         const deepLink = page.locator('main a[href="#probabilita"]').first();

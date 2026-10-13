@@ -71,10 +71,25 @@ Matrice e istogramma mantengono distinzione fra coda di una squadra e totale gol
 
 ## 5. Verifiche e stato del rilascio
 
-Prima del giro finale: **1.019 test**, Ruff 0, `pip check` OK; build **499/2.364/7.600**;
-`verify_site` **242.503 · 0**, parità **59 schede**, resa 375 **28.766 · 0**.
-Queste misure precedono le ultime correzioni browser: il giro finale è in esecuzione e sarà
-registrato prima della consegna. I test nuovi mirati passano, incluso il salvataggio fino al push.
+**Giro definitivo locale completato:**
+- **1.023 test passati** (248,02 s con gli altri controlli in parallelo), Ruff 0, `pip check` OK.
+- Build **499 schede / 2.364 fixture / 7.600 giocatori nel catalogo**; **4.316 HTML**, sito
+  **152.786.020 byte**. Il JS di accessibilità aumenta lievemente gli HTML, senza cambiare i dati.
+- `verify_site`: **242.503 controlli, zero problemi**, 55 oracoli.
+- Parità: **59 schede**, struttura/indice coerenti. Resa 375: **28.766 misure, zero problemi**.
+- **Chromium 153 reale: 84 visite su 21 pagine, zero problemi**; 7 pre e 7 post per lega, più
+  7 pagine principali, 375/1280 px, chiaro/scuro, tendina matrice aperta e interazioni.
+- Wheel: **13 template, 9 font e LICENSE inclusi**.
+- `git diff cdfc85c -- data/processed src/fda/models`: vuoto; nessun modello/Parquet modificato.
+
+Nel primo test della ricerca il nuovo harness leggeva troppo presto il DOM (il filtro ha
+**debounce di 120 ms**): 4 segnalazioni spurie, **zero segnalazioni axe** dopo i fix visivi.
+Corretto il test con attesa dell'esito osservabile (righe nascoste/ripristinate), non con un
+cambiamento al filtro funzionante e non disattivando controlli. Il giro ripetuto è tutto verde.
+
+**GitHub:** sul commit `77e173c` i job `test` (**2m34s**) e `site` (**11m49s**) sono già verdi.
+Il browser di quel commit precede la correzione del debounce nel test; la nuova revisione
+va verificata sullo SHA finale. Non dichiarati ancora tutti i check remoti verdi.
 
 **PR #116** contiene ora audit e correzioni sul ramo della sessione. La correzione della #115
 è inclusa, ma #115 non è stata chiusa né fusa dall'agente. Nessun merge di produzione, nessun
@@ -93,5 +108,5 @@ run di raccolta esterna o riscrittura di `main` è stato eseguito.
 
 ## Prossimo passo
 
-Completare i gate locali e quelli della PR #116; poi merge da parte dell'utente e verifica del
+Gate locali completi. Completare i check remoti dello SHA finale della PR #116; poi merge da parte dell'utente e verifica del
 primo daily fino al deploy. Registrare separatamente cosa è provato offline e cosa è pubblicato.

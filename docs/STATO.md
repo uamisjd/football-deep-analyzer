@@ -1,4 +1,4 @@
-## 2026-10-14 — Correzioni dell'audit implementate, validazione finale in corso
+## 2026-10-14 — Correzioni dell'audit: tutti i controlli locali verdi, CI finale in attesa
 
 Richiesta utente: «correggi e sistema tutto». Dettagli e prove in
 [`CORREZIONI_AUDIT_2026-10-14.md`](CORREZIONI_AUDIT_2026-10-14.md).
@@ -9,11 +9,15 @@ job, constraints Python/npm e Dependabot, LICENSE già dichiarata resa esplicita
 Browser reale avviato nel sandbox: trovati e corretti problemi di focus tabelle, link e contrasto;
 nuovo controllo Playwright/axe a 375/1280 px e due temi. Nessun cambiamento al modello o ai dati.
 
-**Verificato prima dell'ultimo giro browser:** 1.019 test, Ruff 0, build 499/2.364/7.600,
-verify 242.503 · 0, parità 59, resa 28.766 · 0. **In corso:** giro finale completo e CI della PR #116.
-Nessun merge, dispatch di raccolta, chiusura #115 o modifica di produzione eseguiti.
-**Prossimo:** gate finali; merge utente di #116; poi prova dal vivo di daily+deploy, foto serale,
-registro intermedio e raccolta nl/pt. Non confondere correzioni sul branch con sito già ripubblicato.
+**Giro definitivo locale verde:** **1.023 test**, Ruff 0, pip check OK, build 499/2.364/7.600,
+**4.316 HTML / 152,8 MB**, verify **242.503 · 0**, parità **59**, resa **28.766 · 0**;
+**browser reale Chromium 153: 84 visite / 21 pagine / 0 problemi** (7 pre + 7 post per lega,
+7 pagine principali, due viewport/temi, matrice aperta e interazioni). Wheel completa con LICENSE.
+Il test della ricerca attende ora il debounce: corrette 4 segnalazioni spurie del nuovo harness,
+nessun bug inventato del filtro. Modelli e Parquet byte-invariati rispetto a `cdfc85c`.
+**GitHub:** `test` e `site` già verdi su `77e173c`; check della revisione finale ancora da completare.
+Nessun merge/dispatch/chiusura #115 eseguiti. **Prossimo:** check finali #116; merge utente;
+poi prova dal vivo di daily+deploy, foto serale, registro intermedio e raccolta nl/pt.
 
 ## 2026-10-13 — Audit indipendente della sessione 7c92c1a2: prodotto verificato, pipeline da correggere
 
