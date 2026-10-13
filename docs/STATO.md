@@ -1,3 +1,11 @@
+## 2026-10-13 — Merge PR #111 su ordine esplicito dell'utente (docs/102 + docs/103)
+
+**Merge PR #111 (`arena/3bafce48-football-deep-analyzer` → `main`):**
+- Eseguito dall'agente su ordine esplicito dell'utente nel turno corrente (*«Please merge the pull request.»*; deroga una tantum registrata in `docs/13` §9.27).
+- **Contenuto fuso su `main`:** concordanza ««1» + plurale» rimasta sul sito (`docs/102`) e revisione misurata della sezione «Precedenti» (`docs/103`).
+- **Verifica pre-merge (controllo d'ordine `docs/00` §D eseguito):** `git log --oneline origin/main..HEAD` = solo i commit della PR, `git status --porcelain` vuoto · `pytest` **943** · `ruff` pulito · build **498/2.364/7.602** · `verify_site` **241.619 · 0** · `parita_schede` nessuna differenza · `resa_375` **28.722 · 0** · CI `tests` verde (`38432135717`).
+- **Prossimo passo:** le due sezioni restanti della coda `docs/101` §4 (Previsione del modello ensemble; Verifica approfondita), e la verifica all'ingresso del `daily` post-merge su `main`.
+
 ## 2026-10-13 — Revisione di «Precedenti» (`#precedenti`): misurata, tre difetti chiusi (`docs/103`)
 
 **Misura d'ingresso** (`docs/101` §4.1; elenco canonico dal `sitemap.xml`: 498 schede = 58 pre-partita + 440 finite): blocco completo su **52/58** pre-partita (sulle finite **0 per progetto**: `h2h_pattern` è un blocco pre-partita come `key_players_deep`), bilancio corto 5+433, segnaposto 8/8 veri; **490 schede** con l'elenco «Ultimi precedenti» (**2.353 righe**) e **0 incoerenze** rispetto ai Parquet (date, punteggi, esiti V/N/P, duplicati, regola della vigilia, righe anomale); il bilancio corto di FotMob combacia con l'archivio **438/438**; sotto-serie per campo su 39 schede, **muta su 13** (il difetto M6 di `docs/55`).
