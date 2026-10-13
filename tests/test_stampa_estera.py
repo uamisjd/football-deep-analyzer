@@ -6,6 +6,8 @@ inventato per farli passare.
 """
 
 
+from pathlib import Path
+
 import pandas as pd
 
 from fda.config import leagues
@@ -370,3 +372,129 @@ def test_la_scheda_rende_il_blocco_fuori_dalla_tendina(tmp_path):
     assert html.index("stampa in lingua originale") < html.index('<details class="news-more"')
     # la riga unica della card dice che la stampa locale ha qualcosa da mostrare
     assert "Nella stampa in lingua originale" in html
+
+
+# --------------------------------------------------------------------------------------
+# L'oracolo [50]: il difetto del primo run in produzione (docs/106 §6) non deve tornare
+# --------------------------------------------------------------------------------------
+
+def _checker():
+    """Carica `scripts/verify_site.py` come modulo, senza eseguirne il main."""
+    import importlib.util
+
+    p = Path(__file__).resolve().parents[1] / "scripts" / "verify_site.py"
+    spec = importlib.util.spec_from_file_location("verify_site_estera", p)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _pagina_con_due_squadre(tmp_path, monkeypatch):
+    """Scheda di Eredivisie con voci in lingua originale su **entrambe** le squadre.
+
+    È la forma che il 13/10 ha fatto fallire il `daily` #267: la prima stesura dell'oracolo
+    ritagliava i riquadri con un'espressione regolare e il blocco della prima squadra si
+    portava dietro anche il secondo.
+    """
+    from fda.site.build import SiteBuilder
+
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+    ko = pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=3)
+    quando = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", pd.DataFrame([{
+        "match_id": 900002, "league_id": 57, "season": "2026/2027", "round": "9",
+        "utc_kickoff": ko, "home_id": 8614, "home_name": "Sparta Rotterdam",
+        "away_id": 8525, "away_name": "Willem II", "home_goals": None, "away_goals": None,
+        "status": "scheduled", "source": "test"}]))
+    st.write("match_info", pd.DataFrame([{"match_id": 900002, "status": "scheduled"}]))
+    def voce(tid, titolo, url):
+        return {"team_id": tid, "published_at": quando, "title": titolo, "url": url,
+                "source": "Testata NL", "description": "", "language": "nl"}
+
+    righe = [voce(8614, "Sparta Rotterdam, blessure voor de spits", "u1"),
+             voce(8614, "Sparta Rotterdam verlengt contract speler A", "u2"),
+             voce(8614, "Sparta Rotterdam haalt een nieuwe spits", "u3"),
+             voce(8525, "Willem II, blessure voor de doelman", "u4"),
+             voce(8525, "Willem II verlengt contract speler B", "u5")]
+    st.write("news", pd.DataFrame(righe))
+    site = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=site).build_match_pages({900002})
+    return site, tmp_path / "processed"
+
+
+def test_oracolo_50_passa_con_voci_su_entrambe_le_squadre(tmp_path, monkeypatch):
+    """Il caso che il 13/10 ha reso rosso il `daily` #267: voci su tutte e due le squadre."""
+    site, data = _pagina_con_due_squadre(tmp_path, monkeypatch)
+    fails, checks = _checker().check_stampa_estera(site, data)
+    assert fails == [], fails
+    assert checks >= 8      # due riquadri, cinque voci e le loro righe di fonte
+
+
+def test_oracolo_50_vede_i_difetti_veri(tmp_path, monkeypatch):
+    """L'oracolo non è uno specchio: se la pagina mente, deve dirlo.
+
+    Tre manomissioni, una per tipo di controllo: il conteggio dichiarato, il titolo
+    (che deve esistere in archivio) e la lingua dichiarata.
+    """
+    site, data = _pagina_con_due_squadre(tmp_path, monkeypatch)
+    pg = site / "partite" / "900002.html"
+    originale = pg.read_text(encoding="utf-8")
+    vs = _checker()
+
+    pg.write_text(originale.replace(": 3 voci su", ": 9 voci su"), encoding="utf-8")
+    fails, _ = vs.check_stampa_estera(site, data)
+    assert any("dichiara 9 voci e ne rende 3" in f for f in fails), fails
+
+    pg.write_text(originale.replace("Sparta Rotterdam, blessure voor de spits",
+                                    "Sparta Rotterdam, blessure voor de spitsen"), encoding="utf-8")
+    fails, _ = vs.check_stampa_estera(site, data)
+    assert any("non presente in archivio" in f for f in fails), fails
+
+    pg.write_text(originale.replace("lingua originale: olandese", "lingua originale: inglese"),
+                  encoding="utf-8")
+    fails, _ = vs.check_stampa_estera(site, data)
+    assert any("lingua dichiarata" in f or "non dichiarata" in f for f in fails), fails
+
+    # un riquadro in meno (una sola squadra): la pagina promette una copertura che non ha
+    pg.write_text(originale[:originale.index('<div class="news-estera" data-team-id="8525"')]
+                  + originale[originale.index("</div>\n    </div>",
+                                              originale.index('data-team-id="8525"')):],
+                  encoding="utf-8")
+    fails, _ = vs.check_stampa_estera(site, data)
+    assert any("invece di 2" in f for f in fails), fails
+
+    pg.write_text(originale, encoding="utf-8")
+
+
+def test_oracolo_50_con_una_squadra_vuota_e_l_altra_piena(tmp_path, monkeypatch):
+    """Il caso più frequente in produzione («squadra 8464 dichiara 0 voci e ne rende 3»):
+
+    il riquadro di una squadra è vuoto, quello dell'altra ha le voci. Con la cattura a
+    espressione regolare i tre titoli finivano attribuiti alla squadra vuota.
+    """
+    from fda.site.build import SiteBuilder
+
+    monkeypatch.chdir(Path(__file__).resolve().parents[1])
+    ko = pd.Timestamp.now(tz="UTC") + pd.Timedelta(days=3)
+    quando = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=3)
+    st = Store(tmp_path / "processed")
+    st.write("fixtures", pd.DataFrame([{
+        "match_id": 900003, "league_id": 57, "season": "2026/2027", "round": "9",
+        "utc_kickoff": ko, "home_id": 8464, "home_name": "Fortuna Sittard",
+        "away_id": 8674, "away_name": "NEC", "home_goals": None, "away_goals": None,
+        "status": "scheduled", "source": "test"}]))
+    st.write("match_info", pd.DataFrame([{"match_id": 900003, "status": "scheduled"}]))
+    st.write("news", pd.DataFrame([
+        {"team_id": 8674, "published_at": quando, "title": "NEC haalt een nieuwe spits",
+         "url": "n1", "source": "Testata NL", "description": "", "language": "nl"},
+        {"team_id": 8674, "published_at": quando, "title": "NEC verlengt contract speler C",
+         "url": "n2", "source": "Testata NL", "description": "", "language": "nl"},
+        {"team_id": 8674, "published_at": quando, "title": "NEC, blessure voor de doelman",
+         "url": "n3", "source": "Testata NL", "description": "", "language": "nl"},
+    ]))
+    site = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=site).build_match_pages({900003})
+    fails, checks = _checker().check_stampa_estera(site, tmp_path / "processed")
+    assert fails == [], fails
+    assert checks >= 5      # due riquadri + le tre voci del NEC

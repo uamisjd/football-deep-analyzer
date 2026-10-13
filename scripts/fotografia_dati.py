@@ -33,15 +33,19 @@ fotografia in più che un buco nei dati.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import shutil
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 ORA_SERALE_UTC = 20
 RETE_SICUREZZA = timedelta(hours=24)
 PERCORSO_DATI = "data/processed"
+SNAPSHOT_MARKER = "FDA-SNAPSHOT: full-v1"
+MAX_PAGES = 20
 
 
 def _a_utc(quando: datetime) -> datetime:
@@ -49,13 +53,12 @@ def _a_utc(quando: datetime) -> datetime:
     return quando.replace(tzinfo=UTC) if quando.tzinfo is None else quando.astimezone(UTC)
 
 
-def ultima_fotografia(repo: str, ramo: str, token: str | None = None, per_page: int = 1) -> datetime | None:
-    """Data (committer) dell'ultimo commit che ha toccato `data/processed`.
+def ultima_fotografia(repo: str, ramo: str, token: str | None = None, per_page: int = 100) -> datetime | None:
+    """Ultima fotografia COMPLETA: i commit del solo registro non spostano il clock.
 
-    Usa l'API di GitHub: il repository stesso è lo stato, quindi non serve nessun file
-    segnalibro da conservare tra un run e l'altro. `None` se non esiste ancora.
-    In CI si passa da `gh` (già installato e autenticato dal workflow); senza `gh` si
-    usa `requests`. Due strade, un solo significato.
+    Riconosce il marker nuovo e i commit storici ``data: run ...``. Scorre anche oltre
+    la prima pagina, con un limite esplicito: al limite genera errore → fail-open.
+    Non inferisce una fotografia dal semplice percorso modificato.
     """
     if shutil.which("gh") and (token or os.environ.get("GH_TOKEN")):
         return _leggi_con_gh(repo, ramo, per_page)
@@ -68,43 +71,57 @@ def _interpreta(data_iso: str | None) -> datetime | None:
     return datetime.fromisoformat(data_iso)
 
 
-def _leggi_con_gh(repo: str, ramo: str, per_page: int = 1) -> datetime | None:
-    """Lettura via `gh api` (stesso token del workflow, nessuna configurazione in più)."""
+def _trova_fotografia(read_page: Callable[[int], list[dict[str, Any]]], per_page: int) -> datetime | None:
+    if not 1 <= per_page <= 100:
+        raise ValueError("per_page deve essere fra 1 e 100")
+    for page in range(1, MAX_PAGES + 1):
+        entries = read_page(page)
+        for entry in entries:
+            commit = entry["commit"]
+            message = commit["message"]
+            if SNAPSHOT_MARKER in message.splitlines() or message.startswith("data: run "):
+                date = _interpreta(commit["committer"]["date"])
+                if date is None:
+                    raise ValueError("fotografia senza data")
+                return date
+        if len(entries) < per_page:
+            return None
+    raise RuntimeError("cronologia troppo lunga senza fotografia: fail-open")
+
+
+def _leggi_con_gh(repo: str, ramo: str, per_page: int = 100) -> datetime | None:
     import subprocess
 
-    esito = subprocess.run(
-        [
-            "gh", "api",
-            f"repos/{repo}/commits",
-            "-X", "GET",
-            "-f", f"path={PERCORSO_DATI}",
-            "-f", f"sha={ramo}",
-            "-f", f"per_page={per_page}",
-            "--jq", ".[0].commit.committer.date",
-        ],
-        capture_output=True, text=True, timeout=30, check=True,
-    )
-    return _interpreta(esito.stdout.strip())
+    def read_page(page: int) -> list[dict[str, Any]]:
+        result = subprocess.run(
+            ["gh", "api", f"repos/{repo}/commits", "-X", "GET",
+             "-f", f"path={PERCORSO_DATI}", "-f", f"sha={ramo}",
+             "-f", f"per_page={per_page}", "-f", f"page={page}"],
+            capture_output=True, text=True, timeout=30, check=True,
+        )
+        return json.loads(result.stdout)
+
+    return _trova_fotografia(read_page, per_page)
 
 
-def _leggi_con_requests(repo: str, ramo: str, token: str | None = None, per_page: int = 1) -> datetime | None:
+def _leggi_con_requests(repo: str, ramo: str, token: str | None = None, per_page: int = 100) -> datetime | None:
     import requests
 
     base = os.environ.get("GITHUB_API_URL", "https://api.github.com")
-    intestazioni = {"Accept": "application/vnd.github+json"}
+    headers = {"Accept": "application/vnd.github+json"}
     if token:
-        intestazioni["Authorization"] = f"Bearer {token}"
-    risposta = requests.get(
-        f"{base}/repos/{repo}/commits",
-        params={"path": PERCORSO_DATI, "sha": ramo, "per_page": per_page},
-        headers=intestazioni,
-        timeout=20,
-    )
-    risposta.raise_for_status()
-    voci = risposta.json()
-    if not voci:
-        return None
-    return _interpreta(voci[0]["commit"]["committer"]["date"])
+        headers["Authorization"] = f"Bearer {token}"
+
+    def read_page(page: int) -> list[dict[str, Any]]:
+        response = requests.get(
+            f"{base}/repos/{repo}/commits",
+            params={"path": PERCORSO_DATI, "sha": ramo, "per_page": per_page, "page": page},
+            headers=headers, timeout=20,
+        )
+        response.raise_for_status()
+        return response.json()
+
+    return _trova_fotografia(read_page, per_page)
 
 
 def decide(

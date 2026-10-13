@@ -115,6 +115,9 @@ class HttpClient:
 
         last_exc: Exception | None = None
         for attempt in range(1, self.max_retries + 1):
+            # Ogni retry è una richiesta vera: anche l’ultimo tentativo rispetta il tetto.
+            if self.max_requests is not None and self.stats.requests >= self.max_requests:
+                raise SourceError(f"[{self.name}] budget richieste esaurito ({self.max_requests})")
             self._throttle()
             self.stats.requests += 1
             try:

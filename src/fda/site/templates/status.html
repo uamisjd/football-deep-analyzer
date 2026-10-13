@@ -2,7 +2,7 @@
 {% block title %}Stato fonti — CalcioMetro{% endblock %}
 {% block content %}
 <h1>Stato fonti e database</h1>
-<p class="mut">Salute degli aggiornamenti automatici: ogni fonte viene interrogata 5 volte al giorno e qui si vede l'esito dell'ultimo run, oltre alla completezza delle schede partita. <b>FotMob è la fonte primaria</b> (7/7 leghe); ESPN è riserva sospesa per 403 cronico, coperta da FotMob/Google News.</p>
+<p class="mut">Salute degli aggiornamenti automatici: la raccolta è pianificata 5 volte al giorno (cache e sospensioni possono evitare richieste) e qui si vede l'esito dell'ultimo run, oltre alla completezza delle schede partita. <b>FotMob è la fonte primaria</b> (7/7 leghe); ESPN è una riserva: classifica, scoreboard e notizie hanno esiti distinti nella tabella sotto. Un esito OK può provenire dalla cache; la colonna richieste indica gli accessi effettuati nel run.</p>
 <div class="grid">
 <div class="card"><h2>Ultimi run per fonte</h2>
 <p class="small mut">«Righe» sono le righe di dati salvate dalla fonte in quell'ultimo run: una fonte che risponde ma non salva nulla scrive qui il motivo. <b>SOSPESO</b> non è un errore del sito: la fonte ha fallito per molti run consecutivi (es. ESPN 403), il sistema la mette in pausa e la riprova da solo ogni 4 run. <b>AVVISO</b> è un degrado coperto da un'altra fonte (es. feed Sportmediaset 404, coperto da Google News).</p>

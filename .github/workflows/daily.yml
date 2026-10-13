@@ -16,10 +16,10 @@ on:
       - "docs/**"
       - "*.md"
   schedule:
-    - cron: "0 4 * * *"     # 06:00 IT (estate) — run principale del mattino
-    - cron: "0 10 * * *"    # 12:00 IT — infortuni/formazioni/meteo
-    - cron: "0 14 * * *"    # 16:00 IT
-    - cron: "0 18 * * *"    # 20:00 IT — risultati pomeridiani
+    - cron: "7 4 * * *"     # 06:00 IT (estate) — run principale del mattino
+    - cron: "11 10 * * *"    # 12:00 IT — infortuni/formazioni/meteo
+    - cron: "17 14 * * *"    # 16:00 IT
+    - cron: "23 18 * * *"    # 20:00 IT — risultati pomeridiani
     - cron: "30 21 * * *"   # 23:30 IT — risultati serali
   workflow_dispatch:        # avvio manuale dal tab "Actions" → "Run workflow"
     inputs:
@@ -46,28 +46,29 @@ concurrency:
   cancel-in-progress: false
 
 permissions:
-  contents: write     # per committare data/processed
-  pages: write        # per pubblicare il sito
-  id-token: write     # richiesto da deploy-pages
-  issues: write       # per aprire/aggiornare/chiudere issue di allerta sul daily (docs/41 §4, P1.1)
+  contents: read
 
 jobs:
   run:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # solo questo job salva i dati
     timeout-minutes: 40
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           ref: ${{ github.ref_name }}
 
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
         with:
           python-version: "3.11"
           cache: pip
-          cache-dependency-path: pyproject.toml
+          cache-dependency-path: |
+            pyproject.toml
+            requirements-ci.txt
 
       - name: Installa il pacchetto (con dipendenze dev per i test)
-        run: pip install -q -e ".[dev]"
+        run: pip install -q -c requirements-ci.txt -e ".[dev]"
 
       # Cache HTTP su disco fra un run e l'altro (rispetto delle fonti, misurato il
       # 05/10/2026 su `source_status`): `data/cache/` non è versionato e il checkout
@@ -82,7 +83,7 @@ jobs:
       - name: Ripristina la cache HTTP dei run precedenti
         id: cache-http
         continue-on-error: true
-        uses: actions/cache/restore@v6
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: data/cache
           key: fda-http-${{ github.run_id }}
@@ -94,20 +95,14 @@ jobs:
       - name: Run giornaliero (collect → predict → backtest → simulate → build)
         env:
           PYTHONUNBUFFERED: "1"
+          FDA_LEAGUES: ${{ inputs.leagues }}
+          FDA_SKIP_PREDICT: ${{ inputs.skip_predict }}
         run: |
           set -euo pipefail   # senza pipefail il fallimento di `fda daily` veniva mascherato dalla pipe
-          ARGS="${{ github.event.inputs.leagues }}"
-          FLAGS=""
-          if [ "${{ github.event.inputs.skip_predict }}" = "true" ]; then FLAGS="--skip-predict"; fi
-          fda daily $ARGS $FLAGS 2>&1 | tee run.log | tail -80
-
-      - name: Salva il log come artifact
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: run-log-${{ github.run_number }}
-          path: run.log
-          retention-days: 7
+          read -r -a ARGS <<< "$FDA_LEAGUES"
+          FLAGS=()
+          if [ "$FDA_SKIP_PREDICT" = "true" ]; then FLAGS=(--skip-predict); fi
+          fda daily "${ARGS[@]}" "${FLAGS[@]}" 2>&1 | tee run.log | tail -80
 
       # Dopo `fda daily` la cache è completa (le fasi successive non fanno richieste):
       # si salva qui, anche se la raccolta è fallita a metà, così il run seguente riparte
@@ -121,7 +116,7 @@ jobs:
       - name: Salva la cache HTTP per il run successivo
         if: always() && steps.cache-http.outcome == 'success'
         continue-on-error: true
-        uses: actions/cache/save@v6
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: data/cache
           key: fda-http-${{ github.run_id }}
@@ -184,53 +179,18 @@ jobs:
             >> "$GITHUB_OUTPUT" 2> fotografia.log || echo "commit=true" >> "$GITHUB_OUTPUT"
           cat fotografia.log
 
-      - name: Commit dei dati aggiornati
+      - name: Commit dei dati aggiornati (worktree isolato)
+        env:
+          FDA_BRANCH: ${{ github.ref_name }}
+          FDA_FULL_SNAPSHOT: ${{ steps.fotografia.outputs.commit }}
         run: |
+          set -euo pipefail
           git config user.name "fda-bot"
           git config user.email "fda-bot@users.noreply.github.com"
-          git add data/processed docs/STATO.md
-          if [ "${{ steps.fotografia.outputs.commit }}" != "true" ]; then
-            # Fotografia di oggi già salvata (docs/105 §3): i Parquet aggiornati si
-            # rinviano al run serale. Unica eccezione, e non è una comodità: il registro
-            # **preregistrato** `prospettico` si salva a ogni run se è cambiato, perché il
-            # suo valore di prova è la data di registrazione (la previsione è congelata
-            # prima del calcio d'inizio), non la fotografia — costo misurato: 0,5 MB in
-            # 30 giorni.
-            git reset -q
-            git add data/processed/prospettico.parquet
-            if git diff --cached --quiet; then
-              echo "fotografia dei dati già salvata oggi: niente da fare"
-              exit 0
-            fi
-            git commit -m "data: registro prospettico $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
-          else
-            if git diff --cached --quiet; then
-              echo "nessun dato nuovo"
-              exit 0
-            fi
-            git commit -m "data: run $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
-          fi
-          # Un merge/commit può arrivare mentre il run è ancora in corso. Il vecchio
-          # `|| true` ignorava il rebase e lasciava fallire il push senza retry: in quel
-          # caso il collect/build riusciva ma Pages non veniva mai preparato.
-          pushed=false
-          for attempt in 1 2 3; do
-            git fetch origin "${{ github.ref_name }}"
-            git rebase "origin/${{ github.ref_name }}"
-            if git push origin "HEAD:${{ github.ref_name }}"; then
-              pushed=true
-              break
-            fi
-            echo "push concorrente fallito (tentativo ${attempt}/3), ritento"
-            sleep $((attempt * 5))
-          done
-          if [ "$pushed" != true ]; then
-            echo "impossibile pubblicare il commit dati dopo 3 tentativi" >&2
-            exit 1
-          fi
+          python -m scripts.pubblica_dati --branch "$FDA_BRANCH" --full "$FDA_FULL_SNAPSHOT"
 
       - name: Prepara il sito per Pages
-        uses: actions/upload-pages-artifact@v5
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5
         with:
           path: site
 
@@ -249,20 +209,20 @@ jobs:
           echo "::warning::fallimento deliberato richiesto da «prova_allerta»: serve solo a verificare l'apertura della issue di guasto"
           exit 1
 
-      # Allerta automatica su guasto/ripristino (docs/41 §4, P1.1):
-      # - se il run è verde, chiude in automatico eventuali issue di guasto aperte;
-      # - se il run è rosso, apre una issue dettagliata con link, commit ed estratti di log o vi aggiunge un commento.
-      - name: Segnala ripristino (chiude eventuale issue di guasto aperta)
-        if: success() && github.ref_name == github.event.repository.default_branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/ci_alert.py on-success
 
-      - name: Segnala fallimento (apre o aggiorna issue di guasto)
-        if: failure() && github.ref_name == github.event.repository.default_branch
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: python scripts/ci_alert.py on-failure
+      - name: Salva diagnostica del run
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: run-log-${{ github.run_number }}
+          path: |
+            run.log
+            verify.log
+            parita.log
+            resa375.log
+            fotografia.log
+          if-no-files-found: warn
+          retention-days: 7
 
   deploy:
     needs: run
@@ -277,4 +237,31 @@ jobs:
       id-token: write
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v5
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5
+
+  notify:
+    # Solo il risultato END-TO-END autorizza una dichiarazione di ripristino.
+    needs: [run, deploy]
+    if: always() && github.ref_name == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+      issues: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7
+        with:
+          python-version: "3.11"
+      - name: Recupera diagnostica (anche se il deploy è fallito o saltato)
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
+        with:
+          name: run-log-${{ github.run_number }}
+      - name: Segnala esito di raccolta e pubblicazione
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FDA_RUN_RESULT: ${{ needs.run.result }}
+          FDA_DEPLOY_RESULT: ${{ needs.deploy.result }}
+        run: python scripts/ci_alert.py on-result

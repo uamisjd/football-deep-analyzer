@@ -49,7 +49,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/104_revisione_totale_2026-10-13.md`](docs/104_revisione_totale_2026-10-13.md) — **revisione totale del 13/10**: salute misurata da zero (943 test e 241.754 controlli **al momento della revisione**; 988 e 241.774 dopo `docs/105`-`docs/106`), copertura della rassegna per lega, crescita del repository con le opzioni di contenimento.
 - [`docs/105_una_fotografia_al_giorno_2026-10-13.md`](docs/105_una_fotografia_al_giorno_2026-10-13.md) — **politica adottata**: i dati entrano in `main` una volta al giorno (−80% di crescita, sito invariato), con il registro preregistrato fuori dalla regola.
 
-> `docs/` ha **117** file `.md` (**107** documenti numerati, da `00` a `106` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 2 audit datati e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione totale più recente è [`docs/104`](docs/104_revisione_totale_2026-10-13.md).
+> `docs/` ha **119** file `.md` (**107** documenti numerati, da `00` a `106` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 2 audit datati e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione indipendente più recente è [audit 13/10](docs/AUDIT_COMPLETO_2026-10-13_7c92c1a2.md), seguita dalle [correzioni 14/10](docs/CORREZIONI_AUDIT_2026-10-14.md).
 
 ## Avvio rapido (sviluppo)
 
@@ -87,3 +87,36 @@ GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), comm
 1. Settings → Pages → *Build and deployment* → Source: **GitHub Actions**.
 2. Actions → *daily* → **Run workflow** (primo run manuale; poi parte da solo con il cron).
 3. **Nessun secret**: tutte le fonti usate sono gratuite e senza chiave. Le quote di mercato non sono pubblicate (decisione del 19/09/2026, `docs/38`).
+
+## Verifiche riproducibili e pubblicazione (14/10/2026)
+
+```bash
+pip install -c requirements-ci.txt -e ".[dev]"
+python -m pytest -q
+ruff check .
+fda build
+python scripts/verify_site.py --site site --data data/processed
+python scripts/parita_schede.py site
+python -m scripts.resa_375
+# Opzionale in locale, obbligatorio nella CI PR: browser vero e axe WCAG AA
+npm ci
+npx playwright install --with-deps chromium
+npm run test:browser
+```
+
+`requirements-ci.txt` congela le versioni runtime/dev verificate su Python 3.11; non contiene
+hash di integrità e non certifica assenza di CVE. I browser test usano un campione pre/post delle
+sette leghe a 375/1280 px, temi chiaro/scuro, toggle e link interni. Il report in
+`browser-results/` è generato, non versionato. Non è una certificazione completa WCAG.
+
+Nel daily, `scripts/pubblica_dati.py` salva i dati in un **worktree temporaneo isolato**:
+commit/rebase/push non toccano il checkout della build. Le fotografie complete hanno marker
+`FDA-SNAPSHOT: full-v1`; i commit del solo registro prospettico **non** spostano la loro data.
+L'allerta di ripristino viene emessa solo dopo **raccolta e deploy riusciti**. Il cron è
+nominale, non una garanzia di puntualità. Un merge resta soggetto alla policy del progetto.
+
+### Licenza e dati di terzi
+
+La licenza MIT già dichiarata per il codice è riportata in [`LICENSE`](LICENSE). Non concede
+nuovi diritti sui dati o articoli di terzi: si applicano le condizioni delle rispettive fonti,
+e ai font la licenza contenuta in `src/fda/site/assets/fonts/LICENSE.txt`.

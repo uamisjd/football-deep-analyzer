@@ -1,3 +1,20 @@
+## 2026-10-14 — Correzioni dell'audit implementate, validazione finale in corso
+
+Richiesta utente: «correggi e sistema tutto». Dettagli e prove in
+[`CORREZIONI_AUDIT_2026-10-14.md`](CORREZIONI_AUDIT_2026-10-14.md).
+Worktree isolato per commit/rebase/push; marker/paginazione delle fotografie senza includere
+il registro; budget per ogni retry; allerta solo dopo run+deploy; parser [50] della #115 integrato;
+titolo Accuratezza e testi ESPN corretti. CI con build/gate/browser, Actions a SHA, permessi per
+job, constraints Python/npm e Dependabot, LICENSE già dichiarata resa esplicita.
+Browser reale avviato nel sandbox: trovati e corretti problemi di focus tabelle, link e contrasto;
+nuovo controllo Playwright/axe a 375/1280 px e due temi. Nessun cambiamento al modello o ai dati.
+
+**Verificato prima dell'ultimo giro browser:** 1.019 test, Ruff 0, build 499/2.364/7.600,
+verify 242.503 · 0, parità 59, resa 28.766 · 0. **In corso:** giro finale completo e CI della PR #116.
+Nessun merge, dispatch di raccolta, chiusura #115 o modifica di produzione eseguiti.
+**Prossimo:** gate finali; merge utente di #116; poi prova dal vivo di daily+deploy, foto serale,
+registro intermedio e raccolta nl/pt. Non confondere correzioni sul branch con sito già ripubblicato.
+
 ## 2026-10-13 — Audit indipendente della sessione 7c92c1a2: prodotto verificato, pipeline da correggere
 
 Relazione completa: [`AUDIT_COMPLETO_2026-10-13_7c92c1a2.md`](AUDIT_COMPLETO_2026-10-13_7c92c1a2.md).

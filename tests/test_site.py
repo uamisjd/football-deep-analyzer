@@ -3023,3 +3023,37 @@ def test_card_panchina_rendimento_dichiarato_per_un_subentro(tmp_path):
     card = card.split('id="panchina"', 1)[1].split('<div class="card"', 1)[0]
     assert "rendimento: <b>nessuna gara finita con lui in panchina</b>" in card
     st.close()
+
+
+def test_accuracy_title_is_plain_text_and_laboratory_link_is_visible(tmp_path):
+    from bs4 import BeautifulSoup
+    st = Store(tmp_path / "data")
+    out = tmp_path / "site"
+    out.mkdir()
+    SiteBuilder(store=st, out_dir=out).build_accuracy(pd.DataFrame(columns=["match_id", "home_goals", "away_goals", "utc_kickoff", "league_id", "status"]))
+    soup = BeautifulSoup((out / "accuratezza.html").read_text(), "html.parser")
+    assert soup.title.get_text() == "Accuratezza del modello — CalcioMetro"
+    assert soup.select_one('main a[href="laboratorio.html"]')
+
+
+def test_status_does_not_claim_every_espn_component_is_suspended(tmp_path):
+    st = Store(tmp_path / "data")
+    out = tmp_path / "site"
+    out.mkdir()
+    SiteBuilder(store=st, out_dir=out).build_status()
+    html = (out / "stato.html").read_text()
+    assert "riserva sospesa per 403 cronico" not in html
+    assert "classifica, scoreboard e notizie hanno esiti distinti" in html
+    assert "cache" in html
+
+
+def test_readable_text_not_dimmed_and_scroll_focus_is_conditional():
+    from fda.site.build import TEMPLATES
+    match = (TEMPLATES / "match.html").read_text()
+    assert 'style="opacity:.55"' not in match
+    assert 'style="opacity:.62"' not in match
+    assert 'style="opacity:.78"' not in match
+    assert 'style="opacity:.82"' not in match
+    base = (TEMPLATES / "base.html").read_text()
+    assert "el.scrollWidth > el.clientWidth + 1" in base
+    assert "el.removeAttribute('tabindex')" in base

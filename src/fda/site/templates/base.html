@@ -158,6 +158,25 @@
       var d = t.closest('details:not([open])');
       if(d) d.setAttribute('open','');
     };
+    // Solo le tabelle che SCORRONO entrano nel percorso Tab, anche dopo resize/toggle.
+    var tableFocus = function(){
+      document.querySelectorAll('.tablewrap').forEach(function(el){
+        var scrolls = el.clientWidth > 0 && el.scrollWidth > el.clientWidth + 1;
+        if(scrolls){
+          el.setAttribute('tabindex','0');
+          el.setAttribute('role','region');
+          var card=el.closest('.card');
+          var heading=card && card.querySelector('h2,h3');
+          el.setAttribute('aria-label','Tabella scorrevole' + (heading ? ': ' + heading.textContent.trim() : ''));
+        }else{
+          el.removeAttribute('tabindex'); el.removeAttribute('role'); el.removeAttribute('aria-label');
+        }
+      });
+    };
+    window.addEventListener('resize',tableFocus);
+    document.addEventListener('toggle',tableFocus,true);
+    if(document.fonts) document.fonts.ready.then(tableFocus);
+    tableFocus();
     window.addEventListener('hashchange',apri);
     apri();
   }catch(e){}

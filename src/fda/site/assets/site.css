@@ -84,6 +84,8 @@ h4{font-size:13px;font-weight:600;margin:0 0 8px;color:var(--txt2);text-transfor
 p{margin:0 0 12px}
 a{color:var(--accent);text-decoration:none;transition:color .13s}
 a:hover{color:var(--accent-hover)}
+/* I link nel testo non si distinguono solo per colore (WCAG 1.4.1). */
+main p a,main li a,main td a,main th a,main .small a,footer p a{text-decoration:underline;text-underline-offset:.18em;text-decoration-thickness:1px}
 a:focus-visible,button:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius:6px;box-shadow:0 0 0 6px var(--accent-dim)}
 /* skip-link (P1.13, docs/19 §3.6): fuori schermo finché non riceve il focus da tastiera,
    così non sposta il layout; visibile in alto a sinistra quando si tabula */
@@ -679,3 +681,6 @@ a:focus-visible{outline:2px solid var(--accent);outline-offset:3px;border-radius
 .filter-button.small{font-size:11px;padding:4px 9px;min-height:28px}
 .cal-intro .cal-title{flex:1}
 .upcoming-summary-leagues .tag b{color:var(--txt)}
+
+/* Contenitori scorrevoli raggiungibili da tastiera, senza alterarne le misure. */
+.tablewrap:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
