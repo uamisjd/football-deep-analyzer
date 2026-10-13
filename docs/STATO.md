@@ -1,3 +1,108 @@
+## 2026-10-13 — Stampa in lingua originale: fonti estere con sintesi nostra (docs/106, PR #113)
+
+**Decisione dell'utente (13/10, `ask_user`):** «cambio politica: fonti estere + sintesi nostra» —
+risposta alla sua domanda «perché per le squadre estere non usiamo fonti estere?».
+
+**Misura che motiva la deroga** (`docs/106` §1): sulle 58 schede pre-partita la card «Vita del
+club» era vuota in **10 su 10** fra NED1 e POR1; togliendo il filtro lingua le voci pubblicabili
+restavano **0** — le 46 voci non italiane in archivio sono pagine di servizio di testate italiane
+e siti di pronostici, non stampa estera. La stampa italiana non scrive dei club di queste leghe.
+
+**Implementato:** edizioni locali dichiarate per lega (`config/leagues.yaml`), lingua nelle righe
+raccolte (colonna `language`), vocabolario chiuso di 9 temi con priorità fissa
+(`src/fda/site/estero.py`), card `news-estera` con titolo originale citato + fonte + lingua
+dichiarate, riga unica che dichiara anche le voci in lingua originale, **oracolo indipendente
+[50]** in `verify_site.py`. Costo: 168 richieste per run (tetto 200).
+
+**Misura sul campione reale (27 titoli, feed del 13/10):** prima 0 voci → dopo **1–3 voci per
+club** (Heerenveen 3, Sparta 3, AZ 1, Braga 1). Titoli conservati in
+`tests/fixtures/estero_2026-10-13.json`, resa congelata in un test.
+
+**Gate:** pytest **988** (+25) · ruff 0 · build **498/2.364/7.602** · `verify_site` **241.774 controlli · 0 problemi**
+(55 oracoli: 32 indipendenti, uno nuovo — [50]) · parità **58 schede identiche** · resa 375 px **28.728 · 0**.
+
+**Chiusura del turno (dopo `docs/106`, commit `c07ea95`):** corretti i conteggi dell'indice dei documenti, che erano
+sbagliati da più giri — **117 file `.md` e 107 documenti numerati** (`00`–`106`: il 09 non è mai esistito, il 58 è
+duplicato) — e i numeri stantii della tabella del briefing (515 test in 44 file → **988 in 60**; 26 Parquet → **32**;
+template 12 → **13**), dichiarando che la tabella arriva fino a `docs/69` e che l'elenco completo è `ls docs/`.
+PR #113: check `test` **verde** (3m24s), `MERGEABLE`/**clean**.
+
+**Merge eseguito il 13/10 dall'agente su ordine esplicito dell'utente** (*«Please merge the pull request.»*):
+deroga alla regola D registrata in [`docs/13` §9.29](13_modelli_e_schede_piano_2026-09-13.md). Prima del merge,
+verifica d'ordine con i comandi: `git log --oneline origin/main..HEAD` = solo i commit della PR,
+`git status --porcelain` vuoto, nessun commit non pushato. Commit di merge e run del `daily` registrati nella
+voce di chiusura qui sotto.
+
+## 2026-10-13 — Una fotografia dei dati al giorno: opzione A adottata (docs/105), −80% di crescita
+
+**Decisione dell'utente (via domande di sessione): opzione A** — i Parquet entrano in `main`
+**una volta al giorno** invece di ~5, con un'unica eccezione motivata (il registro preregistrato).
+Il sito resta identico: cinque build e cinque deploy al giorno, stessi gate, stesse richieste.
+
+**Implementato:**
+- `scripts/fotografia_dati.py`: decisione pura (`decide()`), stato letto dalla cronologia del
+  repository (`gh api`, ripiego `requests`), fail-open su qualunque errore.
+  Regola: prima fotografia → sì; fotografia di **oggi** (UTC) → no; altrimenti sì se
+  **ora UTC ≥ 20** (run serale) **oppure** se sono passate **≥ 24 ore** (rete di sicurezza).
+- `tests/test_fotografia_dati.py`: **20 test** (giornata a cinque run con una sola fotografia,
+  confine delle 24 ore, fail-open, ripiego su `requests`, output a una riga per `$GITHUB_OUTPUT`).
+- `.github/workflows/daily.yml`: nuovo passo «Fotografia dei dati — decidere se questo run
+  committa», commit condizionale, e nuovo input di dispatch **`forza_commit`** (default `false`).
+  Quando la fotografia è già salvata si committa **solo** `data/processed/prospettico.parquet`
+  se è cambiato (il suo valore di prova è la data di registrazione: costo misurato 0,5 MB/30 gg).
+
+**Prove:** estrazione del passo dal YAML ed esecuzione in un repository di prova con origine
+locale — cinque scenari, tutti corretti: con «fotografia già salvata» i Parquet grandi **non**
+sono su origine e il registro sì; nei casi serali si committa `data: run …`. Prova dal vivo dal
+sandbox: lo script legge il commit dati delle 17:33 UTC e risponde `commit=false`.
+
+**Effetto atteso** (`docs/105` §4): da ~155 fotografie e 743,8 MB/mese a **~30 fotografie e
+~150 MB/mese (−80%)**; 1 GB spostato da ~24/10/2026 a ~metà dicembre 2026, 5 GB oltre il 2029.
+**Da verificare dopo il merge:** il primo run serale (fotografia presente) e i run intermedi
+(solo registro o «niente da fare») — è la verifica che i gate offline non possono dare.
+
+**Prossimo:** merge delle due cose insieme (la revisione `docs/104` e questa), poi la verifica
+d'ingresso del `daily`; in coda le 2 sezioni della scheda e l'esperimento notizie NED1/POR1.
+
+## 2026-10-13 — Revisione totale del progetto e del sito (docs/104): salute confermata, tre decisioni all'utente
+
+**Richiesta utente:** *«controlla vita morte e miracoli del progetto e del sito, vedi a che punto
+siamo arrivati, se c'è qualcosa da fare, da rivedere, da migliorare. fai delle ricerche e studia
+tutto»*. Relazione completa in [`docs/104`](104_revisione_totale_2026-10-13.md).
+
+**Misurato da zero in quella sessione** (i numeri di oggi, dopo `docs/105` e `docs/106`, sono `pytest` **988** e
+`verify_site` **241.774 · 0 problemi** con 55 oracoli — [50] è la card «stampa in lingua originale»; storia
+completa recuperata: 713 commit; build locale dai dati di `17b46b3`): `pytest` **943**, `ruff` **0 errori**, `fda build` **498 schede / 2.364 fixture /
+7.602 giocatori**, `verify_site` **241.754 controlli · 0 problemi**, parità **58 schede** (struttura
+identica, indice 16 voci, testo min 31.876 · mediana 37.508), resa 375 px **28.728 misure · 0**;
+sito **4.316 pagine HTML / 153 MB**; anteprima attiva su `0.0.0.0:8000`. GitHub: **0 issue, 0 PR**,
+daily 3/3 verdi dopo la PR #110, `lab`/`benchmark`/`understat-storico` verdi. Sito pubblicato:
+0 partite oggi (sosta nazionali), messaggio onesto, ripresa **venerdì 16/10/2026 con 5 partite**.
+Nessun numero pubblicato smentito dai dati.
+
+**Contenuti — «Vita del club» sulle 58 pre-partita:** 33/58 con voci (ITA1 10/10, ESP1 7/10,
+GER1 6/9, ENG1 5/10, FRA1 5/9, **NED1 0/9, POR1 0/1**). Ricerca web di conferma: la stampa italiana
+copre le leghe estere solo per i club maggiori → il buco di NED1/POR1 è **di fonte**, non di filtro.
+
+**Rischio nuovo, misurato:** il repository cresce di **~24,8 MB/giorno** (743,8 MB negli ultimi 30
+giorni; pack **722,85 MiB**; news.parquet 45%, backtest 27%, predictions 12%; blob massimo 4,9 MB,
+nessun file vicino ai limiti 50/100 MiB). A questo ritmo **1 GB ~24/10/2026** e 5 GB ~7/4/2027. Opzioni con numeri in `docs/104` §3: **A** commit dei dati 1×/giorno (−80%), **B** stop agli
+snapshot derivati, **C** compattazione periodica con `git filter-repo`, **D** LFS (insufficiente da
+sola: 1 GB gratis). Il checkout della CI è shallow e non è toccato. **Decisione dell'utente, non
+presa d'ufficio.**
+
+**Coda confermata:** restano le **ultime 2 sezioni** della scheda partita («Previsione del modello
+ensemble»; «Verifica approfondita» — «Precedenti» chiusa con `docs/103`); decisioni aperte su
+StatsBomb e clima; `dc_xg` non promosso (in attesa di accumulo); igiene documentale: l'indice di
+briefing/README diceva «92 file `.md` / 83 numerati», oggi sono **114 / 104**.
+
+**Ricerca:** limiti GitHub (file 50/100 MiB; repo ideale <1 GB, <5 GB raccomandato; LFS 1 GB),
+`git filter-repo`/`git-sizer` per il contenimento, stampa italiana delle leghe estere (Sky Sport,
+Eurosport, Diretta.it: coprono i club grandi e gli eventi di lega).
+
+**Prossimo:** tre decisioni all'utente (politica del repository; le 2 sezioni; feed di lega per
+NED1/POR1). PR aperta con questo documento (`docs/104`), nessun merge.
+
 ## 2026-10-13 — Merge PR #111 su ordine esplicito dell'utente (docs/102 + docs/103)
 
 **Merge PR #111 (`arena/3bafce48-football-deep-analyzer` → `main`):**

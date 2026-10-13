@@ -46,7 +46,10 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/68_revisione_forma_mercato_2026-10-10.md`](docs/68_revisione_forma_mercato_2026-10-10.md) — revisione indipendente della PR #98: numeri confermati, conteggi a data fissata e tre lacune dei controlli corrette.
 - [`docs/69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md`](docs/69_coda_post_merge_tilt_e_forza_avversari_2026-10-10.md) — coda verificata dopo la PR #98: decisione sui tre tilt con misure rigenerate, «forza avv.» storica già misurata, riconciliazione dei due ΔRPS col mercato.
 
-> L'**indice completo** dei 92 file `.md` di `docs/` (83 documenti numerati — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — + briefing + `STATO.md` + 5 archivi + 2 audit datati, più `_audit_modelli.json`) è nel briefing, sezione 6.
+- [`docs/104_revisione_totale_2026-10-13.md`](docs/104_revisione_totale_2026-10-13.md) — **revisione totale del 13/10**: salute misurata da zero (943 test e 241.754 controlli **al momento della revisione**; 988 e 241.774 dopo `docs/105`-`docs/106`), copertura della rassegna per lega, crescita del repository con le opzioni di contenimento.
+- [`docs/105_una_fotografia_al_giorno_2026-10-13.md`](docs/105_una_fotografia_al_giorno_2026-10-13.md) — **politica adottata**: i dati entrano in `main` una volta al giorno (−80% di crescita, sito invariato), con il registro preregistrato fuori dalla regola.
+
+> `docs/` ha **117** file `.md` (**107** documenti numerati, da `00` a `106` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 2 audit datati e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione totale più recente è [`docs/104`](docs/104_revisione_totale_2026-10-13.md).
 
 ## Avvio rapido (sviluppo)
 

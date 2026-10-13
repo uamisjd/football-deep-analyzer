@@ -141,7 +141,7 @@ class _FakeNews:
     def __init__(self, start: int = 0) -> None:
         self.http = _FakeHttp(RSS_VUOTO.encode(), start=start)
 
-    def team_news(self, team_id, team_name, diag=None, country=None):
+    def team_news(self, team_id, team_name, diag=None, country=None, editions=None):
         # ``country`` esiste nella firma del client vero (oggi solo edizione italiana,
         # docs/53 §3.3):
         # il finto risponde lo stesso feed perché qui interessa la contabilità.
@@ -415,7 +415,7 @@ def test_collect_news_rispetta_il_filtro_leghe_sulle_squadre(tmp_path):
     chieste: list[str] = []
 
     class _RegNews(_FakeNews):
-        def team_news(self, team_id, team_name, diag=None, country=None):
+        def team_news(self, team_id, team_name, diag=None, country=None, editions=None):
             chieste.append(team_name)
             return super().team_news(team_id, team_name, diag, country)
 

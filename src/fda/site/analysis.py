@@ -52,6 +52,8 @@ from .advanced import (
 )
 from .club_news import title_exclusion, whole_phrase
 from .club_signals import club_signal
+from .estero import TEMI as TEMI_ESTERO
+from .estero import sintesi_estera
 from .fmt import (
     dec,
     displayed,
@@ -406,6 +408,14 @@ def _no_news() -> dict[str, Any]:
             "senza_segnale": 0, "correlate": 0}
 
 
+def _no_estera() -> dict[str, Any]:
+    """Blocco «stampa in lingua originale» vuoto (partite finite: la card non si stampa)."""
+    return {"attiva": False, "lingua": "", "label": "", "voci": [], "esaminate": 0,
+            "classificate": 0, "non_classificate": 0, "fuori_ambito": 0, "doppioni": 0,
+            "senza_titolo": 0, "vecchie": 0, "oltre_capienza": 0, "oltre_tema": 0,
+            "pubblicate": 0, "limite": 0, "tema_limite": 0, "finestra": 0}
+
+
 #: Voci dell'imbuto della card «Vita del club» che entrano nella riga unica quando non c'è
 #: niente da pubblicare (`docs/28` §2 P1.1). L'ordine mette per primo il cesto generico —
 #: «servizio o cronaca», cioè quello che non è notizia — e poi i motivi specifici, nello
@@ -426,7 +436,7 @@ NEWS_FUNNEL_ORDER: tuple[tuple[str, str], ...] = (
 
 
 def news_quiet_line(home: dict[str, Any], away: dict[str, Any], home_name: str,
-                    away_name: str) -> dict[str, Any] | None:
+                    away_name: str, estera: int = 0) -> dict[str, Any] | None:
     """Una riga sola quando **nessuna** delle due squadre ha un titolo pubblicabile.
 
     Perché esiste (misurato il 2026-09-18, `docs/28` §2 P1.1): su **42 schede su 66** la card
@@ -475,7 +485,13 @@ def news_quiet_line(home: dict[str, Any], away: dict[str, Any], home_name: str,
         if vecchie:
             riga += f" · {it_plural(vecchie, 'troppo vecchio', 'troppo vecchi')}"
         riga += "."
+    if estera:
+        # Con le edizioni locali attive (docs/106) «nessun titolo» riguarda la stampa
+        # italiana: dirlo senza la seconda metà della frase sarebbe falso.
+        riga += (f" Nella stampa in lingua originale ci sono {it_plural(estera, 'voce', 'voci')} "
+                 "per questa partita: sono qui sotto, con fonte e lingua dichiarate.")
     return {"riga": riga, "esaminate": esaminate, "vecchie": vecchie, "finestra": finestra,
+            "estera": estera,
             "motivi": [{"chiave": chiave, "etichetta": etichetta, "n": _somma(chiave)}
                        for chiave, etichetta in NEWS_FUNNEL_ORDER if _somma(chiave)]}
 
@@ -1240,6 +1256,9 @@ class MatchAnalysis:
         self.season_sim_cond = store.read("season_sim_cond")  # probabilità condizionate per gara (punto 9)
         self.cup_fixtures = store.read("cup_fixtures")
         self.news_df = store.read("news")
+        # Edizioni locali dichiarate per lega (`config/leagues.yaml`, docs/106): la card
+        # «stampa in lingua originale» esiste solo dove la lega le dichiara.
+        self.news_edizioni = {int(lg.fotmob_id): dict(lg.news or {}) for lg in leagues()}
         self.transfers = store.read("transfers")
         # specchio dei risultati (3 stagioni, 7 leghe): serve allo split di sede della card
         # «Fattori» (`venue_form`), che sulla sola stagione in corso avrebbe 2-3 gare per sede
@@ -3522,6 +3541,8 @@ class MatchAnalysis:
     NEWS_LIMIT: ClassVar[int] = 3                # fatti pubblicati per squadra
     NEWS_CATEGORY_LIMIT: ClassVar[int] = 2       # non più di due fatti della stessa categoria
     NEWS_RESERVE_LIMIT: ClassVar[int] = 2        # «in riserva»: i primi che non entrano nei tre
+    ESTERA_LIMIT: ClassVar[int] = 3              # voci della card «stampa in lingua originale»
+    ESTERA_TEMA_LIMIT: ClassVar[int] = 2         # non più di due voci dello stesso tema
     # «Da sapere»: tetto alle righe derivate dai nostri dati. Oltre questa soglia la card
     # smette di essere un riassunto e diventa un elenco (docs/25 §5).
     SAPERE_MAX: ClassVar[int] = 8
@@ -3858,6 +3879,147 @@ class MatchAnalysis:
             v.pop("_key", None)
             out["riserva"].append(v)
         out["pubblicate"] = len(out["notizie"])
+        return out
+
+    @staticmethod
+    def _estera_soggetto(titolo: str, nome: str, squad: list[dict[str, Any]] | None,
+                         coach: str | None) -> bool:
+        """Il titolo parla di questa squadra, di un suo giocatore o del suo allenatore.
+
+        Serve perché il feed locale, senza virgolette, restituisce anche pezzi di lega che
+        citano la squadra solo di sfuggita: senza questo controllo la card attribuirebbe a
+        Heerenveen un titolo sul PSV.
+        """
+        key = soft_key(titolo)
+        if not key:
+            return False
+        tokens = [t for t in soft_key(nome).split() if len(t) >= 3]
+        if soft_key(nome) and whole_phrase(key, soft_key(nome)):
+            return True
+        if tokens and any(t in key.split() for t in tokens if len(t) >= 5):
+            return True
+        if coach:
+            parti = [p for p in soft_key(coach).split() if len(p) >= 5]
+            if parti and any(p in key for p in parti):
+                return True
+        for x in squad or []:
+            nm = str(x.get("name") or x.get("player_name") or "")
+            k = soft_key(nm)
+            if len(k) >= 5 and whole_phrase(key, k):
+                return True
+        return False
+
+    def stampa_estera(self, team_id: int, team_name: str, kickoff: datetime,
+                      lega_news: dict[str, Any] | None = None,
+                      squad: list[dict[str, Any]] | None = None,
+                      coach: str | None = None, *, now: Any = None,
+                      limit: int | None = None) -> dict[str, Any]:
+        """Stampa del club in lingua originale, con sintesi in italiano scritta da noi.
+
+        La card «Vita del club» non può riempire il vuoto delle leghe che la stampa
+        italiana ignora (misurato il 2026-10-13: 0 voci su 9 schede di Eredivisie e 0 su 1
+        di Liga Portugal). Qui si usano le edizioni locali **solo** se la lega le dichiara
+        in `config/leagues.yaml`, e si pubblica:
+
+        - l'etichetta italiana del tema (:func:`fda.site.estero.sintesi_estera`), presa
+          da un vocabolario chiuso e con priorità fissa;
+        - le parole originali che provano quel segnale, citate com'è;
+        - testata, data e lingua dichiarata, con il titolo originale per intero.
+
+        Nessuna traduzione, nessun riassunto, nessun titolo riscritto: chi legge vede cosa
+        ha scritto la fonte e cosa abbiamo riconosciuto noi. Ogni voce esaminata ha un solo
+        esito — pubblicata, fuori ambito (parla di un'altra squadra), non classificata,
+        oltre la capienza o il limite di tema — e tutti gli esiti sono contati, perché un
+        vuoto dichiarato vale più di un'etichetta inventata.
+        """
+        cfg = lega_news or {}
+        codici = [str(c).lower() for c in (cfg.get("editions") or [])]
+        lingua = str(cfg.get("lingua") or "").lower()
+        label = str(cfg.get("label") or lingua)
+        limit = self.ESTERA_LIMIT if limit is None else limit
+        out: dict[str, Any] = {"attiva": False, "lingua": lingua, "label": label,
+                               "voci": [], "esaminate": 0, "classificate": 0,
+                               "non_classificate": 0, "fuori_ambito": 0, "doppioni": 0,
+                               "senza_titolo": 0, "vecchie": 0, "oltre_capienza": 0,
+                               "oltre_tema": 0, "pubblicate": 0,
+                               "limite": limit, "tema_limite": self.ESTERA_TEMA_LIMIT,
+                               "finestra": self.NEWS_WINDOW_DAYS}
+        if not lingua or lingua not in codici:
+            return out
+        out["attiva"] = True
+        ko = pd.to_datetime(kickoff, utc=True)
+        as_of = pd.to_datetime(now, utc=True) if now is not None else pd.Timestamp.now(tz="UTC")
+        start = ko - pd.Timedelta(days=self.NEWS_WINDOW_DAYS)
+        out.update(window_start=start, window_end=ko, as_of=as_of,
+                   window_state="future" if as_of < start else "open" if as_of < ko else "ended")
+        if self.news_df.empty or "title" not in self.news_df.columns:
+            return out
+        if "language" in self.news_df.columns:
+            lingue = self.news_df.language.fillna("it").astype(str).str.lower()
+        else:
+            # Archivio scritto prima della colonna (docs/106): quelle righe sono tutte
+            # dell'edizione italiana, perché era l'unica interrogata.
+            lingue = pd.Series("it", index=self.news_df.index)
+        pa = pd.to_datetime(self.news_df.published_at, utc=True, errors="coerce")
+        miei = (self.news_df.team_id == team_id) & (lingue == lingua)
+        finestra = miei & (pa >= start) & (pa <= min(ko, as_of))
+        out["vecchie"] = int((miei & (pa >= ko - pd.Timedelta(days=self.NEWS_OLD_HORIZON_DAYS))
+                              & (pa < start)).sum())
+        df = self.news_df[finestra].copy()
+        if df.empty:
+            return out
+        df["published_at"] = pa.loc[df.index]
+        # Rappresentante deterministico per URL: la stessa pagina ripubblicata non è un
+        # secondo fatto (l'URL è la chiave della tabella `news` insieme a squadra e data).
+        df = df.sort_values(["published_at", "source", "url", "title"],
+                            ascending=[False, True, True, True])
+        candidati: list[dict[str, Any]] = []
+        visti: set[str] = set()
+        righe = list(df.itertuples(index=False))
+        istanti = df["published_at"].tolist()
+        for r, ts in zip(righe, istanti, strict=True):
+            out["esaminate"] += 1
+            titolo = str(getattr(r, "title", "") or "").strip()
+            if not titolo:
+                out["senza_titolo"] += 1
+                continue
+            url = str(getattr(r, "url", "") or "")
+            if url and url in visti:
+                out["doppioni"] += 1
+                continue
+            if url:
+                visti.add(url)
+            if not self._estera_soggetto(titolo, team_name, squad, coach):
+                out["fuori_ambito"] += 1
+                continue
+            s = sintesi_estera(titolo, lingua)
+            if s is None:
+                out["non_classificate"] += 1
+                continue
+            out["classificate"] += 1
+            candidati.append({
+                "chiave": s.chiave, "etichetta": s.etichetta, "nota": s.nota,
+                "evidenza": s.evidenza, "titolo": titolo,
+                "fonte": str(getattr(r, "source", "") or ""), "url": url,
+                "data": ts, "lingua": lingua, "label": label})
+        # Priorità del tema (l'ordine dichiarato in `site/estero.py`) e, a parità, la
+        # voce più recente: nessun criterio nascosto.
+        priorita = {t[0]: i for i, t in enumerate(TEMI_ESTERO)}
+        candidati.sort(key=lambda v: (priorita.get(v["chiave"], 99),
+                                      -(v["data"].timestamp() if v["data"] is not None else 0)))
+        per_tema: dict[str, int] = {}
+        for v in candidati:
+            if v["data"] is None:
+                continue
+            if per_tema.get(v["chiave"], 0) >= self.ESTERA_TEMA_LIMIT:
+                out["oltre_tema"] += 1
+                continue
+            if len(out["voci"]) >= limit:
+                out["oltre_capienza"] += 1
+                continue
+            per_tema[v["chiave"]] = per_tema.get(v["chiave"], 0) + 1
+            out["voci"].append(v)
+        out["pubblicate"] = len(out["voci"])
         return out
 
     def news_sapere(self, match_id: int, home_id: int, home_name: str,
@@ -7063,6 +7225,18 @@ class MatchAnalysis:
                                     seen=news_seen, opponent=f["home_name"],
                                     coach=away_coach, lineup_type=_val(info, "lineup_type"), now=news_as_of)
                      if status != "finished" else _no_news())
+        # Stampa in lingua originale (docs/106): solo per le leghe che dichiarano
+        # un'edizione locale. Stessa finestra della rassegna italiana, stessi dati grezzi —
+        # ma etichetta italiana nostra, titolo originale citato, fonte e lingua dichiarate.
+        lega_news = self.news_edizioni.get(int(f["league_id"]), {})
+        home_estera = (self.stampa_estera(home_id, str(f["home_name"]), kickoff, lega_news,
+                                          squad=self.match_squad(match_id, home_id),
+                                          coach=home_coach, now=news_as_of)
+                       if status != "finished" else _no_estera())
+        away_estera = (self.stampa_estera(away_id, str(f["away_name"]), kickoff, lega_news,
+                                          squad=self.match_squad(match_id, away_id),
+                                          coach=away_coach, now=news_as_of)
+                       if status != "finished" else _no_estera())
         visti_home = {news_title_key(str(n.get("title") or "")) for n in home_news["notizie"]}
         visti_away = {news_title_key(str(n.get("title") or "")) for n in away_news["notizie"]}
         # P2.5 (`docs/28` §3): la forma sale in testa alla scheda — serie e punti in un micro-badge
@@ -7152,6 +7326,8 @@ class MatchAnalysis:
             # `visti` è condiviso dalle due squadre, così lo stesso articolo non compare due volte
             "home_news": home_news,
             "away_news": away_news,
+            "home_estera": home_estera,
+            "away_estera": away_estera,
             # blocco «Da sapere» della card (docs/24 §3.5): derivato dai nostri dati
             "news_sapere": (self.news_sapere(match_id, home_id, f["home_name"], away_id,
                                              f["away_name"], kickoff)
@@ -7261,7 +7437,8 @@ class MatchAnalysis:
         # riga unica della card «Vita del club» quando non c'è nulla da pubblicare (docs/28 §2
         # P1.1): costruita qui perché è un fatto della partita (due squadre), non di una colonna
         ctx["news_quiet"] = (news_quiet_line(ctx["home_news"], ctx["away_news"],
-                                             f["home_name"], f["away_name"])
+                                             f["home_name"], f["away_name"],
+                                             estera=home_estera["pubblicate"] + away_estera["pubblicate"])
                              if status != "finished" else None)
         ctx["goals"] = self.goals_view(ctx["prediction"])
         ctx["prob_steps"] = probability_steps(ctx["prediction"])

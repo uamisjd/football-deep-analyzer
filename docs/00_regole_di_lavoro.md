@@ -100,7 +100,11 @@ nella PR). Se il push non riesce, il lavoro va consegnato nello stesso turno com
   dell'utente: un messaggio pieno di contenuti ma in inglese è un contenuto perso. Il materiale
   raccolto da fonti estere si pubblica solo se è in italiano (`is_italian_news`, `docs/25` §3):
   quello in un'altra lingua non si traduce né si riscrive, si scarta — e la scheda dichiara
-  perché è vuota.
+  perché è vuota. **Deroga dichiarata dall'utente il 2026-10-13** (`docs/106`): per le leghe che
+  la dichiarano in `config/leagues.yaml` (oggi NED1 e POR1) si raccolgono le edizioni locali e si
+  pubblica **una sintesi in italiano scritta da noi** — etichetta di tema da vocabolario chiuso —
+  accanto al **titolo originale** (citato, con attributo `lang`) e con **fonte, data e lingua
+  dichiarate**. Restano vietati la traduzione del titolo e la riscrittura del testo di terzi.
 - **Riuso prima di scrivere**: librerie esistenti (penaltyblog, soccerdata, mplsoccer) prima di codice proprio.
 - **Onestà sui numeri**: ogni previsione viene registrata e valutata pubblicamente (RPS/Brier); niente "accuratezza" dichiarata senza misura.
 - **Rispetto delle fonti**: limiti di richieste per fonte, cache, nessun aggiramento di CAPTCHA o protezioni.

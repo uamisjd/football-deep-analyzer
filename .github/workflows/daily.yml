@@ -35,6 +35,10 @@ on:
         description: "Fallisce di proposito a fine run, per provare l'apertura della issue di guasto (docs/41 §6)"
         type: boolean
         default: false
+      forza_commit:
+        description: "Salva i dati nel repository anche se la fotografia di oggi è già salvata (docs/105)"
+        type: boolean
+        default: false
 
 # Un solo run alla volta: evita conflitti sui commit dei dati
 concurrency:
@@ -154,33 +158,75 @@ jobs:
           set -euo pipefail
           python -m scripts.resa_375 2>&1 | tee resa375.log | tail -20
 
+      # Una fotografia dei dati al giorno (docs/105). I cinque run pubblicano tutti il sito,
+      # ma i Parquet aggiornati entrano nel repository **una volta sola**: al run serale
+      # (≥ 20 UTC, quello con i risultati della giornata) o al primo run utile se quello è
+      # fallito (rete di sicurezza a 24 ore). Misura che motiva la regola (docs/104 §3):
+      # 743,8 MB scritti in 30 giorni (~24,8 MB al giorno), pack a 722,85 MiB, verso il
+      # limite raccomandato di 1 GB in ~11 giorni. La decisione sta in
+      # `scripts/fotografia_dati.py` (funzione pura, 20 test) e legge l'ultima fotografia
+      # dalla cronologia stessa del repository: nessun file di stato da conservare.
+      # Fail-open: se la lettura non riesce, si committa (meglio una fotografia in più che
+      # un buco nell'archivio).
+      - name: Fotografia dei dati — decidere se questo run committa (docs/105)
+        id: fotografia
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event.inputs.forza_commit }}" = "true" ]; then
+            echo "commit forzato dal dispatch: si salva la fotografia comunque" >&2
+            echo "commit=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          python -m scripts.fotografia_dati \
+            --repo "${{ github.repository }}" --ramo "${{ github.ref_name }}" \
+            >> "$GITHUB_OUTPUT" 2> fotografia.log || echo "commit=true" >> "$GITHUB_OUTPUT"
+          cat fotografia.log
+
       - name: Commit dei dati aggiornati
         run: |
           git config user.name "fda-bot"
           git config user.email "fda-bot@users.noreply.github.com"
           git add data/processed docs/STATO.md
-          if git diff --cached --quiet; then
-            echo "nessun dato nuovo"
-          else
-            git commit -m "data: run $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
-            # Un merge/commit può arrivare mentre il run è ancora in corso. Il vecchio
-            # `|| true` ignorava il rebase e lasciava fallire il push senza retry: in quel
-            # caso il collect/build riusciva ma Pages non veniva mai preparato.
-            pushed=false
-            for attempt in 1 2 3; do
-              git fetch origin "${{ github.ref_name }}"
-              git rebase "origin/${{ github.ref_name }}"
-              if git push origin "HEAD:${{ github.ref_name }}"; then
-                pushed=true
-                break
-              fi
-              echo "push concorrente fallito (tentativo ${attempt}/3), ritento"
-              sleep $((attempt * 5))
-            done
-            if [ "$pushed" != true ]; then
-              echo "impossibile pubblicare il commit dati dopo 3 tentativi" >&2
-              exit 1
+          if [ "${{ steps.fotografia.outputs.commit }}" != "true" ]; then
+            # Fotografia di oggi già salvata (docs/105 §3): i Parquet aggiornati si
+            # rinviano al run serale. Unica eccezione, e non è una comodità: il registro
+            # **preregistrato** `prospettico` si salva a ogni run se è cambiato, perché il
+            # suo valore di prova è la data di registrazione (la previsione è congelata
+            # prima del calcio d'inizio), non la fotografia — costo misurato: 0,5 MB in
+            # 30 giorni.
+            git reset -q
+            git add data/processed/prospettico.parquet
+            if git diff --cached --quiet; then
+              echo "fotografia dei dati già salvata oggi: niente da fare"
+              exit 0
             fi
+            git commit -m "data: registro prospettico $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
+          else
+            if git diff --cached --quiet; then
+              echo "nessun dato nuovo"
+              exit 0
+            fi
+            git commit -m "data: run $(date -u +'%Y-%m-%d %H:%M') UTC [skip ci]"
+          fi
+          # Un merge/commit può arrivare mentre il run è ancora in corso. Il vecchio
+          # `|| true` ignorava il rebase e lasciava fallire il push senza retry: in quel
+          # caso il collect/build riusciva ma Pages non veniva mai preparato.
+          pushed=false
+          for attempt in 1 2 3; do
+            git fetch origin "${{ github.ref_name }}"
+            git rebase "origin/${{ github.ref_name }}"
+            if git push origin "HEAD:${{ github.ref_name }}"; then
+              pushed=true
+              break
+            fi
+            echo "push concorrente fallito (tentativo ${attempt}/3), ritento"
+            sleep $((attempt * 5))
+          done
+          if [ "$pushed" != true ]; then
+            echo "impossibile pubblicare il commit dati dopo 3 tentativi" >&2
+            exit 1
           fi
 
       - name: Prepara il sito per Pages

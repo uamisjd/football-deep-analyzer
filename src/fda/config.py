@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -47,6 +47,12 @@ class League:
     # la stagione configurata. Non include EPS, vincitrice UCL/UEL o scivolamenti da
     # spareggi: sono eccezioni non deducibili dalla sola classifica nazionale.
     ucl_spots: int | None = None
+    #: Edizioni locali di Google News ammesse per questa lega (docs/106). Vuoto = solo
+    #: edizione italiana. Le edizioni locali servono alla card «stampa in lingua
+    #: originale» della scheda partita: si raccoglie il titolo originale, la testata e la
+    #: lingua, e si pubblica una sintesi in italiano **scritta da noi** con fonte e lingua
+    #: dichiarate — mai un titolo tradotto, mai un testo riscritto.
+    news: dict[str, Any] = field(default_factory=dict)
 
     @property
     def has_understat(self) -> bool:

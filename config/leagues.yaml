@@ -84,6 +84,14 @@ leagues:
     clubelo_country: "NED"
     teams: 18
     ucl_spots: 2
+    # Stampa in lingua originale (docs/106): la stampa italiana non scrive dei club
+    # dell'Eredivisie (misurato il 2026-10-13: 0 voci su 9 schede). Si raccolgono le
+    # edizioni locali di Google News e si pubblica una sintesi in italiano con fonte e
+    # lingua dichiarate. Vuoto = solo edizione italiana, come le altre leghe.
+    news:
+      editions: ["nl"]
+      lingua: "nl"
+      label: "olandese"
 
   - key: POR1
     name: "Liga Portugal"
@@ -98,6 +106,12 @@ leagues:
     clubelo_country: "POR"
     teams: 18
     ucl_spots: 1
+    # Stampa in lingua originale (docs/106), stessa regola dell'Eredivisie: la stampa
+    # italiana non copre i club della Liga Portugal.
+    news:
+      editions: ["pt"]
+      lingua: "pt"
+      label: "portoghese"
 
 # Coppe: per ora solo calendario (servono per la congestione delle squadre), nessuna analisi dedicata.
 cups_calendar_only:
