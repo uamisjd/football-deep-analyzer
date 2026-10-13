@@ -1,0 +1,69 @@
+# 98 — Filtro lingua e copertura: protocollo e verifica (2026-10-13)
+
+**Perimetro:** continuazione di Vita del club, senza passare all'ensemble. Il limite di
+copertura non si risolve abbassando i filtri o traducendo automaticamente le fonti estere.
+Nessun modello e nessun Parquet di produzione da modificare.
+
+## 1. Misura prima di cambiare
+
+Riprodotti sul codice `01c38e2` tre problemi distinti:
+
+1. «Inter: misure cautelari per i tifosi» è respinto: `langdetect` lo attribuisce al rumeno,
+   pur senza parole di veto. La probabilità del rilevatore non è una certificazione.
+2. «Roma, è polemica per il rigore» e «Nuovo manager per il club: il progetto della società»
+   sono respinti dalla lista lessicale, benché la stima statistica sia italiana. «Polemica»
+   è parola italiana; «manager» è anche un prestito d'uso comune. La normalizzazione degli
+   accenti rende ambiguo anche il confronto fra «però» italiano e «pero» spagnolo.
+3. «Nottingham Forest stadium expansion plans approved», chiaramente inglese, passa se
+   accompagnato da una descrizione italiana sufficientemente lunga. La lingua della
+   descrizione finisce per autorizzare il **titolo**, che è il testo pubblicato.
+
+In questo sandbox sono assenti le cache e il venv della sessione precedente. Prima di
+riallineare Git sono stati confrontati **51 file** con il ramo remoto: zero differenze;
+reset **mixed** senza cambiare i file di lavoro. Venv ricreato. Nessuna raccolta calcistica.
+
+## 2. Candidato dichiarato prima del replay reale
+
+Baseline: `is_italian_news` attuale. Candidato: **Lingua 2.1.1**, libreria offline già
+addestrata e adatta anche ai testi brevi, rilevatore **su tutte le lingue supportate** per
+non forzare testo sconosciuto dentro le sette lingue attese.
+
+Regola candidata fissata per la misura:
+
+- si valuta **il titolo**, non titolo + descrizione;
+- deve risultare italiano con distanza relativa dal secondo classificato **almeno 0,15**;
+- sotto sei parole, si richiede anche un marcatore italiano: soli nomi propri non
+  dichiarano una lingua;
+- un estratto non può rendere italiano un titolo straniero; l'eventuale estratto esposto
+  deve superare il suo controllo separato;
+- esito incerto = astensione, non dichiarazione che il testo sia certamente straniero;
+- nessuna traduzione e nessuna nuova fonte; il pacchetto è solo un rilevatore locale.
+
+Sono stati salvati **149 casi etichettati** in
+`tests/fixtures/news_language_review_2026-10-13.json` prima della valutazione comparata:
+59 regressioni esistenti, 30 nuovi italiani, titoli stranieri in otto gruppi, 10 casi
+ambigui e casi misti titolo/descrizione. È un campione di sviluppo/regressione, non una
+stima indipendente dell'accuratezza futura.
+
+Nella prova tecnica preliminare il rilevatore su tutte le lingue ha avuto un picco di
+circa **909 MiB** (caricamento lazy dei modelli) contro circa **227 MiB** limitandolo a otto
+lingue. La variante limitata non è quella scelta: confonderebbe più facilmente una lingua
+non contemplata con una di quelle attese. Memoria e latenza vanno dichiarate e misurate
+anche sul corpus, non ignorate perché un esempio riesce.
+
+## 3. Criterio di integrazione
+
+Prima si confrontano errori e astensioni sul campione dichiarato e sulle differenze del
+corpus reale; poi si decide. Nessun vantaggio proclamato dal solo titolo già noto. Non si
+modificano soglie dopo aver visto il risultato senza registrare la modifica e il motivo.
+Se il guadagno introduce regressioni non accettabili, il candidato non entra.
+
+La copertura si misura con due numeri separati: titoli italiani riconosciuti e segnalazioni
+editoriali effettivamente esponibili, per ciascuna lega. Recuperare un titolo italiano di
+formazioni o cronaca **non** significa aver trovato una notizia utile per Vita del club.
+
+## Prossimo passo
+
+Misurare baseline/candidato sui 149 casi e sui Parquet, classificare le differenze reali,
+integrare solo un esito giustificato. Poi tutti i gate e anteprima aggiornata. Copertura
+fonte, scelta sul clima e StatsBomb restano esplicitamente aperti finché non verificati.

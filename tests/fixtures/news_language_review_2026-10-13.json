@@ -1,0 +1,1053 @@
+{
+  "scope": "Benchmark linguistico dichiarato prima del replay reale; sviluppo e regressione, non precisione futura",
+  "candidate": {
+    "name": "lingua-all-languages-title-only",
+    "minimum_relative_distance": 0.15,
+    "minimum_words_without_italian_marker": 6
+  },
+  "cases": [
+    {
+      "id": "18993e29eff0",
+      "title": "Bologna, esonerato Tedesco: arriva Palladino con contratto fino al 2029",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "bf95395468e6",
+      "title": "Lazio-Milan, tifosi scortano la squadra ma disertano l’Olimpico",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "76d6038ccee8",
+      "title": "Cuesta si gioca la panchina del Parma, pronto uno tra Nicola e D'Aversa",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "19299208b176",
+      "title": "Real Madrid, Espì al 91’ salva Mourinho dalla contestazione",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "49b27f8f1f5c",
+      "title": "Atalanta, i conti del mercato e l'impatto che avranno sul bilancio",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "8f59ef72383f",
+      "title": "«La política divide y el fútbol une»: Pellegrini defiende a Ezzalzouli tras los insultos marroquíes",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "781abd940392",
+      "title": "José Bordalás se vuelve a quejar de la plantilla del Getafe y ensalza la del Betis",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "015477e28106",
+      "title": "El Getafe CF dibuja un presupuesto récord desde la Covid en 2026-2027",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "d1aa9b9dc884",
+      "title": "Iñigo Pérez y su posible destitución del Villarreal CF",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "0a71a36fe513",
+      "title": "¿Cuándo y dónde ver el partido?",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "bc8fd9a091d0",
+      "title": "Carrick sack demanded now but Man Utd fans split",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "346a86b36d4e",
+      "title": "Jamie Carragher: Arsenal boss Mikel Arteta becoming like Sir Alex Ferguson",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "bb627ea9a5d8",
+      "title": "Inside Matthias Jaissle's brutal dressing room blast as Newcastle stars told learn fast",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "0803edb208bf",
+      "title": "Fußball-Bundesliga: Medien – HSV verlängert Vertrag mit Trainer Polzin bis 2029",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "819dd2912f73",
+      "title": "Bayern-Star Lennart Karl entschuldigt sich für Jubel-Geste beim Elversberg-Spiel",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "9f72f5b23792",
+      "title": "Santos – Monaco : Neymar solde une dette de 2 M€ liée à Jean Lucas",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "ee8d6a9e0e57",
+      "title": "Les supporters de Marseille interdits de déplacement à Istanbul après une sanction",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "f0d80a8893a2",
+      "title": "Veelbesproken oud-Feyenoorder (31) bekent schuld na stevige crash met Lamborghini",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "9c6f5a265356",
+      "title": "FC Utrecht grijpt hard in na incidenten en deelt eerste stadionverboden uit",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "af057bb8424c",
+      "title": "Cérebro com mais golo e sem limites: Gabri Veiga vai estar na seleção espanhola",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "19cb4bf6a681",
+      "title": "FC Utrecht Maatjes officieel van start in Stadion Galgenwaard",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "fc0034ca0f08",
+      "title": "Voormalig FC Twente-ster Bryan Ruiz begint aan eerste klus als hoofdtrainer",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "caa871c983d3",
+      "title": "Ajax-coach Míchel hoopt op komst Bissouma: 'Heeft veel kwaliteiten'",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "df8b5f359f60",
+      "title": "Bournemouth left-back Adrien Truffert named in Zinédine Zidane’s first extended France squad",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "0cfcb63157f4",
+      "title": "Mark Walter sells stake in Chelsea FC amid investigation",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "a30b0d530335",
+      "title": "When will Man United’s £2bn new stadium open? Latest news amid ‘opening date’ reports",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "2ac54688f4ff",
+      "title": "Rodri a player 'we cannot replace,' says Man City's Hugo Viana",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "9329751cc61f",
+      "title": "Nottingham Forest stadium expansion plans approved",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "bf70a443cecf",
+      "title": "Hull FC suspend prop forward Sam Lisone pending investigation",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "4b26bb959e96",
+      "title": "7pm BST: Live U21s football - watch West Ham United v Liverpool",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "bc87aa01968b",
+      "title": "Auxerre - Still : « C'est peut-être romantique, mais... » : Sports - Orange - Sports",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "634cf00027b4",
+      "title": "Stade Brestois. Mama Baldé, opéré du pouce, espéré contre Auxerre",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "1aec686367c7",
+      "title": "VIDÉO. FC Lorient. Ibrahima Baldé : « Forcément content de mon match »",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "fddad1c1b8f6",
+      "title": "Ligue 1. Le coordinateur sportif Kader Mangane sur le départ du Racing Club de Strasbourg",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "ee35b317fbe0",
+      "title": "« Genesio ne démissionnera pas » : le message qui circule à Marseille",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "50f1955eca57",
+      "title": "L’OGC Nice vers un triste record…",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "d8fc916b3755",
+      "title": "Cómo afecta la detención de Rakan Al-Thani al futuro del Málaga CF",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "463e0e9a2606",
+      "title": "Iñigo Pérez: \"No tengo miedo al cese\"",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "6e735c633d4d",
+      "title": "Trainerwechsel bei Leverkusen-Gegner",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "af51829da129",
+      "title": "Eintracht Frankfurt: Adi Hütters Knallhart-Kurs – Kader, System, Talente",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "fb06d05e5e19",
+      "title": "Nationalmannschaft: Jürgen Klopp setzt auf Felix Nmecha im DFB-Team",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "b2315981e0ab",
+      "title": "WERDERFRAUEN: Nordderby erneut im Weserstadion",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "4a385e94f605",
+      "title": "Petrasso: «Limpámos a nossa imagem»",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "5534819daf75",
+      "title": "FC Porto tem nova academia de futebol no Paquistão",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "b2ce88ce9b79",
+      "title": "«Agora é fácil falar!» Marco Silva analisa triunfo histórico do Benfica e visita ao FC Porto",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "194ba11820eb",
+      "title": "Manuel Mendonça: «Demonstração muito grande»",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "251d9ff7055c",
+      "title": "NAPOLI, LOBOTKA E IL RINNOVO: IL FUTURO DEL CENTROCAMPISTA RESTA UN REBUS",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "428175b8b3d3",
+      "title": "FIORENTINA-NAPOLI, 300 TIFOSI AZZURRI AL FRANCHI: LA SQUADRA NON SARÀ SOLA",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "ac26b7f1d88e",
+      "title": "FIGC * FEDERAZIONE ITALIANA GIUOCO CALCIO: «SERIE A WOMEN, DERBY ROMA SABATO 3 OTTOBRE ORE 18, MILAN-JUVENTUS DOMENICA 4",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "72326060afd4",
+      "title": "Pellegrini difende Ez Abde dopo l'incidente della maglia di Ceuta: \"Il calcio non deve essere motivo di divisione, ma di",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "fcb4ef7c5713",
+      "title": "Il Lens caccia Toppmöller: le motivazioni dietro l'esonero",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "1584c3636240",
+      "title": "Newcastle, Jaissle: il pesante ko contro il Leeds è «difficile da digerire»",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "bd2a16aa57ae",
+      "title": "Tottenham, De Zerbi nei guai: spesi 300 milioni ma la squadra non segna più",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "49a171421342",
+      "title": "Lo stadio del Levante si allaga dopo il diluvio: il tunnel sommerso dall'acqua, non si può giocare",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "a3d06ea0a05b",
+      "title": "Ex viola, Gosens: «Il calcio è follia, mi hanno tagliato all'improvviso. Grato allo Schalke»",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "25e538a14f79",
+      "title": "Goncalo Ramos: \"Se segno non esulto perché il Benfica è la mia casa\". Sulla maglia n° 9, Ibra, Modric...",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "90cee3b9caef",
+      "title": "Getafe vs Deportivo A Coruña",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "b0439ff942be",
+      "title": "Nottingham Forest vs Leeds United",
+      "description": "",
+      "expected": false,
+      "group": "legacy"
+    },
+    {
+      "id": "a164f51f00e3",
+      "title": "Bologna-Torino, Orsolini prova il recupero",
+      "description": "",
+      "expected": true,
+      "group": "legacy"
+    },
+    {
+      "id": "98497aeadea2",
+      "title": "Inter: misure cautelari per i tifosi",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "81e3756bb77a",
+      "title": "Roma, è polemica per il rigore",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "70870c0b5365",
+      "title": "Il club conferma il manager e il suo staff",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "b553cf8c8e5e",
+      "title": "Il progetto della società però divide i tifosi",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "43cb6877d568",
+      "title": "Il Brighton, Groß è squalificato",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "2ced2dc9d0f7",
+      "title": "Il manager del Chelsea parla ai tifosi",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "26fa078d6528",
+      "title": "I fans del Torino protestano contro la società",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "ea7a01e496b6",
+      "title": "Ajax, il nuovo stadio è stato approvato dal comune",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "d5039edca980",
+      "title": "Il Benfica: assemblea dei soci e nuovi incarichi",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "d4149b625672",
+      "title": "Il PSV presenta il bilancio e i conti della società",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "22d90037e689",
+      "title": "Il Porto annuncia nuove regole per la vendita dei biglietti",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "eb0144e708d8",
+      "title": "Il Monaco ha depositato il ricorso al tribunale",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "b8a67981ae9c",
+      "title": "Rennes, il consiglio di amministrazione approva i conti",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "f0a52bb21166",
+      "title": "Lione, le dimissioni del presidente sono ufficiali",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "3d7fc86f4a22",
+      "title": "AZ Alkmaar, gli abbonati avranno nuovi posti allo stadio",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "6cb27de7c4bb",
+      "title": "Il Barça smentisce la notizia: nessuna multa al tecnico",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "7df6e42b4343",
+      "title": "Il club esclude un cambio di proprietà, per ora",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "0b20f9c36458",
+      "title": "Roma: nuovo stadio",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "837a1069e205",
+      "title": "Milan: tecnico esonerato",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "46c476c8f264",
+      "title": "Inter: tifosi in protesta",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "106274344f99",
+      "title": "Lazio, il presidente si è dimesso",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "0a6519bb4132",
+      "title": "I tifosi della Juventus sono stati riammessi in trasferta",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "3bd224cca0e6",
+      "title": "Il Chelsea organizza un meeting con i propri abbonati",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "e641b1300ff9",
+      "title": "Un derby senza tifosi ospiti: ecco il divieto della questura",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "2c78de55a28e",
+      "title": "Roma: una vittoria importante per la squadra",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "701a1a809d83",
+      "title": "Al club servono soldi, non slogan: i conti sono in rosso",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "37455b26d9c0",
+      "title": "Il consiglio del club cambia, arriva una nuova presidente",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "aa1cf39cb9f3",
+      "title": "Il tecnico della squadra è stato multato dalla società",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "d9effb6b420a",
+      "title": "Da domani riapre la curva dello stadio per i tifosi di casa",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "b9b8ef3b46d0",
+      "title": "PSG, il presidente spiega perché i tifosi sono preoccupati",
+      "description": "",
+      "expected": true,
+      "group": "nuovi_it"
+    },
+    {
+      "id": "39a3c59bc67e",
+      "title": "The club confirms its new manager",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_en"
+    },
+    {
+      "id": "585b5df2359f",
+      "title": "Chelsea board approves new stadium project",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_en"
+    },
+    {
+      "id": "f0adc529d176",
+      "title": "Arsenal supporters protest outside Emirates Stadium",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_en"
+    },
+    {
+      "id": "ae17c6698b48",
+      "title": "Newcastle coach resigns following defeat",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_en"
+    },
+    {
+      "id": "ea0edd3867c9",
+      "title": "El club confirma al nuevo entrenador",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_es"
+    },
+    {
+      "id": "b463dfa7a865",
+      "title": "El presidente del club presenta su dimisión",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_es"
+    },
+    {
+      "id": "65a074b59d98",
+      "title": "Los aficionados vuelven al estadio tras la sanción",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_es"
+    },
+    {
+      "id": "406ba31f88ef",
+      "title": "El consejo de administración aprueba las cuentas",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_es"
+    },
+    {
+      "id": "689475e386fa",
+      "title": "La plantilla protesta contra la directiva",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_es"
+    },
+    {
+      "id": "21dfda940fb1",
+      "title": "Le club confirme son nouvel entraîneur",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_fr"
+    },
+    {
+      "id": "59421be205d3",
+      "title": "Le président du club annonce sa démission",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_fr"
+    },
+    {
+      "id": "8462c6ca63f9",
+      "title": "Les supporters manifestent contre la direction",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_fr"
+    },
+    {
+      "id": "58abfa6b18a8",
+      "title": "Le conseil valide le projet du nouveau stade",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_fr"
+    },
+    {
+      "id": "6e6be3db78cb",
+      "title": "La société publie ses comptes annuels",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_fr"
+    },
+    {
+      "id": "0fb4464e8e45",
+      "title": "Der Verein bestätigt seinen neuen Trainer",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_de"
+    },
+    {
+      "id": "4ec4739110f9",
+      "title": "Der Präsident erklärt seinen Rücktritt",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_de"
+    },
+    {
+      "id": "91914a7c6e5a",
+      "title": "Die Fans protestieren gegen den Vorstand",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_de"
+    },
+    {
+      "id": "1c07394191bd",
+      "title": "Neues Stadion genehmigt: Ausbau startet im Sommer",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_de"
+    },
+    {
+      "id": "2d2d2fef8ff4",
+      "title": "Vorstand stellt Jahresabschluss vor",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_de"
+    },
+    {
+      "id": "641dd4137093",
+      "title": "De club bevestigt de nieuwe trainer",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_nl"
+    },
+    {
+      "id": "08bab3c81bd6",
+      "title": "Voorzitter kondigt vertrek aan na bestuursvergadering",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_nl"
+    },
+    {
+      "id": "7ba2648018a4",
+      "title": "Supporters protesteren tegen de directie",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_nl"
+    },
+    {
+      "id": "61ce3a14ed2f",
+      "title": "Nieuw stadion goedgekeurd door gemeenteraad",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_nl"
+    },
+    {
+      "id": "3c0ea0370c89",
+      "title": "Jaarverslag toont groeiende schuldenlast",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_nl"
+    },
+    {
+      "id": "75b435035c1c",
+      "title": "O clube confirma o novo treinador",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_pt"
+    },
+    {
+      "id": "2f7d8d92cea9",
+      "title": "O presidente anuncia a sua demissão",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_pt"
+    },
+    {
+      "id": "c1e412d7025e",
+      "title": "Os adeptos protestam contra a direção",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_pt"
+    },
+    {
+      "id": "f6ec061c8b31",
+      "title": "Novo estádio aprovado pela câmara municipal",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_pt"
+    },
+    {
+      "id": "3aa564fa3c13",
+      "title": "Conselho de administração aprova relatório e contas",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_pt"
+    },
+    {
+      "id": "cb3127e6048b",
+      "title": "Inter: măsuri cautelare pentru suporteri",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_ro"
+    },
+    {
+      "id": "9595383a7de7",
+      "title": "Președintele clubului și-a anunțat demisia",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_ro"
+    },
+    {
+      "id": "a1ed395741b3",
+      "title": "Echipa protestează împotriva conducerii",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_ro"
+    },
+    {
+      "id": "0d63ad6f8da4",
+      "title": "Clubul anunță noul antrenor",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_ro"
+    },
+    {
+      "id": "980123a28f8d",
+      "title": "Suporterii se întorc pe stadion",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_ro"
+    },
+    {
+      "id": "6e702078f969",
+      "title": "Arsenal, nový trenér klubu schválil přestup",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_other"
+    },
+    {
+      "id": "d9292865ceac",
+      "title": "Prezes klubu ogłasza rezygnację po spotkaniu zarządu",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_other"
+    },
+    {
+      "id": "a3187faaf537",
+      "title": "Klubbens ordförande avgår efter styrelsemötet",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_other"
+    },
+    {
+      "id": "4c98df61a79c",
+      "title": "El president dimiteix després de la reunió de la junta",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_other"
+    },
+    {
+      "id": "c41ad0b0ad15",
+      "title": "Kulübün başkanı yönetim toplantısından sonra istifa etti",
+      "description": "",
+      "expected": false,
+      "group": "stranieri_other"
+    },
+    {
+      "id": "7099959a03da",
+      "title": "Nottingham Forest stadium expansion plans approved",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "afd6f7d3dc80",
+      "title": "El presidente del club presenta su dimisión",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "be9d46e8cded",
+      "title": "Le président du club annonce sa démission",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "02205537dcf3",
+      "title": "Der Präsident erklärt seinen Rücktritt",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "6289af75c256",
+      "title": "Voorzitter kondigt vertrek aan na bestuursvergadering",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "8616a0f7a5ea",
+      "title": "O presidente anuncia a sua demissão",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "596233b7eb2e",
+      "title": "Președintele clubului și-a anunțat demisia",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "67b48e46277c",
+      "title": "Prezes klubu ogłasza rezygnację po spotkaniu zarządu",
+      "description": "Lo stadio verrà ampliato e i tifosi avranno nuovi posti. La società ha approvato il progetto del nuovo impianto per la prossima stagione.",
+      "expected": false,
+      "group": "misto_titolo_straniero"
+    },
+    {
+      "id": "1a1b6b2ce692",
+      "title": "Roma Inter Milan",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "e29eef1f5b21",
+      "title": "Juventus Napoli",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "7f4c2e64a0d5",
+      "title": "Ajax PSV AZ",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "5f2c4b379414",
+      "title": "PSG Monaco Lens",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "c57b0a828f6a",
+      "title": "Bayern Borussia Dortmund",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "9b79d374cd25",
+      "title": "Liverpool Newcastle Arsenal",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "87464a37d05d",
+      "title": "Sporting Benfica Porto",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "561dfed2a700",
+      "title": "Casa Pia Porto",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "5ab424831a7c",
+      "title": "Como Roma Lazio",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "01ba4719c80b",
+      "title": "",
+      "description": "",
+      "expected": false,
+      "group": "ambiguo"
+    },
+    {
+      "id": "15e78dad2387",
+      "title": "Inter: misure cautelari per i tifosi",
+      "description": "The club confirms this statement with a new announcement for its fans.",
+      "expected": true,
+      "group": "misto_titolo_italiano"
+    },
+    {
+      "id": "f9d1ba088dc5",
+      "title": "Roma, è polemica per il rigore",
+      "description": "The club confirms this statement with a new announcement for its fans.",
+      "expected": true,
+      "group": "misto_titolo_italiano"
+    },
+    {
+      "id": "ecdad56e7617",
+      "title": "Il club conferma il manager e il suo staff",
+      "description": "The club confirms this statement with a new announcement for its fans.",
+      "expected": true,
+      "group": "misto_titolo_italiano"
+    }
+  ]
+}

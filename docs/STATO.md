@@ -1,3 +1,18 @@
+## 2026-10-13 — Lingua e copertura: misura del difetto e confronto preregistrato (docs/98)
+
+**In corso, nessun candidato ancora integrato.** Prima attività: file riallineati al ramo
+salvato dopo confronto hash di 51 file, zero differenze; venv ricreato, Parquet intatti.
+Riprodotti: italiano breve letto come rumeno; veto su «polemica»/«manager» italiani;
+titolo inglese autorizzato da una descrizione italiana. Non basta aumentare i titoli.
+
+Candidato dichiarato prima del replay: Lingua offline, tutte le lingue supportate, solo
+titolo, margine almeno 0,15 e guardia sui titoli brevi senza grammatica. **149 casi**
+congelati per confronto (italiani/stranieri/ambigui/misti). Prove preliminari e costi in
+[docs/98](98_lingua_copertura_2026-10-13.md); nessun risultato di accuratezza ancora attribuito.
+**Prossimo:** confronto + replay reale per lega, poi eventuale integrazione, gate e
+anteprima. Vita del club ancora aperta: niente passaggio all'ensemble, merge o cambio
+modelli. Vincolo italiano, decisioni StatsBomb/clima e tutela dei `season_sim*` invariati.
+
 ## 2026-10-13 — Vita del club: qualità editoriale migliorata, copertura ancora insufficiente
 
 **Richiesta utente:** verificare davvero accuratezza, utilità, intuibilità e tutte le partite.
