@@ -159,7 +159,7 @@ def test_bollettino_pubblica_solo_i_fatti_che_spostano(tmp_path):
         {"team_id": 2, "published_at": KO("2026-09-15 08:00"),
          "title": "Inter, multa della lega per i cori: la società protesta", "url": "u4",
          "source": "S4", "description": ""},
-        {"team_id": 2, "published_at": KO("2026-09-08 08:00"),
+        {"team_id": 2, "published_at": KO("2026-08-31 08:00"),
          "title": "Inter, crisi societaria: la proprietà vuole vendere", "url": "u5",
          "source": "S5", "description": ""},
     ])
@@ -168,7 +168,7 @@ def test_bollettino_pubblica_solo_i_fatti_che_spostano(tmp_path):
         ["Inter, multa della lega per i cori: la società protesta"]
     assert nw["esaminate"] == 4 and nw["pubblicate"] == 1
     assert nw["annunci"] == 1 and nw["scartate"] == 2 and nw["piatti"] == 0
-    assert nw["vecchie"] == 1          # la voce dell'8/09 è oltre i 7 giorni
+    assert nw["vecchie"] == 1          # la voce del 31/08 è oltre i 14 giorni
     assert nw["notizie"][0]["topic_label"] == "Società"
     assert nw["notizie"][0]["ore"] == 4.0
     assert nw["notizie"][0]["punteggio"] > 0
@@ -279,10 +279,10 @@ def test_bollettino_riserva_oltre_i_tre(tmp_path):
 
 
 def test_bollettino_finestra_sette_giorni(tmp_path):
-    """Finestra di 7 giorni: fuori le notizie più vecchie (contate) e quelle pubblicate
+    """Finestra di 14 giorni: fuori le notizie più vecchie (contate) e quelle pubblicate
     dopo il calcio d'inizio."""
     st = _store_news(tmp_path, "bollettino_finestra", [
-        {"team_id": 2, "published_at": KO("2026-09-07 08:00"),
+        {"team_id": 2, "published_at": KO("2026-08-31 08:00"),
          "title": "Inter, ricorso respinto: la multa resta", "url": "u1", "source": "S1",
          "description": ""},
         {"team_id": 2, "published_at": KO("2026-09-15 20:00"),
@@ -294,7 +294,7 @@ def test_bollettino_finestra_sette_giorni(tmp_path):
     ])
     nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
     assert nw["esaminate"] == 1 and nw["pubblicate"] == 1 and nw["vecchie"] == 1
-    assert nw["finestra"] == 7
+    assert nw["finestra"] == 14
     assert all(n["published_at"] <= KO("2026-09-15 12:00") for n in nw["notizie"])
     st.close()
 
@@ -479,7 +479,7 @@ def test_bollettino_tabella_vuota_degrada(tmp_path):
     a = MatchAnalysis(st)
     nw = a.team_news(1, "Roma", KO("2026-09-15 12:00"))
     assert nw["notizie"] == [] and nw["riserva"] == []
-    assert nw["esaminate"] == 0 and nw["finestra"] == 7 and nw["pubblicate"] == 0
+    assert nw["esaminate"] == 0 and nw["finestra"] == 14 and nw["pubblicate"] == 0
     assert a.coach(1) is None and a.stakes("Roma") is None
     assert a.bench_side(1, "Roma") is None
 
@@ -1245,7 +1245,7 @@ def _bollettino(**kw):
     """Bollettino della card con tutte le chiavi dell'imbuto, come le produce `team_news`."""
     d = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
          "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0, "vecchie": 0,
-         "pertinenti": 0, "lingua": 0, "finestra": 7, "limite": 3, "categoria_limite": 2,
+         "pertinenti": 0, "lingua": 0, "finestra": 14, "limite": 3, "categoria_limite": 2,
          "riserva_limite": 2}
     d.update(kw)
     return d
@@ -1262,7 +1262,7 @@ def test_riga_unica_quando_nessuna_squadra_ha_titoli_pubblicabili():
         _bollettino(esaminate=7, scartate=6, lingua=1),
         "Roma", "Inter")
     assert quieta is not None
-    assert quieta["riga"].startswith("Nessun titolo selezionato su Roma e Inter nella finestra pre-partita di 7 giorni")
+    assert quieta["riga"].startswith("Nessun titolo selezionato su Roma e Inter nella finestra pre-partita di 14 giorni")
     assert "27 voci esaminate, escluse dai filtri" in quieta["riga"]
     assert "18 servizio o cronaca" in quieta["riga"]      # 12 + 6
     assert "5 annunci o logistica" in quieta["riga"]
@@ -1282,7 +1282,7 @@ def test_riga_unica_non_scatta_se_una_squadra_ha_qualcosa():
 def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
     """Nessun titolo in finestra: la riga dice anche quanti ne sono stati guardati oltre."""
     quieta = news_quiet_line(_bollettino(vecchie=2), _bollettino(vecchie=1), "Roma", "Inter")
-    assert "Nessuna voce raccolta su Roma e Inter nella finestra pre-partita di 7 giorni" \
+    assert "Nessuna voce raccolta su Roma e Inter nella finestra pre-partita di 14 giorni" \
         in quieta["riga"]
     assert "3 titoli più vecchi oltre la finestra" in quieta["riga"]
 
@@ -1290,7 +1290,7 @@ def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
     assert "1 titolo più vecchio oltre la finestra" in solo_uno["riga"]
 
     niente = news_quiet_line(_bollettino(), _bollettino(), "Roma", "Inter")
-    assert niente["riga"].endswith("nella finestra pre-partita di 7 giorni.")
+    assert niente["riga"].endswith("nella finestra pre-partita di 14 giorni.")
 
 
 # ---- card «Fattori»: i due fattori aggiunti il 2026-10-08 (docs/58 §3-§4) ----------------------

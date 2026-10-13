@@ -32,6 +32,11 @@ def test_campione_editoriale_di_sviluppo(case):
     ('Torino: il tecnico dice "mi dimetto"', "analysis", "allenatore"),
     ("Benfica: incidente stradale per un tesserato", "event", "fuoricampo"),
     ("Genoa, nuova proprietà dopo il passaggio delle quote", "event", "societa"),
+    ("Brest, ufficiale: il capitano rinnova fino al 2029", "event", "mercato"),
+    ("Lipsia, tegola in allenamento: tempi di recupero lunghi", "event", "infortuni"),
+    ("Siviglia, multa UEFA e diffida per il settore ospiti", "event", "societa"),
+    ("L'ad del club: «Potremmo approvare la variante per lo stadio»", "analysis", "stadio"),
+    ("Nizza, svolta Haise: la rimonta rilancia la squadra", "analysis", "allenatore"),
 ])
 def test_controlli_separati_su_altri_club_e_modalita(title, kind, topic):
     signal = club_signal(title)
@@ -47,6 +52,8 @@ def test_controlli_separati_su_altri_club_e_modalita(title, kind, topic):
     "Sporting: il difensore vuole la maglia, il compagno insegue", "La squadra segue il modulo del tecnico",
     "Inter, protesta per il rigore secondo l'opinionista", "Formazioni AZ-PSV: la vigilia del derby",
     "Roma-Inter LIVE! Cronaca della protesta per un rigore", "Milan, i tifosi vogliono ritirare la maglia storica",
+    "Pronostico e quote di Lens-Nizza: dove vederla in tv e streaming",
+    "Fantacalcio: chi schierare in questa giornata di Serie A",
 ])
 def test_controlli_negativi_non_confondono_parole_generiche_e_fatti(title):
     assert club_signal(title) is None

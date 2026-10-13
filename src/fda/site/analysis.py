@@ -3505,7 +3505,7 @@ class MatchAnalysis:
         "Forma e classifica (contesto)": 6,
     }
 
-    NEWS_WINDOW_DAYS: ClassVar[int] = 7          # finestra vera: una settimana
+    NEWS_WINDOW_DAYS: ClassVar[int] = 14         # finestra pre-partita: 14 giorni (pari a NEWS_RETENTION_DAYS)
     NEWS_OLD_HORIZON_DAYS: ClassVar[int] = 45    # quanto indietro si contano i «troppo vecchi»
     NEWS_LIMIT: ClassVar[int] = 3                # fatti pubblicati per squadra
     NEWS_CATEGORY_LIMIT: ClassVar[int] = 2       # non più di due fatti della stessa categoria
@@ -3520,8 +3520,9 @@ class MatchAnalysis:
         """Token distintivi del nome squadra (per capire di chi parla un titolo)."""
         key = soft_key(team_name or "")
         drop = {"calcio", "club", "fc", "ac", "as", "ss", "ssc", "us", "sc", "cf", "afc",
-                "cp", "cd", "sv", "vfl", "vfb", "tsg", "bsc", "de", "del"}
-        return {t for t in key.split() if len(t) >= 4 and t not in drop}
+                "cp", "cd", "sv", "vfl", "vfb", "tsg", "bsc", "de", "del", "ud", "ogc", "rcd"}
+        base = {t for t in key.split() if len(t) >= 4 and t not in drop}
+        return base | {t for t in soggetto_tokens(team_name) if t not in drop}
 
     def team_news(self, team_id: int, team_name: str, kickoff: datetime,
                   days: int | None = None, limit: int | None = None,
@@ -3627,12 +3628,18 @@ class MatchAnalysis:
                     entities.setdefault(part, "coach")
 
         # nomi propri di club: «Milan» in un titolo di Inter non è un soggetto interessante
-        # (il club lo si cita sempre), i nomi di persona sì
+        # (il club lo si cita sempre), i nomi di persona sì. Si escludono da _club_tokens i
+        # prefissi condivisi fra più club («real», «borussia», «olympique», «sporting»,
+        # «manchester», «madrid», «paris», «united», «city») e i nomi comuni italiani
+        # («fortuna», «santa», «clara», «union», «ahead», «eagles», «saint»).
         if self._club_tokens is None:
             self._club_tokens = set()
+            ambig = {"paris", "manchester", "madrid", "real", "borussia", "olympique",
+                     "sporting", "united", "city", "union", "fortuna", "santa", "clara",
+                     "ahead", "eagles", "saint"}
             if not self.fixtures.empty:
                 for nm in pd.concat([self.fixtures.home_name, self.fixtures.away_name]).dropna():
-                    self._club_tokens |= self.team_tokens(str(nm))
+                    self._club_tokens |= (self.team_tokens(str(nm)) - ambig)
 
         def subject_ok(title: str) -> bool:
             key = soft_key(title or "")
@@ -3686,7 +3693,8 @@ class MatchAnalysis:
                 return None
             if any(whole_phrase(key, soft_key(str(nm))) for nm in entities if len(nm) >= 5):
                 return None
-            if any(whole_phrase(key, t) for t in tokens if len(t) >= 5):
+            if any(whole_phrase(key, t) for t in tokens
+                   if len(t) >= 5 or not re.search(rf"\ba\s+{re.escape(t)}\b", key)):
                 return None
             for c in sorted(self._club_tokens or ()):
                 if len(c) >= 5 and c not in tokens and c not in avversario and whole_phrase(key, c):
@@ -4446,8 +4454,16 @@ class MatchAnalysis:
         """Nomi dei giocatori della squadra visti in stagione (per riconoscerli nei titoli)."""
         if self.player_stats.empty or "player_name" not in self.player_stats.columns:
             return []
-        rows = self.player_stats[self.player_stats.team_id == team_id]
-        return [str(n) for n in rows.player_name.dropna().unique().tolist()]
+        cache = getattr(self, "_player_names_by_team", None)
+        ps_len = len(self.player_stats)
+        if cache is None or getattr(self, "_player_names_ps_len", -1) != ps_len:
+            cache = {}
+            sub = self.player_stats[["team_id", "player_name"]].dropna().drop_duplicates()
+            for tid_k, grp in sub.groupby("team_id"):
+                cache[int(tid_k)] = [str(n) for n in grp["player_name"].tolist()]
+            self._player_names_by_team = cache
+            self._player_names_ps_len = ps_len
+        return cache.get(int(team_id), [])
 
     def unavailable_for_news(self, team_name: str) -> list[str]:
         """Nomi degli indisponibili più recenti della squadra (per selezionare le notizie)."""

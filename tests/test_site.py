@@ -731,7 +731,7 @@ def test_vita_del_club_in_una_riga_quando_non_c_e_nulla(tmp_path):
     SiteBuilder(store=st, out_dir=out).build()
     html = (out / "partite/5749669.html").read_text(encoding="utf-8")
 
-    assert "Nessun titolo selezionato su Udinese e Lazio nella finestra pre-partita di 7 giorni" in html
+    assert "Nessun titolo selezionato su Udinese e Lazio nella finestra pre-partita di 14 giorni" in html
     assert "3 voci esaminate, escluse dai filtri" in html
     # la tendina c'è, e l'imbuto per squadra (i numeri del verificatore [20]) è dentro di lei
     inizio = html.find('id="notizie"')

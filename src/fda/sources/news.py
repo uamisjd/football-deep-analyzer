@@ -270,6 +270,8 @@ def _verifica_testo_italiano(testo: str, richiedi_marcatore_se_incerto: bool = F
         return False
     if len(parole) < _MIN_PAROLE_LINGUA:
         return bool(marc_all)
+    if len(marc_excl) >= 2:
+        return True
     stime = _stima_lingua(testo.lower())
     if not stime:
         return True
@@ -416,6 +418,26 @@ ITALIAN_SEARCH_NAMES: dict[str, str] = {
     # «Nacional» da solo pesca il vocabolario comune e le altre «Nacional» del mondo:
     # la stampa italiana scrive il nome per esteso.
     "Nacional": '"Nacional Madeira"',
+    # Denominazioni italiane e forme correnti per i club dei dati che altrimenti
+    # interrogavano il nome secco straniero o con sigle societarie («FC Groningen»,
+    # «SC Heerenveen», «Casa Pia AC», «Toulouse», «Strasbourg», «Barcelona», «Sevilla»).
+    "Barcelona": '("Barcellona" OR "Barcelona")',
+    "Sevilla": '("Siviglia" OR "Sevilla")',
+    "Deportivo A Coruña": '("Deportivo La Coruna" OR "Deportivo A Coruña")',
+    "Levante": '("Levante UD" OR "Levante")',
+    "Toulouse": '("Tolosa" OR "Toulouse")',
+    "Strasbourg": '("Strasburgo" OR "Strasbourg")',
+    "Lille": '("Lille" OR "Lilla")',
+    "Monaco": '("AS Monaco" OR "Monaco")',
+    "FC Groningen": '("Groningen" OR "FC Groningen")',
+    "SC Heerenveen": '("Heerenveen" OR "SC Heerenveen")',
+    "NEC Nijmegen": '("NEC Nimega" OR "NEC Nijmegen" OR "Nijmegen")',
+    "Cambuur": '("SC Cambuur" OR "Cambuur")',
+    "Excelsior": '("Excelsior Rotterdam" OR "Excelsior")',
+    "Braga": '("Sporting Braga" OR "SC Braga" OR "Braga")',
+    "Benfica": '("Benfica" OR "SL Benfica")',
+    "Casa Pia AC": '("Casa Pia" OR "Casa Pia AC")',
+    "Estrela da Amadora": '("Estrela Amadora" OR "Estrela da Amadora")',
 }
 
 
@@ -656,8 +678,10 @@ def parse_espn_news(payload: Any, team_ids: dict[str, int],
         head = clean_text(art.get("headline"), 200)
         desc = clean_text(art.get("description"), 240)
         blob = f"{head} {desc}".lower()
+        seen_tids: set[int] = set()
         for name, tid in team_ids.items():
-            if name and name.lower() in blob:
+            if name and int(tid) not in seen_tids and name.lower() in blob:
+                seen_tids.add(int(tid))
                 pub = art.get("published") or art.get("lastModified")
                 try:
                     from datetime import datetime as _dt
@@ -671,7 +695,6 @@ def parse_espn_news(payload: Any, team_ids: dict[str, int],
                                     if isinstance(art.get("links"), dict) else "") or "",
                             "source": "ESPN", "description": desc})
                 bump(diag, "espn_attribuiti")
-                break
     return out
 
 
@@ -707,27 +730,27 @@ def parse_direct_sports_rss(
         if not title or not is_italian_news(title, desc):
             continue
         text_blob = f"{title} {desc}".lower()
-        matched_tid: int | None = None
+        matched_tids: list[int] = []
         for alias, tid in sorted_aliases:
-            if re.search(r"\b" + re.escape(alias) + r"\b", text_blob):
-                matched_tid = tid
-                break
-        if matched_tid is None:
+            if int(tid) not in matched_tids and re.search(r"\b" + re.escape(alias) + r"\b", text_blob):
+                matched_tids.append(int(tid))
+        if not matched_tids:
             continue
         pub = item.findtext("pubDate") or ""
         try:
             dt = parsedate_to_datetime(pub).astimezone(UTC)
         except (TypeError, ValueError):
             dt = None
-        out.append({
-            "team_id": int(matched_tid),
-            "published_at": dt,
-            "title": title,
-            "url": (item.findtext("link") or "").strip(),
-            "source": source_name,
-            "description": desc,
-        })
-        bump(diag, "direct_feed_attribuiti")
+        for matched_tid in matched_tids:
+            out.append({
+                "team_id": int(matched_tid),
+                "published_at": dt,
+                "title": title,
+                "url": (item.findtext("link") or "").strip(),
+                "source": source_name,
+                "description": desc,
+            })
+            bump(diag, "direct_feed_attribuiti")
     return out
 
 

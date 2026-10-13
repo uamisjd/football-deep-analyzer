@@ -85,7 +85,7 @@ def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
             continue
         fixture = matches.iloc[0]
         kickoff = pd.to_datetime(fixture.utc_kickoff, utc=True)
-        lower = kickoff - pd.Timedelta(days=7)
+        lower = kickoff - pd.Timedelta(days=14)
         period = soup.select_one(".news-window")
         checks += 1
         if period is None:
@@ -101,7 +101,7 @@ def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
             error(mid, "period", "metadati del periodo non validi")
             continue
         if start != lower or end != kickoff:
-            error(mid, "period", "periodo diverso dai sette giorni prima della gara")
+            error(mid, "period", "periodo diverso dai quattordici giorni prima della gara")
         phase = "future" if as_of < lower else "open" if as_of < kickoff else "ended"
         expected = {"future": "Settimana non ancora iniziata", "open": "Finestra ancora aperta",
                     "ended": "Finestra terminata"}[phase]

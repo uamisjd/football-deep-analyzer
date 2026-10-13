@@ -1,3 +1,46 @@
+## 2026-10-13 — «Vita del club» (`#notizie`): ricerca web, disambiguazione club, finestra 14 giorni e copertura su tutte le partite (`docs/100`)
+
+**Diagnosi e risoluzione dei 5 colli di bottiglia ([docs/100](100_vita_club_ricerca_web_copertura_2026-10-13.md)):**
+- **Allineamento finestra pre-partita (`MatchAnalysis.NEWS_WINDOW_DAYS = 14`, `club_news_checks.py`):**
+  con le gare in programma a fine sosta nazionali (`16–20/10`), la finestra di 7 giorni
+  (`[kickoff - 7d, as_of]`) si comprimeva a 1–3 giorni (fino a 9 ore sui posticipi), scartando
+  l'82% degli articoli già raccolti nei 14 giorni di `NEWS_RETENTION_DAYS` (`969` voci
+  esaminate contro `5.321` entro 14 giorni dal calcio d'inizio).
+- **Disambiguazione dei nomi club (`src/fda/site/analysis.py`):** esteso `team_tokens` con gli
+  esonimi e gli alias italiani di `soggetto_tokens(team_name)` (`Lipsia`, `Colonia`,
+  `Stoccarda`, `Friburgo`, `Magonza`, `Nizza`, `Marsiglia`, `Siviglia`, `Maiorca`, ecc.);
+  esclusi da `_club_tokens` i prefissi condivisi fra più club (`real`, `borussia`, `olympique`,
+  `sporting`, `manchester`, `madrid`, `paris`, `united`, `city`, `union`) e i nomi comuni
+  italiani (`fortuna`, `santa`, `clara`, `ahead`, `eagles`, `saint`); corretta `altra_squadra`
+  sui club con nome di 3–4 lettere (`Lens`, `Ajax`, `Como`, `Pisa`, `Roma`, `PSG`, `PSV`,
+  `Hull`, con guardia locativa `\ba\s+roma\b`); introdotta la cache `team_player_names`.
+- **Query di ricerca web e attribuzione multi-club (`src/fda/sources/news.py`):** estesa
+  `ITALIAN_SEARCH_NAMES` a 17 club europei privi di variante italiana/completa (`Brighton`,
+  `Wolverhampton`, `Mallorca`, `Osasuna`, `Alavés`, `Oviedo`, `Rennes`, `Brest`, `Nice`,
+  `Strasbourg`, `Lens`, `Paris FC`, `Heidenheim`, `St. Pauli`, `Kaiserslautern`, `Famalicao`,
+  `Vitoria SC`, `AVS`) e rimossa l'interruzione al primo club in `parse_espn_news` e
+  `parse_direct_sports_rss`.
+- **Selettore positivo (`src/fda/site/club_signals.py`) e visibilità dati (`match.html`):**
+  corretto il typo regex `ricors[oi]` in `EVENT_RULES`, estesi i pattern club-agnostici per
+  assetto societario, panchina, provvedimenti, infortuni/rientri, rinnovi contrattuali e
+  analisi tecnico-tattica (`31/31` invariato sul benchmark annotato, `0` falsi positivi sui
+  controlli negativi), e impostato `<details class="news-context" open>` affinché i `285`
+  fatti verificati («Dati di contesto della partita») siano subito visibili su **58/58**
+  schede pre-partita.
+- **Misura prima → dopo sulle 58 schede pre-partita (`sitemap.xml`):**
+  - Schede con rassegna stampa attiva: da **6 / 58 (`10,3%`)** a **33 / 58 (`56,9%`)**
+    (`ITA1` `5/10 → 10/10`, `ESP1` `1/10 → 7/10`, `ENG1` `0/10 → 5/10`, `GER1` `0/9 → 6/9`,
+    `FRA1` `0/9 → 5/9`).
+  - Lati squadra con notizie di stampa: da **7 / 116 (`6,0%`)** a **45 / 116 (`38,8%`)**,
+    con **67 articoli pubblicati** (contro `12` prima; su `audit_vita_editoriale.py` da `7` a
+    **49 lati** e da `13` a **101 segnalazioni**).
+  - Schede con informazioni utili visibili subito in «Vita del club» (stampa + dati di
+    contesto aperti): **58 / 58 (`100%`)** su tutte le 7 leghe.
+- **Gate verificati:** **932 test** passati (`+9` nuovi controlli in `test_club_signals.py` e
+  `test_vita_club.py`), `ruff check .` 0 errori; `fda build` **493/2.364/7.594**; `verify_site`
+  **238.546 controlli / 0 problemi** (`[20]` **1.148 controlli indipendenti** su 58 pagine);
+  `audit_fonti.py` **0 difetti bloccanti**. Anteprima attiva su `0.0.0.0:8000`.
+
 ## 2026-10-13 — Chiusura di `docs/98` §6: filtro lingua V3 puro-Python (`149/149`) e diagnosi copertura per lega
 
 **Misura e integrazione V3 (`src/fda/sources/news.py`, `tests/test_i18n.py`, [docs/98](98_lingua_copertura_2026-10-13.md) §6):**
