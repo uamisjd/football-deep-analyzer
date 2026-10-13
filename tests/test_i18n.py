@@ -190,3 +190,22 @@ def test_is_italian_news_senza_grammatica_non_pubblica():
     assert not is_italian_news("Getafe vs Deportivo A Coruña")
     assert not is_italian_news("Nottingham Forest vs Leeds United")
     assert is_italian_news("Bologna-Torino, Orsolini prova il recupero")
+
+
+def test_is_italian_news_benchmark_2026_10_13():
+    """Benchmark pre-registrato di 149 casi (docs/98): 0 falsi positivi e 0 falsi negativi."""
+    import json
+    from pathlib import Path
+
+    from fda.sources.news import is_italian_news
+
+    fixture = Path(__file__).parent / "fixtures" / "news_language_review_2026-10-13.json"
+    cases = json.loads(fixture.read_text(encoding="utf-8"))["cases"]
+    assert len(cases) == 149
+    for idx, c in enumerate(cases):
+        got = is_italian_news(c["title"], c.get("description", ""))
+        assert got is bool(c["expected"]), (
+            f"caso #{idx} [{c['category']}] fallito: atteso={c['expected']} ottenuto={got} "
+            f"title={c['title']!r} desc={c.get('description', '')!r}"
+        )
+

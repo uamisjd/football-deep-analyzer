@@ -1,3 +1,40 @@
+## 2026-10-13 — Chiusura di `docs/98` §6: filtro lingua V3 puro-Python (`149/149`) e diagnosi copertura per lega
+
+**Misura e integrazione V3 (`src/fda/sources/news.py`, `tests/test_i18n.py`, [docs/98](98_lingua_copertura_2026-10-13.md) §6):**
+- Risolti tutti i **19 errori su 149** della baseline sul benchmark congelato
+  `tests/fixtures/news_language_review_2026-10-13.json` (**149/149 corretti: 0 falsi
+  positivi, 0 falsi negativi**) senza introdurre `Lingua` (~909 MiB in RAM) né nuove
+  dipendenze (**0 MiB extra RAM**).
+- Valutazione **prima sul solo titolo**: i 6 falsi positivi `[misto_titolo_straniero]`
+  (`en`, `fr`, `nl`, `pt`, `ro`, `pl` con estratto italiano) sono tutti bloccati e i 3
+  falsi negativi `[misto_titolo_italiano]` sono tutti recuperati.
+- Corretti i falsi veti lessicali su parole italiane o prestiti correnti (`però` che senza
+  accento collideva con lo spagnolo `pero`, `polemica` vs `polémica`, `Under`, `Eredivisie`,
+  `ADO Den Haag`, `para`, `vai`, `now`; `manager`, `fans`, `meeting`, `ß` in cognomi come
+  `Groß` e genitivo sassone ammessi in presenza di ≥ 2 marcatori esclusivi italiani;
+  `Casa`/`Rosa`/`Gol` neutralizzati nei nomi propri di club isolati come «Casa Pia Porto»;
+  tokenizzazione Unicode `[^\W\d_]+`).
+- **Replay sulle 4.431 coppie uniche di `data/processed/news.parquet`:** **1 sola nuova
+  esclusione** (`"Parma's Nesta Elphege Undergoes Appendix Surgery"`, titolo inglese che la
+  baseline lasciava passare) e **185 recuperi italiani** (0 falsi positivi stranieri).
+- **Effetto su «Vita del club» e diagnosi della copertura per campionato:** sulle 63 schede
+  del campione di `docs/97` gli scarti impropri «in un'altra lingua» scendono da **145 a 80**
+  (`-65`, di cui `11 → 1` in `NED1` e `23 → 8` in `GER1`; sulle 58 schede pre-partita del
+  13/10 da **110 a 60**, `-50`), attribuendo le righe italiane recuperate alla vera ragione
+  editoriale (`servizio o cronaca`, `bassa reputazione`, `su un'altra squadra`, `senza
+  segnale`) e recuperando nel *Clima intorno al club* di `5749690` (`Atalanta-Venezia`) la
+  notizia societaria de *Il Gazzettino* prima scartata per «polemica». Dimostrato con misura
+  per lega che l'assenza di voci esposte nelle leghe estere dipende dalla natura di cronaca
+  delle 197 righe italiane raccolte su 51 gare estere, non dal filtro lingua.
+- **Gate verificati:** **923 test** passati (`+1` benchmark test su 149 casi in
+  `test_i18n.py`), `ruff check .` 0 errori; `fda build` **493/2.364/7.594**; `verify_site`
+  **238.235 controlli / 0 problemi**; parità **58 schede**; resa 375 px **28.504 misure /
+  0 problemi**; audit Vita (**840 / 0**), Mercato (**928 / 0**) e Panchina (**0 difetti**).
+  Anteprima attiva su `0.0.0.0:8000`.
+- **Prossimo:** audit delle ultime 3 sezioni della scheda partita (*Previsione ensemble*,
+  *Precedenti*, *Verifica approfondita*). PR **#110** aperta e pronta per il merge quando
+  vorrai sbloccare `daily` su `main`.
+
 ## 2026-10-13 — Post-merge PR #108, diagnosi issue #109 e hotfix dei due errori del `daily` (docs/99)
 
 **Stato verificato su Git e GitHub Actions:** PR #108 unita dall'utente (`6a0034c`, 21 commit
