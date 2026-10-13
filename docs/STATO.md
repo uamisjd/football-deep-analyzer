@@ -1,3 +1,23 @@
+## 2026-10-13 — Merge PR #110 su ordine esplicito dell'utente e handoff per la nuova sessione (`docs/101`)
+
+**Merge PR #110 (`arena/079933b1-football-deep-analyzer` → `main`):**
+- Eseguito dall'agente su ordine esplicito dell'utente nel turno corrente (*«ok fai merge ,dopo
+  continuiamo su una nuova sessione,quindi in caso prepara la nuova sessione con i prossimi
+  lavori»*; deroga una tantum registrata in `docs/13` §9.26).
+- **Contenuto fuso su `main`:** hotfix dei 2 errori del workflow `daily` (Issue #109,
+  [`docs/99`](99_diagnosi_daily_109_hotfix_2026-10-13.md)), filtro lingua V3 puro-Python
+  `149/149` ([`docs/98`](98_lingua_copertura_2026-10-13.md) §6), copertura e ricerca web di
+  «Vita del club» (`#notizie`) su tutte le partite ([`docs/100`](100_vita_club_ricerca_web_copertura_2026-10-13.md)),
+  e preparazione completa della nuova sessione ([`docs/101`](101_handoff_prossima_sessione_2026-10-13.md)
+  e `docs/BRIEFING_NUOVA_SESSIONE.md`).
+- **Prossimo passo (nella nuova sessione):** verificare all'ingresso il `daily` post-merge su
+  `main` e l'issue `#109`, avviare il server di anteprima su `0.0.0.0:8000` e completare la
+  revisione delle **ultime 3 sezioni della scheda partita** secondo la mappa tecnica in
+  [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md):
+  1. **«Precedenti» (`#precedenti`)** (`match.html:650–670`, `h2h_pattern`, `h2h_list`, `h2h_stats`, invariante `[7]`);
+  2. **«Previsione del modello ensemble» (`#previsione` + `#scomposizione` + `#laboratorio` + `#fascia-storica` + `#posizione-lega` + `#primo-gol`)** (`match.html:671–864`, invarianti `[8]`, `[10]`, `[11]`, `[12]`, `[15]`, `[16]`, `[17]`, `[46]`, `[47]`);
+  3. **«Verifica approfondita: risultati esatti e distribuzione gol» (`#verifica`: `#probabilita` + `#gol-totali`)** (`match.html:1118–1168`, invarianti `[8]`, `[9]`).
+
 ## 2026-10-13 — «Vita del club» (`#notizie`): ricerca web, disambiguazione club, finestra 14 giorni e copertura su tutte le partite (`docs/100`)
 
 **Diagnosi e risoluzione dei 5 colli di bottiglia ([docs/100](100_vita_club_ricerca_web_copertura_2026-10-13.md)):**

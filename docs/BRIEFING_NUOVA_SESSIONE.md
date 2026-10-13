@@ -2,12 +2,29 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-10 (notte — **PR #100 fusa dall'agente su ordine esplicito dell'utente (deroga una tantum)**, hotfix daily rosso + voce G tilt + voce B2 «forza avv.» storica in produzione; handoff aggiornato in cima) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**; in coda c'è l'elenco completo dei documenti del progetto. Lo stato effettivo è in cima a `docs/STATO.md` (che rispetta la regola A5: ultimi tre giri; i giri dal 57º al 7/10 sono in [`STATO_archivio_2026-10-07.md`](STATO_archivio_2026-10-07.md)); l'ultimo lotto — **mergiato** — è in [`docs/56`](56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md), la revisione che l'ha decisa in [`docs/55`](55_revisione_schede_prossime_partite_2026-10-07.md), la **revisione delle schede partita in corso** (prima coppia: «Analisi pre-partita» + «Fattori»; seconda coppia: «Scontro tattico» + «Fatti rilevanti») in [`docs/57`](57_schede_sezione_prepartita_fattori_2026-10-07.md), la revisione totale in [`docs/53`](53_revisione_totale_qualita_quantita_2026-10-07.md).
-> Se la chat è nuova, rileggilo sempre; se è la continuazione di una sessione già avviata su questo repo, può bastare `docs/STATO.md` + le regole `00`.
+> **Ultimo aggiornamento:** 2026-10-13 (**PR #110 fusa dall'agente su ordine esplicito dell'utente (deroga una tantum)**; hotfix `daily` #109 in [`docs/99`](99_diagnosi_daily_109_hotfix_2026-10-13.md), filtro lingua V3 `149/149` in [`docs/98`](98_lingua_copertura_2026-10-13.md) §6, copertura e ricerca web di «Vita del club» in [`docs/100`](100_vita_club_ricerca_web_copertura_2026-10-13.md), e **mappa completa dei prossimi lavori** in [`docs/101`](101_handoff_prossima_sessione_2026-10-13.md)) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
 
 ---
 
-## Handoff operativo corrente — 2026-10-10 notte (il più recente: leggere questo per primo)
+## Handoff operativo corrente — 2026-10-13 (il più recente: leggere questo e `docs/101` per primi)
+
+**Sessione `arena/079933b1-football-deep-analyzer` chiusa con la PR #110 fusa su `main`** (merge eseguito dall'agente su ordine esplicito dell'utente *«ok fai merge»*, deroga registrata in `docs/13` §9.26 e `docs/STATO.md`).
+
+- **Cosa contiene `main` dopo PR #110:**
+  1. **Hotfix dei 2 errori del workflow `daily` (Issue #109, [`docs/99`](99_diagnosi_daily_109_hotfix_2026-10-13.md)):** corretta concordanza `1 campionati` in `laboratorio.html` e allineata regex `[20]` `r"· (?:<b>)?(\d+) lettur[ae] sul tema"` in `verify_site.py` + `match.html` + `club_news_checks.py`.
+  2. **Filtro lingua V3 puro-Python `149/149` ([`docs/98`](98_lingua_copertura_2026-10-13.md) §6):** `is_italian_news` in `src/fda/sources/news.py` ottiene `149/149` (`0` FP, `0` FN) sul benchmark congelato `tests/fixtures/news_language_review_2026-10-13.json` con `0 MiB` di RAM extra.
+  3. **«Vita del club» (`#notizie`) funzionante su tutte le partite ([`docs/100`](100_vita_club_ricerca_web_copertura_2026-10-13.md)):** finestra pre-partita portata a `NEWS_WINDOW_DAYS = 14` (allineata a `NEWS_RETENTION_DAYS = 14`), `team_tokens` esteso con `soggetto_tokens`, `_club_tokens` ripulito dai prefissi condivisi (`real`, `borussia`, `olympique`, `sporting`, `manchester`, `madrid`, `paris`, `united`, `city`, `union`) e dai sostantivi comuni (`fortuna`, `santa`, `clara`, `ahead`, `eagles`, `saint`), `altra_squadra` corretta sui club di 3–4 lettere (`Lens`, `Ajax`, `Como`, `Pisa`, `Roma`, `PSG`, `PSV`, `Hull`), `ITALIAN_SEARCH_NAMES` estesa a 17 club europei, attribuzione multi-club in `parse_espn_news`/`parse_direct_sports_rss`, `club_signals.py` esteso (`31/31` sul benchmark, `0` FP sui controlli negativi), e `<details class="news-context" open>` aperto di default su 58/58 schede pre-partita (`33/58` schede con articoli di stampa contro `6/58` prima; `58/58` schede con informazioni utili immediatamente visibili).
+- **Gate verificati alla fusione:** **932 test passati**, `ruff check .` **0 errori**, `fda build` **493 schede / 2.364 fixture / 7.594 giocatori**, `verify_site.py` **238.546 controlli · 0 problemi**, `audit_fonti.py` **0 difetti bloccanti**.
+- **Prossimo lavoro in coda (dettagliato passo per passo in [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md)):**
+  1. Verificare all'ingresso con `gh run list --branch main --limit 3` che il `daily` attivato dal merge di PR #110 sia verde e che l'issue `#109` si sia chiusa; avviare il server di anteprima live su `0.0.0.0:8000`.
+  2. Completare la revisione delle **ultime 3 sezioni della scheda partita** (`src/fda/site/templates/match.html` e `src/fda/site/analysis.py`), una alla volta con misura prima/dopo (Regola B.10):
+     - **Sezione 1:** **«Precedenti» (`#precedenti`)** (`match.html:650–670`, `h2h_pattern`, `h2h_list`, `h2h_stats`, invariante `[7]`).
+     - **Sezione 2:** **«Previsione del modello ensemble» (`#previsione` + `#scomposizione` + `#laboratorio` + `#fascia-storica` + `#posizione-lega` + `#primo-gol`)** (`match.html:671–864`, invarianti `[8]`, `[10]`, `[11]`, `[12]`, `[15]`, `[16]`, `[17]`, `[46]`, `[47]`).
+     - **Sezione 3:** **«Verifica approfondita: risultati esatti e distribuzione gol» (`#verifica`: `#probabilita` + `#gol-totali`)** (`match.html:1118–1168`, invarianti `[8]`, `[9]`).
+
+---
+
+## Handoff operativo precedente — 2026-10-10 notte
 
 **Sessione `arena/4e5bb7f8` chiusa con la PR #100 fusa** (merge commit; l'agente ha eseguito
 il merge **su ordine esplicito dell'utente** — deroga una tantum alla policy merge,
