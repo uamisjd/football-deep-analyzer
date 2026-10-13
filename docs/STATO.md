@@ -22,12 +22,24 @@ come contesto, non notizie. Nessun punteggio di sentiment o modifica ai modelli.
 NED1 e POR1 ancora senza voci selezionate.** Non risolto, non mascherato da riempitivi.
 Relazione [docs/97](97_vita_club_qualita_copertura_2026-10-12.md).
 
-**Verificati:** 299 test mirati, Ruff pulito; audit frammento 946/0. **Da eseguire:** suite
-completa, build, verify_site, audit Vita/editoriale/Mercato/Panchina, parità e resa mobile.
-Parquet di produzione intatti, compresi `season_sim*`. PR #108 in bozza, nessun merge.
-**Anteprima da riavviare** su una scheda italiana e una lega scoperta dopo i gate.
-**Prossimo:** chiudere i gate; copertura delle fonti ancora da affrontare prima di dichiarare
-Vita del club risolta per tutti. Decisioni StatsBomb/clima ancora aperte.
+**Gate finali verificati:** **920 test**, Ruff pulito; build **493/2.364/7.594**; verify_site
+**238.235 controlli / 0 problemi**. Audit Vita **840 / 0**, editoriale, Mercato **928 / 0**,
+Panchina e Clima superati; parità **58 schede**, resa 375 px **28.504 / 0 problemi**.
+CI `00d3d3a` verde (`38324483243`, `38324477217`). Corrette anche concordanze e lettura DOM
+dei marcatori Clima, con regressioni e gate rifatti. Parquet intatti, `season_sim*` compresi;
+nessun modello modificato. PR #108 in bozza, nessun merge.
+
+**Sito del 13/10:** 58 schede / 116 lati (cinque gare uscite dal calendario breve), 969 voci,
+7 titoli principali: 4 eventi segnalati + 3 analisi/dichiarazioni. **109 lati senza voci**;
+ancora 5 leghe a zero. Il confronto di sviluppo resta fisso a 63 schede, non mescolare campioni.
+**Limite aggiuntivo provato:** il filtro lingua scarta la frase italiana breve «Inter: misure
+cautelari per i tifosi». Non risolto; da valutare con un campione multilingue, non abbassando
+la soglia alla cieca. I test verdi non certificano utilità, recall o completezza universali.
+
+**Anteprima attiva/verificata** 0.0.0.0:8000: Roma–Genoa `5749701.html#notizie`; esempio
+scoperto SC Heerenveen–Excelsior `5781769.html#notizie`. HTTP 200 su schede, homepage, CSS/font.
+**Prossimo:** Vita del club resta APERTA su copertura e falsi negativi linguistici. Non passare
+all'ensemble dando questa verifica per definitiva. Decisioni StatsBomb/clima ancora aperte.
 
 ## 2026-10-12 — Vita del club: terza sezione verificata, anteprima ripristinata (docs/96)
 

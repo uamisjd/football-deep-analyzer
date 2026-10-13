@@ -139,7 +139,7 @@ Udinese del 5 ottobre (intervento alla caviglia, non rissa), comunicato Genoa de
 (incarichi), comunicato Atlético (azionariato). Le letture confermano i livelli di prova
 sopra; nessun testo originale è stato importato nel sito o nei dati.
 
-Nuovo riscontro primario: [Polizia di Stato](https://www.poliziadistato.it/articolo/scontri-prima-del-derby-torino-juventus--22-misure-cautelari-e-42-daspo),
+Nuovo riscontro primario: [1](https://www.poliziadistato.it/articolo/scontri-prima-del-derby-torino-juventus--22-misure-cautelari-e-42-daspo),
 comunicato del **6/10/2026**: **22 misure cautelari e 42 Daspo**, riferiti agli incidenti
 prima del derby del **24 maggio**. I titoli della rassegna citano numeri e grandezze diverse:
 non vengono sommati, uniformati né spacciati per conferme indipendenti. Pubblicazione,
@@ -187,10 +187,54 @@ Misura ripetibile: `scripts/audit_vita_editoriale.py --reference-date 2026-10-12
 Audit tecnico sul frammento: **946 controlli, 0 difetti**. Test mirati complessivi:
 **299 passati**, Ruff pulito. In attesa dei gate completi e dell'anteprima ricostruita.
 
+## 7. Esito finale del giro: non è ancora una soluzione completa per tutte le partite
+
+Il build del 13/10 ha **58 schede pre-partita / 116 lati**, non 63/126: sono uscite dalla
+finestra del calendario cinque gare del 12/10. Il confronto prima/dopo rimane sul campione
+fisso di 63, senza attribuire al selettore questa riduzione temporale.
+
+Sul sito corrente: **969 voci esaminate, 7 titoli principali** (4 eventi segnalati e 3
+analisi/dichiarazioni), nessuna riserva o lettura correlata in questa finestra, **109 lati
+senza segnalazioni**. Sei lati con titoli in ITA1, uno in ESP1; ENG1/GER1/FRA1/NED1/POR1
+restano senza voci esposte. Non è prova che non ci siano eventi, né qualità uniforme.
+
+Resta anche un limite da affrontare esplicitamente: il filtro linguistico ha rifiutato il
+controllo sintetico breve «Inter: misure cautelari per i tifosi», che è italiano. Il test
+sulla concordanza della UI usa ora una frase italiana più lunga, perché non deve confondere
+layout e riconoscimento della lingua; **il falso negativo linguistico non è stato nascosto
+né dichiarato risolto**. Serve un audit dedicato, multilingue, prima di allentare il filtro
+rischiando titoli stranieri. Non si cambia il vincolo dell'italiano senza richiesta utente.
+
+**Gate finali, rieseguiti dopo le ultime correzioni:**
+
+- **920 test passati**, `ruff check .` pulito.
+- **`fda build`: 493 schede / 2.364 fixture / 7.594 giocatori**.
+- **`verify_site`: 238.235 controlli, 0 problemi** (31 I / 20 M / 3 S).
+- Audit Vita: **840 controlli, 0 difetti**; audit editoriale sul campione fisso, Mercato
+  (**928 controlli / 0 difetti**), Panchina e Clima superati.
+- Parità: **58 schede, nessuna differenza**; resa 375 px: **28.504 misure, 0 problemi**.
+- CI del codice **`00d3d3a`** verde: run
+  [38324483243](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38324483243) e
+  [38324477217](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38324477217).
+- Nessun Parquet modificato, inclusi i due `season_sim*`; nessuna modifica ai modelli.
+
+La prima verifica completa aveva trovato sette concordanze «1 titoli» e quattro marcatori
+Clima letti male dall'oracolo, che si aspettava un `li` senza attributi. Corrette le
+concordanze e sostituita la regex con lettura DOM dei soli titoli principali; aggiunti due
+test, rifatti tutti i gate. Non sono stati rimossi i controlli per farli diventare verdi.
+
+**Anteprima HTTP verificata:** Roma–Genoa (`5749701.html#notizie`) per i casi con contenuti;
+SC Heerenveen–Excelsior (`5781769.html#notizie`) per vedere il vuoto dichiarato di raccolta
+/selezione. Porta 8000 sul sandbox, sito locale aggiornato; homepage, schede, CSS e font
+rispondono 200 anche con Host/Origin del proxy. Non è pubblicazione su `main` o nuova raccolta.
+
+Misura macchina in `docs/_audit_vita_editoriale_2026-10-13.json`.
+
 ## Prossimo passo
 
-Eseguire suite completa, build, verify_site, audit e resa mobile; mostrare l'anteprima.
-**Non dichiarare risolta la copertura per tutte le partite:** non lo è. Decidere poi come
+**Vita del club resta aperta su copertura e falsi negativi linguistici.** Non passare
+all'ensemble come se il problema fosse risolto. **Non dichiarare risolta la copertura per
+tutte le partite:** non lo è. Decidere poi come
 estendere e verificare la raccolta italiana via CI, senza inventare notizie, cambiare i
 Parquet qui o aggirare protezioni. La revisione di Vita del club resta aperta su questo
 punto; non si passa automaticamente all'ensemble. PR #108 in bozza, nessun merge.
