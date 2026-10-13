@@ -1,0 +1,322 @@
+{
+  "before": {
+    "source_data_commit": "514309d",
+    "code_before": "02a242d",
+    "pages": 63,
+    "sides": 126,
+    "arrivals": 1009,
+    "departures": 1647,
+    "numeric_fees": 866,
+    "free": 459,
+    "loans_without_fee": 922,
+    "unknown_fees": 409,
+    "lineup_matches_actual": 96,
+    "lineup_matches_displayed": 35,
+    "sides_with_hidden_arrivals": 14,
+    "predicted_sides": 8,
+    "previous_lineup_sides": 7,
+    "legacy_check_errors": 0,
+    "legacy_check_count": 493
+  },
+  "comparison": {
+    "counts": {
+      "movement_tables_identical": 126,
+      "visible_moves": 897,
+      "loan_labels_added": 47,
+      "saldo_not_quantifiable": 24,
+      "saldo_zero": 7
+    },
+    "not_quantifiable": [
+      [
+        5749706,
+        "Cagliari",
+        null,
+        13000000.0
+      ],
+      [
+        5781768,
+        "Willem II",
+        null,
+        null
+      ],
+      [
+        5781769,
+        "SC Heerenveen",
+        500000.0,
+        null
+      ],
+      [
+        5781771,
+        "Cambuur",
+        350000.0,
+        null
+      ],
+      [
+        5781774,
+        "Telstar",
+        null,
+        250000.0
+      ],
+      [
+        5781775,
+        "PEC Zwolle",
+        null,
+        0.0
+      ],
+      [
+        5781775,
+        "Go Ahead Eagles",
+        null,
+        null
+      ],
+      [
+        5795468,
+        "Coventry",
+        133550000.0,
+        null
+      ],
+      [
+        5795484,
+        "Coventry",
+        133550000.0,
+        null
+      ],
+      [
+        5802956,
+        "Le Havre",
+        1500000.0,
+        null
+      ],
+      [
+        5802956,
+        "Auxerre",
+        null,
+        null
+      ],
+      [
+        5802957,
+        "Le Mans",
+        null,
+        null
+      ],
+      [
+        5802961,
+        "Paris FC",
+        0.0,
+        null
+      ],
+      [
+        5802963,
+        "Troyes",
+        null,
+        32400000.0
+      ],
+      [
+        5868092,
+        "Celta Vigo",
+        7000000.0,
+        null
+      ],
+      [
+        5868094,
+        "Atlético Madrid",
+        0.0,
+        null
+      ],
+      [
+        5868096,
+        "Málaga",
+        null,
+        null
+      ],
+      [
+        5868096,
+        "Real Sociedad",
+        8500000.0,
+        null
+      ],
+      [
+        5868099,
+        "Athletic Club",
+        null,
+        4500000.0
+      ],
+      [
+        5868100,
+        "Villarreal",
+        17000000.0,
+        null
+      ],
+      [
+        5881192,
+        "Elversberg",
+        1000000.0,
+        null
+      ],
+      [
+        5881194,
+        "Schalke 04",
+        2500000.0,
+        null
+      ],
+      [
+        5887594,
+        "Gil Vicente",
+        0.0,
+        null
+      ],
+      [
+        5887649,
+        "Famalicão",
+        null,
+        null
+      ]
+    ],
+    "removed_numeric_net_when_one_side_unknown": [
+      {
+        "match_id": 5749706,
+        "team": "Cagliari",
+        "old_displayed_net": -13000000.0
+      },
+      {
+        "match_id": 5781769,
+        "team": "SC Heerenveen",
+        "old_displayed_net": 500000.0
+      },
+      {
+        "match_id": 5781771,
+        "team": "Cambuur",
+        "old_displayed_net": 350000.0
+      },
+      {
+        "match_id": 5781774,
+        "team": "Telstar",
+        "old_displayed_net": -250000.0
+      },
+      {
+        "match_id": 5795468,
+        "team": "Coventry",
+        "old_displayed_net": 133600000.0
+      },
+      {
+        "match_id": 5795484,
+        "team": "Coventry",
+        "old_displayed_net": 133600000.0
+      },
+      {
+        "match_id": 5802956,
+        "team": "Le Havre",
+        "old_displayed_net": 1500000.0
+      },
+      {
+        "match_id": 5802963,
+        "team": "Troyes",
+        "old_displayed_net": -32400000.0
+      },
+      {
+        "match_id": 5868092,
+        "team": "Celta Vigo",
+        "old_displayed_net": 7000000.0
+      },
+      {
+        "match_id": 5868096,
+        "team": "Real Sociedad",
+        "old_displayed_net": 8500000.0
+      },
+      {
+        "match_id": 5868099,
+        "team": "Athletic Club",
+        "old_displayed_net": -4500000.0
+      },
+      {
+        "match_id": 5868100,
+        "team": "Villarreal",
+        "old_displayed_net": 17000000.0
+      },
+      {
+        "match_id": 5881192,
+        "team": "Elversberg",
+        "old_displayed_net": 1000000.0
+      },
+      {
+        "match_id": 5881194,
+        "team": "Schalke 04",
+        "old_displayed_net": 2500000.0
+      }
+    ]
+  },
+  "mini_audit_after": {
+    "counts": {
+      "prematch_pages": 63,
+      "market_pages": 63,
+      "sides": 126,
+      "numeric": 866,
+      "free": 459,
+      "loan": 922,
+      "unknown": 409,
+      "lineup_matches": 96,
+      "lineup_predicted_sides": 8,
+      "lineup_unknown_sides": 0,
+      "lineup_previous_sides": 7
+    },
+    "checks": 1008,
+    "errors": [],
+    "defects": 0
+  },
+  "new_tests": 24,
+  "targeted_tests": 71,
+  "full_gates": {
+    "tests_passed": 796,
+    "ruff": "passed",
+    "negative_verify_site": {
+      "exit": 1,
+      "overlapping_findings": 324
+    },
+    "build": {
+      "matches": 498,
+      "fixtures": 2364,
+      "players": 7594
+    },
+    "verify_site": {
+      "checks": 240345,
+      "problems": 0
+    },
+    "market_audit": {
+      "checks": 1008,
+      "defects": 0
+    },
+    "panchina_audit_defects": 0,
+    "parity_pages": 63,
+    "mobile_checks": 28667,
+    "mobile_problems": 0,
+    "production_parquets_unchanged": true
+  },
+  "full_render_comparison": {
+    "movement_tables_identical": 126,
+    "visible_moves": 897,
+    "loan_labels_added": 47
+  },
+  "full_audit_after": {
+    "counts": {
+      "prematch_pages": 63,
+      "market_pages": 63,
+      "sides": 126,
+      "numeric": 866,
+      "free": 459,
+      "loan": 922,
+      "unknown": 409,
+      "lineup_matches": 96,
+      "lineup_predicted_sides": 8,
+      "lineup_unknown_sides": 0,
+      "lineup_previous_sides": 7
+    },
+    "checks": 1008,
+    "errors": [],
+    "defects": 0
+  },
+  "code_commit": "b77c048",
+  "ci_success_runs": [
+    38292304131,
+    38292299551
+  ]
+}

@@ -44,14 +44,44 @@ def gamma_variant(lambda_home: float, lambda_away: float, rho: float) -> dict[st
             "lambda_home": lh, "lambda_away": la}
 
 
-def record(store: Any, pred: pd.DataFrame) -> int:
-    """Registra le due varianti per le partite appena previste. Ritorna le righe scritte."""
+def _valid_probabilities(df: pd.DataFrame) -> pd.Series:
+    """Un vettore 1X2 deve essere finito, nel simplesso e normalizzato."""
+    p = df[["p_home", "p_draw", "p_away"]].apply(pd.to_numeric, errors="coerce")
+    return (np.isfinite(p).all(axis=1) & p.ge(0).all(axis=1) & p.le(1).all(axis=1)
+            & np.isclose(p.sum(axis=1), 1.0, atol=1e-9, rtol=0))
+
+
+def record(store: Any, pred: pd.DataFrame, *, now: pd.Timestamp | None = None) -> int:
+    """Registra solo prima del kickoff e non riscrive mai una coppia già congelata.
+
+    Il filtro del chiamante non basta: il fit può attraversare il calcio d'inizio e un
+    calendario aggiornato può spostare una data già archiviata. Il kickoff salvato è
+    quindi un secondo limite, conservativo anche per i rinvii (docs/91). ``now`` rende
+    verificabili le condizioni al confine senza dipendere dall'orologio dei test.
+    """
     if pred is None or pred.empty:
         return 0
-    if "dc_rho" not in pred.columns:  # niente ρ = niente variante: si ferma, non inventa un valore
+    now = pd.Timestamp.now(tz="UTC") if now is None else pd.to_datetime(now, utc=True)
+    if pd.isna(now):
+        raise ValueError("prospettico: istante di registrazione non valido")
+    pred = pred.copy()
+    pred["utc_kickoff"] = pd.to_datetime(pred["utc_kickoff"], utc=True, errors="coerce")
+    pred = pred[pred["utc_kickoff"] > now]
+    old = store.read("prospettico")
+    if not old.empty:
+        kickoff = pd.to_datetime(old["utc_kickoff"], utc=True, errors="coerce")
+        frozen = old.loc[kickoff.isna() | (kickoff <= now), "match_id"]
+        pred = pred[~pred["match_id"].isin(frozen)]
+    if pred.empty:
+        return 0
+    if "dc_rho" not in pred.columns:  # niente ρ = niente variante: non si inventa un valore
         raise ValueError("prospettico: manca dc_rho nelle previsioni, impossibile costruire γ")
+    values = pred[["lambda_home", "lambda_away", "dc_rho"]].apply(pd.to_numeric, errors="coerce")
+    if (not _valid_probabilities(pred).all() or not np.isfinite(values).all().all()
+            or not values[["lambda_home", "lambda_away"]].gt(0).all().all()
+            or pred["match_id"].duplicated().any()):
+        raise ValueError("prospettico: probabilità, λ, ρ o chiavi non validi")
     recs: list[dict[str, Any]] = []
-    now = pd.Timestamp.now(tz="UTC")
     for r in pred.itertuples(index=False):
         base = {"match_id": int(r.match_id), "league_key": r.league_key, "made_at": now,
                 "utc_kickoff": r.utc_kickoff}
@@ -64,22 +94,38 @@ def record(store: Any, pred: pd.DataFrame) -> int:
 
 
 def evaluate(store: Any, fixtures: pd.DataFrame) -> dict[str, Any]:
-    """Valutazione appaiata sulle partite finite con entrambe le varianti."""
+    """Valuta coppie finite, valide, dallo stesso snapshot strettamente pre-partita.
+
+    La lettura difensiva protegge anche da Parquet importati o scritti da versioni vecchie:
+    una previsione postuma, ambigua o incompleta non può diventare evidenza di promozione.
+    """
     empty = {"n": 0, "delta": None, "lo": None, "hi": None, "leagues_better": 0,
              "n_leagues": 0, "passes": False, "min_n": MIN_N, "min_leagues": MIN_LEAGUES}
     pr = store.read("prospettico")
     if pr.empty or fixtures is None or fixtures.empty:
         return empty
-    fin = fixtures[fixtures["status"] == "finished"][["match_id", "home_goals", "away_goals"]].dropna()
-    fin = fin.assign(match_id=fin["match_id"].astype(int))
+    fin_cols = ["match_id", "home_goals", "away_goals"]
+    if "utc_kickoff" in fixtures.columns:
+        fin_cols.append("utc_kickoff")
+    fin = fixtures[fixtures["status"] == "finished"][fin_cols].dropna()
+    fin = fin.rename(columns={"utc_kickoff": "actual_kickoff"})
+    fin = fin.assign(match_id=fin["match_id"].astype(int)).drop_duplicates("match_id", keep=False)
     pr = pr.assign(match_id=pr["match_id"].astype(int))
+    for col in ("made_at", "utc_kickoff"):
+        pr[col] = pd.to_datetime(pr[col], utc=True, errors="coerce")
+    pr = pr[~pr.duplicated(["match_id", "variant"], keep=False)]
+    pr = pr[_valid_probabilities(pr) & (pr["made_at"] < pr["utc_kickoff"])]
     cols = ["p_home", "p_draw", "p_away"]
+    pair_keys = ["match_id", "league_key", "made_at", "utc_kickoff"]
     wide = None
     for v in (VARIANT_PROD, VARIANT_GAMMA):
-        part = pr[pr["variant"] == v][["match_id", "league_key", *cols]]
-        part = part.rename(columns={c: f"{c}_{v}" for c in cols}).drop_duplicates("match_id")
-        wide = part if wide is None else wide.merge(part, on=["match_id", "league_key"])
-    m = wide.merge(fin, on="match_id")
+        part = pr[pr["variant"] == v][[*pair_keys, *cols]].dropna(subset=pair_keys)
+        part = part.rename(columns={c: f"{c}_{v}" for c in cols})
+        wide = part if wide is None else wide.merge(part, on=pair_keys, validate="one_to_one")
+    m = wide.merge(fin, on="match_id", validate="one_to_one")
+    if "actual_kickoff" in m.columns:
+        actual = pd.to_datetime(m["actual_kickoff"], utc=True, errors="coerce")
+        m = m[m["made_at"] < actual]
     if m.empty:
         return empty
     out = np.where(m["home_goals"] > m["away_goals"], 0, np.where(m["home_goals"] == m["away_goals"], 1, 2))

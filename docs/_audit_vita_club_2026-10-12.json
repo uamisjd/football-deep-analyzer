@@ -1,0 +1,840 @@
+{
+  "source_data_commit": "514309d",
+  "code_before": "1d85ae4",
+  "before": {
+    "counts": {
+      "sides": 126,
+      "esaminate": 1522,
+      "pubblicate": 47,
+      "scartate": 1027,
+      "oltre": 4,
+      "annunci": 6,
+      "piatti": 0,
+      "altre": 1,
+      "doppioni": 4,
+      "lingua": 145,
+      "bassa_reputazione": 277,
+      "vecchie": 5140,
+      "riserva": 9,
+      "empty_windows": 42,
+      "pages": 63
+    },
+    "funnel_gaps": [
+      [
+        5749699,
+        "Torino",
+        1
+      ],
+      [
+        5749699,
+        "Udinese",
+        1
+      ]
+    ],
+    "older_copies_selected": [
+      [
+        5749690,
+        "Venezia",
+        "Venezia, Stroppa suona la carica: «Con l'Atalanta ora servono punti»",
+        "2026-10-10 12:40:37+00:00",
+        "2026-10-10 12:40:38+00:00"
+      ],
+      [
+        5749690,
+        "Venezia",
+        "Calcio: a Venezia variante al progetto stadio, costi su di un milione",
+        "2026-10-07 12:08:00+00:00",
+        "2026-10-07 12:08:55+00:00"
+      ],
+      [
+        5749701,
+        "Roma",
+        "Como-Roma, i tifosi giallorossi tornano in trasferta dopo 10 mesi",
+        "2026-10-11 09:44:49+00:00",
+        "2026-10-12 11:47:05+00:00"
+      ],
+      [
+        5749700,
+        "Milan",
+        "Le parole di Alberto Aquilani al termine di Sassuolo-Milan",
+        "2026-10-11 20:01:01+00:00",
+        "2026-10-11 22:09:12+00:00"
+      ]
+    ],
+    "why": [
+      [
+        5749690,
+        "Atalanta",
+        "predicted",
+        "«Sarri» è l'allenatore di questa squadra"
+      ],
+      [
+        5749690,
+        "Venezia",
+        "predicted",
+        "«Stroppa» è l'allenatore di questa squadra"
+      ],
+      [
+        5749699,
+        "Torino",
+        "predicted",
+        "«Abate» è l'allenatore di questa squadra"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "predicted",
+        "«Idrissa Gueye» è nella lista indisponibili di FotMob per questa gara"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "lastStarting11",
+        "«Alvini» è l'allenatore di questa squadra"
+      ],
+      [
+        5749704,
+        "Sassuolo",
+        "lastStarting11",
+        "«Alberto Aquilani» è l'allenatore di questa squadra"
+      ],
+      [
+        5749709,
+        "Napoli",
+        "unavailable",
+        "«Allegri» è l'allenatore di questa squadra"
+      ],
+      [
+        5749702,
+        "Bologna",
+        "unavailable",
+        "«Palladino» è l'allenatore di questa squadra"
+      ],
+      [
+        5749701,
+        "Roma",
+        "unavailable",
+        "«Gasperini» è l'allenatore di questa squadra"
+      ],
+      [
+        5749701,
+        "Roma",
+        "unavailable",
+        "«Malen» è nella lista indisponibili di FotMob per questa gara"
+      ],
+      [
+        5749708,
+        "Lecce",
+        "unavailable",
+        "«Francesco» è l'allenatore di questa squadra"
+      ],
+      [
+        5749700,
+        "Atalanta",
+        "unavailable",
+        "«Sarri» è l'allenatore di questa squadra"
+      ],
+      [
+        5749705,
+        "Juventus",
+        "unavailable",
+        "«Spalletti» è nella lista indisponibili di FotMob per questa gara"
+      ]
+    ],
+    "titles": [
+      [
+        5749690,
+        "Atalanta",
+        "Atalanta-Venezia dirà se la squadra segue davvero Sarri",
+        "squadra",
+        "2026-10-12 04:46:16+00:00",
+        "Corriere Bergamo"
+      ],
+      [
+        5749690,
+        "Atalanta",
+        "Atalanta-Venezia, le ultime: Raspadori convocato, recuperi in difesa per Stroppa",
+        "squadra",
+        "2026-10-12 08:02:12+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5749690,
+        "Atalanta",
+        "Ajax-Atalanta, 2.229 tifosi nerazzurri nel settore ospiti della Johan Cruyff Arena",
+        "tifo",
+        "2026-10-12 06:51:00+00:00",
+        "BergamoNews"
+      ],
+      [
+        5749690,
+        "Atalanta",
+        "Caldara a L’Eco: «Atalanta, il cammino sarà lungo e difficile. Il Venezia va rispettato»",
+        "dichiarazioni",
+        "2026-10-10 00:00:00+00:00",
+        "L'Eco di Bergamo"
+      ],
+      [
+        5749690,
+        "Atalanta",
+        "I tifosi nerazzurri all’Atalanta: ritirare la maglia numero 7 del mitico Glenn Stromberg",
+        "tifo",
+        "2026-10-08 10:04:48+00:00",
+        "Quotidiano Sportivo"
+      ],
+      [
+        5749690,
+        "Venezia",
+        "Venezia, Stroppa suona la carica: «Con l'Atalanta ora servono punti»",
+        "dichiarazioni",
+        "2026-10-10 12:40:37+00:00",
+        "La Piazza Web"
+      ],
+      [
+        5749690,
+        "Venezia",
+        "Calcio: a Venezia variante al progetto stadio, costi su di un milione",
+        "stadio",
+        "2026-10-07 12:08:00+00:00",
+        "ANSA"
+      ],
+      [
+        5749690,
+        "Venezia",
+        "Milan, guarda la porta! La squadra di Amorim tira meno di Monza, Venezia e Frosinone: i motivi",
+        "squadra",
+        "2026-10-10 08:04:57+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Incontro per i media con il tecnico Abate",
+        "allenatore",
+        "2026-10-09 07:52:21+00:00",
+        "TORINO FC 1906"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Torino-Udinese, lo sprint di Alaba per esserci subito: l’austriaco verso l’esordio",
+        "squadra",
+        "2026-10-09 05:00:00+00:00",
+        "Messaggero Veneto"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Torino, sfida sulla destra: Belghali vuole la maglia, Patterson insegue",
+        "club",
+        "2026-10-10 15:35:58+00:00",
+        "Toro.it"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Scontri Torino-Juve, misure cautelari per tantissimi tifosi coinvolti: la decisione della Digos",
+        "tifo",
+        "2026-10-06 11:52:00+00:00",
+        "Tuttosport"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Torino, in campo per i bambini malati di tumore: al Pertusa vince la solidarietà",
+        "club",
+        "2026-10-09 13:40:00+00:00",
+        "Torino Cronaca"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Torino-Udinese, Alaba pronto per l'esordio: Solet vicino a lui",
+        "squadra",
+        "2026-10-11 05:00:00+00:00",
+        "Messaggero Veneto"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Nestor Sensini compie 60 anni: «L'Udinese, la famiglia e il rigore di Italia '90»",
+        "dichiarazioni",
+        "2026-10-12 05:28:47+00:00",
+        "il Nord Est"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Camolese presenta Torino-Udinese: «Partita delicata, due squadre che devono crescere in fretta",
+        "squadra",
+        "2026-10-10 05:00:00+00:00",
+        "Messaggero Veneto"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Nota ufficiale: Idrissa Gueye",
+        "fuoricampo",
+        "2026-10-05 21:51:46+00:00",
+        "Udinese"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Divina San Severo e Udinese Academy, nasce una nuova alleanza: insieme per costruire il futuro dei giovani talenti!",
+        "club",
+        "2026-10-10 06:48:25+00:00",
+        "La Gazzetta di San Severo"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "Serie A: Alvini, 'vittoria Napoli meritata, rigore morbido ma passiamo oltre'",
+        "allenatore",
+        "2026-10-10 21:47:10+00:00",
+        "ANSA"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "Il Frosinone guarda il Napoli dall’alto. Al Maradona con la spinta di 2000 tifosi",
+        "tifo",
+        "2026-10-09 23:30:04+00:00",
+        "Il Messaggero"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "Napoli, i convocati per il Frosinone: tornano McTominay e Spinazzola",
+        "squadra",
+        "2026-10-11 08:37:30+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "Serie A: doppio De Bruyne e Lang, il Napoli stende il Frosinone al Maradona",
+        "squadra",
+        "2026-10-10 20:39:27+00:00",
+        "ANSA"
+      ],
+      [
+        5749704,
+        "Sassuolo",
+        "Le parole di Alberto Aquilani al termine di Sassuolo-Milan",
+        "dichiarazioni",
+        "2026-10-11 20:01:01+00:00",
+        "U.S. Sassuolo Calcio"
+      ],
+      [
+        5749704,
+        "Sassuolo",
+        "Sassuolo-Milan, Amorim: «La difesa a 4? Dipende dalle partite. Camarda? Avrà le sue occasioni»",
+        "dichiarazioni",
+        "2026-10-10 12:45:56+00:00",
+        "Il Messaggero"
+      ],
+      [
+        5868094,
+        "Atlético Madrid",
+        "Gilgeous-Alexander diventa azionista dell’Atlético Madrid",
+        "societa",
+        "2026-10-10 12:24:55+00:00",
+        "Il Globo"
+      ],
+      [
+        5749709,
+        "Venezia",
+        "I CONVOCATI PER ATALANTA - VENEZIA",
+        "squadra",
+        "2026-10-11 15:03:13+00:00",
+        "Venezia FC"
+      ],
+      [
+        5749709,
+        "Napoli",
+        "Calcio: De Laurentiis 'mai avuto dubbi su Allegri'",
+        "societa",
+        "2026-10-12 09:06:02+00:00",
+        "ANSA"
+      ],
+      [
+        5749709,
+        "Napoli",
+        "Napoli, i convocati per il Frosinone: tornano McTominay e Spinazzola",
+        "squadra",
+        "2026-10-11 08:37:30+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5868100,
+        "Villarreal",
+        "Real Madrid-Villarreal LIVE! Cronaca e aggiornamenti in tempo reale della sfida valevole per l'8ª giornata de La Liga 2026/2027 delle ore 21:00",
+        "dichiarazioni",
+        "2026-10-10 19:00:00+00:00",
+        "Eurosport.it"
+      ],
+      [
+        5749702,
+        "Bologna",
+        "Lecce-Bologna, reazione salentina ma vincono i rossoblù. Le parole di Fatah, Di Francesco e Palladino",
+        "dichiarazioni",
+        "2026-10-12 06:11:00+00:00",
+        "Leccenews24"
+      ],
+      [
+        5749702,
+        "Inter",
+        "TRIBUNA.COM * SERIE A: «GIOCA L'INTER, A SAN SIRO C'È IL GOTHA DEL CALCIO ITALIANO ED EUROPEO: IL VIP INATTESO AL FIANCO DI MAROTTA E ZANETTI",
+        "dichiarazioni",
+        "2026-10-11 08:55:26+00:00",
+        "agenzia giornalistica opinione"
+      ],
+      [
+        5749702,
+        "Inter",
+        "Inter-Parma, la regia si perde il gol di Sucic: polemiche dei tifosi sui social per Dazn e Sky",
+        "tifo",
+        "2026-10-10 16:21:55+00:00",
+        "Il Messaggero"
+      ],
+      [
+        5868091,
+        "Real Betis",
+        "Formazioni CDA Navalcarnero - Betis Siviglia: Coppa del Re Calcio",
+        "societa",
+        "2026-10-11 21:31:36+00:00",
+        "eurosport.it"
+      ],
+      [
+        5749701,
+        "Roma",
+        "Gasperini sbotta dopo Como-Roma: «Il calcio non è fatto di fotogrammi» - Quotidiano La Voce",
+        "dichiarazioni",
+        "2026-10-12 05:24:55+00:00",
+        "Quotidiano la Voce"
+      ],
+      [
+        5749701,
+        "Roma",
+        "Como-Roma, i tifosi giallorossi tornano in trasferta dopo 10 mesi",
+        "tifo",
+        "2026-10-11 09:44:49+00:00",
+        "Corriere dello Sport"
+      ],
+      [
+        5749701,
+        "Roma",
+        "Follia di Malen: entra a gamba tesa su Kaiki e viene espulso! Nel post-partita arrivano le scuse ai tifosi",
+        "tifo",
+        "2026-10-11 12:01:08+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5749701,
+        "Roma",
+        "Roma, Carica Gasp: «L’entusiasmo ci contagia»",
+        "dichiarazioni",
+        "2026-10-11 00:50:03+00:00",
+        "Il Messaggero"
+      ],
+      [
+        5749701,
+        "Genoa",
+        "UFFICIALE | Genoa, Modesto e Melissano entrano nell’organigramma del club. La nota",
+        "societa",
+        "2026-10-11 09:10:59+00:00",
+        "Buon Calcio a Tutti"
+      ],
+      [
+        5749701,
+        "Genoa",
+        "Il Genoa batte la Fiorentina e si vendica sui social: la risposta epica a Ryanair che fa il giro del web",
+        "dichiarazioni",
+        "2026-10-11 05:48:27+00:00",
+        "GenovaToday"
+      ],
+      [
+        5749708,
+        "Udinese",
+        "Nestor Sensini compie 60 anni: «L'Udinese, la famiglia e il rigore di Italia '90»",
+        "dichiarazioni",
+        "2026-10-12 05:28:47+00:00",
+        "il Nord Est"
+      ],
+      [
+        5749708,
+        "Lecce",
+        "Lecce-Bologna, reazione salentina ma vincono i rossoblù. Le parole di Fatah, Di Francesco e Palladino",
+        "dichiarazioni",
+        "2026-10-12 06:11:00+00:00",
+        "Leccenews24"
+      ],
+      [
+        5749703,
+        "Fiorentina",
+        "Il Genoa batte la Fiorentina e si vendica sui social: la risposta epica a Ryanair che fa il giro del web",
+        "dichiarazioni",
+        "2026-10-12 10:56:25+00:00",
+        "GenovaToday"
+      ],
+      [
+        5749703,
+        "Como",
+        "120 LOMBARDIA. APPLAUSI ALLO STADIO DI COMO PER I CAMPIONI DEL MONDO MCNULTY E EVENEPOEL",
+        "stadio",
+        "2026-10-11 15:14:00+00:00",
+        "tuttobiciweb"
+      ],
+      [
+        5749703,
+        "Como",
+        "Il Times racconta il boom del Como 1907, ma avverte: \"I tifosi rischiano di essere lasciati indietro\"",
+        "tifo",
+        "2026-10-11 13:37:33+00:00",
+        "QuiComo"
+      ],
+      [
+        5749703,
+        "Como",
+        "Como, i seggiolini della vecchia curva demolita diventano oggetti da collezione",
+        "tifo",
+        "2026-10-12 12:24:00+00:00",
+        "la Repubblica"
+      ],
+      [
+        5749703,
+        "Como",
+        "Gasperini sbotta dopo Como-Roma: «Il calcio non è fatto di fotogrammi» - Quotidiano La Voce",
+        "dichiarazioni",
+        "2026-10-12 05:24:55+00:00",
+        "Quotidiano la Voce"
+      ],
+      [
+        5749700,
+        "Milan",
+        "Le parole di Alberto Aquilani al termine di Sassuolo-Milan",
+        "dichiarazioni",
+        "2026-10-11 20:01:01+00:00",
+        "U.S. Sassuolo Calcio"
+      ],
+      [
+        5749700,
+        "Atalanta",
+        "Ajax-Atalanta, 2.229 tifosi nerazzurri nel settore ospiti della Johan Cruyff Arena",
+        "tifo",
+        "2026-10-12 06:51:00+00:00",
+        "BergamoNews"
+      ],
+      [
+        5749700,
+        "Atalanta",
+        "Atalanta-Venezia dirà se la squadra segue davvero Sarri",
+        "squadra",
+        "2026-10-12 04:46:16+00:00",
+        "Corriere Bergamo"
+      ],
+      [
+        5749700,
+        "Atalanta",
+        "Atalanta-Venezia, le ultime: Raspadori convocato, recuperi in difesa per Stroppa",
+        "squadra",
+        "2026-10-12 08:02:12+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5749705,
+        "Juventus",
+        "Spalletti-Pisacane: lite, quasi rissa e doppio rosso. \"Bravi. Anche a perder tempo\". \"Quale tempo?\"",
+        "spogliatoio",
+        "2026-10-11 20:52:58+00:00",
+        "La Gazzetta dello Sport"
+      ],
+      [
+        5749705,
+        "Juventus",
+        "Cagliari Juventus, intervista Elia Caprile",
+        "dichiarazioni",
+        "2026-10-11 22:02:00+00:00",
+        "L'Unione Sarda.it"
+      ],
+      [
+        5749705,
+        "Juventus",
+        "Cagliari Juventus, intervista Yerry Mina",
+        "dichiarazioni",
+        "2026-10-11 22:02:00+00:00",
+        "L'Unione Sarda.it"
+      ],
+      [
+        5749705,
+        "Lazio",
+        "Immobile tifoso speciale per la Lazio allo stadio: \"Mio figlio me lo chiedeva da un po'...\"",
+        "tifo",
+        "2026-10-12 06:24:00+00:00",
+        "Corriere dello Sport"
+      ],
+      [
+        5749705,
+        "Lazio",
+        "Lazio record e adesso la Champions",
+        "squadra",
+        "2026-10-12 05:52:25+00:00",
+        "il Giornale"
+      ],
+      [
+        5868098,
+        "Real Madrid",
+        "Dybala si emoziona prima di Roma-Real Madrid: \"I nostri tifosi in casa ci daranno una spinta in più. Vorrei finire la carriera in Italia\"",
+        "tifo",
+        "2026-10-12 09:14:00+00:00",
+        "Corriere dello Sport"
+      ]
+    ],
+    "order_changes": [
+      {
+        "match_id": 5749690,
+        "team": "Venezia"
+      },
+      {
+        "match_id": 5749699,
+        "team": "Udinese"
+      },
+      {
+        "match_id": 5749700,
+        "team": "Milan"
+      },
+      {
+        "match_id": 5749701,
+        "team": "Roma"
+      },
+      {
+        "match_id": 5749708,
+        "team": "Udinese"
+      }
+    ]
+  },
+  "after": {
+    "counts": {
+      "esaminate": 1522,
+      "pubblicate": 32,
+      "scartate": 1016,
+      "annunci": 14,
+      "piatti": 18,
+      "altre": 3,
+      "doppioni": 12,
+      "lingua": 145,
+      "bassa_reputazione": 277,
+      "oltre": 1,
+      "fuori_ambito": 1,
+      "oltre_categoria": 1,
+      "oltre_capienza": 0,
+      "vecchie": 5140,
+      "riserva": 3,
+      "sides": 126,
+      "window_ended": 10,
+      "window_open": 116,
+      "pages": 63
+    },
+    "removed": [
+      [
+        5749690,
+        "Atalanta",
+        "Atalanta-Venezia, le ultime: Raspadori convocato, recuperi in difesa per Stroppa"
+      ],
+      [
+        5749690,
+        "Venezia",
+        "Milan, guarda la porta! La squadra di Amorim tira meno di Monza, Venezia e Frosinone: i motivi"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Incontro per i media con il tecnico Abate"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Torino-Udinese, lo sprint di Alaba per esserci subito: l’austriaco verso l’esordio"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Divina San Severo e Udinese Academy, nasce una nuova alleanza: insieme per costruire il futuro dei giovani talenti!"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Nestor Sensini compie 60 anni: «L'Udinese, la famiglia e il rigore di Italia '90»"
+      ],
+      [
+        5749699,
+        "Udinese",
+        "Torino-Udinese, Alaba pronto per l'esordio: Solet vicino a lui"
+      ],
+      [
+        5749700,
+        "Milan",
+        "Le parole di Alberto Aquilani al termine di Sassuolo-Milan"
+      ],
+      [
+        5749700,
+        "Atalanta",
+        "Atalanta-Venezia, le ultime: Raspadori convocato, recuperi in difesa per Stroppa"
+      ],
+      [
+        5749701,
+        "Roma",
+        "Follia di Malen: entra a gamba tesa su Kaiki e viene espulso! Nel post-partita arrivano le scuse ai tifosi"
+      ],
+      [
+        5749701,
+        "Genoa",
+        "Il Genoa batte la Fiorentina e si vendica sui social: la risposta epica a Ryanair che fa il giro del web"
+      ],
+      [
+        5749703,
+        "Fiorentina",
+        "Il Genoa batte la Fiorentina e si vendica sui social: la risposta epica a Ryanair che fa il giro del web"
+      ],
+      [
+        5749703,
+        "Como",
+        "120 LOMBARDIA. APPLAUSI ALLO STADIO DI COMO PER I CAMPIONI DEL MONDO MCNULTY E EVENEPOEL"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "Napoli, i convocati per il Frosinone: tornano McTominay e Spinazzola"
+      ],
+      [
+        5749704,
+        "Frosinone",
+        "Serie A: doppio De Bruyne e Lang, il Napoli stende il Frosinone al Maradona"
+      ],
+      [
+        5749704,
+        "Sassuolo",
+        "Le parole di Alberto Aquilani al termine di Sassuolo-Milan"
+      ],
+      [
+        5749705,
+        "Juventus",
+        "Cagliari Juventus, intervista Elia Caprile"
+      ],
+      [
+        5749705,
+        "Juventus",
+        "Cagliari Juventus, intervista Yerry Mina"
+      ],
+      [
+        5749708,
+        "Udinese",
+        "Nestor Sensini compie 60 anni: «L'Udinese, la famiglia e il rigore di Italia '90»"
+      ],
+      [
+        5749709,
+        "Venezia",
+        "I CONVOCATI PER ATALANTA - VENEZIA"
+      ],
+      [
+        5749709,
+        "Napoli",
+        "Napoli, i convocati per il Frosinone: tornano McTominay e Spinazzola"
+      ],
+      [
+        5868091,
+        "Real Betis",
+        "Formazioni CDA Navalcarnero - Betis Siviglia: Coppa del Re Calcio"
+      ],
+      [
+        5868100,
+        "Villarreal",
+        "Real Madrid-Villarreal LIVE! Cronaca e aggiornamenti in tempo reale della sfida valevole per l'8ª giornata de La Liga 2026/2027 delle ore 21:00"
+      ]
+    ],
+    "added": [
+      [
+        5749699,
+        "Torino",
+        "Torino, minutaggi in Nazionale: granata in top cinque in Serie A"
+      ],
+      [
+        5749699,
+        "Torino",
+        "Torino-Juventus, oltre 20 misure cautelari fra i tifosi di entrambi i club"
+      ]
+    ],
+    "order_changed_sides": 0
+  },
+  "mini_audit_after": {
+    "counts": {
+      "prematch_pages": 63,
+      "news_pages": 63,
+      "windows_ended": 5,
+      "sides": 126,
+      "examined": 1522,
+      "published": 32,
+      "reserve": 3,
+      "empty_sides": 108,
+      "windows_open": 58
+    },
+    "checks": 987,
+    "errors": [],
+    "defects": 0
+  },
+  "new_tests": 54,
+  "targeted_tests_passed": 153,
+  "full_gates": {
+    "tests_passed": 850,
+    "ruff": "passed",
+    "build": {
+      "matches": 498,
+      "fixtures": 2364,
+      "players": 7594
+    },
+    "verify_site": {
+      "checks": 241464,
+      "problems": 0
+    },
+    "vita_audit": {
+      "checks": 987,
+      "defects": 0
+    },
+    "mercato_audit": {
+      "checks": 1008,
+      "defects": 0
+    },
+    "panchina_defects": 0,
+    "clima": "passed",
+    "parity_pages": 63,
+    "mobile_checks": 28669,
+    "mobile_problems": 0,
+    "production_parquets_unchanged": true
+  },
+  "previous_sections_unchanged": {
+    "mercato_identiche": 63,
+    "panchina_identiche": 63
+  },
+  "full_audit_after": {
+    "counts": {
+      "prematch_pages": 63,
+      "news_pages": 63,
+      "windows_ended": 5,
+      "sides": 126,
+      "examined": 1522,
+      "published": 32,
+      "reserve": 3,
+      "empty_sides": 108,
+      "windows_open": 58
+    },
+    "checks": 987,
+    "errors": [],
+    "defects": 0
+  },
+  "code_commit": "5e45f35",
+  "ci_success_runs": [
+    38307602678,
+    38307597677
+  ]
+}

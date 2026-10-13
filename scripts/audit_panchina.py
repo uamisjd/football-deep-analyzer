@@ -13,6 +13,8 @@ Uso: ``.venv/bin/python scripts/audit_panchina.py`` (dopo ``fda build``).
 
 from __future__ import annotations
 
+import argparse
+import json
 import re
 import sys
 from collections import Counter
@@ -24,6 +26,7 @@ import pandas as pd
 
 from fda.config import load_leagues_config
 from fda.models.season_sim import mc_percent_str
+from fda.site.panchina_checks import monte_carlo_findings, safety_findings
 
 ROOT = Path(__file__).resolve().parents[1]
 SITE = ROOT / "site" / "partite"
@@ -80,18 +83,24 @@ def posizione_virtuale(tab: pd.DataFrame, tid: int, opp_id: int, pts: int, gd: i
     return sopra + 1
 
 
-def main() -> int:
-    """Censimento e ricalcoli; stampa solo riepiloghi."""
-    if not SITE.exists():
+def main(argv: list[str] | None = None) -> int:
+    """Censimento e ricalcoli; exit 1 su difetti, anche sulle copie usate nei kill-test."""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--site", type=Path, default=SITE, help="Cartella delle schede partita")
+    parser.add_argument("--data", type=Path, default=DATA, help="Cartella dei Parquet")
+    parser.add_argument("--json", type=Path, help="Salva il riepilogo della misura")
+    args = parser.parse_args(argv)
+    site, data = args.site, args.data
+    if not site.exists():
         print("nessuna site/partite: esegui prima `fda build`")
         return 1
     from fda.config import leagues
     from fda.teams import canonical as canon
-    fx = pd.read_parquet(DATA / "fixtures.parquet")
-    lu = pd.read_parquet(DATA / "lineup.parquet")
-    st = pd.read_parquet(DATA / "fotmob_standings.parquet")
-    sim = pd.read_parquet(DATA / "season_sim.parquet")
-    mi = pd.read_parquet(DATA / "match_info.parquet")
+    fx = pd.read_parquet(data / "fixtures.parquet")
+    lu = pd.read_parquet(data / "lineup.parquet")
+    st = pd.read_parquet(data / "fotmob_standings.parquet")
+    sim = pd.read_parquet(data / "season_sim.parquet")
+    mi = pd.read_parquet(data / "match_info.parquet")
     chiave = {lg.fotmob_id: lg.key for lg in leagues()}
     posti = {lg.key: lg.ucl_spots for lg in leagues()}
     fx["ko"] = pd.to_datetime(fx.utc_kickoff, utc=True, errors="coerce")
@@ -102,7 +111,7 @@ def main() -> int:
     # `scripts/backfill_fotmob.py`, docs/80): serve **soltanto** al ricalcolo degli incroci in
     # panchina, che con la sola stagione in corso non hanno nulla da contare. Permanenza,
     # rendimento, precedenti ed età restano letti dalla stagione in corso, come il generatore.
-    sto_path = DATA / "match_storico.parquet"
+    sto_path = data / "match_storico.parquet"
     sto = pd.read_parquet(sto_path) if sto_path.exists() else pd.DataFrame()
     if not sto.empty:
         sto["ko"] = pd.to_datetime(sto.utc_kickoff, utc=True, errors="coerce")
@@ -124,12 +133,13 @@ def main() -> int:
     errori: dict[str, list[str]] = {"tenure": [], "ppg": [], "table": [], "virtuale": [],
                                     "etichetta": [], "eta": [], "nome_coach": [], "nazione": [],
                                     "precedenti": [], "incroci": [], "gol": [], "stima": [],
-                                    "tooltip": []}
+                                    "tooltip": [], "salvezza": [], "precisione_mc": []}
     precedenti: list[tuple[str, int, int]] = []
     etichette: Counter[str] = Counter()
     posizioni: dict[str, list[int]] = {}
 
-    for pg in sorted(SITE.glob("*.html")):
+    pre_ids = []
+    for pg in sorted(site.glob("*.html")):
         html = pg.read_text(encoding="utf-8")
         pre = "Analisi pre-partita" in html
         agg["pagine_totali"] += 1
@@ -137,9 +147,11 @@ def main() -> int:
         m = CARD.search(html)
         if not m:
             agg["card_assente"] += 1
+            agg["card_assente_pre"] += int(pre)
             continue
         agg["card_presente"] += 1
         mid = int(pg.stem)
+        pre_ids.append(mid)
         fr = fx[fx.match_id == mid]
         if fr.empty:
             agg["match_non_in_calendario"] += 1
@@ -178,10 +190,16 @@ def main() -> int:
             # trasparenza (`docs/78` §12): il tooltip spiega i numeri, la loro precisione e
             # le soglie delle etichette; ogni cella con la riga dei numeri deve averlo
             if "titolo " in c_st:      # la riga dei numeri c'è: il tooltip deve esserci
-                if "errore standard fino a 0,5 punti percentuali" in st_raw[lato]:
-                    agg["tooltip_posta_in_gioco"] += 1
-                else:
-                    errori["tooltip"].append(f"{pg.stem}|{tname}| tooltip assente")
+                sim_row = sim[sim.team.map(canon) == canon(tname)]
+                mc_issues = monte_carlo_findings(
+                    st_raw[lato], sim_row.iloc[0].get("n_sims") if not sim_row.empty else None)
+                agg["tooltip_posta_in_gioco"] += int(not mc_issues)
+                errori["precisione_mc"].extend(f"{pg.stem}|{tname}| {msg}" for msg in mc_issues)
+            # Semantica indipendente, anche se manca la panchina: il rango decide se è
+            # salva; a pari punti non si cambia zona. Non riusa i rami di bench_deep.
+            table_check = st[st.league_code == fr.lg].drop_duplicates("team_id")
+            safety_issues = safety_findings(c_st, table_check, tid)
+            errori["salvezza"].extend(f"{pg.stem}|{tname}| {msg}" for msg in safety_issues)
 
             # ---- allenatore: permanenza e rendimento, ricalcolati dal calendario ----
             ct = co[(co.team_id == tid) & (co.ko <= kickoff)].sort_values("ko", kind="stable")
@@ -398,10 +416,13 @@ def main() -> int:
                 marg = pts - int(by.loc[releg, "points"])
                 pezzi.append(f"{marg} punt{'o' if marg == 1 else 'i'} sopra la zona retrocessione"
                              if marg > 0 else "a pari punti con la zona retrocessione")
-            elif releg - 1 in by.index:
-                need = int(by.loc[releg - 1, "points"]) - pts
-                pezzi.append(f"{need} punt{'o' if need == 1 else 'i'} dalla salvezza diretta"
-                             if need > 0 else "in zona salvezza diretta")
+            elif rank >= releg:
+                safe = n - 3 if n in (18, 20) else releg - 1
+                if safe in by.index:
+                    need = int(by.loc[safe, "points"]) - pts
+                    pezzi.append(f"{need} punt{'o' if need == 1 else 'i'} dalla salvezza diretta"
+                                 if need > 0 else f"a pari punti con il {safe}º posto (salvezza diretta)"
+                                 if need == 0 else "in zona retrocessione diretta")
             ucl = posti.get(fr.lg)
             if ucl is not None and ucl in by.index:
                 if rank <= ucl:
@@ -461,10 +482,23 @@ def main() -> int:
     if precedenti:
         d = pd.DataFrame(precedenti, columns=["cella", "vs_avv", "vs_all"])
         print(d[["vs_avv", "vs_all"]].value_counts().to_string())
-    print("\n=== copertura per lega (pagine) ===")
-    for k, v in fx[fx.match_id.isin([int(p.stem) for p in SITE.glob("*.html")])].lg.value_counts().items():
+    print("\n=== copertura per lega (schede pre-partita) ===")
+    for k, v in fx[fx.match_id.isin(pre_ids)].lg.value_counts().items():
         print(k, v)
-    return 0
+    defects = sum(map(len, errori.values())) + sum(map(len, silenzi.values()))
+    defects += sum(v for k, v in agg.items() if k.startswith("celle_male::") or k in {
+        "card_assente_pre", "match_non_in_calendario", "pagine_pre_con_calendario_finito",
+        "stakes_senza_simulazione",
+    })
+    if not pre_ids:
+        defects += 1  # nessuna scheda misurata non è una verifica riuscita
+    if args.json:
+        args.json.parent.mkdir(parents=True, exist_ok=True)
+        args.json.write_text(json.dumps({"counts": {k: int(v) for k, v in agg.items()},
+                                        "errors": errori, "missing": silenzi,
+                                        "defects": int(defects)}, ensure_ascii=False, indent=2) + "\n")
+    print(f"\nDifetti: {defects}")
+    return 1 if defects else 0
 
 
 if __name__ == "__main__":

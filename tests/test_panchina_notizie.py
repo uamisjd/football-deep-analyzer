@@ -335,8 +335,11 @@ def test_bollettino_un_soggetto_per_categoria(tmp_path):
          "source": "S3", "description": ""},
     ])
     nw = MatchAnalysis(st).team_news(2, "Inter", KO("2026-09-15 12:00"))
-    assert nw["pertinenti"] == 2 and nw["scartate"] == 1
+    # Stessa persona non dimostra lo stesso evento: club e lega possono sanzionare
+    # separatamente. La seconda lettura resta consultabile, non viene cancellata.
+    assert nw["pertinenti"] == 3 and nw["correlate"] == 1 and nw["doppioni"] == 0
     assert "Calhanoglu" in nw["notizie"][0]["title"]
+    assert nw["notizie"][0]["related"]
     st.close()
 
 
@@ -388,7 +391,8 @@ def test_bollettino_rilevanza_per_questa_partita(tmp_path):
     titoli = [n["title"] for n in nw["notizie"]]
     # avversario citato (+5) contro altro club citato (−4): vince il primo
     assert titoli[0].startswith("Inter-Lazio")
-    punteggi = {n["title"]: n["punteggio"] for n in nw["notizie"] + nw["riserva"]}
+    esposte = nw["notizie"] + nw["riserva"]
+    punteggi = {n["title"]: n["punteggio"] for n in esposte + [r for n in esposte for r in n["related"]]}
     assert punteggi["Inter-Lazio, ricorso respinto: la multa resta"] > \
         punteggi["Inter, il Milan: ricorso sul tetto ingaggi"]
     st.close()
@@ -414,7 +418,8 @@ def test_bollettino_perche_conta_collega_la_notizia_ai_nostri_dati(tmp_path):
     an = MatchAnalysis(st)
     nw = an.team_news(2, "Inter", KO("2026-09-15 12:00"), squad=an.match_squad(4, 2),
                       coach="Coach Nuovo")
-    voce = next(n for n in nw["notizie"] if "Marco" in n["title"])
+    esposte = nw["notizie"] + nw["riserva"]
+    voce = next(n for n in esposte + [r for n in esposte for r in n["related"]] if "Marco" in n["title"])
     assert voce["why"].startswith("«Marco Ferrante» è nella lista indisponibili")
     coach_voce = next(n for n in nw["notizie"] if "Coach Nuovo" in n["title"])
     assert "allenatore" in coach_voce["why"]
@@ -1257,8 +1262,8 @@ def test_riga_unica_quando_nessuna_squadra_ha_titoli_pubblicabili():
         _bollettino(esaminate=7, scartate=6, lingua=1),
         "Roma", "Inter")
     assert quieta is not None
-    assert quieta["riga"].startswith("Nessun titolo pubblicabile su Roma e Inter negli ultimi 7 giorni")
-    assert "27 titoli esaminati e scartati con criterio" in quieta["riga"]
+    assert quieta["riga"].startswith("Nessun titolo selezionato su Roma e Inter nella finestra pre-partita di 7 giorni")
+    assert "27 voci esaminate, escluse dai filtri" in quieta["riga"]
     assert "18 servizio o cronaca" in quieta["riga"]      # 12 + 6
     assert "5 annunci o logistica" in quieta["riga"]
     assert "1 in un'altra lingua" in quieta["riga"]
@@ -1277,7 +1282,7 @@ def test_riga_unica_non_scatta_se_una_squadra_ha_qualcosa():
 def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
     """Nessun titolo in finestra: la riga dice anche quanti ne sono stati guardati oltre."""
     quieta = news_quiet_line(_bollettino(vecchie=2), _bollettino(vecchie=1), "Roma", "Inter")
-    assert "Nessun titolo in lingua italiana raccolto su Roma e Inter negli ultimi 7 giorni" \
+    assert "Nessuna voce raccolta su Roma e Inter nella finestra pre-partita di 7 giorni" \
         in quieta["riga"]
     assert "3 titoli più vecchi oltre la finestra" in quieta["riga"]
 
@@ -1285,7 +1290,7 @@ def test_riga_unica_senza_titoli_raccolti_dichiara_i_vecchi():
     assert "1 titolo più vecchio oltre la finestra" in solo_uno["riga"]
 
     niente = news_quiet_line(_bollettino(), _bollettino(), "Roma", "Inter")
-    assert niente["riga"].endswith("negli ultimi 7 giorni.")
+    assert niente["riga"].endswith("nella finestra pre-partita di 7 giorni.")
 
 
 # ---- card «Fattori»: i due fattori aggiunti il 2026-10-08 (docs/58 §3-§4) ----------------------

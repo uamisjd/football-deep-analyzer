@@ -32,8 +32,8 @@ from .predict import (
 log = logging.getLogger(__name__)
 
 # Quante squadre sono a rischio retrocessione per lega (posti "rossi": dirette + playoff).
-# NED1: 2 dirette + 1 playoff · FRA1: 2 dirette + 1 barrage · POR1: 2 dirette + 1 playoff (16ª)
-# → tutte a 3; le altre big-5 a 3 dirette. Nota esplicita sul sito.
+# GER1, FRA1, NED1, POR1: 2 dirette + 1 spareggio (16ª); ITA1, ESP1, ENG1: 3 dirette.
+# → tutte a 3. La 16ª nei campionati a 18 non è salvezza diretta (docs/94).
 REL_COUNTS: dict[str, int] = {
     "ITA1": 3, "ESP1": 3, "ENG1": 3, "GER1": 3,
     "FRA1": 3, "NED1": 3, "POR1": 3,

@@ -245,7 +245,8 @@ def test_transfer_window_ordina_per_importo_pubblicato(tmp_path):
     assert mk["arrivals"][0]["fee"] == "30 M€"
     assert mk["arrivals"][1]["fee"] == "importo non noto"     # mai un numero inventato
     assert mk["arrivals"][3]["fee"] == "gratuito"
-    assert mk["importi_noti"] == 1 and mk["importi_mancanti"] == 3
+    assert mk["importi_noti"] == 1 and mk["importi_mancanti"] == 1
+    assert mk["gratuiti"] == 1 and mk["prestiti_senza_importo"] == 1
     assert mk["spesa"] == 30000000.0 and mk["saldo"] == 30000000.0
     st.close()
 
@@ -322,7 +323,8 @@ def test_arrivi_gia_in_distinta(tmp_path):
     an = MatchAnalysis(st)
     mk = an.transfer_window(1, match_id=4)
     assert [p["name"] for p in mk["in_campo"]] == ["Nuovo Acquisto"]
-    assert mk["in_campo"][0]["status"] == "titolare"
+    assert mk["in_campo"][0]["status"] == "titolare nella distinta raccolta"
+    assert mk["lineup_origin"] == "unknown"   # il test non fornisce un tipo di distinta
     assert an.transfer_window(1, match_id=99)["in_campo"] == []   # nessuna distinta → nessuna riga
     st.close()
 

@@ -50,6 +50,8 @@ from .advanced import (
     wp_path,
     xg_race,
 )
+from .club_news import title_exclusion, whole_phrase
+from .club_signals import club_signal
 from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_int, pct_triple
 from .laboratorio import laboratorio as whatif_laboratorio
 from .rates import (
@@ -390,7 +392,9 @@ def _no_news() -> dict[str, Any]:
     return {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0, "scartate": 0,
             "oltre": 0, "annunci": 0, "piatti": 0, "altre": 0, "doppioni": 0,
             "vecchie": 0, "pertinenti": 0, "lingua": 0,
-            "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0, "bassa_reputazione": 0}
+            "finestra": 0, "limite": 0, "categoria_limite": 0, "riserva_limite": 0, "bassa_reputazione": 0,
+            "fuori_ambito": 0, "oltre_categoria": 0, "oltre_capienza": 0,
+            "senza_segnale": 0, "correlate": 0}
 
 
 #: Voci dell'imbuto della card «Vita del club» che entrano nella riga unica quando non c'è
@@ -403,10 +407,12 @@ NEWS_FUNNEL_ORDER: tuple[tuple[str, str], ...] = (
     ("lingua", "in un'altra lingua"),
     ("bassa_reputazione", "fonte a bassa reputazione"),
     ("annunci", "annunci o logistica"),
-    ("piatti", "non spostano nulla"),
+    ("piatti", "senza un fatto specifico nel titolo"),
+    ("fuori_ambito", "fuori ambito prima squadra"),
+    ("senza_segnale", "senza evento o analisi espliciti"),
     ("altre", "su un'altra squadra"),
     ("doppioni", "già raccontati da un'altra voce"),
-    ("oltre", "oltre il limite dei tre"),
+    ("oltre", "oltre i limiti di esposizione"),
 )
 
 
@@ -445,7 +451,7 @@ def news_quiet_line(home: dict[str, Any], away: dict[str, Any], home_name: str,
     giorni = it_plural(finestra, "giorno")
     squadre = f"{home_name} e {away_name}"
     if not esaminate:
-        riga = f"Nessun titolo in lingua italiana raccolto su {squadre} negli ultimi {giorni}"
+        riga = f"Nessuna voce raccolta su {squadre} nella finestra pre-partita di {giorni}"
         if vecchie:
             riga += (f" ({it_plural(vecchie, 'titolo più vecchio', 'titoli più vecchi')} oltre la "
                      "finestra: guardati e lasciati fuori)")
@@ -453,10 +459,10 @@ def news_quiet_line(home: dict[str, Any], away: dict[str, Any], home_name: str,
     else:
         motivi = [f"{_somma(chiave)} {etichetta}" for chiave, etichetta in NEWS_FUNNEL_ORDER
                   if _somma(chiave)]
-        esam = it_plural(esaminate, "titolo esaminato", "titoli esaminati")
-        scartati = "scartato" if esaminate == 1 else "scartati"
-        riga = (f"Nessun titolo pubblicabile su {squadre} negli ultimi {giorni}: {esam} e "
-                f"{scartati} con criterio — {' · '.join(motivi)}")
+        esam = it_plural(esaminate, "voce esaminata", "voci esaminate")
+        scartati = "esclusa" if esaminate == 1 else "escluse"
+        riga = (f"Nessun titolo selezionato su {squadre} nella finestra pre-partita di {giorni}: {esam}, "
+                f"{scartati} dai filtri — {' · '.join(motivi)}")
         if vecchie:
             riga += f" · {it_plural(vecchie, 'troppo vecchio', 'troppo vecchi')}"
         riga += "."
@@ -1915,7 +1921,27 @@ class MatchAnalysis:
         # «63%»: 4 numeri diversi fra le due pagine nella build del 2026-10-11
         # (`docs/78` §12).
         p_e_pct = None if p_e is None else mc_percent_str(p_e)
+        # La CLI consente numerosità diverse dal default. Non dichiarare sempre 10.000
+        # né un SE di 0,5 pp: il massimo MC è 50/√N pp, distinto dall'incertezza del modello.
+        raw_ns = r.get("n_sims")
+        try:
+            ns = float(raw_ns)
+        except (TypeError, ValueError):
+            ns = float("nan")
+        n_sims = (int(ns) if math.isfinite(ns) and ns > 0 and ns.is_integer()
+                  and not isinstance(raw_ns, (bool, np.bool_)) else None)
+        if n_sims is not None:
+            # Arrotondare verso l'alto: con 9.000 estrazioni il massimo è 0,527…,
+            # quindi «fino a 0,5» prometterebbe una precisione che non abbiamo.
+            se_max_pp = math.ceil(500 / math.sqrt(n_sims)) / 10
+            n_text = f"{n_sims:,}".replace(",", ".")
+            mc_line = (f"{n_text} simulazioni Monte Carlo del resto del campionato: "
+                       f"errore standard fino a {_dec1(se_max_pp)} punti percentuali")
+        else:
+            mc_line = ("simulazioni Monte Carlo del resto del campionato: numerosità non dichiarata, "
+                       "precisione non quantificabile")
         return {"p_title": p_t, "p_top_n": p_e, "p_top4": p_e, "p_rel": p_r,
+                "n_sims": n_sims, "mc_precision_line": mc_line,
                 "ucl_spots": top_n, "ucl_legacy": legacy_top,
                 "p_title_pct": mc_percent_str(p_t),
                 "p_top_n_pct": p_e_pct, "p_top4_pct": p_e_pct,
@@ -1996,9 +2022,10 @@ class MatchAnalysis:
           sempre **prima** di questa partita. Il bilancio fra i due **club** sta nella card
           «Precedenti» e non viene mai attribuito all'allenatore;
         - **posta in gioco di classifica**: distacco reale dalla zona retrocessione
-          (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18) e dal 4º posto
-          (linea Europa minima in tutte e 7 le leghe), dalla classifica FotMob viva;
-        - **cosa succede**: posizione virtuale in caso di vittoria/sconfitta, per punti e
+          (retrocessioni dirette: 18ª posizione su 20 squadre, 17ª su 18), dalla salvezza
+          diretta (17ª su 20, 15ª su 18 con spareggio) e dall'ultimo posto UCL configurato,
+          dalla classifica FotMob viva; pari punti non cambia la zona del rango;
+        - **cosa succede**: posizione virtuale in caso di vittoria/pareggio/sconfitta, per punti e
           differenza reti con le altre partite in sospeso (etichettato «virtuale»);
         - **probabilità di stagione** da ``season_sim`` (Monte Carlo) come prima.
         """
@@ -2209,15 +2236,24 @@ class MatchAnalysis:
             if n_teams >= 4 and st.get("points") is not None and not pd.isna(st["points"]):
                 pts, gd, rank = int(st["points"]), int(st.get("goal_diff") or 0), int(st["rank"])
                 releg_start = n_teams - 2 if n_teams == 20 else n_teams - 1
+                last_safe = releg_start - 1
+                if n_teams == 18 and code in {"GER1", "FRA1", "NED1", "POR1"}:
+                    last_safe -= 1  # il 16º è lo spareggio, il 15º l'ultima salvezza diretta
                 by_rank = tab.set_index("rank")
                 if releg_start in by_rank.index and rank < releg_start:
                     marg = pts - int(by_rank.loc[releg_start, "points"])
                     gap_rel = (f"{marg} {'punto' if marg == 1 else 'punti'} sopra la zona "
                                f"retrocessione" if marg > 0 else "a pari punti con la zona retrocessione")
-                elif releg_start - 1 in by_rank.index:
-                    need = int(by_rank.loc[releg_start - 1, "points"]) - pts
-                    gap_rel = (f"{need} {'punto' if need == 1 else 'punti'} dalla salvezza diretta"
-                               if need > 0 else "in zona salvezza diretta")
+                elif rank >= releg_start and last_safe in by_rank.index:
+                    need = int(by_rank.loc[last_safe, "points"]) - pts
+                    if need > 0:
+                        gap_rel = f"{need} {'punto' if need == 1 else 'punti'} dalla salvezza diretta"
+                    elif need == 0:
+                        # Il rango resta in zona retrocessione: pari punti non significa salva.
+                        gap_rel = f"a pari punti con il {last_safe}º posto (salvezza diretta)"
+                    else:
+                        # Classifica non monotona per punti: non inventare una distanza o salvezza.
+                        gap_rel = "in zona retrocessione diretta"
                 else:
                     gap_rel = None
                 ucl_n = self.ucl_spots(code)
@@ -3492,7 +3528,8 @@ class MatchAnalysis:
                   squad: list[dict[str, Any]] | None = None,
                   seen: set[str] | None = None,
                   opponent: str | None = None,
-                  coach: str | None = None) -> dict[str, Any]:
+                  coach: str | None = None, *, now: Any = None,
+                  lineup_type: str | None = None) -> dict[str, Any]:
         """Bollettino stampa della squadra: solo i fatti che possono spostare qualcosa.
 
         Rifatto in ``docs/24`` §3 e poi in §3.5 dopo il confronto con l'utente del
@@ -3503,7 +3540,7 @@ class MatchAnalysis:
 
         Regole (deterministiche e verificabili):
 
-        1. **finestra vera**: ``kickoff − 7 giorni ≤ data ≤ kickoff``, senza recupero. Una
+        1. **finestra vera**: ``kickoff − 7 giorni ≤ data ≤ min(kickoff, now)``, senza recupero. Una
            notizia di tre settimane prima non entra: l'utente l'ha rifiutata due volte. Le
            righe più vecchie della finestra si **contano** (``vecchie``), così la card può
            dichiararle invece di far credere di non averle viste;
@@ -3528,30 +3565,43 @@ class MatchAnalysis:
         8. **dedup**: per titolo normalizzato, con l'insieme condiviso fra le due squadre
            della stessa partita, così lo stesso pezzo non compare due volte in pagina.
 
-        Ritorna le voci e i conteggi dell'imbuto (esaminate, pubblicate, annunci, servizio o
-        cronaca, non spostano nulla, troppo vecchi, oltre il limite, in riserva).
+        Docs/96: ordine deterministico delle versioni ammissibili, copie/soggetti duplicati
+        conteggiati come tali, limiti di categoria e capienza distinti. Ogni voce esaminata
+        ha un solo esito: pubblicata, in riserva o esclusa. Le vecchie restano fuori dal totale.
+        Le date assolute e lo stato della finestra impediscono di chiamare «quiete» una
+        rassegna ancora futura o incompleta. I filtri editoriali non certificano l'impatto.
         """
         days = self.NEWS_WINDOW_DAYS if days is None else days
         limit = self.NEWS_LIMIT if limit is None else limit
         out: dict[str, Any] = {"notizie": [], "riserva": [], "esaminate": 0, "pubblicate": 0,
                                "scartate": 0, "oltre": 0, "annunci": 0, "piatti": 0,
                                "altre": 0, "doppioni": 0, "vecchie": 0, "pertinenti": 0,
-                               "lingua": 0, "bassa_reputazione": 0,
+                               "lingua": 0, "bassa_reputazione": 0, "fuori_ambito": 0,
+                               "oltre_categoria": 0, "oltre_capienza": 0, "senza_segnale": 0, "correlate": 0,
                                "finestra": days, "limite": limit,
                                "categoria_limite": self.NEWS_CATEGORY_LIMIT,
                                "riserva_limite": self.NEWS_RESERVE_LIMIT}
+        ko = pd.to_datetime(kickoff, utc=True)
+        as_of = pd.to_datetime(now, utc=True) if now is not None else pd.Timestamp.now(tz="UTC")
+        start = ko - pd.Timedelta(days=days)
+        out.update(window_start=start, window_end=ko, as_of=as_of,
+                   window_state="future" if as_of < start else "open" if as_of < ko else "ended")
         if self.news_df.empty:
             return out
-        ko = pd.Timestamp(kickoff)
-        pa = pd.to_datetime(self.news_df.published_at, utc=True)
+        pa = pd.to_datetime(self.news_df.published_at, utc=True, errors="coerce")
         miei = self.news_df.team_id == team_id
-        df = self.news_df[miei & (pa >= ko - pd.Timedelta(days=days)) & (pa <= ko)]
+        df = self.news_df[miei & (pa >= start) & (pa <= min(ko, as_of))].copy()
+        # Rappresentante deterministico della versione pubblicata: la copia più recente
+        # non è un nuovo fatto. A pari data usiamo fonte/URL/titolo/brano, mai l'ordine fisico.
+        df["published_at"] = pa.loc[df.index]
+        df = df.sort_values(["published_at", "source", "url", "title", "description"],
+                            ascending=[False, True, True, True, True], kind="stable")
         out["esaminate"] = len(df)
         # le righe più vecchie della finestra non si pubblicano ma si contano (fino a un
         # orizzonte utile): la card dice quante ne ha lasciate indietro, e il lettore sa che
         # non è che non le abbiamo viste
         fuori = self.news_df[miei & (pa >= ko - pd.Timedelta(days=self.NEWS_OLD_HORIZON_DAYS))
-                             & (pa < ko - pd.Timedelta(days=days))]
+                             & (pa < start) & (pa <= as_of)]
         out["vecchie"] = len(fuori)
         tokens = self.team_tokens(team_name)
         avversario = self.team_tokens(opponent or "")
@@ -3584,35 +3634,31 @@ class MatchAnalysis:
                 for nm in pd.concat([self.fixtures.home_name, self.fixtures.away_name]).dropna():
                     self._club_tokens |= self.team_tokens(str(nm))
 
-        def soggetti(title: str) -> set[str]:
-            """Soggetto della notizia (vedi :func:`news_subjects`).
-
-            Fra i nomi esclusi ci sono quelli dei club — tutti, non solo i due di questa
-            partita: «Inter» apre qualunque titolo della colonna di Inter e non distingue
-            una notizia dall'altra.
-            """
-            return news_subjects(title, set(self._club_tokens or ()) | tokens)
-
         def subject_ok(title: str) -> bool:
             key = soft_key(title or "")
-            if tokens and any(t in key for t in tokens):
+            if tokens and any(whole_phrase(key, t) for t in tokens):
                 return True
             low = (title or "").lower()
-            return any(nm in low for nm in entities if len(nm) >= 5)
+            return any(whole_phrase(low, nm) for nm in entities if len(nm) >= 5)
 
         def nota(title: str) -> str:
             """Collegamento con i nostri dati: a chi si riferisce la notizia, e come stava."""
             low = (title or "").lower()
             for nm, status in sorted(entities.items(), key=lambda kv: -len(kv[0])):
-                if len(nm) < 5 or nm not in low:
+                if len(nm) < 5 or not whole_phrase(low, nm):
                     continue
                 nome = nm if nm[0].isupper() else nm.title()
                 if status == "unavailable":
                     return f"«{nome}» è nella lista indisponibili di FotMob per questa gara"
-                if status == "starter":
-                    return f"«{nome}» è in distinta come titolare: la notizia può essere più fresca del dato"
-                if status == "sub":
-                    return f"«{nome}» è in distinta fra i giocatori a disposizione"
+                if status in {"starter", "sub"}:
+                    role = "titolare" if status == "starter" else "a disposizione"
+                    if lineup_type in {"confirmed", "official"}:
+                        return f"«{nome}» compare come {role} nella distinta ufficiale raccolta"
+                    if lineup_type in {"predicted", "probable"}:
+                        return f"«{nome}» compare come {role} nella formazione prevista, non confermata"
+                    if lineup_type == "lastStarting11":
+                        return f"«{nome}» compare come {role} nell’ultima distinta disponibile, non in quella di questa gara"
+                    return f"«{nome}» compare come {role} nella distinta raccolta; tipo non dichiarato"
                 if status == "coach":
                     return f"«{nome}» è l'allenatore di questa squadra"
                 return ""
@@ -3628,16 +3674,22 @@ class MatchAnalysis:
             altro club: la voce non riguarda questa gara e si conta a parte.
             """
             key = soft_key(title or "")
-            if avversario and any(t in key for t in avversario):
+            prefix = soft_key(re.split(r"[,：:]", title, maxsplit=1)[0])
+            if prefix != key and not any(whole_phrase(prefix, t) for t in tokens):
+                owner = next((t for t in sorted(self._club_tokens or ())
+                              if len(t) >= 5 and t not in tokens and whole_phrase(prefix, t)), None)
+                if owner:
+                    return owner
+            if avversario and any(whole_phrase(key, t) for t in avversario):
                 return None
             if coach and soft_key(str(coach)) in key:
                 return None
-            if any(soft_key(str(nm)) in key for nm in entities if len(nm) >= 5):
+            if any(whole_phrase(key, soft_key(str(nm))) for nm in entities if len(nm) >= 5):
                 return None
-            if any(t in key for t in tokens if len(t) >= 5):
+            if any(whole_phrase(key, t) for t in tokens if len(t) >= 5):
                 return None
             for c in sorted(self._club_tokens or ()):
-                if len(c) >= 5 and c not in tokens and c not in avversario and c in key:
+                if len(c) >= 5 and c not in tokens and c not in avversario and whole_phrase(key, c):
                     return c
             return None
 
@@ -3651,29 +3703,30 @@ class MatchAnalysis:
             key = soft_key(title or "")
             low = (title or "").lower()
             p = 0.0
-            if avversario and any(t in key for t in avversario):
+            if avversario and any(whole_phrase(key, t) for t in avversario):
                 p += 5
             if re.search(r"previa|ante el |ante la |jornada \d|vigilia|vespera|preview|"
                          r"vorbericht|avant-?match|voorbeschouwing|pr[eé]via|partidazo",
                          title or "", re.IGNORECASE):
                 p += 5
             if coach and (soft_key(str(coach)) in key or str(coach).lower() in low
-                          or any(len(t) >= 5 and t in key
+                          or any(len(t) >= 5 and whole_phrase(key, t)
                                  for t in soft_key(str(coach)).split())):
                 p += 4
-            if any(nm in low for nm in entities if len(nm) >= 5):
+            if any(whole_phrase(low, nm) for nm in entities if len(nm) >= 5):
                 p += 3
-            if tokens and any(t in key for t in tokens):
+            if tokens and any(whole_phrase(key, t) for t in tokens):
                 p += 2
             altri = {c for c in (self._club_tokens or ())
                      if len(c) >= 5 and c not in tokens and c not in avversario}
-            if any(c in key for c in altri):
+            if any(whole_phrase(key, c) for c in altri):
                 p -= 4
             return p
 
         rows = [r._asdict() for r in df.itertuples(index=False)]
         visti: set[str] = seen if seen is not None else set()
         scelte: list[dict[str, Any]] = []
+        local_titles: set[str] = set()
         for r in rows:
             title = str(r.get("title") or "").strip()
             key = news_title_key(title)
@@ -3688,28 +3741,40 @@ class MatchAnalysis:
             if is_low_reputation(r.get("source")):
                 out["bassa_reputazione"] += 1
                 continue
-            topic, _evidence = classify_news(title, r.get("description"), r.get("source"))
-            if topic is None:
-                out["scartate"] += 1
-                continue
-            if not key or key in visti or not subject_ok(title):
-                out["scartate"] += 1
-                continue
-            if topic in self.NEWS_ALTROVE:
-                # infortuni, squalifiche e mercato hanno già la loro card in questa pagina:
-                # ripeterli qui era una delle cose che l'utente non voleva più leggere
-                out["scartate"] += 1
-                continue
-            motivo = news_value(title, r.get("description"), r.get("source"))
-            if motivo is not None:
-                out["annunci" if motivo == "annuncio" else "piatti"] += 1
-                continue
             if altra_squadra(title):
                 out["altre"] += 1
                 continue
-            # la chiave entra subito nell'insieme condiviso: il feed ripubblica lo stesso
-            # articolo con data aggiornata (misurato: 231 coppie (squadra, url) con più righe)
-            visti.add(key)
+            signal = club_signal(title)
+            if signal is None:
+                # Vecchi filtri solo per spiegare l'esclusione; non possono autorizzare
+                # la pubblicazione in assenza di segnale positivo.
+                exclusion = title_exclusion(title)
+                old_topic = classify_news(title, r.get("description"), r.get("source"))[0]
+                old_reason = news_value(title, r.get("description"), r.get("source"))
+                if exclusion:
+                    out[exclusion] += 1
+                elif old_topic is None or old_topic in self.NEWS_ALTROVE:
+                    out["scartate"] += 1
+                elif old_reason:
+                    out["annunci" if old_reason == "annuncio" else "piatti"] += 1
+                else:
+                    out["senza_segnale"] += 1
+                continue
+            topic = signal.topic
+            if not key or not subject_ok(title):
+                out["scartate"] += 1
+                continue
+            if key in visti:
+                out["doppioni"] += 1
+                continue
+            # Solo candidati idonei prenotano il titolo: una copia più recente ma
+            # fuori lingua/a bassa reputazione non cancella la versione ammissibile.
+            if key in local_titles:
+                out["doppioni"] += 1
+                continue
+            local_titles.add(key)
+            # L'insieme condiviso riceve solo ciò che verrà esposto: una candidatura
+            # scartata in questa colonna non deve censurare la colonna avversaria.
             branch = self._news_branch(r)
             # «sintesi» solo se aggiunge qualcosa al titolo: per Google News il brano È il
             # titolo con la testata appiccicata, e ripeterlo era il difetto della vecchia card
@@ -3726,64 +3791,46 @@ class MatchAnalysis:
                            "url": str(r.get("url") or ""), "published_at": published,
                            "topic": topic, "topic_label": TOPIC_LABELS.get(topic, topic),
                            "sintesi": sintesi, "why": nota(title), "ore": ore,
-                           "punteggio": punteggio, "_key": key})
-
-        def un_soggetto(voci: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            """Una voce per categoria e soggetto, nell'ordine in cui arrivano.
-
-            Due voci della stessa categoria sullo stesso nome proprio sono lo stesso fatto
-            raccontato due volte. Il filtro va applicato **dopo** l'ordinamento per
-            (punteggio, data): le righe del Parquet arrivano in ordine di data crescente e
-            filtrando in lettura restava la voce più vecchia.
-            """
-            tenute: list[dict[str, Any]] = []
-            visti_sog: dict[str, set[str]] = {}
-            for v in voci:
-                sog = soggetti(v["title"])
-                if sog and sog & visti_sog.get(v["topic"], set()):
-                    continue
-                visti_sog.setdefault(v["topic"], set()).update(sog)
-                tenute.append(v)
-            return tenute
-
-        def un_evento(voci: list[dict[str, Any]]) -> list[dict[str, Any]]:
-            """Un fatto per evento, anche fra categorie diverse (docs/24 §3, regola 8).
-
-            `un_soggetto` guarda dentro la stessa categoria; ma lo stesso episodio può
-            arrivare con due categorie diverse — misurato il 2026-09-17 sui titoli della
-            seconda edizione: per il Betis la difesa di Pellegrini su Abde compariva due
-            volte, come «Dichiarazioni» e come «Club». Qui la chiave è la **persona di
-            questa partita** (allenatore o giocatore della distinta) nominata nel titolo:
-            se un fatto la nomina e un altro fatto tenuto la nomina già, è lo stesso
-            evento raccontato due volte e resta solo il primo (i fatti sono in ordine di
-            punteggio). Niente persone nel titolo = nessun vincolo.
-            """
-            tenute: list[dict[str, Any]] = []
-            gia: set[str] = set()
-            for v in voci:
-                low = str(v["title"]).lower()
-                persone = {nm for nm in entities if len(nm) >= 5 and nm in low}
-                if persone & gia:
-                    out["doppioni"] += 1
-                    continue
-                gia |= persone
-                tenute.append(v)
-            return tenute
+                           "punteggio": punteggio, "_key": key,
+                           "kind": signal.kind,
+                           "kind_label": "Evento segnalato" if signal.kind == "event" else "Analisi / dichiarazione",
+                           "signal_label": signal.label, "evidence": signal.evidence,
+                           "signal_family": signal.family, "related": []})
 
         scelte.sort(key=lambda v: (-v["punteggio"], -v["published_at"].value))
-        tenute = un_evento(un_soggetto(scelte))
-        out["scartate"] += len(scelte) - len(tenute) - out["doppioni"]
-        out["pertinenti"] = len(tenute)
+        # Stesso segnale specifico = letture sul tema, NON identità provata dell'evento.
+        # Tutti i titoli restano consultabili. Il solo nome di una persona non è dedup.
+        groups: dict[tuple[str, str], dict[str, Any]] = {}
+        tenute: list[dict[str, Any]] = []
+        for voce in scelte:
+            cue = re.sub(r"\bmultat[oaie]\b", "multa", soft_key(voce["evidence"]))
+            # Daspo e misure cautelari sono letture sul tema dei provvedimenti,
+            # non eventi indipendenti né conferme fra fonti: non si sommano i numeri.
+            grouping = (voce["signal_family"], "provvedimenti" if voce["signal_family"] == "supporters_orders" else cue)
+            if voce["kind"] == "event" and grouping in groups:
+                groups[grouping]["related"].append(voce)
+            else:
+                tenute.append(voce)
+                if voce["kind"] == "event":
+                    groups[grouping] = voce
+        out["pertinenti"] = len(scelte)
         # diversità: non più di due fatti della stessa categoria — il punteggio decide quali
         # due (prima i più freschi e più sostanziosi), e chi resta fuori si conta a parte
         pubblicabili: list[dict[str, Any]] = []
         per_categoria: dict[str, int] = {}
         for v in tenute:
             if per_categoria.get(v["topic"], 0) >= self.NEWS_CATEGORY_LIMIT:
-                out["oltre"] += 1
+                out["oltre_categoria"] += 1 + len(v["related"])
                 continue
             per_categoria[v["topic"]] = per_categoria.get(v["topic"], 0) + 1
             pubblicabili.append(v)
+        out["oltre_capienza"] = sum(1 + len(v["related"]) for v in pubblicabili[limit + self.NEWS_RESERVE_LIMIT:])
+        out["oltre"] = out["oltre_categoria"] + out["oltre_capienza"]
+        for v in pubblicabili[:limit + self.NEWS_RESERVE_LIMIT]:
+            visti.add(v["_key"])
+            for related in v["related"]:
+                visti.add(related.pop("_key"))
+            out["correlate"] += len(v["related"])
         for v in pubblicabili[:limit]:
             v.pop("_key", None)
             out["notizie"].append(v)
@@ -4190,8 +4237,8 @@ class MatchAnalysis:
         return f"{v:.0f} €"
 
     def transfer_window(self, team_id: int, match_id: int | None = None,
-                        n: int = 4) -> dict[str, Any] | None:
-        """Mercato della squadra **della finestra in corso**, come pubblicato da FotMob.
+                        n: int = 4, *, now: Any = None) -> dict[str, Any] | None:
+        """Ultimo gruppo di movimenti della squadra, ricavato dai dati FotMob.
 
         Rifatto in ``docs/24`` §4. La versione precedente pubblicava le 4 voci più recenti
         di tutta la tabella chiamandole «ultima finestra»: misurato sul sito del 2026-09-16,
@@ -4207,17 +4254,33 @@ class MatchAnalysis:
         pubblicano in forma leggibile (``12,5 M€``) e in italiano.
 
         Se la fonte non ha movimenti recenti la card **non sparisce**: dice da quando non
-        ne pubblica. Con ``match_id`` si aggiunge il collegamento con il campo: quali
-        arrivi sono già nella distinta di questa partita.
+        ne pubblica. ``now`` e, se noto, il kickoff delimitano le date prima della
+        deduplicazione; non sono timestamp di conoscenza storica della fonte.
+        Con ``match_id`` si incrociano **tutti** gli arrivi (``n`` è solo un limite grafico)
+        con la distinta raccolta, distinguendo ufficiale, prevista e ultima disponibile.
+        Gratuiti, prestiti senza cifra e dati non dichiarati sono categorie separate;
+        il saldo è parziale e non si calcola inventando lo zero di un lato ignoto.
         """
         out: dict[str, Any] = {"arrivals": [], "departures": [], "n_in": 0, "n_out": 0,
                                "window_start": "", "window_end": "", "stale": False,
                                "spesa": None, "incasso": None, "saldo": None,
                                "importi_noti": 0, "importi_mancanti": 0, "in_campo": [],
+                               "gratuiti": 0, "prestiti_senza_importo": 0,
+                               "lineup_origin": self.transfer_lineup_origin(match_id),
                                "ultimo": ""}
+        out["lineup_label"] = self.TRANSFER_LINEUP_LABELS[out["lineup_origin"]]
         if self.transfers.empty or "player_name" not in self.transfers.columns:
             return None
         df = self.transfers[self.transfers.team_id == team_id].copy()
+        cutoff = pd.to_datetime(now, utc=True) if now is not None else pd.Timestamp.now(tz="UTC")
+        if match_id is not None and not self.fixtures.empty:
+            match = self.fixtures[self.fixtures.match_id == match_id]
+            if not match.empty:
+                ko = pd.to_datetime(match.iloc[0].utc_kickoff, utc=True, errors="coerce")
+                if pd.notna(ko):
+                    cutoff = min(cutoff, ko)
+        # Prima della deduplica: una ripubblicazione futura non deve sostituire la voce pre-partita.
+        df = df[parse_moments(df.get("date")) <= cutoff]
         if df.empty:
             return None
         # due difetti misurati il 2026-10-07 (docs/56 §2): le date della fonte hanno due
@@ -4239,8 +4302,7 @@ class MatchAnalysis:
         out["ultimo"] = ultimo.strftime("%d/%m/%Y")
         out["window_start"] = pd.Timestamp(first).strftime("%d/%m/%Y")
         out["window_end"] = ultimo.strftime("%d/%m/%Y")
-        oggi = pd.Timestamp.now(tz="UTC")
-        if (oggi - ultimo).days > self.TRANSFER_STALE_DAYS:
+        if (cutoff - ultimo).days > self.TRANSFER_STALE_DAYS:
             out["stale"] = True
             return out
 
@@ -4266,10 +4328,14 @@ class MatchAnalysis:
                 return []
             def riga(r: dict[str, Any]) -> dict[str, Any]:
                 date = pd.Timestamp(r["_date"])
+                amount = self.fee_eur(r.get("fee_text"))
+                fee = self.fee_it(r.get("fee_text"))
+                kind = ("numeric" if amount is not None else "free" if fee == "gratuito"
+                        else "loan" if fee == "prestito" else "unknown")
                 return {"name": str(r["player_name"]),
                         "counterpart": str(r.get("counterpart") or ""),
-                        "fee": self.fee_it(r.get("fee_text")),
-                        "fee_eur": self.fee_eur(r.get("fee_text")),
+                        "fee": fee, "fee_eur": amount, "fee_kind": kind,
+                        "is_loan": str(r.get("transfer_type") or "").lower() in {"on loan", "loan", "prestito"},
                         "date_it": date.strftime("%d/%m/%Y"),
                         "date": int(date.timestamp()),
                         "_club": soft_key(str(r.get("counterpart") or ""))}
@@ -4301,27 +4367,53 @@ class MatchAnalysis:
             rows = movimenti[direction]
             out[chiave] = rows[:n]
             out[count] = len(rows)
-        importi = [r["fee_eur"] for r in movimenti["in"] + movimenti["out"]]
-        out["importi_noti"] = sum(1 for v in importi if v)
-        out["importi_mancanti"] = sum(1 for v in importi if not v)
-        spesa = sum(v for v in (r["fee_eur"] for r in movimenti["in"]) if v)
-        incasso = sum(v for v in (r["fee_eur"] for r in movimenti["out"]) if v)
-        out["spesa"] = spesa if out["importi_noti"] else None
-        out["incasso"] = incasso if out["importi_noti"] else None
-        out["saldo"] = (spesa - incasso) if out["importi_noti"] else None
-        out["saldo_it"] = self.fee_it(abs(out["saldo"])) if out["saldo"] is not None else ""
-        out["saldo_segno"] = ("+" if (out["saldo"] or 0) > 0 else "−") if out["saldo"] else ""
-        out["in_campo"] = self.arrivals_on_pitch(team_id, match_id, out["arrivals"]) \
-            if match_id else []
+        # Le formule sono informazioni, non importi mancanti indistinti (docs/95).
+        all_moves = movimenti["in"] + movimenti["out"]
+        out["importi_noti"] = sum(r["fee_kind"] == "numeric" for r in all_moves)
+        out["gratuiti"] = sum(r["fee_kind"] == "free" for r in all_moves)
+        out["prestiti_senza_importo"] = sum(r["fee_kind"] == "loan" for r in all_moves)
+        out["importi_mancanti"] = sum(r["fee_kind"] == "unknown" for r in all_moves)
+
+        def known_total(rows: list[dict[str, Any]]) -> float | None:
+            numeric = [r["fee_eur"] for r in rows if r["fee_kind"] == "numeric"]
+            if numeric:
+                return float(sum(numeric))  # parziale: mai il costo complessivo del mercato
+            # Senza cifre, solo gratuiti o nessun movimento sostengono lo zero.
+            return 0.0 if all(r["fee_kind"] == "free" for r in rows) else None
+
+        out["spesa"], out["incasso"] = known_total(movimenti["in"]), known_total(movimenti["out"])
+        if out["spesa"] is not None and out["incasso"] is not None:
+            out["saldo"] = out["spesa"] - out["incasso"]
+        # Lo zero contabile non è un valore di mercato assente: non passarlo a fee_it(0).
+        for key in ("spesa", "incasso", "saldo"):
+            value = out[key]
+            out[key + "_it"] = ("non quantificabile" if value is None else "0 €" if value == 0
+                                else self.fee_it(abs(value)))
+        out["saldo_segno"] = ("+" if out["saldo"] > 0 else "−") if out["saldo"] else ""
+        # Il limite grafico di quattro righe non restringe i giocatori da incrociare.
+        out["in_campo"] = self.arrivals_on_pitch(team_id, match_id, movimenti["in"]) if match_id else []
         return out
+
+    TRANSFER_LINEUP_LABELS: ClassVar[dict[str, str]] = {
+        "official": "distinta ufficiale", "predicted": "formazione prevista",
+        "previous": "ultima distinta disponibile", "unknown": "distinta raccolta (tipo non dichiarato)",
+    }
+
+    def transfer_lineup_origin(self, match_id: int | None) -> str:
+        if match_id is None or self.info.empty:
+            return "unknown"
+        rows = self.info[self.info.match_id == match_id]
+        raw = str(rows.iloc[0].get("lineup_type", "")) if not rows.empty else ""
+        return {"confirmed": "official", "official": "official", "predicted": "predicted",
+                "probable": "predicted", "lastStarting11": "previous"}.get(raw, "unknown")
 
     def arrivals_on_pitch(self, team_id: int, match_id: int,
                           arrivals: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Quali arrivi della finestra sono già nella distinta di questa partita.
+        """Arrivi riconosciuti per nome nella distinta raccolta, una volta per persona.
 
-        È il collegamento che mancava fra «chi è arrivato» e «chi gioca»: misurato sulle 70
-        schede con card del 2026-09-16, il 58,3% degli arrivi in finestra compare nella
-        distinta (titolare o a disposizione), quindi l'informazione c'è ed è utile.
+        Una distinta può essere prevista o essere l'ultima disponibile: lo stato non è
+        una conferma di impiego. Il chiamante passa tutti gli arrivi, non il top-4 visibile.
+        La tabella trasferimenti non fornisce ID: nessun abbinamento fuzzy inventato.
         """
         if not arrivals or self.lineup.empty:
             return []
@@ -4329,16 +4421,23 @@ class MatchAnalysis:
                            & (self.lineup.role.isin(["starter", "sub"]))]
         if rows.empty:
             return []
+        origin = self.transfer_lineup_origin(match_id)
+        qualifiers = {"official": "", "predicted": " nella previsione",
+                      "previous": " nell’ultima distinta", "unknown": " nella distinta raccolta"}
         per_nome: dict[str, dict[str, Any]] = {}
         for r in rows.itertuples(index=False):
+            status = ("titolare" if r.role == "starter" else "a disposizione") + qualifiers[origin]
             per_nome[soft_key(str(r.player_name))] = {
                 "name": str(r.player_name), "role": str(r.role),
                 "value": float(r.market_value_eur) if pd.notna(r.market_value_eur) else 0.0,
-                "status": "titolare" if r.role == "starter" else "a disposizione"}
+                "status": status}
         out = []
+        seen = set()
         for a in arrivals:
-            hit = per_nome.get(soft_key(str(a["name"])))
-            if hit:
+            name = soft_key(str(a["name"]))
+            hit = per_nome.get(name)
+            if hit and name not in seen:
+                seen.add(name)
                 out.append({"name": hit["name"], "status": hit["status"], "value": hit["value"]})
         out.sort(key=lambda x: (-x["value"], x["name"]))
         return out
@@ -6916,6 +7015,7 @@ class MatchAnalysis:
         # insieme condiviso dalle due colonne del bollettino stampa (docs/24 §3): lo stesso
         # articolo non deve comparire due volte nella stessa pagina
         news_seen: set[str] = set()
+        news_as_of = pd.Timestamp.now(tz="UTC")
         # allenatori in panchina (servono alla rilevanza delle notizie e al blocco «Da sapere»)
         home_coach = (self.coach(home_id, kickoff) or {}).get("name")
         away_coach = (self.coach(away_id, kickoff) or {}).get("name")
@@ -6925,11 +7025,13 @@ class MatchAnalysis:
         home_news = (self.team_news(home_id, f["home_name"], kickoff,
                                     squad=self.match_squad(match_id, home_id),
                                     seen=news_seen, opponent=f["away_name"],
-                                    coach=home_coach) if status != "finished" else _no_news())
+                                    coach=home_coach, lineup_type=_val(info, "lineup_type"), now=news_as_of)
+                     if status != "finished" else _no_news())
         away_news = (self.team_news(away_id, f["away_name"], kickoff,
                                     squad=self.match_squad(match_id, away_id),
                                     seen=news_seen, opponent=f["home_name"],
-                                    coach=away_coach) if status != "finished" else _no_news())
+                                    coach=away_coach, lineup_type=_val(info, "lineup_type"), now=news_as_of)
+                     if status != "finished" else _no_news())
         visti_home = {news_title_key(str(n.get("title") or "")) for n in home_news["notizie"]}
         visti_away = {news_title_key(str(n.get("title") or "")) for n in away_news["notizie"]}
         # P2.5 (`docs/28` §3): la forma sale in testa alla scheda — serie e punti in un micro-badge

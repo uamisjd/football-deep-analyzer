@@ -156,6 +156,14 @@ CANDIDATES: tuple[Candidate, ...] = (
 )
 
 
+# Esperimento isolato: non entra nel set generico (input e calibrazione diversi).
+# Si esegue solo con `fda lab-xg`, protocollo fisso e risultati separati (docs/92).
+XG_CANDIDATE = Candidate(
+    "dc_xg", "DC+Elo con λ da xG continui (protocollo docs/92)", "production", "xg_poisson_dc",
+    {"xi": 0.0018, "shrink": 8.0, "w_dc": 0.7},
+)
+
+
 # --------------------------------------------------------------------------- modelli addestrati
 class _FittedGoals:
     """Modello sui gol addestrato: espone λ, ρ (se c'è) e la matrice dei punteggi."""
@@ -178,6 +186,9 @@ def fit_goals(hist: pd.DataFrame, cand: Candidate) -> _FittedGoals | DixonColesM
     """Addestra la famiglia richiesta; ``None`` se lo storico è insufficiente."""
     import penaltyblog as pb
 
+    if cand.family == "xg_poisson_dc":
+        from .xg import XGDixonColesModel
+        return XGDixonColesModel(xi=cand.xi, shrink_prior=float(cand.params.get("shrink", 8.0))).fit(hist)
     if cand.family == "dixon_coles":
         return DixonColesModel(xi=cand.xi, shrink_prior=float(cand.params.get("shrink", 8.0))).fit(hist)
     cls_name = GOAL_FAMILIES.get(cand.family)
@@ -284,7 +295,8 @@ def _mix_grids(lh_a: float, la_a: float, rho_a: float, probs_b: tuple[float, flo
 # --------------------------------------------------------------------------- walk-forward
 def walk_forward(hist: pd.DataFrame, candidates: tuple[Candidate, ...] = CANDIDATES,
                  step_days: int = 28, min_train: int = 600, calibration: Calibration | None = None,
-                 max_windows: int | None = None, self_calibrate: bool = True) -> pd.DataFrame:
+                 max_windows: int | None = None, self_calibrate: bool = True,
+                 strict_fits: bool = False) -> pd.DataFrame:
     """Una riga per (candidato, gara valutata): probabilità, λ, mercati ed esito osservato.
 
     ``self_calibrate`` (default) dà a **ogni candidato la propria correzione del livello dei
@@ -294,6 +306,9 @@ def walk_forward(hist: pd.DataFrame, candidates: tuple[Candidate, ...] = CANDIDA
     confronto sarebbe iniquo: la produzione è pubblicata calibrata, e un candidato con λ più
     basse verrebbe penalizzato due volte. Con ``self_calibrate=False`` si applica a tutti la
     calibrazione salvata, cioè si confronta la ricetta pubblicata così com'è.
+
+    ``strict_fits=True`` interrompe il run al primo errore di fit: serve agli esperimenti
+    preregistrati, dove saltare una finestra cambierebbe il campione dopo aver visto i dati.
     """
     df = hist.dropna(subset=["home_goals", "away_goals"]).copy()
     if df.empty:
@@ -307,13 +322,14 @@ def walk_forward(hist: pd.DataFrame, candidates: tuple[Candidate, ...] = CANDIDA
               if "league_key" in df.columns else [("?", df)])
     for league_key, g in groups:
         rows.extend(_walk_league(g, league_key, candidates, step_days, min_train, cal, max_windows,
-                                 self_calibrate))
+                                 self_calibrate, strict_fits))
     return pd.DataFrame(rows)
 
 
 def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, ...],
                  step_days: int, min_train: int, cal: Calibration,
-                 max_windows: int | None, self_calibrate: bool = True) -> list[dict[str, Any]]:
+                 max_windows: int | None, self_calibrate: bool = True,
+                 strict_fits: bool = False) -> list[dict[str, Any]]:
     if len(g) <= min_train:
         return []
     d = g["date"]
@@ -338,6 +354,7 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
         if len(train) < min_train or test.empty:
             continue
         windows += 1
+        calibration_n = {key: int(value[2]) for key, value in acc.items()}
         scales: dict[str, float] = {}
         if self_calibrate:
             for cand in candidates:
@@ -349,7 +366,9 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
             t0 = time.time()
             try:
                 fitted[cand.key] = _fit_candidate(cand, train)
-            except Exception as exc:                                # un candidato non ferma gli altri
+            except Exception as exc:                                # salvo esperimenti strict
+                if strict_fits:
+                    raise
                 log.warning("%s/%s: fit saltato (%s: %s)", league_key, cand.key, type(exc).__name__, exc)
                 fitted[cand.key] = None
             log.debug("%s/%s fit in %.1fs su %d gare", league_key, cand.key, time.time() - t0, len(train))
@@ -357,7 +376,8 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
             obs = {"date": r.date, "league_key": league_key, "home": r.home, "away": r.away,
                    "home_goals": int(r.home_goals), "away_goals": int(r.away_goals),
                    "outcome": 0 if r.home_goals > r.away_goals else (1 if r.home_goals == r.away_goals else 2),
-                   "n_train": len(train)}
+                   "n_train": len(train), "train_max": train["date"].max(),
+                   "window_start": window_end - pd.Timedelta(days=step_days)}
             for cand in candidates:
                 cal_c = (Calibration(scales.get(cand.key, 1.0), cal.rho_shift) if self_calibrate
                          else cal)
@@ -365,6 +385,10 @@ def _walk_league(g: pd.DataFrame, league_key: str, candidates: tuple[Candidate, 
                 if row is None:
                     continue
                 row["lambda_scale"] = float(cal_c.lambda_scale)
+                row["calibration_n"] = calibration_n[cand.key]
+                fm = fitted.get(cand.key)
+                goal_model = fm.get("goals") if isinstance(fm, dict) else fm
+                row["uses_xg"] = bool(getattr(goal_model, "uses_xg", False))
                 # l'accumulo usa le λ **grezze** del candidato: è su quelle che si stima la correzione
                 lam_raw = float(row.get("lambda_home_raw", row.get("lambda_home", float("nan")))
                                 + row.get("lambda_away_raw", row.get("lambda_away", float("nan"))))

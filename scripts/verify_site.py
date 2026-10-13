@@ -796,9 +796,10 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "16": ("M", "posizione di lega dai Parquet; somma stampata ricalcolata"),
     "17": ("M", "conteggi da events; le probabilità con la formula del verificatore"),
     "18": ("I", "etichette d'impatto dell'infermeria e tooltip richiesti"),
-    "19": ("M", ("classifica e posizione virtuale ricalcolate; posta in gioco dal Parquet "
-                 "con la formattazione del generatore, confrontata con Proiezioni")),
-    "20": ("S", "card notizie: la selezione è `team_news` del generatore"),
+    "19": ("M", ("rango/salvezza e precisione MC controllati semanticamente; classifica e "
+                 "posizione virtuale ricalcolate; percentuali dal Parquet con la formattazione "
+                 "del generatore, confrontata con Proiezioni")),
+    "20": ("M", "selezione ricalcolata dal generatore; periodo, imbuto e tuple fonte controllati indipendentemente"),
     "21": ("I", ("stato della squadra (ex «Clima del club»): strisce di campionato, xPTS "
                  "(Understat o Poisson FotMob), riposo/congestione con le coppe, panchina, "
                  "infermeria dai Parquet")),
@@ -820,7 +821,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "36": ("I", "tabelle dentro .tablewrap"),
     "37": ("I", "didascalie del punteggio coerenti col punteggio"),
     "38": ("I", "importi non azzerati dall'arrotondamento"),
-    "39": ("M", "movimenti di mercato ↔ tabella transfers"),
+    "39": ("M", "finestra dichiarata ↔ transfers; importi/formule, saldi e distinte ricalcolati senza il generatore"),
     "40": ("I", "meteo: valori pubblicati ↔ soglie del codice"),
     "41": ("M", ("struttura e soglie della card dei Fattori; il testo delle soglie è del "
                  "generatore (fattori_soglie_testo)")),
@@ -2602,6 +2603,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     from fda.config import leagues as _leagues19
     from fda.config import load_leagues_config
     from fda.models.season_sim import mc_percent_str
+    from fda.site.panchina_checks import monte_carlo_findings, safety_findings
     from fda.teams import canonical as _canon
     fx19 = st.read("fixtures")
     lu19 = st.read("lineup")
@@ -2616,7 +2618,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     fm19 = st.read("fotmob_standings")
     mi19 = st.read("match_info")
     from fda.site.analysis import MatchAnalysis as _MA
-    from fda.sources.news import JUNK_NEWS, is_italian_news, news_value
+    from fda.sources.news import is_italian_news
     ma19 = _MA(st)
     _lg19 = {lg.fotmob_id: lg.key for lg in _leagues19()}
     _ucl19 = {lg.key: lg.ucl_spots for lg in _leagues19()}
@@ -2677,11 +2679,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             # dall'HTML grezzo, non da `txt`: l'unescape prima dei tag mangerebbe «&lt;1»
             card19 = PANCHINA_CARD.search(html)
             righe19 = {}
+            grezze19 = {}
             if card19:
                 for nome_riga, corpo in PANCHINA_ROW.findall(card19.group(1)):
                     celle = PANCHINA_TD.findall(corpo)
                     if len(celle) == 2:
                         righe19[nome_riga] = [panchina_cella(c) for c in celle]
+                        grezze19[nome_riga] = celle
             for lato, (tid, tname, oid, oname) in enumerate((
                     (int(fr.home_id), str(fr.home_name), int(fr.away_id), str(fr.away_name)),
                     (int(fr.away_id), str(fr.away_name), int(fr.home_id), str(fr.home_name)))):
@@ -2890,6 +2894,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 cella_st = (righe19.get("Posta in gioco") or ["", ""])[lato]
                 if sr is not None:
                     checks += 1
+                    raw_st = (grezze19.get("Posta in gioco") or ["", ""])[lato]
+                    fails.extend(f"{pg.name}: panchina ({tname}) {error}"
+                                 for error in monte_carlo_findings(raw_st, getattr(sr, "n_sims", None)))
+                    checks += 1
                     raw_top = getattr(sr, "p_top_n", None)
                     if raw_top is None or pd.isna(raw_top):
                         raw_top = getattr(sr, "p_top4", None)
@@ -2961,17 +2969,25 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pts19, gd19, rank19 = int(r19.points), int(r19.goal_diff or 0), int(r19["rank"])
                     by_rank19 = tab19.set_index("rank")
                     releg19 = n19 - 2 if n19 == 20 else n19 - 1
+                    # Vincolo semantico indipendente: rango in zona rossa ≠ salvezza,
+                    # anche quando i punti pareggiano quelli dell'ultima squadra salva.
+                    checks += 1
+                    fails.extend(f"{pg.name}: panchina ({tname}) {error}"
+                                 for error in safety_findings(cella_st, tab19, tid))
                     pezzi = [f"{rank19}º con {pts19} punt{'o' if pts19 == 1 else 'i'}"]
                     if releg19 in by_rank19.index and rank19 < releg19:
                         marg19 = pts19 - int(by_rank19.loc[releg19, "points"])
                         pezzi.append(
                             f"{marg19} punt{'o' if marg19 == 1 else 'i'} sopra la zona retrocessione"
                             if marg19 > 0 else "a pari punti con la zona retrocessione")
-                    elif releg19 - 1 in by_rank19.index:
-                        need19 = int(by_rank19.loc[releg19 - 1, "points"]) - pts19
-                        pezzi.append(
-                            f"{need19} punt{'o' if need19 == 1 else 'i'} dalla salvezza diretta"
-                            if need19 > 0 else "in zona salvezza diretta")
+                    elif rank19 >= releg19:
+                        safe19 = n19 - 3 if n19 in (18, 20) else releg19 - 1
+                        if safe19 in by_rank19.index:
+                            need19 = int(by_rank19.loc[safe19, "points"]) - pts19
+                            pezzi.append(
+                                f"{need19} punt{'o' if need19 == 1 else 'i'} dalla salvezza diretta"
+                                if need19 > 0 else f"a pari punti con il {safe19}º posto (salvezza diretta)"
+                                if need19 == 0 else "in zona retrocessione diretta")
                     ucl19 = _ucl19.get(code19) if code19 else None
                     if ucl19 is not None and ucl19 in by_rank19.index:
                         if rank19 <= ucl19:
@@ -2983,7 +2999,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                 if ge19 > 0 else f"a pari punti col {ucl19}º posto")
                     checks += 1
                     atteso_tab = " · ".join(pezzi)
-                    if atteso_tab not in txt:
+                    if atteso_tab not in cella_st:
                         fails.append(f"{pg.name}: distanze di classifica ({tname}) «{atteso_tab}» "
                                      f"assenti o diverse")
 
@@ -3172,22 +3188,29 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: intestazione card di squadra sconosciuta ({team_name[:30]})")
                 continue
             co = ma19.coach(tid, kickoff) or {}
+            stamp20 = re.search(r'data-as-of="([^"]+)"', card)
+            as_of20 = pd.to_datetime(html_unescape(stamp20.group(1)), utc=True) if stamp20 else None
+            meta20 = mi19[mi19.match_id == mid] if not mi19.empty else mi19
+            tipo20 = meta20.iloc[0].get("lineup_type") if not meta20.empty else None
             atteso = ma19.team_news(tid, team_name, kickoff,
                                     squad=ma19.match_squad(mid, tid), seen=visti20,
-                                    opponent=opp, coach=co.get("name"))
+                                    opponent=opp, coach=co.get("name"), now=as_of20, lineup_type=tipo20)
             head = blocco.split("<ul", 1)[0]
             # ogni numero stampato nell'intestazione deve essere quello calcolato
             for etichetta, valore, schema in (
                     ("titoli esaminati", atteso["esaminate"],
-                     r"· (\d+) titol[oi] (?:esaminato|esaminati)"),
+                     r"· (\d+) (?:voce esaminata|voci esaminate)"),
                     ("pubblicati", atteso["pubblicate"], r"· (\d+) pubblicat[oi]"),
                     ("annunci o logistica", atteso["annunci"], r"· (\d+) annunc"),
                     ("servizio o cronaca", atteso["scartate"], r"· (\d+) servizio o cronaca"),
                     ("altra squadra", atteso["altre"], r"· (\d+) su un'altra squadra"),
                     ("già raccontato da un'altra voce", atteso["doppioni"],
                      r"· (\d+) già raccontat[oi] da un'altra voce"),
-                    ("non spostano nulla", atteso["piatti"], r"· (\d+) non (?:sposta|spostano) nulla"),
-                    ("oltre il limite", atteso["oltre"], r"· (\d+) oltre il limite"),
+                    ("senza fatto specifico", atteso["piatti"], r"· (\d+) senza un fatto specifico"),
+                    ("fuori ambito", atteso["fuori_ambito"], r"· (\d+) fuori ambito prima squadra"),
+                    ("segnale assente", atteso["senza_segnale"], r"· (\d+) senza evento o analisi espliciti"),
+                    ("letture sul tema", atteso["correlate"], r"· (\d+) letture sul tema"),
+                    ("oltre il limite", atteso["oltre"], r"· (\d+) oltre i limiti"),
                     ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):
                 checks += 1
                 m = re.search(schema, head)
@@ -3200,16 +3223,20 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             if (int(m.group(1)) if m else 0) != len(atteso["riserva"]):
                 fails.append(f"{pg.name}: «in riserva» di {team_name[:20]} non corrisponde "
                              f"ai dati ({len(atteso['riserva'])})")
-            stampati = re.findall(r'<a href="(https?://[^"]+)" rel="noopener noreferrer nofollow">'
-                                  r'(.*?)</a>', blocco.split("In riserva", 1)[0])
+            from bs4 import BeautifulSoup
+
+            parsed20 = BeautifulSoup(blocco, "html.parser")
+            primary20 = parsed20.select("ul.news-list > li")
+            stampati = [(str(li.find("a").get("href")), li.find("a").get_text(strip=True))
+                        for li in primary20 if li.find("a")]
             attesi = [(str(n["url"]), str(n["title"])) for n in atteso["notizie"]]
             checks += 1
             if [(u, html_unescape(t)) for u, t in stampati] != attesi:
                 fails.append(f"{pg.name}: voci della card di {team_name[:20]} diverse da "
                              f"quelle calcolate ({len(stampati)} stampate, {len(attesi)} attese)")
                 continue
-            etichette = [html_unescape(x) for x in
-                         re.findall(r'<span class="topic">(.*?)</span>', blocco.split("In riserva", 1)[0])]
+            etichette = [li.select_one(".topic").get_text(strip=True) for li in primary20
+                          if li.select_one(".topic") is not None]
             attese_et = [str(n["topic_label"]) for n in atteso["notizie"]]
             checks += 1
             if etichette != attese_et:
@@ -3221,8 +3248,13 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 fails.append(f"{pg.name}: più di {atteso['categoria_limite']} voci della stessa "
                              f"categoria per {team_name[:20]}")
             # «in riserva»: le voci dichiarate devono essere quelle calcolate
-            ris = re.findall(r'In riserva, fuori dai tre per regola: <a href="([^"]+)"',
-                             blocco)
+            ris = [str(div.find("a").get("href")) for div in parsed20.select(".news-reserve")
+                   if div.find("a") is not None]
+            related20 = [str(li.find("a").get("href")) for li in parsed20.select("details.news-related li")
+                         if li.find("a") is not None]
+            expected_related20 = [r["url"] for n in atteso["notizie"] + atteso["riserva"] for r in n["related"]]
+            if related20 != expected_related20:
+                fails.append(f"{pg.name}: letture sul tema di {team_name[:20]} diverse dai dati")
             checks += 1
             if ris != [str(n["url"]) for n in atteso["riserva"]]:
                 fails.append(f"{pg.name}: riserva di {team_name[:20]} diversa dai dati "
@@ -3237,25 +3269,31 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             for _u, t in stampati:
                 titolo = html_unescape(t)
                 estratto = desc19.get(titolo, "")
-                if JUNK_NEWS.search(titolo):
-                    fails.append(f"{pg.name}: voce di servizio pubblicata in card "
-                                 f"(«{titolo[:60]}»)")
-                if news_value(titolo) is not None:
-                    fails.append(f"{pg.name}: voce senza sostanza pubblicata in card "
+                from fda.site.club_signals import club_signal
+
+                if club_signal(titolo) is None:
+                    fails.append(f"{pg.name}: voce senza segnale positivo nel perimetro "
                                  f"(«{titolo[:60]}»)")
                 if not is_italian_news(titolo, estratto):
                     fails.append(f"{pg.name}: voce non in lingua italiana pubblicata in card "
                                  f"(«{titolo[:60]}»)")
             if not atteso["notizie"] and atteso["esaminate"]:
                 checks += 1
-                if "Niente che possa spostare qualcosa" not in testo_card:
+                if "Nessun titolo selezionato" not in testo_card:
                     fails.append(f"{pg.name}: card vuota di {team_name[:20]} senza riga di "
                                  f"trasparenza")
             titoli_pagina.extend(t for _u, t in stampati)
         checks += 1
         if len(titoli_pagina) != len(set(titoli_pagina)):
             fails.append(f"{pg.name}: stesso titolo pubblicato due volte nella pagina")
-    print(f"[20] card «Vita del club» riconciliate: {n_news} pagine")
+    from fda.site.club_news_checks import audit_club_life
+
+    independent_news = audit_club_life(site, st.base_dir)
+    checks += independent_news["checks"]
+    fails.extend(f"{e['match_id']}.html: Vita del club ({e['team']}) {e['message']}"
+                 for e in independent_news["errors"])
+    print(f"[20] card «Vita del club» riconciliate: {n_news} pagine; "
+          f"{independent_news['checks']} controlli indipendenti su periodo/conti/fonte")
 
     # 21) stato della squadra (docs/21 P2-6, «Clima del club» fino all'11/10/2026): **oracolo
     # indipendente** dal 2026-10-11 (`docs/81` §5). Il nome è cambiato con `docs/82` §5 — il
@@ -3729,13 +3767,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                 if frammento not in nota49:
                     fails.append(f"{pg.name}: la nota del clima non dichiara «{frammento}»")
             # i titoli pubblicati in «Vita del club» sulla stessa pagina (per i marcatori)
-            _in49 = html.find('id="notizie"')
-            _fine49 = html.find('<div class="card"', _in49 + 10) if _in49 != -1 else -1
-            blocco_not49 = html[_in49:_fine49 if _fine49 != -1 else len(html)]
-            pubblicate49 = {html_unescape(x) for x in re.findall(
-                r'<li><span class="topic">.*?<br><a href="[^"]*"[^>]*>(.*?)</a>',
-                blocco_not49, re.DOTALL)}
-            pubblicate49 = {_tl49(x) for x in pubblicate49 if x}
+            from fda.site.club_news_checks import primary_titles
+
+            pubblicate49 = {_tl49(x) for x in primary_titles(html)}
             fr49 = fx19[fx19.match_id == int(pg.stem)].iloc[0]
             ko49 = pd.Timestamp(fr49.utc_kickoff)
             for parte in parti49[1:]:
@@ -4042,7 +4076,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # 26) mercato (docs/21 P2-7, rifatto in docs/24 §4): la card mostra la finestra
     # ricavata dai dati, gli importi in forma leggibile e gli arrivi già in distinta.
     # Qui si rifà il conto con le stesse funzioni del build e si confronta con la pagina:
-    # righe, ordine, importi, estremi della finestra, saldo e «già in campo».
+    # righe, importi, estremi della finestra e arrivi. [39] verifica indipendentemente
+    # anche bilancio/copertura e provenienza della distinta: questa riconciliazione è mista.
     n_mkt = 0
     for pg in pages:
         html = pg.read_text(encoding="utf-8")
@@ -4065,13 +4100,15 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             continue
         n_mkt += 1
         # la card è divisa in due colonne, una per squadra: i controlli vanno fatti sulla
-        # colonna, non sull'intera card (la riga «già in campo» di una squadra non è di
+        # colonna, non sull'intera card (la riga «arrivi riconosciuti» di una squadra non è di
         # pertinenza dell'altra)
-        colonne = re.split(r'<h3 style="margin:0 0 8px">', html[html.find('id="mercato"'):])[1:]
-        per_nome = {}
-        for col in colonne:
-            nome_col = html_unescape(col.split("</h3>", 1)[0]).strip()
-            per_nome[nome_col] = col
+        from bs4 import BeautifulSoup
+
+        from fda.site.mercato_checks import CARD as _MERCATO_CARD
+        section = _MERCATO_CARD.search(html)
+        soup = BeautifulSoup(section.group() if section else "", "html.parser")
+        per_nome = {node.h3.get_text(strip=True): str(node) for node in soup.select(".grid > .card")
+                    if node.h3 is not None}
         for tid, mk in attesi26.items():
             if mk is None:
                 continue
@@ -4114,18 +4151,17 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                      f"stampato come calcolato")
             checks += 1
             if mk["in_campo"]:
-                riga = (f"<b>Già in campo:</b> {len(mk['in_campo'])} "
-                        + ("arrivo" if len(mk["in_campo"]) == 1 else "arrivi"))
+                riga = f"<b>Arrivi riconosciuti:</b> {len(mk['in_campo'])} "
                 if riga not in col:
-                    fails.append(f"{pg.name}: {nome}: riga «già in campo» assente o diversa "
+                    fails.append(f"{pg.name}: {nome}: riga «arrivi riconosciuti» assente o diversa "
                                  f"dal calcolo")
                 for p26 in mk["in_campo"]:
                     checks += 1
                     if str(p26["name"]) not in col_txt:
                         fails.append(f"{pg.name}: {nome}: arrivo già in distinta non pubblicato "
                                      f"({p26['name']})")
-            elif "Già in campo:" in col:
-                fails.append(f"{pg.name}: {nome}: riga «già in campo» presente ma nessun "
+            elif "Arrivi riconosciuti:" in col:
+                fails.append(f"{pg.name}: {nome}: riga «arrivi riconosciuti» presente ma nessun "
                              f"arrivo in distinta secondo i dati")
     print(f"[26] card mercato riconciliate: {n_mkt} pagine")
 
@@ -4687,99 +4723,14 @@ def check_importi_mercato(site: Path) -> tuple[list[str], int]:
 # funzione** che la costruisce: coerente e sbagliata. Questa invariante rifà il conto dal
 # Parquet, in modo indipendente, e pretende che una riga per giocatore resti una.
 def check_mercato_movimenti(site: Path, data: Path | None) -> tuple[list[str], int]:
-    """[39] un movimento per giocatore e direzione: niente righe ripetute, conteggi giusti."""
-    import pandas as pd
+    """[39] finestra, copertura delle cifre, bilancio e arrivi: ricalcolo indipendente."""
+    from fda.site.mercato_checks import audit_market
 
-    from fda.store import Store
-    from fda.teams import soft_key
-
-    fails: list[str] = []
-    checks = 0
-    st = Store(data) if data else Store()
-    tr = st.read("transfers")
-    fx = st.read("fixtures")
-    if tr.empty or fx.empty or "player_name" not in tr.columns:
-        return fails, checks
-    date = pd.to_datetime(tr["date"], utc=True, errors="coerce", format="mixed")
-    tr = tr.assign(_dt=date, _pn=tr.player_name.map(lambda v: soft_key(str(v or ""))),
-                   _cn=tr.counterpart.map(lambda v: soft_key(str(v or ""))))
-    tr = tr[tr._dt.notna()]
-    pages = sorted((site / "partite").glob("*.html")) if (site / "partite").is_dir() else []
-    intestazione = re.compile(r"<b>(\d+)</b> (?:arrivo|arrivi) · <b>(\d+)</b> (?:partenza|partenze) "
-                              r"nella finestra dal <b>(\d{2}/\d{2}/\d{4})</b>")
-    n_pagine = 0
-    for pg in pages:
-        html = pg.read_text(encoding="utf-8")
-        if 'id="mercato"' not in html or "Analisi pre-partita" not in html:
-            continue
-        mid = int(pg.stem)
-        riga_fx = fx[fx.match_id == mid]
-        if riga_fx.empty:
-            continue
-        f = riga_fx.iloc[0]
-        n_pagine += 1
-        # la card finisce alla card successiva: senza il taglio, `<h3>` di altre sezioni
-        # entravano nella scansione (misurato: 255 blocchi invece di 132)
-        inizio = html.find('id="mercato"')
-        dopo = html.find('<div class="card" id="', inizio + 10)
-        card = html[inizio:dopo if dopo > inizio else len(html)]
-        colonne = re.split(r'<h3 style="margin:0 0 8px">', card)[1:]
-        # (a) nessun nome ripetuto nella stessa colonna e direzione
-        for colonna in colonne:
-            pezzi = colonna.split('class="small" style="margin:8px 0 4px;')[1:]
-            for direzione, pezzo in zip(("arrivi", "partenze"), pezzi, strict=False):
-                nomi = re.findall(r"<tr>\s*<td>([^<]+)</td>", pezzo)
-                checks += 1
-                chiavi = [soft_key(html_unescape(n)) for n in nomi]
-                if len(chiavi) != len(set(chiavi)):
-                    doppi = sorted({n for n, k in zip(nomi, chiavi, strict=True)
-                                    if chiavi.count(k) > 1})
-                    fails.append(f"{pg.name}: mercato {direzione}: riga ripetuta "
-                                 f"({', '.join(doppi)})")
-        # (b) i conteggi pubblicati = giocatori distinti nella finestra dichiarata in pagina
-        for tid, nome in ((int(f.home_id), str(f.home_name)), (int(f.away_id), str(f.away_name))):
-            squadra = tr[tr.team_id == tid]
-            if squadra.empty:
-                continue
-            attesi = {}
-            for direzione, chiave in (("in", "n_in"), ("out", "n_out")):
-                d = squadra[squadra.direction == direzione]
-                attesi[chiave] = int(d._pn.nunique()) if not d.empty else 0
-            m = None
-            for col in colonne:
-                if html_unescape(col.split("</h3>", 1)[0]).strip() == nome:
-                    m = intestazione.search(col)
-                    break
-            if m is None:
-                continue
-            for chiave, idx in (("n_in", 1), ("n_out", 2)):
-                pubblicato = int(m.group(idx))
-                checks += 1
-                # la finestra può escludere i movimenti vecchi: il confronto è sulla stessa
-                # porzione di tabella letta dalla pagina
-                inizio = pd.to_datetime(m.group(3), format="%d/%m/%Y", utc=True)
-                direzione = "in" if chiave == "n_in" else "out"
-                d = squadra[(squadra.direction == direzione) & (squadra._dt >= inizio)]
-                distinti = int(d._pn.nunique()) if not d.empty else 0
-                if pubblicato != distinti:
-                    extra = pubblicato - distinti
-                    spiegato = False
-                    if extra > 0:
-                        # eccezione dichiarata dalla card: due movimenti dello stesso
-                        # giocatore verso club diversi a più di 30 giorni l'uno dall'altro
-                        gruppi = 0
-                        for _, g in d.groupby("_pn"):
-                            if len(g) < 2:
-                                continue
-                            span = (g._dt.max() - g._dt.min()).days
-                            if span > 30 and len({c for c in g._cn}) > 1:
-                                gruppi += len(g) - 1
-                        spiegato = gruppi >= extra
-                    if not spiegato:
-                        fails.append(f"{pg.name}: mercato {nome}: {pubblicato} movimenti "
-                                     f"pubblicati contro {distinti} giocatori distinti nei dati")
-    print(f"[39] card mercato senza movimenti ripetuti: {n_pagine} pagine")
-    return fails, checks
+    report = audit_market(site, data if data is not None else Path(__file__).resolve().parents[1] / "data/processed")
+    fails = [f"{e['match_id']}.html: mercato {e['team']}: {e['message']}" for e in report["errors"]]
+    print(f"[39] mercato riconciliato indipendentemente: "
+          f"{report['counts'].get('market_pages', 0)} pagine, {report['checks']} controlli")
+    return fails, report["checks"]
 
 
 # Le soglie del meteo erano scritte in due posti diversi: il testo della card diceva «nella

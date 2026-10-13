@@ -640,13 +640,9 @@ def main() -> int:
                               ("stampa", "lingua")):
             if frase not in nota2:
                 difetti["clima_nota_disallineata"].append(f"{pg.stem}: nota senza «{frase}» ({chiave})")
-        _in_n = html.find('id="notizie"')
-        _fine_n = html.find('<div class="card"', _in_n + 10) if _in_n != -1 else -1
-        _blocco_n = html[_in_n:_fine_n if _fine_n != -1 else len(html)]
-        pubblicate = {unescape(x) for x in re.findall(
-            r'<li><span class="topic">.*?<br><a href="[^"]*"[^>]*>(.*?)</a>',
-            _blocco_n, re.DOTALL)}
-        pubblicate = {_tl(x) for x in pubblicate if x}
+        from fda.site.club_news_checks import primary_titles
+
+        pubblicate = {_tl(x) for x in primary_titles(html)}
         fr = fx[fx.match_id == int(pg.stem)]
         if fr.empty:
             continue
