@@ -77,7 +77,7 @@ Matrice e istogramma mantengono distinzione fra coda di una squadra e totale gol
   **152.786.020 byte**. Il JS di accessibilità aumenta lievemente gli HTML, senza cambiare i dati.
 - `verify_site`: **242.503 controlli, zero problemi**, 55 oracoli.
 - Parità: **59 schede**, struttura/indice coerenti. Resa 375: **28.766 misure, zero problemi**.
-- **Chromium 153 reale: 84 visite su 21 pagine, zero problemi**; 7 pre e 7 post per lega, più
+- **Chromium 153 reale: 84 visite su 21 pagine, zero problemi**; 7 pre e 7 post (una scheda per lega per tipo), più
   7 pagine principali, 375/1280 px, chiaro/scuro, tendina matrice aperta e interazioni.
 - Wheel: **13 template, 9 font e LICENSE inclusi**.
 - `git diff cdfc85c -- data/processed src/fda/models`: vuoto; nessun modello/Parquet modificato.

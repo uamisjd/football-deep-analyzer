@@ -11,7 +11,7 @@ nuovo controllo Playwright/axe a 375/1280 px e due temi. Nessun cambiamento al m
 
 **Giro definitivo locale verde:** **1.023 test**, Ruff 0, pip check OK, build 499/2.364/7.600,
 **4.316 HTML / 152,8 MB**, verify **242.503 · 0**, parità **59**, resa **28.766 · 0**;
-**browser reale Chromium 153: 84 visite / 21 pagine / 0 problemi** (7 pre + 7 post per lega,
+**browser reale Chromium 153: 84 visite / 21 pagine / 0 problemi** (7 pre + 7 post, una per lega per tipo,
 7 pagine principali, due viewport/temi, matrice aperta e interazioni). Wheel completa con LICENSE.
 Il test della ricerca attende ora il debounce: corrette 4 segnalazioni spurie del nuovo harness,
 nessun bug inventato del filtro. Modelli e Parquet byte-invariati rispetto a `cdfc85c`.
