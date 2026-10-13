@@ -67,3 +67,28 @@ formazioni o cronaca **non** significa aver trovato una notizia utile per Vita d
 Misurare baseline/candidato sui 149 casi e sui Parquet, classificare le differenze reali,
 integrare solo un esito giustificato. Poi tutti i gate e anteprima aggiornata. Copertura
 fonte, scelta sul clima e StatsBomb restano esplicitamente aperti finché non verificati.
+
+
+## 4. Primo risultato e variante conservativa (prima dell'integrazione)
+
+Il candidato singolo rispetta tutte le 59 regressioni e riduce gli errori sul benchmark
+**19→3**, ma sul corpus di 4.431 coppie titolo/descrizione uniche ha 309 esclusioni nuove
+ e 179 recuperi. Fra le esclusioni c'è il titolo italiano già verificato sull'azionariato
+Atlético: **regressione sostanziale, candidato singolo respinto**. Non si abbassa il margine
+0,15 per far passare quel titolo.
+
+Variante V2 dichiarata per la prossima misura: titolo ammesso se supera il vecchio controllo
+**sul solo titolo** oppure il candidato Lingua già fissato. In entrambi i percorsi i titoli
+brevi senza un indicatore italiano restano sospesi; «casa/rosa/gol/goal» da soli non bastano
+come indicatore per una lista di nomi di club. Il vecchio ramo non deve restare permissivo
+se il proprio rilevatore manca. Descrizione esclusa dall'autorizzazione del titolo; nessuna
+traduzione. La variante non contiene nomi di persone/club o eccezioni per articoli specifici.
+
+Questo secondo tentativo viene dichiarato, non nascosto come se fosse la prima ricetta.
+Vanno ripetuti benchmark e replay reale e va misurato separatamente l'effetto editoriale.
+
+## Prossimo passo aggiornato
+
+Valutare V2 prima di integrarla. Tre italiani del benchmark restano difficili per V1
+(nome con ß, un prestito lessicale e un titolo telegrafico): non sono dichiarati stranieri
+con certezza. Non si cerca di risolverli riducendo alla cieca la soglia statistica.
