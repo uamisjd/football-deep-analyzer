@@ -18,7 +18,14 @@ dichiarate, riga unica che dichiara anche le voci in lingua originale, **oracolo
 club** (Heerenveen 3, Sparta 3, AZ 1, Braga 1). Titoli conservati in
 `tests/fixtures/estero_2026-10-13.json`, resa congelata in un test.
 
-**Gate:** pytest **988** (+25) · ruff 0 · build/verify/parità/resa al run di verifica.
+**Gate:** pytest **988** (+25) · ruff 0 · build **498/2.364/7.602** · `verify_site` **241.774 controlli · 0 problemi**
+(55 oracoli: 32 indipendenti, uno nuovo — [50]) · parità **58 schede identiche** · resa 375 px **28.728 · 0**.
+
+**Chiusura del turno (dopo `docs/106`, commit `c07ea95`):** corretti i conteggi dell'indice dei documenti, che erano
+sbagliati da più giri — **117 file `.md` e 107 documenti numerati** (`00`–`106`: il 09 non è mai esistito, il 58 è
+duplicato) — e i numeri stantii della tabella del briefing (515 test in 44 file → **988 in 60**; 26 Parquet → **32**;
+template 12 → **13**), dichiarando che la tabella arriva fino a `docs/69` e che l'elenco completo è `ls docs/`.
+PR #113: 4 commit, check `test` **verde** (3m39s), `MERGEABLE`/**clean**, in attesa del merge dell'utente.
 
 ## 2026-10-13 — Una fotografia dei dati al giorno: opzione A adottata (docs/105), −80% di crescita
 
