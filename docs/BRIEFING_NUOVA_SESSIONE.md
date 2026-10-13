@@ -30,6 +30,8 @@ Opzioni con numeri in `docs/104` §3 (A: commit dati 1×/giorno −80%; C: `git 
 D: LFS insufficiente). **Tre decisioni attendono l'utente:** politica del repository, le ultime 2
 sezioni della scheda partita, feed di lega per NED1/POR1. Nessuna modifica di codice in questa
 sessione: solo misure, `docs/104` e aggiornamenti di indice (`README`, questo briefing).
+> Numeri **al momento di quella revisione**: dopo `docs/105` e `docs/106` sono `pytest` **988** e
+> `verify_site` **241.774 · 0 problemi** (55 oracoli), con la card «stampa in lingua originale» verificata dall'oracolo [50].
 
 **Sessione `arena/079933b1-football-deep-analyzer` chiusa con la PR #110 fusa su `main`** (merge eseguito dall'agente su ordine esplicito dell'utente *«ok fai merge»*, deroga registrata in `docs/13` §9.26 e `docs/STATO.md`).
 
@@ -297,7 +299,7 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 
 | Percorso | Contenuto |
 |---|---|
-| **`docs/` — indice completo** (114 file `.md` al 13/10/2026: **104** documenti numerati — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **6** archivi + 2 audit datati, più i 6 file `.json` di audit e `preview/`) | |
+| **`docs/` — albero essenziale** (117 file `.md` al 13/10/2026: **107** documenti numerati **da `00` a `106`** — il 09 non è mai esistito, il **58 è duplicato** (collisione nota, `docs/63` §8) — + briefing + `STATO.md` + **6** archivi + 2 audit datati, più i 6 file `.json` di audit e `preview/`). Questa tabella descrive i documenti **fino a `docs/69`**: l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101` | |
 | `docs/BRIEFING_NUOVA_SESSIONE.md` | Questo file: porta d'ingresso per ogni nuova sessione. |
 | `docs/STATO.md` | **Checkpoint**: ultimi **3 giri** + fatto / in corso / prossimo passo / decisioni aperte. Aggiornato a ogni turno (regola A5). |
 | `docs/STATO_archivio_2026-10-07.md` | Giri **dal 57º al 7/10/2026** (archiviati perché `STATO.md` aveva superato i 78 kB): sessioni `arena/336bc217` → `arena/01a0bade`. |
@@ -379,13 +381,13 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `src/fda/` | `cli.py` (typer), `config.py`, `collect.py`, `store.py` (Parquet versionati + viste DuckDB), `http.py` (cache/rate-limit/retry), `teams.py` (~300 alias), `backoff.py` (sospensione delle fonti), `diagnostics.py` (`detail`/`digest`/`shape_of`). |
 | `src/fda/sources/` | `fotmob.py` (**primaria**), `understat.py`, `espn.py` (riserva: 403 su tutte le fasi), `history.py` (CSV storici e mirror), `news.py` (Google News + ESPN news), `openmeteo.py` (fallback meteo). |
 | `src/fda/models/` | `predict.py` (Dixon-Coles + Elo, ensemble `tilt`), `calibration.py`, `dc_grid.py`, `backtest.py`, `lab.py` (walk-forward), `season_sim.py` (Monte Carlo stagione). |
-| `src/fda/site/` | `build.py`, `analysis.py` (frasi in italiano), `advanced.py`, `players.py`, `rates.py` (stime stabilizzate), `audit.py`, `fmt.py`, `templates/` (**12**), `assets/site.css` (esterno con cache-busting). |
+| `src/fda/site/` | `build.py`, `analysis.py` (frasi in italiano), `advanced.py`, `players.py`, `rates.py` (stime stabilizzate), `audit.py`, `fmt.py`, `estero.py` (**sintesi in italiano della stampa in lingua originale**, `docs/106`), `templates/` (**13**), `assets/site.css` (esterno con cache-busting). |
 | `scripts/` | **`audit_mercato.py`** e **`audit_epv.py`** (misure rieseguibili offline sui Parquet: duplicati/date del mercato; EPV e indice di contesto contro il modello), **`verify_site.py`** (gate in CI, invarianti `[0]`-`[44]`; `[41]`-`[43]` dalla revisione delle schede e **`[44]` card «Le due squadre» ricalcolata dai Parquet su tutte le pagine**, aggiunta il 9/10/2026), **`prematch_sections.py`** (censimento della scheda pre-partita: sezioni, peso visibile/tendina, ridondanze), `audit_match_sections.py`, `benchmark_quote.py`, `probe_fonti.py` (sonda settimanale), `diagnose_model.py`, `verdetto_lab.py`, `corpus_da_h2h.py`, `anteprima_scheda.py`, `render_preview.py`, `verify_ned_por.py`, `verify_standings.py`, **`font_locali.py`** (scarica i font e li rende locali, `--check` offline). |
 | `config/leagues.yaml` | Le 7 leghe + coppe; aggiungere una lega = aggiungere una voce qui (`datahub_base` per i mirror). |
 | `config/sources.yaml` | Budget di richieste per fonte. |
 | `.github/workflows/` | `daily.yml` (cron 5x/giorno: collect → calibrate → predict → backtest → simulate → build → gate → commit dati → Pages), `tests.yml` (Ruff + pytest su push/PR; Ruff aggiunto in questa sessione), `lab.yml` (lunedì 05:30 IT + sonda dei fallback), `benchmark.yml` (mensile: modello vs chiusura), `diag-fetch-log.yml` (log dei run → branch **`diag-logs`**). |
-| `tests/` | **515 test** in 44 file, eseguiti offline (parser su fixture JSON, config, modelli, sito, store/collect, backoff, contrasto dei temi, integrità del pacchetto). |
-| `data/processed/` | **26 Parquet** versionati, committati dai run daily. `fda.duckdb` è una vista derivata e **non** è versionato (`docs/26` §5). |
+| `tests/` | **988 test** in 60 file, eseguiti offline (parser su fixture JSON, config, modelli, sito, store/collect, backoff, contrasto dei temi, integrità del pacchetto). |
+| `data/processed/` | **32 Parquet** versionati, committati dai run daily. `fda.duckdb` è una vista derivata e **non** è versionato (`docs/26` §5). |
 | `diag/trigger.txt` | Interruttore del workflow `diag`: scrivici `run_id=<id>` e pusha su un branch `arena/**`. |
 
 ## 7. Limitazioni note (per non ri-verificare a vuoto)

@@ -57,8 +57,9 @@ d'ingresso del `daily`; in coda le 2 sezioni della scheda e l'esperimento notizi
 siamo arrivati, se c'è qualcosa da fare, da rivedere, da migliorare. fai delle ricerche e studia
 tutto»*. Relazione completa in [`docs/104`](104_revisione_totale_2026-10-13.md).
 
-**Misurato da zero in questa sessione** (storia completa recuperata: 713 commit; build locale dai
-dati di `17b46b3`): `pytest` **943**, `ruff` **0 errori**, `fda build` **498 schede / 2.364 fixture /
+**Misurato da zero in quella sessione** (i numeri di oggi, dopo `docs/105` e `docs/106`, sono `pytest` **988** e
+`verify_site` **241.774 · 0 problemi** con 55 oracoli — [50] è la card «stampa in lingua originale»; storia
+completa recuperata: 713 commit; build locale dai dati di `17b46b3`): `pytest` **943**, `ruff` **0 errori**, `fda build` **498 schede / 2.364 fixture /
 7.602 giocatori**, `verify_site` **241.754 controlli · 0 problemi**, parità **58 schede** (struttura
 identica, indice 16 voci, testo min 31.876 · mediana 37.508), resa 375 px **28.728 misure · 0**;
 sito **4.316 pagine HTML / 153 MB**; anteprima attiva su `0.0.0.0:8000`. GitHub: **0 issue, 0 PR**,
