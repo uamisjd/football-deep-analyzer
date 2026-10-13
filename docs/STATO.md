@@ -45,7 +45,7 @@ squadra con un'espressione regolare e il primo si portava dietro il secondo: 32 
 **Fix pronto (PR nuova, ramo di sessione):** riquadri letti con il parser HTML, controlli in più (chiave
 del tema ↔ etichetta, lingua di lega configurata, presenza dei **due** riquadri) e **tre test nuovi** che
 costruiscono il caso vero, compresa una pagina manomessa che l'oracolo deve respingere. Gate: `pytest`
-**990** (+2) · `ruff` 0 · build **498/2.364/7.602** · `verify_site` **241.784 · 0 problemi** · parità identica ·
+**991** (+3) · `ruff` 0 · build **498/2.364/7.602** · `verify_site` **241.784 · 0 problemi** · parità identica ·
 resa 375 **28.728 · 0**. La issue #114 si chiude da sola al primo `daily` verde (`docs/41` §4).
 **Prossimo passo:** merge del fix e verifica d'ingresso sul primo `daily` verde (righe `nl`/`pt` in archivio,
 blocco in pagina, +36 richieste in `stato.html`).

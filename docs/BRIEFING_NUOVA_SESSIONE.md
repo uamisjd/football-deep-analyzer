@@ -30,8 +30,8 @@ Opzioni con numeri in `docs/104` §3 (A: commit dati 1×/giorno −80%; C: `git 
 D: LFS insufficiente). **Tre decisioni attendono l'utente:** politica del repository, le ultime 2
 sezioni della scheda partita, feed di lega per NED1/POR1. Nessuna modifica di codice in questa
 sessione: solo misure, `docs/104` e aggiornamenti di indice (`README`, questo briefing).
-> Numeri **al momento di quella revisione**: dopo `docs/105` e `docs/106` sono `pytest` **988** e
-> `verify_site` **241.774 · 0 problemi** (55 oracoli), con la card «stampa in lingua originale» verificata dall'oracolo [50].
+> Numeri **al momento di quella revisione**: dopo `docs/105` e `docs/106` sono `pytest` **991** e
+> `verify_site` **241.784 · 0 problemi** (55 oracoli), con la card «stampa in lingua originale» verificata dall'oracolo [50].
 
 **Sessione `arena/079933b1-football-deep-analyzer` chiusa con la PR #110 fusa su `main`** (merge eseguito dall'agente su ordine esplicito dell'utente *«ok fai merge»*, deroga registrata in `docs/13` §9.26 e `docs/STATO.md`).
 
