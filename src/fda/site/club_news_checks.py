@@ -143,7 +143,7 @@ def audit_club_life(site: Path, data: Path) -> dict[str, Any]:
             counts["published"] += len(primary)
             counts["reserve"] += len(reserve)
             counts["related"] += len(related)
-            declared_related = re.search(r"· (\d+) letture sul tema", text)
+            declared_related = re.search(r"· (\d+) lettur[ae] sul tema", text)
             if (int(declared_related.group(1)) if declared_related else 0) != len(related):
                 error(mid, "related", "conteggio delle letture sul tema diverso dall'elenco", team)
             counts["empty_sides"] += not (primary or reserve)

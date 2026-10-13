@@ -300,10 +300,10 @@ ENGLISH = re.compile(
 AGREEMENT = re.compile(
     r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
-    r"giocatori|campionati|cartellini|allenatori)\b"
+    r"giocatori|campionati|cartellini|allenatori|letture)\b"
     r"|(?<![\d,])\b\d+ i (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
-    r"giocatori|campionati|cartellini|allenatori)\b")
+    r"giocatori|campionati|cartellini|allenatori|letture)\b")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
 # Attributi che un lettore di schermo pronuncia: il testo lì dentro è a tutti gli effetti
 # testo nostro, ma i controlli di lingua giravano solo sul testo visibile (audit 18/09/2026).
@@ -3209,7 +3209,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     ("senza fatto specifico", atteso["piatti"], r"· (\d+) senza un fatto specifico"),
                     ("fuori ambito", atteso["fuori_ambito"], r"· (\d+) fuori ambito prima squadra"),
                     ("segnale assente", atteso["senza_segnale"], r"· (\d+) senza evento o analisi espliciti"),
-                    ("letture sul tema", atteso["correlate"], r"· (\d+) letture sul tema"),
+                    ("letture sul tema", atteso["correlate"], r"· (?:<b>)?(\d+) lettur[ae] sul tema"),
                     ("oltre il limite", atteso["oltre"], r"· (\d+) oltre i limiti"),
                     ("troppo vecchi", atteso["vecchie"], r"· (\d+) troppo vecch")):
                 checks += 1

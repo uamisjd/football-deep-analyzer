@@ -1,3 +1,41 @@
+## 2026-10-13 — Post-merge PR #108, diagnosi issue #109 e hotfix dei due errori del `daily` (docs/99)
+
+**Stato verificato su Git e GitHub Actions:** PR #108 unita dall'utente (`6a0034c`, 21 commit
+dal ramo `arena/8d89284f-football-deep-analyzer`; nessun commit orfano rimasto fuori).
+Workflow `tests` su `main` verde (`38381687220`), mentre `daily` su `main` era rosso da
+5 run consecutivi (issue automatica **#109** aperta dal run #257 del 12/10 19:44 UTC e
+aggiornata fino al run #261 `38381687223` del 13/10 10:29 UTC). Raccolta dati, modelli,
+backtest, simulazioni e `fda build` riuscivano con 0 errori; il blocco avveniva al passo 11
+(`verify_site`), prima del commit dei Parquet e del deploy Pages.
+
+**Due cause diagnosticate e corrette ([docs/99](99_diagnosi_daily_109_hotfix_2026-10-13.md)):**
+1. `laboratorio.html: concordanza '1 campionati'`: la riga 52 del test prospettico stampava
+   `{{ prosp.leagues_better }} campionati` senza filtro plurale; rimasta latente finché
+   `prosp.n == 0` nello snapshot locale, si è attivata in produzione alla prima gara finita
+   con `leagues_better == 1`. Corretta con `|it_plural('campionato', 'campionati')` (e
+   concordato anche `lab.n_passes == 1` alla riga 12).
+2. `5749705.html: «letture sul tema» di Juventus stampa 0, i dati dicono 1`: in `match.html`
+   (riga 611) il contatore è dentro `<b>...</b>` (`· <b>1 letture sul tema</b>`). Mentre
+   l'oracolo indipendente `club_news_checks.py` legge il testo senza tag HTML (ed è passato
+   nel run #261 con 864/864 controlli verdi), `[20]` in `verify_site.py` (riga 3212) cercava
+   `r"· (\d+) letture sul tema"` sull'HTML grezzo `head`, fallendo per via di `<b>` non
+   appena il run live ha trovato 1 lettura correlata su Juventus (`5749705.html`). Corretto
+   il singolare in `match.html` (`1 lettura sul tema`), allineate le regex in `verify_site.py`
+   (`r"· (?:<b>)?(\d+) lettur[ae] sul tema"`) e `club_news_checks.py`, ed esteso `AGREEMENT`
+   a `1 letture`.
+
+**Gate finali verificati:** **922 test** passati (+2 test di regressione dedicati in
+`test_lab_page.py` e `test_vita_editorial.py`), `ruff check .` pulito; `fda build`
+**493/2.364/7.594**; `verify_site` **238.235 controlli / 0 problemi**; parità **58 schede**;
+resa 375 px **28.504 misure / 0 problemi**; audit Vita (**840 / 0**), Mercato (**928 / 0**)
+e Panchina (**0 difetti**) superati. Nessun Parquet modificato, nessun modello cambiato.
+
+**Prossimo:** (1) PR pronta per sbloccare subito `daily` su `main` e far chiudere in
+automatico l'issue #109 (merge dell'utente, regola D); (2) proseguire su Vita del club
+(`docs/98` §5: misura di V3 sul filtro lingua e copertura delle 5 leghe estere), poi le
+ultime 3 sezioni del punto 4 (*Previsione ensemble*, *Precedenti*, *Verifica approfondita*).
+Decisioni utente aperte: StatsBomb e conferma card Clima.
+
 ## 2026-10-13 — Lingua e copertura: misura del difetto e confronto preregistrato (docs/98)
 
 **In corso, nessun candidato ancora integrato.** Prima attività: file riallineati al ramo
