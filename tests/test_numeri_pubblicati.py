@@ -112,8 +112,13 @@ def test_agreement_presidia_i_plurali_misurati():
     """
     vs = _site_module()
     for testo in ("Altri 1 arrivi riconosciuti", "chiudere nelle prime 1 posizioni",
-                  "2 i titoli più vecchi", "1 arrivi", "5 i legni"):
+                  "2 i titoli più vecchi", "1 arrivi", "5 i legni",
+                  # quarto ramo (docs/103 §2): aggettivo plurale + «1», la forma che i tre
+                  # rami col numero davanti non potevano vedere — 8 schede la stampavano
+                  "nessun pareggio negli ultimi 1", "nelle ultime 1", "i primi 1"):
         assert vs.AGREEMENT.search(testo), f"non intercettato: {testo!r}"
     for testo in ("1 assente", "1 occasione", "1 titolare", "1 voce", "1 Ammonizioni 3",
-                  "1,2 ammonizioni", "su 7 arrivi riconosciuti"):
+                  "1,2 ammonizioni", "su 7 arrivi riconosciuti",
+                  # il ramo nuovo non tocca i plurali giusti né i numeri col separatore
+                  "nessun pareggio negli ultimi 2", "primi 1.000 iscritti", "gli ultimi 1.000"):
         assert not vs.AGREEMENT.search(testo), f"falso positivo: {testo!r}"

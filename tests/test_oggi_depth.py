@@ -563,8 +563,11 @@ def test_h2h_pattern_from_current_home_side(tmp_path):
     assert hp["top_scores"][0]["score"] == "1-1" and hp["top_scores"][0]["n"] == 2
     assert hp["first"] == pd.Timestamp("2023-11-10 18:00", tz="UTC")
     assert hp["last"] == pd.Timestamp("2025-05-10 18:00", tz="UTC")
-    # sotto 8 casi con la casa attuale in casa: nessuna sotto-serie pubblicata
+    # sotto 8 casi con la casa attuale in casa: nessuna sotto-serie pubblicata — ma il
+    # conteggio esce comunque (`venue_n`), perché la scheda deve dire *perché* non c'è
+    # invece di tacere (M6, docs/103 §3: 13 schede con 2-7 casi senza spiegazione)
     assert hp["venue"] is None
+    assert hp["venue_n"] == 3
 
 
 def test_h2h_venue_subset_published_from_eight_cases(tmp_path):
@@ -577,7 +580,7 @@ def test_h2h_venue_subset_published_from_eight_cases(tmp_path):
     ma.h2h_df = pd.DataFrame(rows)
     hp = ma.h2h_pattern(100, 10, 20, KICK)
     assert hp is not None and hp["venue"] is not None
-    assert hp["venue"]["n"] == 8
+    assert hp["venue"]["n"] == 8 == hp["venue_n"]
     assert (hp["venue"]["wins"], hp["venue"]["draws"], hp["venue"]["losses"]) == (3, 5, 0)
     assert hp["venue"]["wins"] + hp["venue"]["draws"] + hp["venue"]["losses"] == hp["venue"]["n"]
     assert hp["venue"]["gpg"] == pytest.approx((3 + 2 + 2 + 3 + 2 + 2 + 3 + 2) / 8)

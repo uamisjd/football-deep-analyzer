@@ -1,3 +1,11 @@
+## 2026-10-13 — Revisione di «Precedenti» (`#precedenti`): misurata, tre difetti chiusi (`docs/103`)
+
+**Misura d'ingresso** (`docs/101` §4.1; elenco canonico dal `sitemap.xml`: 498 schede = 58 pre-partita + 440 finite): blocco completo su **52/58** pre-partita (sulle finite **0 per progetto**: `h2h_pattern` è un blocco pre-partita come `key_players_deep`), bilancio corto 5+433, segnaposto 8/8 veri; **490 schede** con l'elenco «Ultimi precedenti» (**2.353 righe**) e **0 incoerenze** rispetto ai Parquet (date, punteggi, esiti V/N/P, duplicati, regola della vigilia, righe anomale); il bilancio corto di FotMob combacia con l'archivio **438/438**; sotto-serie per campo su 39 schede, **muta su 13** (il difetto M6 di `docs/55`).
+
+**Difetti chiusi:** (1) «nessun pareggio **negli ultimi 1**» su 8 schede → «nell'ultimo precedente», con **quarto ramo di `AGREEMENT`** (aggettivo plurale + «1»; misurato prima: 8 hit reali, 0 falsi positivi su 4.314 pagine e attributi); (2) **M6** → `venue_n` esposto sempre e riga «di cui con X di casa (N): sotto la soglia di 8 casi non pubblichiamo le frequenze» sulle 13 schede, col numero ricalcolato dall'archivio in `[5]` (39 pubblicate + 13 col motivo); (3) il **bilancio corto porta il numero dei casi** («Bilancio (2)») su 438 schede, verificato come somma dei tre numeri stampati — `[5]` passa così da 52 a **490** schede verificate.
+
+**Gate:** `pytest` **943** · `ruff` pulito · build **498/2.364/7.602** · `verify_site` **241.619 · 0** (erano 240.691) · `parita_schede` nessuna differenza · `resa_375` 28.722 · 0. Dopo: «ultimi 1» **0**, righe «Bilancio (N)» **490**, frasi di soglia **13**. Restano la sezione 2 («Previsione del modello ensemble») e la 3 («Verifica approfondita») della coda `docs/101` §4.
+
 ## 2026-10-13 — Chiusa la classe ««1» + plurale» su UCL e arrivi (`docs/102`), dopo la verifica d'ingresso del daily
 
 **Verifica d'ingresso:** il log incollato dall'utente corrisponde ai run `38381687223`/`38391444901` su `6a0034c`, già corretti da `b021aeb` (PR #110); daily `38414127388` **success** su `b6d7cc3` + commit dati `1364678`, issue #109 chiusa automaticamente alle 14:47:42Z. Nessun intervento ulteriore sui due errori del log ([`docs/102`](102_concordanza_ucl_e_arrivi_2026-10-13.md) §1).

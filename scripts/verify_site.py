@@ -305,6 +305,11 @@ ENGLISH = re.compile(
 # rigore», «1 punto» — non sono in lista). I plurali delle tabelle di confronto (es. «1
 # Ammonizioni 3», dove l'1 è la cella della squadra e non il contatore) restano fuori
 # perché in maiuscolo: la regex è case-sensitive.
+# Quarto ramo (13/10/2026, docs/103 §2): l'ordine inverso — aggettivo plurale + «1» —
+# che i tre rami sopra non potevano vedere perché il numero viene dopo la parola.
+# Misurato sulle 4.314 pagine + gli attributi leggibili: l'unica forma presente era
+# «nessun pareggio negli ultimi 1» (8 schede pre-partita, card Precedenti); zero
+# occorrenze legittime. Il guard (`(?![\d.,])`) esclude i «1.000» col separatore.
 AGREEMENT = re.compile(
     r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
@@ -315,7 +320,8 @@ AGREEMENT = re.compile(
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
     r"giocatori|campionati|cartellini|allenatori|letture|arrivi|posizioni|occasioni|presenze|"
     r"partenze|reti|trasferte|ammonizioni|espulsioni|parate|legni|angoli|sostituzioni|"
-    r"giornate|rimonte)\b")
+    r"giornate|rimonte)\b"
+    r"|(?<![\d,])\b(altri|altre|ultim[ie]|prim[ie]|prossim[ie]|scors[ie]) 1(?![\d.,])")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
 # Attributi che un lettore di schermo pronuncia: il testo lì dentro è a tutti gli effetti
 # testo nostro, ma i controlli di lingua giravano solo sul testo visibile (audit 18/09/2026).
@@ -1885,7 +1891,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # codifica FotMob indipendente dal codice del sito: usualPosition parte da 0 (616 formazioni)
     role_names = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
     hist: dict[int, int] = {}
-    n_role = n_abs = n_h2h = n_list = 0
+    n_role = n_abs = n_h2h = n_list = n_ven = n_leg = 0
     if not lineup.empty and lineup.usual_position_id.notna().any():
         h = lineup[lineup.usual_position_id.notna()]
         hist = {int(k): int(v) for k, v in
@@ -1946,8 +1952,39 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             hh = hh[hh.home_id.isin(ids) & hh.away_id.isin(ids)]
             checks += 1
             n_h2h += 1
-            if int(m.group(1)) != len(hh):
-                fails.append(f"{pg.name}: {m.group(1)} precedenti in pagina vs {len(hh)} in archivio")
+            if 'aria-label="Bilancio precedenti"' in html:
+                # riga completa con la ciambella: il conteggio è quello che ricalcoliamo
+                # dall'archivio, e la sotto-serie per campo (M6, docs/103 §3) esce da 8 casi
+                # in su, sotto soglia col conteggio e col motivo; in nessun caso il numero
+                # mostrato può divergere dal ricalcolo.
+                if int(m.group(1)) != len(hh):
+                    fails.append(f"{pg.name}: {m.group(1)} precedenti in pagina vs {len(hh)} in archivio")
+                nv = int((hh.home_id == int(row.home_id)).sum())
+                ven = re.search(r"di cui con [^<]*? di casa \((\d+)\)", html)
+                sotto = "sotto la soglia di 8 casi" in html
+                checks += 1
+                n_ven += 1
+                mostrato = int(ven.group(1)) if ven else None
+                if nv >= 8 and (mostrato != nv or sotto):
+                    fails.append(f"{pg.name}: sotto-serie per campo {mostrato} vs {nv} dall'archivio")
+                elif 1 <= nv < 8 and (mostrato != nv or not sotto):
+                    fails.append(f"{pg.name}: sotto-serie per campo {mostrato} con {nv} casi: "
+                                 f"manca il conteggio o il motivo")
+                elif nv == 0 and ven:
+                    fails.append(f"{pg.name}: sotto-serie per campo pubblicata senza casi")
+            else:
+                # bilancio corto (1-2 precedenti, docs/103 §2): il discriminante è l'assenza
+                # della ciambella, non l'etichetta — dal 13/10 anche questa riga porta il
+                # numero dei casi. Qui il conteggio dichiarato è la somma dei tre numeri
+                # mostrati accanto (ciò che il lettore può rifare a mano): l'archivio può
+                # contenerne di più, e non è quello che la riga promette.
+                checks += 1
+                n_leg += 1
+                tre = re.search(re.escape(m.group(0)) + r'<td>(\d+) vittori\w* .*? · '
+                                r'(\d+) pareggi\w* · (\d+) vittori\w*', html)
+                if not tre or int(m.group(1)) != sum(int(x) for x in tre.groups()):
+                    fails.append(f"{pg.name}: Bilancio ({m.group(1)}) non è la somma "
+                                 f"dei tre numeri mostrati")
     for lg_page in ("index.html", "prossime.html"):
         path = site / lg_page
         if not path.exists():
@@ -1972,7 +2009,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                          un_count.get((int(mid), int(row.away_id)), 0)):
                 fails.append(f"{lg_page}: chip indisponibili {n1} {c1} / {n2} {c2} != distinta")
     print(f"[5] schede oggi: {n_role} ruoli, {n_abs} indisponibili, {n_h2h} archivi precedenti, "
-          f"{n_list} chip nelle liste")
+          f"{n_list} chip nelle liste, {n_ven} sotto-serie per campo ricalcolate, "
+          f"{n_leg} bilanci corti")
 
     # 6) post-partita: assist della cronaca e split primo/secondo tempo contro le tabelle
     events, team_stats = st.read("events"), st.read("team_stats")

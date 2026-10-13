@@ -5798,7 +5798,10 @@ class MatchAnalysis:
         total = len(rows)
         top = sorted(scorelines.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
         # sotto-serie «con la casa attuale in casa»: pubblicata solo da 8 casi —
-        # sotto una doppia cifra di precedenti la frequenza non regge una frase (docs/20 §11)
+        # sotto una doppia cifra di precedenti la frequenza non regge una frase (docs/20 §11).
+        # `venue_n` esce sempre (anche sotto soglia): la scheda la usa per dire *perché* la
+        # sotto-serie non c'è invece di tacerla (M6, docs/103 §3) — misurato il 13/10/2026:
+        # 13 schede con 2-7 casi non spiegavano l'assenza della riga.
         venue = None
         nv = vw + vd + vl
         if nv >= 8:
@@ -5808,7 +5811,7 @@ class MatchAnalysis:
                 "margin": sum(margins) / total,
                 "btts": btts / total, "over25": over25 / total, "draw_drought": last_draw,
                 "top_scores": [{"score": s, "n": c, "share": c / total} for s, c in top],
-                "venue": venue,
+                "venue": venue, "venue_n": nv,
                 "last": rows[0]["utc"], "first": rows[-1]["utc"]}
 
     # ---- gruppi di pari per le rate su campioni piccoli (docs/19 §1.10) ----------------------
