@@ -1,3 +1,141 @@
+## 2026-10-13 — Merge PR #110 su ordine esplicito dell'utente e handoff per la nuova sessione (`docs/101`)
+
+**Merge PR #110 (`arena/079933b1-football-deep-analyzer` → `main`):**
+- Eseguito dall'agente su ordine esplicito dell'utente nel turno corrente (*«ok fai merge ,dopo
+  continuiamo su una nuova sessione,quindi in caso prepara la nuova sessione con i prossimi
+  lavori»*; deroga una tantum registrata in `docs/13` §9.26).
+- **Contenuto fuso su `main`:** hotfix dei 2 errori del workflow `daily` (Issue #109,
+  [`docs/99`](99_diagnosi_daily_109_hotfix_2026-10-13.md)), filtro lingua V3 puro-Python
+  `149/149` ([`docs/98`](98_lingua_copertura_2026-10-13.md) §6), copertura e ricerca web di
+  «Vita del club» (`#notizie`) su tutte le partite ([`docs/100`](100_vita_club_ricerca_web_copertura_2026-10-13.md)),
+  e preparazione completa della nuova sessione ([`docs/101`](101_handoff_prossima_sessione_2026-10-13.md)
+  e `docs/BRIEFING_NUOVA_SESSIONE.md`).
+- **Prossimo passo (nella nuova sessione):** verificare all'ingresso il `daily` post-merge su
+  `main` e l'issue `#109`, avviare il server di anteprima su `0.0.0.0:8000` e completare la
+  revisione delle **ultime 3 sezioni della scheda partita** secondo la mappa tecnica in
+  [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md):
+  1. **«Precedenti» (`#precedenti`)** (`match.html:650–670`, `h2h_pattern`, `h2h_list`, `h2h_stats`, invariante `[7]`);
+  2. **«Previsione del modello ensemble» (`#previsione` + `#scomposizione` + `#laboratorio` + `#fascia-storica` + `#posizione-lega` + `#primo-gol`)** (`match.html:671–864`, invarianti `[8]`, `[10]`, `[11]`, `[12]`, `[15]`, `[16]`, `[17]`, `[46]`, `[47]`);
+  3. **«Verifica approfondita: risultati esatti e distribuzione gol» (`#verifica`: `#probabilita` + `#gol-totali`)** (`match.html:1118–1168`, invarianti `[8]`, `[9]`).
+
+## 2026-10-13 — «Vita del club» (`#notizie`): ricerca web, disambiguazione club, finestra 14 giorni e copertura su tutte le partite (`docs/100`)
+
+**Diagnosi e risoluzione dei 5 colli di bottiglia ([docs/100](100_vita_club_ricerca_web_copertura_2026-10-13.md)):**
+- **Allineamento finestra pre-partita (`MatchAnalysis.NEWS_WINDOW_DAYS = 14`, `club_news_checks.py`):**
+  con le gare in programma a fine sosta nazionali (`16–20/10`), la finestra di 7 giorni
+  (`[kickoff - 7d, as_of]`) si comprimeva a 1–3 giorni (fino a 9 ore sui posticipi), scartando
+  l'82% degli articoli già raccolti nei 14 giorni di `NEWS_RETENTION_DAYS` (`969` voci
+  esaminate contro `5.321` entro 14 giorni dal calcio d'inizio).
+- **Disambiguazione dei nomi club (`src/fda/site/analysis.py`):** esteso `team_tokens` con gli
+  esonimi e gli alias italiani di `soggetto_tokens(team_name)` (`Lipsia`, `Colonia`,
+  `Stoccarda`, `Friburgo`, `Magonza`, `Nizza`, `Marsiglia`, `Siviglia`, `Maiorca`, ecc.);
+  esclusi da `_club_tokens` i prefissi condivisi fra più club (`real`, `borussia`, `olympique`,
+  `sporting`, `manchester`, `madrid`, `paris`, `united`, `city`, `union`) e i nomi comuni
+  italiani (`fortuna`, `santa`, `clara`, `ahead`, `eagles`, `saint`); corretta `altra_squadra`
+  sui club con nome di 3–4 lettere (`Lens`, `Ajax`, `Como`, `Pisa`, `Roma`, `PSG`, `PSV`,
+  `Hull`, con guardia locativa `\ba\s+roma\b`); introdotta la cache `team_player_names`.
+- **Query di ricerca web e attribuzione multi-club (`src/fda/sources/news.py`):** estesa
+  `ITALIAN_SEARCH_NAMES` a 17 club europei privi di variante italiana/completa (`Brighton`,
+  `Wolverhampton`, `Mallorca`, `Osasuna`, `Alavés`, `Oviedo`, `Rennes`, `Brest`, `Nice`,
+  `Strasbourg`, `Lens`, `Paris FC`, `Heidenheim`, `St. Pauli`, `Kaiserslautern`, `Famalicao`,
+  `Vitoria SC`, `AVS`) e rimossa l'interruzione al primo club in `parse_espn_news` e
+  `parse_direct_sports_rss`.
+- **Selettore positivo (`src/fda/site/club_signals.py`) e visibilità dati (`match.html`):**
+  corretto il typo regex `ricors[oi]` in `EVENT_RULES`, estesi i pattern club-agnostici per
+  assetto societario, panchina, provvedimenti, infortuni/rientri, rinnovi contrattuali e
+  analisi tecnico-tattica (`31/31` invariato sul benchmark annotato, `0` falsi positivi sui
+  controlli negativi), e impostato `<details class="news-context" open>` affinché i `285`
+  fatti verificati («Dati di contesto della partita») siano subito visibili su **58/58**
+  schede pre-partita.
+- **Misura prima → dopo sulle 58 schede pre-partita (`sitemap.xml`):**
+  - Schede con rassegna stampa attiva: da **6 / 58 (`10,3%`)** a **33 / 58 (`56,9%`)**
+    (`ITA1` `5/10 → 10/10`, `ESP1` `1/10 → 7/10`, `ENG1` `0/10 → 5/10`, `GER1` `0/9 → 6/9`,
+    `FRA1` `0/9 → 5/9`).
+  - Lati squadra con notizie di stampa: da **7 / 116 (`6,0%`)** a **45 / 116 (`38,8%`)**,
+    con **67 articoli pubblicati** (contro `12` prima; su `audit_vita_editoriale.py` da `7` a
+    **49 lati** e da `13` a **101 segnalazioni**).
+  - Schede con informazioni utili visibili subito in «Vita del club» (stampa + dati di
+    contesto aperti): **58 / 58 (`100%`)** su tutte le 7 leghe.
+- **Gate verificati:** **932 test** passati (`+9` nuovi controlli in `test_club_signals.py` e
+  `test_vita_club.py`), `ruff check .` 0 errori; `fda build` **493/2.364/7.594**; `verify_site`
+  **238.546 controlli / 0 problemi** (`[20]` **1.148 controlli indipendenti** su 58 pagine);
+  `audit_fonti.py` **0 difetti bloccanti**. Anteprima attiva su `0.0.0.0:8000`.
+
+## 2026-10-13 — Chiusura di `docs/98` §6: filtro lingua V3 puro-Python (`149/149`) e diagnosi copertura per lega
+
+**Misura e integrazione V3 (`src/fda/sources/news.py`, `tests/test_i18n.py`, [docs/98](98_lingua_copertura_2026-10-13.md) §6):**
+- Risolti tutti i **19 errori su 149** della baseline sul benchmark congelato
+  `tests/fixtures/news_language_review_2026-10-13.json` (**149/149 corretti: 0 falsi
+  positivi, 0 falsi negativi**) senza introdurre `Lingua` (~909 MiB in RAM) né nuove
+  dipendenze (**0 MiB extra RAM**).
+- Valutazione **prima sul solo titolo**: i 6 falsi positivi `[misto_titolo_straniero]`
+  (`en`, `fr`, `nl`, `pt`, `ro`, `pl` con estratto italiano) sono tutti bloccati e i 3
+  falsi negativi `[misto_titolo_italiano]` sono tutti recuperati.
+- Corretti i falsi veti lessicali su parole italiane o prestiti correnti (`però` che senza
+  accento collideva con lo spagnolo `pero`, `polemica` vs `polémica`, `Under`, `Eredivisie`,
+  `ADO Den Haag`, `para`, `vai`, `now`; `manager`, `fans`, `meeting`, `ß` in cognomi come
+  `Groß` e genitivo sassone ammessi in presenza di ≥ 2 marcatori esclusivi italiani;
+  `Casa`/`Rosa`/`Gol` neutralizzati nei nomi propri di club isolati come «Casa Pia Porto»;
+  tokenizzazione Unicode `[^\W\d_]+`).
+- **Replay sulle 4.431 coppie uniche di `data/processed/news.parquet`:** **1 sola nuova
+  esclusione** (`"Parma's Nesta Elphege Undergoes Appendix Surgery"`, titolo inglese che la
+  baseline lasciava passare) e **185 recuperi italiani** (0 falsi positivi stranieri).
+- **Effetto su «Vita del club» e diagnosi della copertura per campionato:** sulle 63 schede
+  del campione di `docs/97` gli scarti impropri «in un'altra lingua» scendono da **145 a 80**
+  (`-65`, di cui `11 → 1` in `NED1` e `23 → 8` in `GER1`; sulle 58 schede pre-partita del
+  13/10 da **110 a 60**, `-50`), attribuendo le righe italiane recuperate alla vera ragione
+  editoriale (`servizio o cronaca`, `bassa reputazione`, `su un'altra squadra`, `senza
+  segnale`) e recuperando nel *Clima intorno al club* di `5749690` (`Atalanta-Venezia`) la
+  notizia societaria de *Il Gazzettino* prima scartata per «polemica». Dimostrato con misura
+  per lega che l'assenza di voci esposte nelle leghe estere dipende dalla natura di cronaca
+  delle 197 righe italiane raccolte su 51 gare estere, non dal filtro lingua.
+- **Gate verificati:** **923 test** passati (`+1` benchmark test su 149 casi in
+  `test_i18n.py`), `ruff check .` 0 errori; `fda build` **493/2.364/7.594**; `verify_site`
+  **238.235 controlli / 0 problemi**; parità **58 schede**; resa 375 px **28.504 misure /
+  0 problemi**; audit Vita (**840 / 0**), Mercato (**928 / 0**) e Panchina (**0 difetti**).
+  Anteprima attiva su `0.0.0.0:8000`.
+- **Prossimo:** audit delle ultime 3 sezioni della scheda partita (*Previsione ensemble*,
+  *Precedenti*, *Verifica approfondita*). PR **#110** aperta e pronta per il merge quando
+  vorrai sbloccare `daily` su `main`.
+
+## 2026-10-13 — Post-merge PR #108, diagnosi issue #109 e hotfix dei due errori del `daily` (docs/99)
+
+**Stato verificato su Git e GitHub Actions:** PR #108 unita dall'utente (`6a0034c`, 21 commit
+dal ramo `arena/8d89284f-football-deep-analyzer`; nessun commit orfano rimasto fuori).
+Workflow `tests` su `main` verde (`38381687220`), mentre `daily` su `main` era rosso da
+5 run consecutivi (issue automatica **#109** aperta dal run #257 del 12/10 19:44 UTC e
+aggiornata fino al run #261 `38381687223` del 13/10 10:29 UTC). Raccolta dati, modelli,
+backtest, simulazioni e `fda build` riuscivano con 0 errori; il blocco avveniva al passo 11
+(`verify_site`), prima del commit dei Parquet e del deploy Pages.
+
+**Due cause diagnosticate e corrette ([docs/99](99_diagnosi_daily_109_hotfix_2026-10-13.md)):**
+1. `laboratorio.html: concordanza '1 campionati'`: la riga 52 del test prospettico stampava
+   `{{ prosp.leagues_better }} campionati` senza filtro plurale; rimasta latente finché
+   `prosp.n == 0` nello snapshot locale, si è attivata in produzione alla prima gara finita
+   con `leagues_better == 1`. Corretta con `|it_plural('campionato', 'campionati')` (e
+   concordato anche `lab.n_passes == 1` alla riga 12).
+2. `5749705.html: «letture sul tema» di Juventus stampa 0, i dati dicono 1`: in `match.html`
+   (riga 611) il contatore è dentro `<b>...</b>` (`· <b>1 letture sul tema</b>`). Mentre
+   l'oracolo indipendente `club_news_checks.py` legge il testo senza tag HTML (ed è passato
+   nel run #261 con 864/864 controlli verdi), `[20]` in `verify_site.py` (riga 3212) cercava
+   `r"· (\d+) letture sul tema"` sull'HTML grezzo `head`, fallendo per via di `<b>` non
+   appena il run live ha trovato 1 lettura correlata su Juventus (`5749705.html`). Corretto
+   il singolare in `match.html` (`1 lettura sul tema`), allineate le regex in `verify_site.py`
+   (`r"· (?:<b>)?(\d+) lettur[ae] sul tema"`) e `club_news_checks.py`, ed esteso `AGREEMENT`
+   a `1 letture`.
+
+**Gate finali verificati:** **922 test** passati (+2 test di regressione dedicati in
+`test_lab_page.py` e `test_vita_editorial.py`), `ruff check .` pulito; `fda build`
+**493/2.364/7.594**; `verify_site` **238.235 controlli / 0 problemi**; parità **58 schede**;
+resa 375 px **28.504 misure / 0 problemi**; audit Vita (**840 / 0**), Mercato (**928 / 0**)
+e Panchina (**0 difetti**) superati. Nessun Parquet modificato, nessun modello cambiato.
+
+**Prossimo:** (1) PR pronta per sbloccare subito `daily` su `main` e far chiudere in
+automatico l'issue #109 (merge dell'utente, regola D); (2) proseguire su Vita del club
+(`docs/98` §5: misura di V3 sul filtro lingua e copertura delle 5 leghe estere), poi le
+ultime 3 sezioni del punto 4 (*Previsione ensemble*, *Precedenti*, *Verifica approfondita*).
+Decisioni utente aperte: StatsBomb e conferma card Clima.
+
 ## 2026-10-13 — Lingua e copertura: misura del difetto e confronto preregistrato (docs/98)
 
 **In corso, nessun candidato ancora integrato.** Prima attività: file riallineati al ramo

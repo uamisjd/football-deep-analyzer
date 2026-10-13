@@ -154,12 +154,12 @@ def test_parole_intere_e_altro_club_in_testa(tmp_path):
     assert_closed(result)
 
 
-@pytest.mark.parametrize("days,state", [(10, "future"), (7, "open"), (2, "open"), (0, "ended"), (-1, "ended")])
+@pytest.mark.parametrize("days,state", [(16, "future"), (14, "open"), (2, "open"), (0, "ended"), (-1, "ended")])
 def test_stato_temporale_dichiarato_anche_senza_notizie(tmp_path, days, state):
     st = Store(tmp_path / "data")
     result = MatchAnalysis(st).team_news(1, "Inter", NOW + pd.Timedelta(days=days), now=NOW)
     assert result["window_state"] == state and result["esaminate"] == 0
-    assert result["window_end"] - result["window_start"] == pd.Timedelta(days=7)
+    assert result["window_end"] - result["window_start"] == pd.Timedelta(days=14)
     quiet = news_quiet_line(result, result, "Inter", "Roma")
     assert "nella finestra pre-partita" in quiet["riga"] and "negli ultimi" not in quiet["riga"]
 
@@ -262,7 +262,37 @@ def test_sezione_e_indice_restano_anche_senza_notizie_o_da_sapere(tmp_path, monk
 
 def test_settimana_futura_non_diventa_silenzio_della_stampa(tmp_path):
     st, ma = seed(tmp_path, [{"title": "Inter, ricorso respinto: la multa resta"}])
-    path = render_card(tmp_path, st, ma, kickoff=NOW + pd.Timedelta(days=10))
+    path = render_card(tmp_path, st, ma, kickoff=NOW + pd.Timedelta(days=16))
     text = path.read_text()
     assert "Settimana non ancora iniziata" in text
     assert "il vuoto non indica assenza di notizie importanti" in text
+
+
+def test_nomi_brevi_e_prefissi_condivisi_non_scartano_la_squadra_corrente(tmp_path):
+    """Club con nome di 3-4 lettere (Lens, PSG, Ajax, Roma) e prefissi condivisi (Real, Borussia)."""
+    _, ma = seed(tmp_path, [
+        {"title": "Lens, ufficiale: il capitano rinnova fino al 2029", "url": "u1"},
+        {"title": "Real Sociedad, svolta Alguacil: la rimonta rilancia la squadra", "url": "u2"},
+    ])
+    res_lens = ma.team_news(1, "Lens", KO, opponent="Nizza", now=NOW)
+    assert res_lens["pubblicate"] >= 1
+    res_soc = ma.team_news(1, "Real Sociedad", KO, opponent="Valencia", now=NOW)
+    assert res_soc["pubblicate"] >= 1
+
+
+def test_dati_di_contesto_aperti_per_default_sulla_scheda(tmp_path):
+    st, ma = seed(tmp_path, [{"title": "Inter, ricorso respinto: la multa resta"}])
+    seen = set()
+    h = ma.team_news(1, "Inter", KO, now=NOW, seen=seen)
+    a = ma.team_news(2, "Roma", KO, now=NOW, seen=seen)
+    ctx = {"home_id": 1, "home_name": "Inter", "away_id": 2, "away_name": "Roma",
+           "home_news": h, "away_news": a,
+           "news_sapere": [{"tag": "Squalifica", "testo": "Mario Rossi salta la gara."}],
+           "news_quiet": news_quiet_line(h, a, "Inter", "Roma")}
+    text = (Path(__file__).parents[1] / "src/fda/site/templates/match.html").read_text()
+    start = text.index('  <div class="card" id="notizie">')
+    end = text.index('\n  </div>', start) + len('\n  </div>')
+    builder = SiteBuilder(store=st, out_dir=tmp_path / "site")
+    html = builder.env.from_string(text[start:end]).render(c=ctx)
+    assert '<details class="news-context" open>' in html
+

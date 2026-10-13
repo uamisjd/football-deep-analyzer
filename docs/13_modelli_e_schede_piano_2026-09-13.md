@@ -1546,3 +1546,11 @@ commento.
 `predict.py` come candidati di laboratorio dichiarati (commento onesto + protocollo
 preregistrato); non sono cablati. Il card «laboratorio» della prossima voce li renderà
 visibili sul sito senza toccare la ricetta.
+
+### 9.26. 2026-10-13 — Deroga una tantum per la PR #110 (ordine esplicito dell'utente)
+
+- **Data:** 2026-10-13 · **PR:** `#110` (`arena/079933b1-football-deep-analyzer` → `main`)
+- **Motivo:** ordine esplicito dell'utente nel turno corrente (*«ok fai merge ,dopo continuiamo su una nuova sessione,quindi in caso prepara la nuova sessione con i prossimi lavori»*).
+- **Verifica pre-merge eseguita:** `pytest -q` **932 passed**, `ruff check .` **0 errori**, `fda build` **493/2.364/7.594**, `verify_site.py` **238.546 controlli · 0 problemi**, CI GitHub Actions `tests` verde (`38410169588` / `38410159811`), stato PR `MERGEABLE` / `CLEAN`.
+- **Contenuto fuso su `main`:** hotfix `daily` #109 (`docs/99`), filtro lingua V3 puro-Python `149/149` (`docs/98` §6), copertura e ricerca web di «Vita del club» (`docs/100`), e handoff completo per la nuova sessione (`docs/101`, `docs/BRIEFING_NUOVA_SESSIONE.md`, `docs/STATO.md`).
+

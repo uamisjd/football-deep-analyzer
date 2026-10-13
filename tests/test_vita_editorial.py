@@ -125,7 +125,32 @@ def test_audit_rifiuta_etichette_o_contatori_non_veri(tmp_path, field):
     if field == 'kind':
         html = html.replace('Evento segnalato', 'Fatto accertato')
     else:
-        html = html.replace('1 letture sul tema', '2 letture sul tema')
+        html = html.replace('1 lettura sul tema', '2 letture sul tema')
     assert html != path.read_text()
     path.write_text(html)
     assert audit_club_life(path.parents[1], st.base_dir)["defects"] > 0
+
+
+def test_letture_sul_tema_in_grassetto_e_concordate_per_verify_site(tmp_path):
+    """Regressione issue #109 (5749705.html): contatore in <b>...</b> e singolare '1 lettura sul tema'."""
+    import re
+
+    from scripts import verify_site as vs
+
+    st, ma = seed(tmp_path, [
+        {"title": "Inter, misure cautelari dopo gli scontri", "url": "https://example.org/1"},
+        {"title": "Inter, altre misure cautelari per i tifosi", "url": "https://example.org/2"},
+    ])
+    path = render_card(tmp_path, st, ma)
+    html = path.read_text()
+    assert "· <b>1 lettura sul tema</b>" in html
+    assert "1 letture sul tema" not in html
+    p = vs.Text()
+    p.feed(html)
+    assert vs.AGREEMENT.search("".join(p.parts)) is None
+    assert vs.AGREEMENT.search("1 letture sul tema") is not None
+    blocchi = re.split(r'<p (?:class="[^"]*" )?style="margin:12px 0 6px"><b>', html)[1:]
+    head = blocchi[0].split("<ul", 1)[0]
+    m = re.search(r"· (?:<b>)?(\d+) lettur[ae] sul tema", head)
+    assert m is not None and int(m.group(1)) == 1
+

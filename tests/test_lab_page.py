@@ -83,3 +83,43 @@ def test_etichetta_pubblica_senza_rimandi_ai_documenti():
     assert public_label("Temperatura 1X2 τ 1,16 (T ≈ 0,86 de-piattimento, docs/48)") == \
         "Temperatura 1X2 τ 1,16 (T ≈ 0,86 de-piattimento)"
     assert "docs/" not in public_label("Elo (docs/13 §6.5)")
+
+
+def test_pagina_laboratorio_concordanza_singolare_prospettico(tmp_path):
+    """Regressione issue #109: con 1 campionato migliore in prospettico non stampa '1 campionati'."""
+    from fda.models import prospettico
+    from fda.site.build import SiteBuilder
+    from fda.store import Store
+    from scripts import verify_site as vs
+
+    st = Store(tmp_path / "processed")
+    df = _frame(
+        [("dc_elo_prod", "Produzione", 1654, 0.2000, None, None, None),
+         ("var_buona", "Variante buona", 1654, 0.1990, -0.001, -0.0015, -0.0002)],
+        {"dc_elo_prod": [0.20] * 7, "var_buona": [0.199] * 7},
+    )
+    st.write("model_lab", df)
+    now = pd.Timestamp("2026-10-12T12:00:00Z")
+    ko = now + pd.Timedelta(hours=1)
+    pred = pd.DataFrame({
+        "match_id": [1], "league_key": ["ITA1"], "utc_kickoff": [ko],
+        "p_home": [0.6], "p_draw": [0.2], "p_away": [0.2],
+        "lambda_home": [1.8], "lambda_away": [0.9], "dc_rho": [-0.04],
+    })
+    prospettico.record(st, pred, now=now)
+    st.write("fixtures", pd.DataFrame({
+        "match_id": [1], "status": ["finished"],
+        "home_goals": [2], "away_goals": [0], "utc_kickoff": [ko],
+    }))
+    out = tmp_path / "site"
+    out.mkdir(parents=True, exist_ok=True)
+    builder = SiteBuilder(store=st, out_dir=out)
+    builder.build_laboratorio()
+    html = (out / "laboratorio.html").read_text()
+    assert "migliore in 1 campionato su 1" in html
+    assert "1 campionati" not in html
+    assert "<b>1</b> supera il criterio di promozione (IC interamente negativo e migliore" in html
+    p = vs.Text()
+    p.feed(html)
+    assert vs.AGREEMENT.search("".join(p.parts)) is None
+
