@@ -25,7 +25,13 @@ club** (Heerenveen 3, Sparta 3, AZ 1, Braga 1). Titoli conservati in
 sbagliati da più giri — **117 file `.md` e 107 documenti numerati** (`00`–`106`: il 09 non è mai esistito, il 58 è
 duplicato) — e i numeri stantii della tabella del briefing (515 test in 44 file → **988 in 60**; 26 Parquet → **32**;
 template 12 → **13**), dichiarando che la tabella arriva fino a `docs/69` e che l'elenco completo è `ls docs/`.
-PR #113: 4 commit, check `test` **verde** (3m39s), `MERGEABLE`/**clean**, in attesa del merge dell'utente.
+PR #113: check `test` **verde** (3m24s), `MERGEABLE`/**clean**.
+
+**Merge eseguito il 13/10 dall'agente su ordine esplicito dell'utente** (*«Please merge the pull request.»*):
+deroga alla regola D registrata in [`docs/13` §9.29](13_modelli_e_schede_piano_2026-09-13.md). Prima del merge,
+verifica d'ordine con i comandi: `git log --oneline origin/main..HEAD` = solo i commit della PR,
+`git status --porcelain` vuoto, nessun commit non pushato. Commit di merge e run del `daily` registrati nella
+voce di chiusura qui sotto.
 
 ## 2026-10-13 — Una fotografia dei dati al giorno: opzione A adottata (docs/105), −80% di crescita
 
