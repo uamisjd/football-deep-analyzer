@@ -1554,3 +1554,10 @@ visibili sul sito senza toccare la ricetta.
 - **Verifica pre-merge eseguita:** `pytest -q` **932 passed**, `ruff check .` **0 errori**, `fda build` **493/2.364/7.594**, `verify_site.py` **238.546 controlli · 0 problemi**, CI GitHub Actions `tests` verde (`38410169588` / `38410159811`), stato PR `MERGEABLE` / `CLEAN`.
 - **Contenuto fuso su `main`:** hotfix `daily` #109 (`docs/99`), filtro lingua V3 puro-Python `149/149` (`docs/98` §6), copertura e ricerca web di «Vita del club» (`docs/100`), e handoff completo per la nuova sessione (`docs/101`, `docs/BRIEFING_NUOVA_SESSIONE.md`, `docs/STATO.md`).
 
+### 9.27. 2026-10-13 — Deroga una tantum per la PR #111 (ordine esplicito dell'utente)
+
+- **Data:** 2026-10-13 · **PR:** `#111` (`arena/3bafce48-football-deep-analyzer` → `main`)
+- **Motivo:** ordine esplicito dell'utente nel turno corrente (*«Please merge the pull request.»*).
+- **Verifica pre-merge eseguita:** controllo d'ordine `docs/00` §D — `git log --oneline origin/main..HEAD` = solo i commit della PR, `git status --porcelain` vuoto; `pytest -q` **943 passed**, `ruff check src tests scripts` **0 errori**, `fda build` **498/2.364/7.602**, `verify_site.py` **241.619 controlli · 0 problemi**, `parita_schede` nessuna differenza, `resa_375` **28.722 misure · 0 problemi**, CI GitHub Actions `tests` verde (`38432135717`).
+- **Contenuto fuso su `main`:** chiusura della classe di concordanza ««1» + plurale» rimasta sul sito (`docs/102`: `ucl_label`, «Un altro arrivo riconosciuto», `AGREEMENT` con 15 plurali) e revisione misurata della sezione «Precedenti» (`docs/103`: striscia dei pareggi al singolare + quarto ramo di `AGREEMENT`, motivo M6 sotto la soglia di 8 casi, conteggio dei casi su tutti i 490 bilanci, `[5]` da 52 a 490 schede verificate).
+

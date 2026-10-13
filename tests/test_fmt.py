@@ -158,3 +158,19 @@ def test_it_plural_con_separatore_migliaia(v, expected):
     from fda.site.fmt import it_plural
 
     assert it_plural(v, "gara", migliaia=True) == expected
+
+
+@pytest.mark.parametrize("v,expected", [
+    (1, "UCL (1ª)"), (2, "UCL (prime 2)"), (3, "UCL (prime 3)"), (4, "UCL (prime 4)"),
+    (None, "UCL"), (0, "UCL")])
+def test_ucl_label_singolare_e_plurale(v, expected):
+    """L'etichetta della soglia UCL concordata col numero di posti (docs/102).
+
+    Il 13/10/2026 la pagina Proiezioni di POR1 (`ucl_spots: 1`) pubblicava «UCL (prime 1)»
+    e «nelle prime 1 posizioni»: la stessa classe di difetto del guasto del `daily`
+    («1 campionati»). Con un posto solo l'etichetta è «UCL (1ª)».
+    """
+    from fda.site.fmt import ucl_label
+
+    assert ucl_label(v) == expected
+    assert "prime 1" not in ucl_label(v)

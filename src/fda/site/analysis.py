@@ -52,7 +52,16 @@ from .advanced import (
 )
 from .club_news import title_exclusion, whole_phrase
 from .club_signals import club_signal
-from .fmt import dec, displayed, displayed_sum, it_day_time, it_plural, pct_int, pct_triple
+from .fmt import (
+    dec,
+    displayed,
+    displayed_sum,
+    it_day_time,
+    it_plural,
+    pct_int,
+    pct_triple,
+    ucl_label,
+)
 from .laboratorio import laboratorio as whatif_laboratorio
 from .rates import (
     MIN_DEN_FOR_RATE,
@@ -2262,8 +2271,11 @@ class MatchAnalysis:
                         # «in zona UCL (prime N)» e non «in zona Europa»: la riga sopra
                         # stampa «UCL (prime N) X%», e con 4 posti il 4º posto È la
                         # Champions — la vecchia etichetta si contraddiceva da sola su 23
-                        # celle delle 4 leghe a 4 posti (`docs/78` §2).
-                        gap_eur = f"in zona UCL (prime {ucl_n})"
+                        # celle delle 4 leghe a 4 posti (`docs/78` §2). L'etichetta è
+                        # composta da `ucl_label` (fonte unica): con un solo posto (POR1)
+                        # diventa «in zona UCL (1ª)», non «in zona UCL (prime 1)»
+                        # (`docs/102`, misurato il 2026-10-13).
+                        gap_eur = "in zona " + ucl_label(ucl_n)
                     else:
                         ge = int(by_rank.loc[ucl_n, "points"]) - pts
                         gap_eur = (
@@ -5786,7 +5798,10 @@ class MatchAnalysis:
         total = len(rows)
         top = sorted(scorelines.items(), key=lambda kv: (-kv[1], kv[0]))[:3]
         # sotto-serie «con la casa attuale in casa»: pubblicata solo da 8 casi —
-        # sotto una doppia cifra di precedenti la frequenza non regge una frase (docs/20 §11)
+        # sotto una doppia cifra di precedenti la frequenza non regge una frase (docs/20 §11).
+        # `venue_n` esce sempre (anche sotto soglia): la scheda la usa per dire *perché* la
+        # sotto-serie non c'è invece di tacerla (M6, docs/103 §3) — misurato il 13/10/2026:
+        # 13 schede con 2-7 casi non spiegavano l'assenza della riga.
         venue = None
         nv = vw + vd + vl
         if nv >= 8:
@@ -5796,7 +5811,7 @@ class MatchAnalysis:
                 "margin": sum(margins) / total,
                 "btts": btts / total, "over25": over25 / total, "draw_drought": last_draw,
                 "top_scores": [{"score": s, "n": c, "share": c / total} for s, c in top],
-                "venue": venue,
+                "venue": venue, "venue_n": nv,
                 "last": rows[0]["utc"], "first": rows[-1]["utc"]}
 
     # ---- gruppi di pari per le rate su campioni piccoli (docs/19 §1.10) ----------------------

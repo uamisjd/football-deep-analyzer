@@ -907,6 +907,10 @@ def test_arbitro_meteo_e_precedenti_card_separate(tmp_path):
          "home_id": 8600, "away_id": 8543, "home_goals": 1, "away_goals": 1},
         {"match_id": 5749669, "utc": "2024-09-22T16:00:00+00:00", "league": "Serie A",
          "home_id": 8543, "away_id": 8600, "home_goals": 0, "away_goals": 2},
+        # l'ultimo precedente non pari, il secondo (il 2026-03-01 del campione) pari:
+        # copre la frase al singolare del draw_drought (docs/103 §2)
+        {"match_id": 5749669, "utc": "2026-06-01T18:45:00+00:00", "league": "Serie A",
+         "home_id": 8543, "away_id": 8600, "home_goals": 2, "away_goals": 0},
     ])
     out = tmp_path / "sito"
     SiteBuilder(store=st, out_dir=out).build_match_pages({5749669, 5749645})
@@ -940,8 +944,17 @@ def test_arbitro_meteo_e_precedenti_card_separate(tmp_path):
     prec = pre[pre.index('<div class="card" id="precedenti">'):]
     assert 'aria-label="Bilancio precedenti"' in prec
     assert f'<th scope="row">Bilancio ({casi})</th>' in prec
-    # la partita finita mostra il bilancio dell'archivio (riga «Bilancio», senza contatore)
-    assert "<h2>Precedenti</h2>" in post and "Bilancio" in post
+    # l'ultimo precedente non è pari e il secondo sì: la striscia va al singolare —
+    # 8 schede stampavano «nessun pareggio negli ultimi 1» (docs/103 §2)
+    assert "nessun pareggio nell'ultimo precedente" in pre
+    assert "ultimi 1" not in pre
+    # la partita finita mostra il bilancio corto (qui 2 precedenti) e dal 13/10 anche
+    # l'etichetta porta il numero dei casi: la somma dei tre numeri stampati (docs/103 §2)
+    assert "<h2>Precedenti</h2>" in post
+    mleg = re.search(r'<th scope="row">Bilancio \((\d+)\)</th><td>(\d+) vittori\w* '
+                     r'.*? · (\d+) pareggi\w* · (\d+) vittori\w*', post)
+    assert mleg, "la riga «Bilancio» della partita finita non porta più il numero dei casi"
+    assert int(mleg.group(1)) == sum(int(x) for x in mleg.groups()[1:])
     # il link dei «Fatti rilevanti» punta dritto alla card dei precedenti
     assert 'href="#precedenti" class="small" style="white-space:nowrap">→ precedenti</a>' in pre
     st.close()

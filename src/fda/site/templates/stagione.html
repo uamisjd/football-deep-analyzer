@@ -23,7 +23,7 @@
   <h2>{{ lg.name }} <span class="tag">{{ lg.key }}</span></h2>
   <div class="tablewrap"><table>
     <tr><th scope="col">Squadra</th><th scope="col" class="r">PG</th><th scope="col" class="r">Pt</th><th scope="col" class="r">Pt attesi</th><th scope="col" class="r">Media pos.</th>
-        <th scope="col" class="r">1°</th>{% if lg.top_n %}<th scope="col" class="r">UCL (prime {{ lg.top_n }}){% if lg.legacy_top %} · dato storico{% endif %}</th>{% endif %}<th scope="col" class="r">Retro</th></tr>
+        <th scope="col" class="r">1°</th>{% if lg.top_n %}<th scope="col" class="r">{{ lg.top_n|ucl_label }}{% if lg.legacy_top %} · dato storico{% endif %}</th>{% endif %}<th scope="col" class="r">Retro</th></tr>
     {% for r in lg.rows %}
     <tr><td>{{ r.team }}{% if r.team in lg.fragili %} <span class="mut" title="Meno di {{ lg.storico_minimo }} gare di storico di allenamento: parametri stimati su pochi dati">◇</span>{% endif %}</td><td class="r">{{ r.played }}</td><td class="r"><b>{{ r.points|int }}</b></td>
         <td class="r">{{ r.exp_points|dec(1) }}</td><td class="r">{{ r.pos_mean|dec(1) }}</td>
@@ -31,7 +31,7 @@
         <td class="r">{{ r.p_rel_pct }}%</td></tr>
     {% endfor %}
   </table></div>
-  <p class="small mut" style="margin-top:10px">UCL = probabilità di chiudere nelle prime {{ lg.top_n if lg.top_n else 'N/D' }} posizioni con accesso ordinario alla fase campionato per la stagione configurata; non include EPS, vincitrici delle coppe o scorrimenti da spareggio. Errore standard massimo misurato: ±{{ lg.mc_se_max_pp|dec(2) }} punti percentuali.{% if lg.legacy_top %} Questo è un fallback storico: lo snapshot non contiene la soglia per lega e il 4 deriva dalla vecchia colonna top-4.{% endif %}</p>
+  <p class="small mut" style="margin-top:10px">UCL = probabilità di chiudere {% if lg.top_n == 1 %}nella 1ª posizione{% else %}nelle prime {{ lg.top_n if lg.top_n else 'N/D' }} posizioni{% endif %} con accesso ordinario alla fase campionato per la stagione configurata; non include EPS, vincitrici delle coppe o scorrimenti da spareggio. Errore standard massimo misurato: ±{{ lg.mc_se_max_pp|dec(2) }} punti percentuali.{% if lg.legacy_top %} Questo è un fallback storico: lo snapshot non contiene la soglia per lega e il 4 deriva dalla vecchia colonna top-4.{% endif %}</p>
   {% if lg.fragili %}<p class="small mut">Poche gare di storico: <b>{{ lg.fragili|join(', ') }}</b>
     ({{ lg.fragili|length }} {{ 'squadra' if lg.fragili|length == 1 else 'squadre' }} sotto le
     {{ lg.storico_minimo }} gare di allenamento): i loro parametri sono stimati su pochi dati, quindi la

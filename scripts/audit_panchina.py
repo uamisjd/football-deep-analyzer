@@ -426,7 +426,9 @@ def main(argv: list[str] | None = None) -> int:
             ucl = posti.get(fr.lg)
             if ucl is not None and ucl in by.index:
                 if rank <= ucl:
-                    pezzi.append(f"in zona UCL (prime {ucl})")
+                    # stessa etichetta della pagina: «prime N», «1ª» con un posto solo (docs/102)
+                    pezzi.append("in zona UCL (1ª)" if ucl == 1
+                                 else f"in zona UCL (prime {ucl})")
                 else:
                     ge = int(by.loc[ucl, "points"]) - pts
                     pezzi.append(f"{ge} punt{'o' if ge == 1 else 'i'} dal {ucl}º posto"

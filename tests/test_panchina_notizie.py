@@ -1937,3 +1937,39 @@ def test_conditional_stakes_tutto_o_niente(mood_analysis):
     # gara non presente: niente
     mood_analysis.season_sim_cond = pd.DataFrame(rows)
     assert mood_analysis.conditional_stakes("Roma", "Inter") is None
+
+
+def test_posta_in_gioco_con_un_solo_posto_ucl(tmp_path):
+    """POR1: la cella «Posta in gioco» scrive «UCL (1ª) 52%», non «UCL (prime 1)» (docs/102).
+
+    Il frammento è quello vero del template (riga della card «Panchina e posta in gioco»),
+    con la soglia UCL della lega a 1 posto: è il caso della Liga Portugal, dove il 13/10/2026
+    due celle su 5887594 pubblicavano «UCL (prime 1)».
+    """
+    from pathlib import Path
+
+    from fda.site.build import SiteBuilder
+
+    template = (Path(__file__).parents[1] / "src/fda/site/templates/match.html").read_text()
+    start = template.index('<tr><th scope="row">Posta in gioco</th>')
+    end = template.index("</tr>", start) + len("</tr>")
+    builder = SiteBuilder(store=Store(tmp_path / "data"), out_dir=tmp_path / "site")
+    text = builder.env.from_string(template[start:end]).render(c={
+        "home_bench": {"stakes": {"label": "corsa al titolo", "p_title_pct": "22",
+                                  "p_top_n_pct": "52", "ucl_spots": 1, "ucl_legacy": False,
+                                  "p_rel_pct": "4", "mc_precision_line": "N=10.000 simulazioni"}},
+        "away_bench": None})
+    assert "UCL (1ª) 52%" in text
+    assert "prime 1" not in text
+
+
+def test_zona_ucl_con_un_solo_posto(analysis, monkeypatch):
+    """Con un posto UCL solo (POR1) la riga di classifica dice «in zona UCL (1ª)» (docs/102).
+
+    La riga sopra, nella stessa cella, stampa l'etichetta `ucl_label` («UCL (1ª) 52%»):
+    le due devono raccontare la stessa soglia. Roma è 1ª in classifica nel fixture.
+    """
+    monkeypatch.setattr(MatchAnalysis, "ucl_spots", staticmethod(lambda code: 1))
+    b = analysis.bench_deep(1, "Roma", 2, "Inter", KO("2026-09-14 00:00"))
+    assert "in zona UCL (1ª)" in b["table_line"]
+    assert "(prime 1)" not in b["table_line"]

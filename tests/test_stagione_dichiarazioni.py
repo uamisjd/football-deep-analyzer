@@ -146,3 +146,30 @@ def test_convenzione_degli_estremi_dichiarata_e_applicata(tmp_path):
     assert inter[4] == "<1%" and inter[5] == ">99%" and inter[-1] == "0%"   # 0,4% · 99,99% · 0
     juventus = celle("Juventus")
     assert juventus[4] == "1%" and juventus[5] == "<1%" and juventus[-1] == ">99%"
+
+
+def test_ucl_con_un_posto_solo_e_concordato(tmp_path):
+    """POR1 ha un solo posto UCL: «UCL (1ª)» e «nella 1ª posizione», mai «prime 1» (docs/102).
+
+    Misurato il 13/10/2026 sulla pagina pubblicata: l'intestazione della colonna e la nota
+    sotto la tabella stampavano «UCL (prime 1)» e «chiudere nelle prime 1 posizioni» — la
+    stessa classe di difetto del guasto del `daily` («1 campionati», `docs/99`).
+    """
+    st = Store(tmp_path / "processed")
+    righe = [dict(_sim_row(t, i), league_key="POR1", top_n=1, p_top_n=0.9 - 0.2 * i)
+             for i, t in enumerate(SQUADRE)]
+    st.write("season_sim", pd.DataFrame(righe))
+    st.write("history", pd.DataFrame(_history({t: 40 for t in SQUADRE})))
+    out = tmp_path / "site"
+    SiteBuilder(store=st, out_dir=out).build_stagione()
+    html = (out / "stagione.html").read_text(encoding="utf-8")
+    st.close()
+    testo = _testo(html)
+    assert "UCL (1ª)" in testo
+    assert "nella 1ª posizione con accesso ordinario" in testo
+    assert "prime 1" not in testo
+    # e il gate di concordanza del sito non trova nulla da ridire su questa variante
+    from scripts.verify_site import AGREEMENT
+
+    trovato = AGREEMENT.search(testo)
+    assert trovato is None, f"concordanza sfuggita: {trovato.group(0)!r}"

@@ -208,3 +208,24 @@ def pct_triple(p: tuple[float, float, float], nd: int = 0) -> list[float]:
     if nd == 0:
         return base
     return [b / unit for b in base]
+
+
+def ucl_label(spots) -> str:
+    """Etichetta della soglia UCL ordinaria: «UCL (prime 4)», «UCL (1ª)» con un posto solo.
+
+    Fonte unica della stringa: la scheda partita («Posta in gioco»), la pagina Proiezioni,
+    la riga di classifica di «Panchina e posta in gioco» e il ramo dei tre punti li
+    compongono tutti da qui. Prima del 2026-10-13 l'etichetta era scritta a mano in cinque
+    punti e con ``ucl_spots = 1`` (POR1) pubblicava «UCL (prime 1)» e «nelle prime 1
+    posizioni» — la stessa classe del guasto del `daily` del 13/10 (`docs/102`).
+    """
+    try:
+        n = int(float(spots))
+    except (TypeError, ValueError):
+        n = 0
+    if n == 1:
+        return "UCL (1ª)"
+    if n:
+        return f"UCL (prime {n})"
+    # soglia ignota: meglio «UCL» senza parentesi che una soglia inventata
+    return "UCL"

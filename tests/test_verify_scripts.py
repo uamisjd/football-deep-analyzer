@@ -99,6 +99,9 @@ def test_verify_site_content_checks(tmp_path):
         # le sei forme dell'hotfix concordanza (docs/40): il gate deve fermarle tutte, anche
         # dentro un attributo pronunciato dal lettore di schermo
         '<p>1 assenti · 1 titolari · 1 giocatori · 1 partite · 1 giorni · 1 gara finita</p>'
+        '<span aria-label="1 partite in casa">forma</span>'
+        # il quarto ramo (docs/103 §2) nasce *prima* del numero: in «nelle ultime 1 partite»
+        # è l'aggettivo a essere sbagliato, e il gate lo dice al punto giusto
         '<span aria-label="nelle ultime 1 partite">forma</span>', encoding="utf-8")
     fails, pages = vs.check_pages(site)
     kinds = {f.split(": ", 1)[1] for f in fails if f.startswith("rotta.html")}
@@ -112,6 +115,8 @@ def test_verify_site_content_checks(tmp_path):
     # «1 partite» sia nel testo sia nell'aria-label (gli attributi sono una dimensione presidiata)
     assert any("concordanza '1 partite'" in k for k in kinds)
     assert any("concordanza in attributo '1 partite'" in k for k in kinds)
+    # aggettivo plurale + numero: segnalato dove nasce il difetto, non sul nome che segue
+    assert any("concordanza in attributo 'ultime 1'" in k for k in kinds)
     # il singolare corretto non è un problema: «1 gara finita» passa
     assert not any("'1 gara finita'" in k for k in kinds)
     assert any("residuo 'nan'" in k for k in kinds)

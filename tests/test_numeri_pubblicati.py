@@ -99,3 +99,26 @@ def test_check_numbers_rilegge_i_numeri_con_il_separatore(tmp_path):
         fails, checks = vs.check_numbers(site, None)
         assert checks > 0
         assert not [f for f in fails if "ValueError" in f], fails
+
+
+def test_agreement_presidia_i_plurali_misurati():
+    """`1 arrivi` e `1 posizioni` sono intercettati dal gate; i singolari no (docs/102).
+
+    Il 13/10/2026 il `daily` era già rosso per «1 campionati» (`docs/99`) e sul sito restavano
+    due occorrenze della stessa classe fuori dalla lista nera: «Altri 1 arrivi riconosciuti»
+    (5 schede) e «chiudere nelle prime 1 posizioni» (Proiezioni, POR1). Il gate ora le
+    intercetta, senza toccare i singolari veri («1 assente», «1 occasione») né le celle delle
+    tabelle di confronto, dove l'1 è il valore della squadra e non il contatore («1 Ammonizioni»).
+    """
+    vs = _site_module()
+    for testo in ("Altri 1 arrivi riconosciuti", "chiudere nelle prime 1 posizioni",
+                  "2 i titoli più vecchi", "1 arrivi", "5 i legni",
+                  # quarto ramo (docs/103 §2): aggettivo plurale + «1», la forma che i tre
+                  # rami col numero davanti non potevano vedere — 8 schede la stampavano
+                  "nessun pareggio negli ultimi 1", "nelle ultime 1", "i primi 1"):
+        assert vs.AGREEMENT.search(testo), f"non intercettato: {testo!r}"
+    for testo in ("1 assente", "1 occasione", "1 titolare", "1 voce", "1 Ammonizioni 3",
+                  "1,2 ammonizioni", "su 7 arrivi riconosciuti",
+                  # il ramo nuovo non tocca i plurali giusti né i numeri col separatore
+                  "nessun pareggio negli ultimi 2", "primi 1.000 iscritti", "gli ultimi 1.000"):
+        assert not vs.AGREEMENT.search(testo), f"falso positivo: {testo!r}"

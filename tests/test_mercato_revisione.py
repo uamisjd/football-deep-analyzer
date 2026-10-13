@@ -207,3 +207,18 @@ def test_tutti_i_nomi_restano_consultabili_ma_solo_quattro_in_apertura(tmp_path)
     assert len(roster.select("details")) == 1
     hidden = roster.details.get_text()
     assert "Nuovo 7" in hidden and "Nuovo 0" not in hidden
+
+
+def test_un_altro_arrivo_singolare(tmp_path):
+    """Cinque arrivi in distinta: la tendina dice «Un altro arrivo riconosciuto» (docs/102).
+
+    Con 8 arrivi la riga è «Altri 4 arrivi riconosciuti»; con 5 il conteggio oltre i primi 4
+    è **uno** e la pagina pubblicava «Altri 1 arrivi riconosciuti» su 5 schede pre-partita
+    (misurato il 13/10/2026). La tendina passa dalla frase fissa al singolare.
+    """
+    st = seeded(tmp_path, fees=[str(i * 1000000) for i in range(5, 0, -1)])
+    path, mk = render(tmp_path, st)
+    html = path.read_text()
+    assert len(mk["in_campo"]) == 5
+    assert "Un altro arrivo riconosciuto" in html
+    assert "Altri 1 arrivi" not in html

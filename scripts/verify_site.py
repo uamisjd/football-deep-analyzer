@@ -297,13 +297,31 @@ ENGLISH = re.compile(
 # sito di oggi (4.205 pagine): il ramo intercetta le 17, 0 falsi positivi — «N i
 # <parola>» non occorre in nessun altro testo. Il singolare «1 i titolo» sparisce col
 # fix del template e resta verificato dalla misura a sito intero, non dalla regex.
+# Terzo ramo (13/10/2026, docs/102): i nomi dei due difetti residui della stessa classe
+# del guasto del `daily` («Altri 1 arrivi riconosciuti» su 5 schede pre-partita, «UCL (prime
+# 1)» e «nelle prime 1 posizioni» sulla pagina Proiezioni di POR1) più i plurali misurati
+# a **zero** occorrenze legittime sul sito di 4.316 pagine: nessuno di questi segue mai un
+# «1» corretto (le forme singolari — «1 assente», «1 occasione», «1 voce», «1 fonte», «1
+# rigore», «1 punto» — non sono in lista). I plurali delle tabelle di confronto (es. «1
+# Ammonizioni 3», dove l'1 è la cella della squadra e non il contatore) restano fuori
+# perché in maiuscolo: la regex è case-sensitive.
+# Quarto ramo (13/10/2026, docs/103 §2): l'ordine inverso — aggettivo plurale + «1» —
+# che i tre rami sopra non potevano vedere perché il numero viene dopo la parola.
+# Misurato sulle 4.314 pagine + gli attributi leggibili: l'unica forma presente era
+# «nessun pareggio negli ultimi 1» (8 schede pre-partita, card Precedenti); zero
+# occorrenze legittime. Il guard (`(?![\d.,])`) esclude i «1.000» col separatore.
 AGREEMENT = re.compile(
     r"(?<![\d,])\b1 (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
-    r"giocatori|campionati|cartellini|allenatori|letture)\b"
+    r"giocatori|campionati|cartellini|allenatori|letture|arrivi|posizioni|occasioni|presenze|"
+    r"partenze|reti|trasferte|ammonizioni|espulsioni|parate|legni|angoli|sostituzioni|"
+    r"giornate|rimonte)\b"
     r"|(?<![\d,])\b\d+ i (rossi|gialli|rigori|gare|partite|vittorie|pareggi|tiri|giorni|precedenti|"
     r"punti|titolari|assenti|sconfitte|anni|mesi|settimane|squadre|incontri|titoli|fatti|"
-    r"giocatori|campionati|cartellini|allenatori|letture)\b")
+    r"giocatori|campionati|cartellini|allenatori|letture|arrivi|posizioni|occasioni|presenze|"
+    r"partenze|reti|trasferte|ammonizioni|espulsioni|parate|legni|angoli|sostituzioni|"
+    r"giornate|rimonte)\b"
+    r"|(?<![\d,])\b(altri|altre|ultim[ie]|prim[ie]|prossim[ie]|scors[ie]) 1(?![\d.,])")
 LOCAL_HREF = re.compile(r'href="([^"#]+\.html)(#[^"]*)?"')
 # Attributi che un lettore di schermo pronuncia: il testo lì dentro è a tutti gli effetti
 # testo nostro, ma i controlli di lingua giravano solo sul testo visibile (audit 18/09/2026).
@@ -1873,7 +1891,7 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
     # codifica FotMob indipendente dal codice del sito: usualPosition parte da 0 (616 formazioni)
     role_names = {0: "portiere", 1: "difensore", 2: "centrocampista", 3: "attaccante"}
     hist: dict[int, int] = {}
-    n_role = n_abs = n_h2h = n_list = 0
+    n_role = n_abs = n_h2h = n_list = n_ven = n_leg = 0
     if not lineup.empty and lineup.usual_position_id.notna().any():
         h = lineup[lineup.usual_position_id.notna()]
         hist = {int(k): int(v) for k, v in
@@ -1934,8 +1952,39 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
             hh = hh[hh.home_id.isin(ids) & hh.away_id.isin(ids)]
             checks += 1
             n_h2h += 1
-            if int(m.group(1)) != len(hh):
-                fails.append(f"{pg.name}: {m.group(1)} precedenti in pagina vs {len(hh)} in archivio")
+            if 'aria-label="Bilancio precedenti"' in html:
+                # riga completa con la ciambella: il conteggio è quello che ricalcoliamo
+                # dall'archivio, e la sotto-serie per campo (M6, docs/103 §3) esce da 8 casi
+                # in su, sotto soglia col conteggio e col motivo; in nessun caso il numero
+                # mostrato può divergere dal ricalcolo.
+                if int(m.group(1)) != len(hh):
+                    fails.append(f"{pg.name}: {m.group(1)} precedenti in pagina vs {len(hh)} in archivio")
+                nv = int((hh.home_id == int(row.home_id)).sum())
+                ven = re.search(r"di cui con [^<]*? di casa \((\d+)\)", html)
+                sotto = "sotto la soglia di 8 casi" in html
+                checks += 1
+                n_ven += 1
+                mostrato = int(ven.group(1)) if ven else None
+                if nv >= 8 and (mostrato != nv or sotto):
+                    fails.append(f"{pg.name}: sotto-serie per campo {mostrato} vs {nv} dall'archivio")
+                elif 1 <= nv < 8 and (mostrato != nv or not sotto):
+                    fails.append(f"{pg.name}: sotto-serie per campo {mostrato} con {nv} casi: "
+                                 f"manca il conteggio o il motivo")
+                elif nv == 0 and ven:
+                    fails.append(f"{pg.name}: sotto-serie per campo pubblicata senza casi")
+            else:
+                # bilancio corto (1-2 precedenti, docs/103 §2): il discriminante è l'assenza
+                # della ciambella, non l'etichetta — dal 13/10 anche questa riga porta il
+                # numero dei casi. Qui il conteggio dichiarato è la somma dei tre numeri
+                # mostrati accanto (ciò che il lettore può rifare a mano): l'archivio può
+                # contenerne di più, e non è quello che la riga promette.
+                checks += 1
+                n_leg += 1
+                tre = re.search(re.escape(m.group(0)) + r'<td>(\d+) vittori\w* .*? · '
+                                r'(\d+) pareggi\w* · (\d+) vittori\w*', html)
+                if not tre or int(m.group(1)) != sum(int(x) for x in tre.groups()):
+                    fails.append(f"{pg.name}: Bilancio ({m.group(1)}) non è la somma "
+                                 f"dei tre numeri mostrati")
     for lg_page in ("index.html", "prossime.html"):
         path = site / lg_page
         if not path.exists():
@@ -1960,7 +2009,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                          un_count.get((int(mid), int(row.away_id)), 0)):
                 fails.append(f"{lg_page}: chip indisponibili {n1} {c1} / {n2} {c2} != distinta")
     print(f"[5] schede oggi: {n_role} ruoli, {n_abs} indisponibili, {n_h2h} archivi precedenti, "
-          f"{n_list} chip nelle liste")
+          f"{n_list} chip nelle liste, {n_ven} sotto-serie per campo ricalcolate, "
+          f"{n_leg} bilanci corti")
 
     # 6) post-partita: assist della cronaca e split primo/secondo tempo contro le tabelle
     events, team_stats = st.read("events"), st.read("team_stats")
@@ -2906,7 +2956,10 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pt = mc_percent_str(float(sr.p_title))
                     pe = None if raw_top is None or pd.isna(raw_top) else mc_percent_str(float(raw_top))
                     pr = mc_percent_str(float(sr.p_rel))
-                    atteso = (f"titolo {pt}% · UCL (prime {top_n}) {pe}%"
+                    # etichetta della soglia UCL ricomposta dai Parquet: «prime N», e «1ª»
+                    # quando il posto è uno (POR1) — la stessa forma di `ucl_label` (docs/102)
+                    ucl_att = "UCL (1ª)" if top_n == 1 else f"UCL (prime {top_n})"
+                    atteso = (f"titolo {pt}% · {ucl_att} {pe}%"
                               if pe is not None else f"titolo {pt}%")
                     if atteso not in cella_st or f"retrocessione {pr}%" not in cella_st:
                         fails.append(f"{pg.name}: posta in gioco {tname} non torna coi Parquet")
@@ -2953,9 +3006,9 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                                 fails.append(
                                     f"{pg.name}: {nome_num} di {tname} non torna fra scheda e "
                                     f"pagina Proiezioni (Proiezioni «{frase_pg}»)")
-                        if r_pg["ucl"] is not None and "UCL (prime" in cella_st:
+                        if r_pg["ucl"] is not None and ucl_att in cella_st:
                             checks += 1
-                            if f"UCL (prime {top_n}) {r_pg['ucl']}" not in cella_st:
+                            if f"{ucl_att} {r_pg['ucl']}" not in cella_st:
                                 fails.append(
                                     f"{pg.name}: UCL di {tname} non torna fra scheda e pagina "
                                     f"Proiezioni (Proiezioni «{r_pg['ucl']}%»)")
@@ -2991,7 +3044,8 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     ucl19 = _ucl19.get(code19) if code19 else None
                     if ucl19 is not None and ucl19 in by_rank19.index:
                         if rank19 <= ucl19:
-                            pezzi.append(f"in zona UCL (prime {ucl19})")
+                            pezzi.append("in zona UCL (1ª)" if ucl19 == 1
+                                         else f"in zona UCL (prime {ucl19})")
                         else:
                             ge19 = int(by_rank19.loc[ucl19, "points"]) - pts19
                             pezzi.append(
