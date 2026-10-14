@@ -1576,3 +1576,15 @@ visibili sul sito senza toccare la ricetta.
 - **Verifica pre-merge eseguita** (ordine di lavoro di `docs/00` §D, con i comandi): `git log --oneline origin/main..HEAD` = i soli 5 commit della PR · `git status --porcelain` vuoto · `git log origin/<branch>..HEAD` vuoto (nessun commit non pushato) · workflow `tests` **verde** sul capo della PR (run `38468258464`, 3m24s) · PR `MERGEABLE` / `clean`. Gate pieni della sessione: `pytest` **988** (+25) · `ruff check src scripts tests` **0 errori** · `fda build` **498/2.364/7.602** · `verify_site.py` **241.774 controlli · 0 problemi** (55 oracoli: 32 indipendenti) · `parita_schede` nessuna differenza (58 schede) · `resa_375` **28.728 misure · 0 problemi**.
 - **Contenuto fuso su `main`:** la revisione totale di progetto e sito (`docs/104`: salute rimisurata da zero, copertura della rassegna per lega, crescita del repository con le opzioni); l'**opzione A** adottata dall'utente — una fotografia dei dati al giorno (`docs/105`, `scripts/fotografia_dati.py` con 20 test, passo dedicato e commit condizionale in `daily.yml`, input di dispatch `forza_commit`, effetto atteso −80% di crescita); la **stampa in lingua originale** per NED1/POR1 (`docs/106`: edizioni locali dichiarate per lega, colonna `language` nelle righe raccolte, vocabolario chiuso di 9 temi in `src/fda/site/estero.py`, card `news-estera` con titolo originale + fonte + lingua dichiarate, oracolo indipendente [50] in `verify_site.py`); e la correzione dei conteggi dell'indice dei documenti (117 file `.md`, 107 numerati da `00` a `106`), che erano sbagliati da più giri.
 - **Nota sul primo effetto in produzione (da verificare, non verificabile in locale):** il push del merge attiva il `daily`, che per la prima volta esegue la decisione della fotografia; i due lati nuovi (righe `nl`/`pt` in archivio e blocco in pagina) si vedono al primo run completo successivo.
+
+
+### 9.30. 2026-10-14 — Deroga una tantum per la PR #116 (ordine dell'utente nel contesto esplicito)
+
+Dopo la proposta «Tutto verde: è il momento di fare Merge (PR #116)», seguita dal piano di
+verifica del daily/deploy, l'utente ha risposto **«ok procedi»**. L'agente ha eseguito
+`gh pr merge 116 --merge` (exit 0), senza auto-merge né cancellazione del ramo di sessione.
+Prima del merge: tre check SUCCESS sullo SHA `d1465b7`, stato MERGEABLE, nessun file diverso
+dalla PR remota/nessun commit non pubblicato. Merge `8a6791a` alle 09:19:25 UTC; daily
+`38541503143` avviato dal push. La policy generale (merge dell'utente) resta invariata;
+questa autorizzazione vale per questa PR, non per PR future né per la chiusura della #115.
+Esito di produzione registrato separatamente in `STATO.md` dopo la verifica effettiva.

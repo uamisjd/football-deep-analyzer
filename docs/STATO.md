@@ -1,3 +1,35 @@
+## 2026-10-14 — Primo daily dopo #116 fallito: hotfix del singolare, produzione NON ripristinata
+
+Run [`38541503143`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38541503143):
+**run FAILURE**, **deploy SKIPPED**, **notify SUCCESS**; la #114 resta correttamente **OPEN**
+e riceve la diagnostica. Raccolta/build conclusi, blocco al gate `verify_site`: **4 intestazioni**
+non riconosciute (5781768/8614, 5781771/10229, 5781774/6414, 5781775/6433).
+Il parser residuo `voci?` non riconosce «1 voce»: riprodotto **prima della correzione** con
+5 test sul template reale, tutti falliti; correzione minima `voc[ei]`, senza cambiare sito,
+dati o modelli. Test tematici: **38 passed**, inclusi 10 casi singolare nl/pt, lati scambiati,
+vuoto/singolare/plurale; Ruff e pip check puliti. Suite completa **1.033 passed in 145,25 s**.
+Prove e limiti: [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
+**PR correttiva [#119](https://github.com/uamisjd/football-deep-analyzer/pull/119) aperta.**
+**Prossimo:** attendere i tre check GitHub sullo SHA finale, poi merge dell’utente.
+Merge futuro **all'utente**: l'autorizzazione precedente valeva solo per #116. Nessun dispatch
+ripetuto, nessuna chiusura manuale #114, nessuna verifica dal vivo di salvataggi/deploy ancora riuscita.
+
+## 2026-10-14 — PR #116 unita su ordine dell'utente; verifica produzione in corso
+
+L'utente ha risposto **«ok procedi»** alla proposta esplicita di merge #116 e verifica del daily.
+Controllati prima del merge: `test`, `site`, `browser` **SUCCESS** sullo SHA `d1465b7`, PR
+`MERGEABLE`; file locali identici al ramo remoto, nessun lavoro non pubblicato. Riconciliati
+HEAD/indice della sessione con i commit già remoti senza scartare file (ripristino sandbox).
+**Merge eseguito:** `gh pr merge 116 --merge`, exit 0; **`8a6791a`**, **14/10 09:19:25 UTC**
+(11:19:25 ora italiana). Deroga una tantum registrata in `docs/13` §9.30.
+
+**Daily del merge:** [`38541503143`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38541503143),
+trigger `push`, SHA `8a6791a`, in esecuzione. Issue **#114 ancora aperta**: non dichiarato
+ripristino prima del deploy. La #115 non è stata chiusa/fusa (il suo fix è già incluso nella #116).
+**Prossimo:** esito run + deploy + notify, chiusura allerta, lettura del sito aggiornato e prova
+salvataggio registro; fotografia completa/archivio nl-pt da verificare al run serale, se non
+salvati in questo run intermedio. Nessun risultato futuro dato per già ottenuto.
+
 ## 2026-10-14 — Correzioni dell'audit: tutti i controlli locali verdi, CI finale in attesa
 
 Richiesta utente: «correggi e sistema tutto». Dettagli e prove in

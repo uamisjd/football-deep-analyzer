@@ -9,6 +9,7 @@ inventato per farli passare.
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from fda.config import leagues
 from fda.site.analysis import MatchAnalysis, news_quiet_line
@@ -498,3 +499,40 @@ def test_oracolo_50_con_una_squadra_vuota_e_l_altra_piena(tmp_path, monkeypatch)
     fails, checks = _checker().check_stampa_estera(site, tmp_path / "processed")
     assert fails == [], fails
     assert checks >= 5      # due riquadri + le tre voci del NEC
+
+
+@pytest.mark.parametrize("home_count,away_count", [(1, 0), (0, 1), (1, 1), (1, 2), (2, 1)])
+@pytest.mark.parametrize("language", ["nl", "pt"])
+def test_oracolo_50_accetta_voce_singolare_come_resa_dal_template(
+        tmp_path, monkeypatch, home_count, away_count, language):
+    """Il daily del merge #116 aveva 4 intestazioni valide con «1 voce», non «1 voci»."""
+    from fda.site.build import SiteBuilder
+
+    site, data = _pagina_con_due_squadre(tmp_path, monkeypatch)
+    st = Store(data)
+    news = st.read("news")
+    reduced = pd.concat([news[news.team_id == 8614].head(home_count),
+                         news[news.team_id == 8525].head(away_count)], ignore_index=True)
+    if language == "pt":
+        fixtures = st.read("fixtures")
+        fixtures["league_id"] = 61
+        fixtures["home_name"], fixtures["away_name"] = "SC Braga", "Vitória SC"
+        st.write("fixtures", fixtures)
+        names = {8614: "SC Braga", 8525: "Vitória SC"}  # ID sintetici della fixture
+        reduced["language"] = "pt"
+        reduced["source"] = "Testata PT"
+        reduced["title"] = [f"{names[row.team_id]} renova contrato com jogador {i}"
+                            for i, row in reduced.iterrows()]
+    st.write("news", reduced)
+    SiteBuilder(store=st, out_dir=site).build_match_pages({900002})
+    html = (site / "partite/900002.html").read_text()
+    assert "1 voce su" in html  # la forma reale del template, non HTML finto adattato al gate
+    fails, checks = _checker().check_stampa_estera(site, data)
+    assert fails == [], fails
+    assert checks >= 3
+    # La forma singolare non deve aggirare il controllo dei conteggi reali.
+    pg = site / "partite/900002.html"
+    pg.write_text(html.replace("1 voce su", "3 voci su"))
+    wrong, _ = _checker().check_stampa_estera(site, data)
+    assert any("dichiara 3 voci e ne rende 1" in f for f in wrong), wrong
+    pg.write_text(html)
