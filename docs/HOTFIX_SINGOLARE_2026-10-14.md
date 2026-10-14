@@ -33,7 +33,8 @@ reale, non stringhe HTML adattate alla regex. Per ogni combinazione viene anche
 manomesso il conteggio «1 voce» → «3 voci»: il gate deve ancora rilevare la bugia.
 Restano verdi le regressioni precedenti su titoli non archiviati, lingua falsa,
 conteggi falsi e isolamento dei due riquadri. Ruff e `pip check` puliti.
-Suite completa in corso al primo checkpoint: risultato da registrare separatamente.
+Suite completa: **1.033 passed in 145,25 s**. Dopo l’aggiunta delle manomissioni
+dei conteggi, ripetuti tutti i 38 test tematici: ancora verdi.
 
 ## Limiti / prossimo passo
 

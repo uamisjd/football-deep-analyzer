@@ -96,7 +96,7 @@ notify **SUCCESS** e #114 ancora aperta con diagnostica. L'oracolo residuo [50] 
 riconosce «1 voce» (`voci?`): quattro intestazioni segnalate. Regressione riprodotta
 prima della patch con 5 test del template tutti falliti. Hotfix minimo `voc[ei]`,
 38 test tematici verdi (10 casi nuovi nl/pt, inclusi conteggi manomessi), suite
-completa in corso: vedi [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
+completa **1.033 passed**: vedi [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
 I gate offline precedenti restano risultati storici veri, **non prova di ripristino in produzione**.
 
 ## 6. Cosa richiede ancora produzione / evidenza, non altre patch speculative

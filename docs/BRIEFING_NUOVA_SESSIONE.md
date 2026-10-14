@@ -19,7 +19,7 @@ La #116 include il codice della #115; non serve applicare due volte lo stesso fi
 `38541503143` è **fallito** al gate [50]: regex `voci?` non riconosce «1 voce».
 Deploy saltato, notify riuscito, #114 ancora aperta con diagnostica: niente falso ripristino.
 Hotfix minimo e regressioni sul template reale in
-[`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md); suite completa in corso,
+[`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md); suite completa **1.033 passed**, 38 test tematici verdi;
 poi nuova PR e check. Il merge della nuova PR resta all'utente. I numeri precedenti sono
 checkpoint del rilascio #116, non prova di successo del daily. Il sito pubblico conserva
 l'ultimo deploy valido; salvataggi/fotografia/news archiviate ancora da verificare dal vivo.

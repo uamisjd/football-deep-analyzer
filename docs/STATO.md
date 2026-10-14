@@ -7,9 +7,9 @@ non riconosciute (5781768/8614, 5781771/10229, 5781774/6414, 5781775/6433).
 Il parser residuo `voci?` non riconosce «1 voce»: riprodotto **prima della correzione** con
 5 test sul template reale, tutti falliti; correzione minima `voc[ei]`, senza cambiare sito,
 dati o modelli. Test tematici: **38 passed**, inclusi 10 casi singolare nl/pt, lati scambiati,
-vuoto/singolare/plurale; Ruff e pip check puliti. Suite completa **in corso**.
+vuoto/singolare/plurale; Ruff e pip check puliti. Suite completa **1.033 passed in 145,25 s**.
 Prove e limiti: [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
-**Prossimo:** completare suite, aprire nuova PR sul ramo della sessione e attendere i check.
+**Prossimo:** aprire nuova PR sul ramo della sessione e attendere i tre check GitHub.
 Merge futuro **all'utente**: l'autorizzazione precedente valeva solo per #116. Nessun dispatch
 ripetuto, nessuna chiusura manuale #114, nessuna verifica dal vivo di salvataggi/deploy ancora riuscita.
 
