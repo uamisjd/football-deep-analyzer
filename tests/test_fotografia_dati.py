@@ -159,3 +159,86 @@ def test_senza_gh_usa_requests(monkeypatch) -> None:
 def test_data_iso_con_z_viene_letta(monkeypatch) -> None:
     assert fd._interpreta("2026-10-13T21:34:12Z") == datetime(2026, 10, 13, 21, 34, 12, tzinfo=UTC)
     assert fd._interpreta("") is None
+
+
+def voce(message, date):
+    return {"commit": {"message": message, "committer": {"date": date}}}
+
+
+def test_registri_di_oggi_non_bloccano_fotografia_serale():
+    entries = [voce("data: registro prospettico [skip ci]", "2026-10-13T18:15:00Z"),
+               voce("data: run 2026-10-12 21:30 UTC [skip ci]", "2026-10-12T21:30:00Z")]
+    last = fd._trova_fotografia(lambda _: entries, 100)
+    assert last == quando(12, 21, 30)
+    assert fd.decide(quando(13, 21), last)[0]
+    assert fd.decide(quando(14, 4), last)[0]  # anche rete di sicurezza
+
+
+def test_fotografia_su_pagina_successiva_e_marker_nuovo():
+    pages = {1: [voce("data: registro prospettico", "2026-10-13T18:00:00Z")],
+             2: [voce("snapshot\n\n" + fd.SNAPSHOT_MARKER, "2026-10-12T21:30:00Z")]}
+    calls = []
+    def read(page):
+        calls.append(page)
+        return pages[page]
+    assert fd._trova_fotografia(read, 1) == quando(12, 21, 30)
+    assert calls == [1, 2]
+
+
+def test_nessuna_fotografia_anche_con_registri_presenti():
+    assert fd._trova_fotografia(lambda _: [voce("data: registro prospettico", "2026-10-13T18:00:00Z")], 100) is None
+    assert fd._trova_fotografia(lambda _: [], 100) is None
+
+
+def test_limite_paginazione_non_finge_fotografia(monkeypatch):
+    monkeypatch.setattr(fd, "MAX_PAGES", 2)
+    with pytest.raises(RuntimeError, match="fail-open"):
+        fd._trova_fotografia(lambda _: [voce("registro", "2026-10-13T18:00:00Z")], 1)
+
+
+def test_requests_pagina_e_filtra_registro(monkeypatch):
+    import requests
+    calls = []
+    class Response:
+        def raise_for_status(self):
+            pass
+        def json(self):
+            if len(calls) == 1:
+                return [voce("data: registro prospettico", "2026-10-13T18:00:00Z")]
+            return [voce("data: run 2026-10-12", "2026-10-12T21:30:00Z")]
+    def get(url, **kwargs):
+        calls.append(kwargs)
+        return Response()
+    monkeypatch.setattr(requests, "get", get)
+    assert fd._leggi_con_requests("repo", "branch", "fake", 1) == quando(12, 21, 30)
+    assert [c["params"]["page"] for c in calls] == [1, 2]
+    assert calls[0]["headers"]["Authorization"] == "Bearer fake"
+
+
+def test_gh_pagina_e_filtra_registro(monkeypatch):
+    import json
+    import subprocess
+    calls = []
+    def run(args, **kwargs):
+        calls.append(args)
+        entries = [voce("data: registro prospettico", "2026-10-13T18:00:00Z")] if len(calls) == 1 else [voce("data: run 2026-10-12", "2026-10-12T21:30:00Z")]
+        return subprocess.CompletedProcess(args, 0, json.dumps(entries))
+    monkeypatch.setattr(subprocess, "run", run)
+    assert fd._leggi_con_gh("repo", "branch", 1) == quando(12, 21, 30)
+    assert "page=1" in calls[0] and "page=2" in calls[1]
+
+
+def test_giornata_con_registri_intermedi_e_una_fotografia_completa():
+    history = [voce("data: run ieri", "2026-10-12T21:30:00Z")]
+    full = 0
+    for hour in (4, 10, 14, 18, 21):
+        now = quando(13, hour)
+        last = fd._trova_fotografia(lambda _: history, 100)
+        decision = fd.decide(now, last)[0]
+        if decision:
+            full += 1
+            history.insert(0, voce("data: run oggi\n\n" + fd.SNAPSHOT_MARKER, now.isoformat()))
+        else:
+            history.insert(0, voce("data: registro prospettico", now.isoformat()))
+    assert full == 1
+    assert not fd.decide(quando(13, 23), fd._trova_fotografia(lambda _: history, 100))[0]

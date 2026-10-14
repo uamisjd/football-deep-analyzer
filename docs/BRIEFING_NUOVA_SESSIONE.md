@@ -6,6 +6,17 @@
 
 ---
 
+## Aggiornamento operativo — 14/10/2026, PR #116
+
+L'audit indipendente ha trovato altri due difetti nel salvataggio, oltre all'oracolo [50].
+Sono corretti sul ramo `arena/7c92c1a2-football-deep-analyzer`, insieme ad allerta dopo deploy,
+HTTP, sito, hardening e test browser. **Leggere prima**
+[`CORREZIONI_AUDIT_2026-10-14.md`](CORREZIONI_AUDIT_2026-10-14.md) e la cima di `STATO.md`.
+La #116 include il codice della #115; non serve applicare due volte lo stesso fix. I gate locali finali sono verdi
+(1.023 test, 242.503 controlli, 84 visite browser senza problemi); resta da verificare la CI finale.
+I numeri seguenti appartengono ai checkpoint storici, non al rilascio corrente.
+Nessun merge eseguito; il sito pubblico conserva ancora l'ultimo deploy valido.
+
 ## Handoff operativo corrente — 2026-10-13 (il più recente: leggere questo e `docs/101` per primi)
 
 **Stampa in lingua originale — [`docs/106`](106_stampa_in_lingua_originale_2026-10-13.md) (13/10, in PR #113).**

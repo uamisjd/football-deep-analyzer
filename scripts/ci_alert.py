@@ -15,6 +15,7 @@ Perché esiste:
 Uso:
     python scripts/ci_alert.py on-failure [--workflow daily] [--logs run.log verify.log ...]
     python scripts/ci_alert.py on-success [--workflow daily]
+    python scripts/ci_alert.py on-result  # FDA_RUN_RESULT + FDA_DEPLOY_RESULT
     python scripts/ci_alert.py --dry-run on-failure
 
 Non fallisce mai con codice diverso da 0: se `gh` non è installato o i permessi non
@@ -29,9 +30,10 @@ import os
 import shutil
 import subprocess
 import sys
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 ISSUE_TITLE = "🚨 Fallimento run giornaliero (daily)"
 ISSUE_LABEL = "bug"
@@ -67,14 +69,12 @@ def get_ci_context() -> dict[str, str]:
 
     # Orari formattati in UTC e ora italiana (UTC+2 d'estate, UTC+1 d'inverno)
     now_utc = datetime.now(UTC)
-    # Calcolo fuso orario approssimato Europa/Roma (+2 da fine marzo a fine ottobre, +1 altrove)
-    mese = now_utc.month
-    it_offset = 2 if (3 < mese < 11) or (mese == 3 and now_utc.day >= 25) or (mese == 10 and now_utc.day < 25) else 1
-    tz_it = timezone(timedelta(hours=it_offset))
-    now_it = now_utc.astimezone(tz_it)
-    tz_label = "CEST / UTC+2" if it_offset == 2 else "CET / UTC+1"
+    now_it = now_utc.astimezone(ZoneInfo("Europe/Rome"))
+    tz_label = f"{now_it.tzname()} / UTC+{int(now_it.utcoffset().total_seconds() // 3600)}"
 
     return {
+        "run_result": os.environ.get("FDA_RUN_RESULT", "non disponibile"),
+        "deploy_result": os.environ.get("FDA_DEPLOY_RESULT", "non disponibile"),
         "server_url": server,
         "repo": repo,
         "run_id": run_id,
@@ -142,6 +142,11 @@ Il run giornaliero su branch `{ctx['ref']}` è fallito e il sito è fermo all'ul
 - **Evento trigger:** `{ctx['event']}`
 - **Commit:** [{ctx['short_sha']}]({ctx['commit_url']})
 
+### Esito dei job
+
+- Raccolta / gate / salvataggio: **{ctx.get("run_result", "non disponibile")}**
+- Pubblicazione Pages: **{ctx.get("deploy_result", "non disponibile")}**
+
 ### Diagnostica dai log
 
 {diag}
@@ -159,6 +164,11 @@ def format_failure_comment_body(ctx: dict[str, str], diag: str) -> str:
 - **Evento trigger:** `{ctx['event']}`
 - **Commit:** [{ctx['short_sha']}]({ctx['commit_url']})
 
+### Esito dei job
+
+- Raccolta / gate / salvataggio: **{ctx.get("run_result", "non disponibile")}**
+- Pubblicazione Pages: **{ctx.get("deploy_result", "non disponibile")}**
+
 ### Diagnostica dai log
 
 {diag}
@@ -172,7 +182,8 @@ def format_recovery_comment_body(ctx: dict[str, str]) -> str:
 Il run giornaliero [#{ctx['run_number']}]({ctx['run_url']}) (commit [{ctx['short_sha']}]({ctx['commit_url']})) è terminato con **successo** su tutti i controlli:
 - Raccolta dati, modelli e simulazioni completati
 - Verifica sito (`verify_site`), parità schede e resa 375 px superate
-- Commit dei dati e deploy su GitHub Pages eseguiti
+- Salvataggio dei dati completato (o nessuna modifica da salvare)
+- Deploy su GitHub Pages riuscito
 
 *Issue chiusa automaticamente.*
 """
@@ -339,7 +350,7 @@ def handle_success(ctx: dict[str, str], dry_run: bool = False) -> int:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Allerta automatica guasto/ripristino workflow Actions")
-    parser.add_argument("action", choices=["on-failure", "on-success"], help="Azione da compiere")
+    parser.add_argument("action", choices=["on-failure", "on-success", "on-result"], help="Azione da compiere")
     parser.add_argument("--workflow", default=None, help="Nome del workflow (default da GITHUB_WORKFLOW)")
     parser.add_argument(
         "--logs",
@@ -351,12 +362,19 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def result_action(run_result: str, deploy_result: str) -> str:
+    """Nessun ripristino per un deploy fallito, saltato, annullato o non noto."""
+    return "on-success" if run_result == deploy_result == "success" else "on-failure"
+
+
 def main() -> int:
     args = parse_args()
     ctx = get_ci_context()
     if args.workflow:
         ctx["workflow"] = args.workflow
 
+    if args.action == "on-result":
+        args.action = result_action(ctx["run_result"], ctx["deploy_result"])
     if args.action == "on-failure":
         return handle_failure(ctx, args.logs, dry_run=args.dry_run)
     if args.action == "on-success":

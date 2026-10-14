@@ -218,3 +218,34 @@ def test_dry_run_flag() -> None:
     assert code == 0
     code2 = ci_alert.handle_success(ctx, dry_run=True)
     assert code2 == 0
+
+
+def test_recovery_requires_both_jobs_success():
+    for run in ("success", "failure", "cancelled", "skipped", "non disponibile"):
+        for deploy in ("success", "failure", "cancelled", "skipped", "non disponibile"):
+            expected = "on-success" if run == deploy == "success" else "on-failure"
+            assert ci_alert.result_action(run, deploy) == expected
+
+
+def test_on_result_routes_failure_and_recovery(monkeypatch):
+    import argparse
+    calls = []
+    monkeypatch.setattr(ci_alert, "parse_args", lambda: argparse.Namespace(
+        action="on-result", workflow="daily", logs=["run.log"], dry_run=True))
+    monkeypatch.setattr(ci_alert, "handle_failure", lambda *a, **kw: calls.append("failure") or 0)
+    monkeypatch.setattr(ci_alert, "handle_success", lambda *a, **kw: calls.append("success") or 0)
+    monkeypatch.setenv("FDA_RUN_RESULT", "success")
+    monkeypatch.setenv("FDA_DEPLOY_RESULT", "failure")
+    assert ci_alert.main() == 0
+    monkeypatch.setenv("FDA_DEPLOY_RESULT", "skipped")
+    assert ci_alert.main() == 0
+    monkeypatch.setenv("FDA_DEPLOY_RESULT", "success")
+    assert ci_alert.main() == 0
+    assert calls == ["failure", "failure", "success"]
+
+
+def test_failure_body_discloses_deploy_failure():
+    ctx = ci_alert.get_ci_context()
+    ctx.update(run_result="success", deploy_result="failure")
+    body = ci_alert.format_failure_issue_body(ctx, "diagnostica")
+    assert "Pubblicazione Pages: **failure**" in body

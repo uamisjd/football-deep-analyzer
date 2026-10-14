@@ -1,3 +1,44 @@
+## 2026-10-14 — Correzioni dell'audit: tutti i controlli locali verdi, CI finale in attesa
+
+Richiesta utente: «correggi e sistema tutto». Dettagli e prove in
+[`CORREZIONI_AUDIT_2026-10-14.md`](CORREZIONI_AUDIT_2026-10-14.md).
+Worktree isolato per commit/rebase/push; marker/paginazione delle fotografie senza includere
+il registro; budget per ogni retry; allerta solo dopo run+deploy; parser [50] della #115 integrato;
+titolo Accuratezza e testi ESPN corretti. CI con build/gate/browser, Actions a SHA, permessi per
+job, constraints Python/npm e Dependabot, LICENSE già dichiarata resa esplicita.
+Browser reale avviato nel sandbox: trovati e corretti problemi di focus tabelle, link e contrasto;
+nuovo controllo Playwright/axe a 375/1280 px e due temi. Nessun cambiamento al modello o ai dati.
+
+**Giro definitivo locale verde:** **1.023 test**, Ruff 0, pip check OK, build 499/2.364/7.600,
+**4.316 HTML / 152,8 MB**, verify **242.503 · 0**, parità **59**, resa **28.766 · 0**;
+**browser reale Chromium 153: 84 visite / 21 pagine / 0 problemi** (7 pre + 7 post, una per lega per tipo,
+7 pagine principali, due viewport/temi, matrice aperta e interazioni). Wheel completa con LICENSE.
+Il test della ricerca attende ora il debounce: corrette 4 segnalazioni spurie del nuovo harness,
+nessun bug inventato del filtro. Modelli e Parquet byte-invariati rispetto a `cdfc85c`.
+**GitHub:** `test` e `site` già verdi su `77e173c`; check della revisione finale ancora da completare.
+Nessun merge/dispatch/chiusura #115 eseguiti. **Prossimo:** check finali #116; merge utente;
+poi prova dal vivo di daily+deploy, foto serale, registro intermedio e raccolta nl/pt.
+
+## 2026-10-13 — Audit indipendente della sessione 7c92c1a2: prodotto verificato, pipeline da correggere
+
+Relazione completa: [`AUDIT_COMPLETO_2026-10-13_7c92c1a2.md`](AUDIT_COMPLETO_2026-10-13_7c92c1a2.md).
+Riferimento verificato: `cdfc85c`; nessun merge/dispatch/modifica ai dati. **988 test**, Ruff 0,
+`pip check` OK, wheel completa; build **499/2.364/7.600**, **4.316 HTML / 148,8 MB**;
+`verify_site` **242.493 · 0**, parità **59 schede**, resa 375 **28.766 · 0**.
+
+**Dal vivo:** sito raggiungibile ma ultimo daily **#267 rosso**, issue **#114** aperta;
+PR **#115** già aperta da altra sessione, check `test` verde, corregge l'oracolo [50].
+**Nuovi difetti riprodotti offline**, non coperti dalla #115: (1) commit parziale del registro
+lascia altri Parquet modificati e `git rebase` fallisce; (2) la query dell'ultima fotografia
+include i commit del solo registro e può far saltare la fotografia serale; (3) retry HTTP supera
+il budget (1 consentita → 3 tentativi). **Verificati nel codice/sito:** ripristino allerta prima
+del job deploy; paragrafo/link Laboratorio dentro `<title>` di Accuratezza; testi ESPN stantii.
+Il prospettico pubblicato ha **5 gare valutate**, non zero; nessuna variante da promuovere.
+
+**Prossimo:** coordinare #115 con i due fix del salvataggio, verificare daily fino al deploy e
+fotografia completa/registro separati; poi integrazione CI, allerta, titolo e ultime due sezioni.
+Questo turno consegna l'audit, non dichiara implementate le correzioni. Nessuna prova browser/CVE.
+
 ## 2026-10-13 — Stampa in lingua originale: fonti estere con sintesi nostra (docs/106, PR #113)
 
 **Decisione dell'utente (13/10, `ask_user`):** «cambio politica: fonti estere + sintesi nostra» —
