@@ -1,3 +1,18 @@
+## 2026-10-14 — Primo daily dopo #116 fallito: hotfix del singolare, produzione NON ripristinata
+
+Run [`38541503143`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38541503143):
+**run FAILURE**, **deploy SKIPPED**, **notify SUCCESS**; la #114 resta correttamente **OPEN**
+e riceve la diagnostica. Raccolta/build conclusi, blocco al gate `verify_site`: **4 intestazioni**
+non riconosciute (5781768/8614, 5781771/10229, 5781774/6414, 5781775/6433).
+Il parser residuo `voci?` non riconosce «1 voce»: riprodotto **prima della correzione** con
+5 test sul template reale, tutti falliti; correzione minima `voc[ei]`, senza cambiare sito,
+dati o modelli. Test tematici: **38 passed**, inclusi 10 casi singolare nl/pt, lati scambiati,
+vuoto/singolare/plurale; Ruff e pip check puliti. Suite completa **in corso**.
+Prove e limiti: [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
+**Prossimo:** completare suite, aprire nuova PR sul ramo della sessione e attendere i check.
+Merge futuro **all'utente**: l'autorizzazione precedente valeva solo per #116. Nessun dispatch
+ripetuto, nessuna chiusura manuale #114, nessuna verifica dal vivo di salvataggi/deploy ancora riuscita.
+
 ## 2026-10-14 — PR #116 unita su ordine dell'utente; verifica produzione in corso
 
 L'utente ha risposto **«ok procedi»** alla proposta esplicita di merge #116 e verifica del daily.

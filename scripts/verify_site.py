@@ -5830,7 +5830,7 @@ def check_stampa_estera(site: Path, data: Path | None) -> tuple[list[str], int]:
         lin = pd.Series("it", index=news.index)
     titoli_per_squadra = {(int(tid), str(lg), str(tit).strip())
                           for tid, lg, tit in zip(news.team_id, lin, news.title, strict=True)}
-    intestazione = re.compile(r"stampa in lingua originale \(([^)]*)\):\s*(\d+) voci? su (\d+)")
+    intestazione = re.compile(r"stampa in lingua originale \(([^)]*)\):\s*(\d+) voc[ei] su (\d+)")
     prova_rx = re.compile(r"lingua originale: ([^·<]+)· riconosciuto da «(.*?)»")
     for pg in sorted((site / "partite").glob("*.html")):
         html = pg.read_text(encoding="utf-8")

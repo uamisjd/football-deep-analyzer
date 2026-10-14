@@ -87,13 +87,17 @@ Nel primo test della ricerca il nuovo harness leggeva troppo presto il DOM (il f
 Corretto il test con attesa dell'esito osservabile (righe nascoste/ripristinate), non con un
 cambiamento al filtro funzionante e non disattivando controlli. Il giro ripetuto è tutto verde.
 
-**GitHub:** sul commit `77e173c` i job `test` (**2m34s**) e `site` (**11m49s**) sono già verdi.
-Il browser di quel commit precede la correzione del debounce nel test; la nuova revisione
-va verificata sullo SHA finale. Non dichiarati ancora tutti i check remoti verdi.
+**GitHub finale #116:** `test`, `site`, `browser` **SUCCESS** su `d1465b7`.
+Merge autorizzato dall'utente «ok procedi»: `8a6791a`, 14/10 09:19:25 UTC.
+La #115 non è stata chiusa né fusa separatamente; il suo codice era incluso nella #116.
 
-**PR #116** contiene ora audit e correzioni sul ramo della sessione. La correzione della #115
-è inclusa, ma #115 non è stata chiusa né fusa dall'agente. Nessun merge di produzione, nessun
-run di raccolta esterna o riscrittura di `main` è stato eseguito.
+**Primo daily reale dopo merge:** `38541503143` **FAILURE**, deploy **SKIPPED**,
+notify **SUCCESS** e #114 ancora aperta con diagnostica. L'oracolo residuo [50] non
+riconosce «1 voce» (`voci?`): quattro intestazioni segnalate. Regressione riprodotta
+prima della patch con 5 test del template tutti falliti. Hotfix minimo `voc[ei]`,
+38 test tematici verdi (10 casi nuovi nl/pt, inclusi conteggi manomessi), suite
+completa in corso: vedi [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
+I gate offline precedenti restano risultati storici veri, **non prova di ripristino in produzione**.
 
 ## 6. Cosa richiede ancora produzione / evidenza, non altre patch speculative
 
@@ -108,5 +112,6 @@ run di raccolta esterna o riscrittura di `main` è stato eseguito.
 
 ## Prossimo passo
 
-Gate locali completi. Completare i check remoti dello SHA finale della PR #116; poi merge da parte dell'utente e verifica del
-primo daily fino al deploy. Registrare separatamente cosa è provato offline e cosa è pubblicato.
+Completare suite/check della nuova PR correttiva e attendere il merge dell'utente.
+Poi verificare il nuovo daily fino al deploy. #114 resta aperta fino al ripristino reale;
+salvataggi e dati esteri archiviati ancora da dimostrare dal vivo.
