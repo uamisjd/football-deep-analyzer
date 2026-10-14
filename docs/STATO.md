@@ -1,3 +1,39 @@
+## 2026-10-14 — Produzione ripristinata (#119/#117); correzione Ruff in PR #120
+
+**PR #119** fusa dall'utente alle 10:26:09 UTC: merge `abf75cf`. Il daily post-merge
+[`38549550657`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38549550657)
+(#271) è riuscito: raccolta, modelli, simulazioni, `verify_site`, parità, resa 375 px e deploy.
+Pages ha registrato il deploy `7063081983`; l'issue **#114 è stata chiusa automaticamente**.
+Il commit dati successivo `94ff49b` ha salvato solo `prospettico.parquet`: run intermedio,
+comportamento atteso dalla regola di una fotografia completa al giorno.
+
+**PR #117** fusa dall'utente alle 10:54:11 UTC: merge `d171e48` (aggiornamento Actions).
+Il daily [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38552807062)
+(#272) e `tests` sono riusciti; Pages ha registrato il deploy `7063664494`. Il commit dati
+`26854ff` ha aggiornato solo `prospettico.parquet`, come atteso per un altro run intermedio.
+Il sito è quindi stato nuovamente pubblicato dopo entrambi i merge; il run del merge #117 è
+un secondo riscontro end-to-end verde.
+
+**PR #115 chiusa dall'utente senza merge** l'11:47:26 UTC. Dopo #119 il suo ramo era `dirty`
+e manteneva la regex vecchia `voci?`.
+
+**PR #118** resta aperta e rossa: l'upgrade Dependabot Ruff 0.16.10 → 0.17.0 segnala due
+`noqa: DTZ001` inutilizzati in `tests/test_fotografia_dati.py`. **Correzione sostitutiva aperta
+come PR #120** (`431d2d2`): aggiorna entrambi i pin a 0.17.0 e rimuove le soppressioni,
+spiegando nel test l'intenzionalità dei datetime naïvi.
+
+Gate locali #120: Ruff 0.17.0 **verde**; suite **1.033 passed**; `pip check` pulito; `fda build`
+499 schede / 2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli, zero problemi**;
+parità senza differenze; resa 375 px **28.766 misure, zero problemi**. Gate browser locale non
+eseguibile: download Chromium da `cdn.playwright.dev` fallito per reset TLS. CI GitHub sullo SHA
+`431d2d2` tutta verde: run PR [`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)
+`test`/`site`/`browser` SUCCESS; anche il run push `38561546432` SUCCESS. Nessuna proposta di merge.
+
+**Prossimo operativo:** comunicare all'utente che tutti i check `test`, `site`, `browser` della
+#120 sono verdi e attendere la sua decisione sul merge. Il prossimo daily serale (previsto dalle
+20:00 UTC in poi) deve salvare la fotografia completa: verificare il commit dei Parquet e la
+persistenza dei dati `nl`/`pt`. Non fare dispatch duplicati né riaprire manualmente #114.
+
 ## 2026-10-14 — Primo daily dopo #116 fallito: hotfix del singolare, produzione NON ripristinata
 
 Run [`38541503143`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38541503143):

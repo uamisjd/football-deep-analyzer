@@ -1588,3 +1588,45 @@ dalla PR remota/nessun commit non pubblicato. Merge `8a6791a` alle 09:19:25 UTC;
 `38541503143` avviato dal push. La policy generale (merge dell'utente) resta invariata;
 questa autorizzazione vale per questa PR, non per PR future né per la chiusura della #115.
 Esito di produzione registrato separatamente in `STATO.md` dopo la verifica effettiva.
+
+### 9.31 — PR #119: singolare «1 voce» nell'oracolo [50] (2026-10-14, merge dell'utente)
+
+L'utente ha fuso la PR #119 alle **10:26:09 UTC** (12:26 CEST), merge commit
+**`abf75cfda9492e847274a94c6f5d95c8c11c9558`**. Verifica pre-merge: check `test`, `site` e
+`browser` verdi sullo SHA finale `2931591a`; PR mergeable/clean. La modifica minima cambia
+la regex `voci?` in `voc[ei]` e aggiunge 10 regressioni renderizzate dal vero `SiteBuilder`
+per nl/pt, incluse verifiche di conteggi manomessi.
+
+**Verifica post-merge reale:** daily #271, run `38549550657`, tutti i gate verdi; deploy Pages
+riuscito (deployment `7063081983`); issue #114 chiusa automaticamente. Il commit dati
+`94ff49b` salva solo `prospettico.parquet`: fotografia completa non prevista in questo run
+intermedio, da verificare al run serale. Nessun merge eseguito dall'agente.
+
+### 9.32 — PR #117: aggiornamento delle GitHub Actions (2026-10-14, merge dell'utente)
+
+L'utente ha fuso la PR #117 alle **10:54:11 UTC** (12:54 CEST), merge commit
+**`d171e4818bfc0f570b9ac87ca97cc6edc3df2eaa`**. Contenuto: `actions/download-artifact`
+aggiornata a v8.0.2 e `actions/setup-node` a v7.1.0, con SHA fissati. Check `test`, `site`
+e `browser` sulla PR verdi.
+
+**Verifica post-merge reale:** `tests` `38552806980` e daily #272 `38552807062` verdi; job
+`run`, `deploy` e `notify` completati con successo. Deployment Pages `7063664494` riuscito.
+Il commit dati `26854ff` ha aggiornato soltanto `prospettico.parquet`, come previsto per il
+run intermedio. Nessuna deroga: il merge lo ha eseguito l'utente.
+
+### 9.33 — PR #120: Ruff 0.17.0 e rimozione dei `noqa` obsoleti (2026-10-14)
+
+PR #118 di Dependabot resta aperta e non è stata modificata direttamente. Dopo il fallimento
+`RUF100` causato dai due `noqa: DTZ001` non più necessari, aperta PR correttiva #120 dal ramo
+di sessione `arena/e6dd07a0-football-deep-analyzer`, commit `431d2d2`. Aggiornati i pin in
+`pyproject.toml` e `requirements-ci.txt`; nel test, il commento dichiara perché i datetime
+naïvi sono intenzionali.
+
+Gate locali: Ruff **0.17.0**, `ruff check .` verde; suite **1.033 passed**; `pip check` pulito;
+`fda build` 499 schede / 2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli,
+zero problemi**; parità senza differenze; resa 375 px **28.766 misure, zero problemi**. Browser
+non eseguibile localmente: Chromium non scaricabile da `cdn.playwright.dev` per reset TLS.
+La CI GitHub sullo SHA `431d2d2` è poi passata interamente: run PR
+[`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)
+con `test`, `site`, `browser` tutti SUCCESS (anche run push `38561546432` SUCCESS).
+**Nessun merge eseguito o autorizzato**; il merge resta all'utente.
