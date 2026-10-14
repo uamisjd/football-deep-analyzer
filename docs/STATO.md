@@ -1,38 +1,30 @@
-## 2026-10-14 — Produzione ripristinata (#119/#117); correzione Ruff in PR #120
+## 2026-10-14 — PR #120 fusa; CI, daily e deploy post-merge verdi
 
-**PR #119** fusa dall'utente alle 10:26:09 UTC: merge `abf75cf`. Il daily post-merge
-[`38549550657`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38549550657)
-(#271) è riuscito: raccolta, modelli, simulazioni, `verify_site`, parità, resa 375 px e deploy.
-Pages ha registrato il deploy `7063081983`; l'issue **#114 è stata chiusa automaticamente**.
-Il commit dati successivo `94ff49b` ha salvato solo `prospettico.parquet`: run intermedio,
-comportamento atteso dalla regola di una fotografia completa al giorno.
+**PR #119** (merge `abf75cf`) e **PR #117** (merge `d171e48`) erano già state fuse dall'utente;
+i daily #271 e #272 e i rispettivi deploy riuscirono. Il run #271 chiuse automaticamente l'issue
+#114. **PR #115** fu chiusa dall'utente senza merge perché il ramo conservava la regex vecchia
+`voci?`.
 
-**PR #117** fusa dall'utente alle 10:54:11 UTC: merge `d171e48` (aggiornamento Actions).
-Il daily [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38552807062)
-(#272) e `tests` sono riusciti; Pages ha registrato il deploy `7063664494`. Il commit dati
-`26854ff` ha aggiornato solo `prospettico.parquet`, come atteso per un altro run intermedio.
-Il sito è quindi stato nuovamente pubblicato dopo entrambi i merge; il run del merge #117 è
-un secondo riscontro end-to-end verde.
+Su richiesta esplicita dell'utente («Please merge the pull request»), eseguito
+`gh pr merge 120 --merge`: **PR #120** fusa il **2026-10-14 alle 13:03:17 UTC** (15:03:17 CEST),
+merge commit **`44df6a43604d07c0c858d26ca630963e75598a2a`**. Prima del merge: `git status --porcelain`
+vuoto; `git log origin/main..HEAD` conteneva solo i due commit della PR (`431d2d2`, `67e05ae`);
+nessun commit non pushato; PR mergeable e `test`, `site`, `browser` SUCCESS sullo SHA `67e05ae`
+(run [`38564116348`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38564116348)).
 
-**PR #115 chiusa dall'utente senza merge** l'11:47:26 UTC. Dopo #119 il suo ramo era `dirty`
-e manteneva la regex vecchia `voci?`.
+**PR #118** di Dependabot si è chiusa automaticamente alle **13:08:03 UTC**, non fusa (`mergedAt`
+null), dopo l'integrazione della correzione #120; non è stata modificata né chiusa manualmente.
 
-**PR #118** resta aperta e rossa: l'upgrade Dependabot Ruff 0.16.10 → 0.17.0 segnala due
-`noqa: DTZ001` inutilizzati in `tests/test_fotografia_dati.py`. **Correzione sostitutiva aperta
-come PR #120** (`431d2d2`): aggiorna entrambi i pin a 0.17.0 e rimuove le soppressioni,
-spiegando nel test l'intenzionalità dei datetime naïvi.
+**Verifiche post-merge:** workflow `tests` [`38568634353`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38568634353)
+verde; daily [`38568634387`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38568634387)
+con `run`, `deploy` (`115876287520`) e `notify` (`115876534387`) tutti riusciti. Il commit dati
+successivo **`190256d`** ha aggiornato soltanto `prospettico.parquet`, come previsto per un run
+intermedio; la fotografia completa resta da verificare al run serale.
 
-Gate locali #120: Ruff 0.17.0 **verde**; suite **1.033 passed**; `pip check` pulito; `fda build`
-499 schede / 2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli, zero problemi**;
-parità senza differenze; resa 375 px **28.766 misure, zero problemi**. Gate browser locale non
-eseguibile: download Chromium da `cdn.playwright.dev` fallito per reset TLS. CI GitHub sullo SHA
-`431d2d2` tutta verde: run PR [`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)
-`test`/`site`/`browser` SUCCESS; anche il run push `38561546432` SUCCESS. Nessuna proposta di merge.
-
-**Prossimo operativo:** comunicare all'utente che tutti i check `test`, `site`, `browser` della
-#120 sono verdi e attendere la sua decisione sul merge. Il prossimo daily serale (previsto dalle
-20:00 UTC in poi) deve salvare la fotografia completa: verificare il commit dei Parquet e la
-persistenza dei dati `nl`/`pt`. Non fare dispatch duplicati né riaprire manualmente #114.
+**Prossimo operativo:** pubblicare questa registrazione post-merge con una PR documentale dal
+branch di sessione; poi attendere il daily serale (dalle 20:00 UTC in poi) e verificare il commit
+della fotografia completa e la persistenza dei dati `nl`/`pt`. Non fare dispatch duplicati né
+riaprire manualmente #114.
 
 ## 2026-10-14 — Primo daily dopo #116 fallito: hotfix del singolare, produzione NON ripristinata
 

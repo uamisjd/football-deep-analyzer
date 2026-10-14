@@ -101,9 +101,10 @@ I gate offline precedenti restano risultati storici veri, **non prova di riprist
 
 ## 6. Cosa richiede ancora produzione / evidenza, non altre patch speculative
 
-- I daily #271 (post-#119) e #272 (post-#117) sono verdi su run + deploy; #114 è chiusa.
-  I due commit dati intermedi hanno salvato solo `prospettico.parquet`. Resta da verificare
-  la prossima fotografia completa (≥20 UTC) e la persistenza dei dati `nl`/`pt`.
+- I daily #271 (post-#119), #272 (post-#117) e il run post-#120 `38568634387` sono verdi
+  su run + deploy; #114 è chiusa. I commit intermedi `94ff49b`, `26854ff` e `190256d` hanno
+  salvato solo `prospettico.parquet`. Resta da verificare la prossima fotografia completa
+  (≥20 UTC) e la persistenza dei dati `nl`/`pt`.
 - Dati `nl`/`pt` nuovi: verificare archivio e copertura effettiva su NED1/POR1 dopo raccolta;
   i titoli in fixture non certificano tutti i club del sito pubblico.
 - Crescita Git: misurare una settimana di fotografie complete, non assumere −80% già ottenuto.
@@ -113,10 +114,8 @@ I gate offline precedenti restano risultati storici veri, **non prova di riprist
 
 ## Prossimo passo
 
-La correzione del singolare è in produzione: i run #271 e #272 hanno superato `verify_site`,
-parità, resa mobile e deploy; #114 è chiusa. Verificare la fotografia completa e l'archivio
-`nl`/`pt` al run serale. La PR #118 per Ruff 0.17.0 resta rossa su `RUF100`; la correzione
-è ora nella PR #120. Ruff, 1.033 test e tutti i gate locali del sito sono verdi; anche la CI
-GitHub `test`, `site`, `browser` è passata sullo SHA `431d2d2` (run PR `38561578168`). Il
-browser locale non è stato eseguito perché il download Chromium da `cdn.playwright.dev` è
-fallito per reset TLS.
+La correzione del singolare resta in produzione: i run #271/#272 sono verdi e #114 è chiusa.
+La correzione Ruff è stata fusa con PR #120 su richiesta esplicita; PR #118 è stata chiusa
+automaticamente senza merge. I controlli pre/post-merge `test`, `site`, `browser` e il daily
+con deploy sono tutti riusciti. Resta da verificare al run serale la fotografia completa e
+l'archivio `nl`/`pt`; i run intermedi hanno aggiornato solo `prospettico.parquet`.
