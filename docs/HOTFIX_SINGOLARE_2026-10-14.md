@@ -40,7 +40,8 @@ dei conteggi, ripetuti tutti i 38 test tematici: ancora verdi.
 
 La diagnosi e la regressione sono provate; la patch **non è ancora su main**.
 Il sito/dataset del run fallito non viene dichiarato ripubblicato o archiviato.
-Serve una nuova PR e il suo ciclo di check; il merge resta all'utente perché la
+Aperta [PR #119](https://github.com/uamisjd/football-deep-analyzer/pull/119); i tre check
+GitHub sono in attesa al checkpoint di apertura. Il merge resta all’utente perché la
 deroga riguardava solo #116. Poi verificare il nuovo daily fino al deploy,
 la chiusura automatica #114 e i salvataggi. Nessun dispatch duplicato o chiusura
 manuale dell'allerta per mascherare il fallimento.

@@ -9,7 +9,8 @@ Il parser residuo `voci?` non riconosce «1 voce»: riprodotto **prima della cor
 dati o modelli. Test tematici: **38 passed**, inclusi 10 casi singolare nl/pt, lati scambiati,
 vuoto/singolare/plurale; Ruff e pip check puliti. Suite completa **1.033 passed in 145,25 s**.
 Prove e limiti: [`HOTFIX_SINGOLARE_2026-10-14.md`](HOTFIX_SINGOLARE_2026-10-14.md).
-**Prossimo:** aprire nuova PR sul ramo della sessione e attendere i tre check GitHub.
+**PR correttiva [#119](https://github.com/uamisjd/football-deep-analyzer/pull/119) aperta.**
+**Prossimo:** attendere i tre check GitHub sullo SHA finale, poi merge dell’utente.
 Merge futuro **all'utente**: l'autorizzazione precedente valeva solo per #116. Nessun dispatch
 ripetuto, nessuna chiusura manuale #114, nessuna verifica dal vivo di salvataggi/deploy ancora riuscita.
 
