@@ -1,3 +1,30 @@
+## 2026-10-14 — Produzione ripristinata dopo #119 e #117; unica PR aperta #118
+
+**PR #119** fusa dall'utente alle 10:26:09 UTC: merge `abf75cf`. Il daily post-merge
+[`38549550657`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38549550657)
+(#271) è riuscito: raccolta, modelli, simulazioni, `verify_site`, parità, resa 375 px e deploy.
+Pages ha registrato il deploy `7063081983`; l'issue **#114 è stata chiusa automaticamente**.
+Il commit dati successivo `94ff49b` ha salvato solo `prospettico.parquet`: run intermedio,
+comportamento atteso dalla regola di una fotografia completa al giorno.
+
+**PR #117** fusa dall'utente alle 10:54:11 UTC: merge `d171e48` (aggiornamento Actions).
+Il daily [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38552807062)
+(#272) e `tests` sono riusciti; Pages ha registrato il deploy `7063664494`. Il commit dati
+`26854ff` ha aggiornato solo `prospettico.parquet`, come atteso per un altro run intermedio.
+Il sito è quindi stato nuovamente pubblicato dopo entrambi i merge; il run del merge #117 è
+un secondo riscontro end-to-end verde.
+
+**PR #115 chiusa dall'utente senza merge** il 11:47:26 UTC. Correttamente non fusa: dopo #119
+il suo ramo era `dirty` e manteneva la regex vecchia `voci?`. **Unica PR aperta: #118**,
+upgrade Ruff 0.16.10 → 0.17.0; la CI fallisce a `ruff check` per due `noqa: DTZ001`
+inutilizzati (`tests/test_fotografia_dati.py`). La correzione in questa PR rimuove le
+soppressioni e aggiorna i due pin alla 0.17.0; la PR #118 resta aperta fino alla decisione
+sull'eventuale PR sostitutiva.
+
+**Prossimo operativo:** il prossimo daily serale (previsto dalle 20:00 UTC in poi) deve
+salvare la fotografia completa; verificare il commit dei Parquet e la persistenza dei dati
+`nl`/`pt`. Non fare dispatch duplicati né riaprire manualmente #114.
+
 ## 2026-10-14 — Primo daily dopo #116 fallito: hotfix del singolare, produzione NON ripristinata
 
 Run [`38541503143`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38541503143):

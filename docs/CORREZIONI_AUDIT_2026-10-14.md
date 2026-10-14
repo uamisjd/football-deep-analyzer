@@ -101,8 +101,9 @@ I gate offline precedenti restano risultati storici veri, **non prova di riprist
 
 ## 6. Cosa richiede ancora produzione / evidenza, non altre patch speculative
 
-- Primo daily dopo il merge: **run + deploy** verdi, allerta coerente, salvataggio del solo
-  registro nei run intermedi e fotografia completa serale.
+- I daily #271 (post-#119) e #272 (post-#117) sono verdi su run + deploy; #114 è chiusa.
+  I due commit dati intermedi hanno salvato solo `prospettico.parquet`. Resta da verificare
+  la prossima fotografia completa (≥20 UTC) e la persistenza dei dati `nl`/`pt`.
 - Dati `nl`/`pt` nuovi: verificare archivio e copertura effettiva su NED1/POR1 dopo raccolta;
   i titoli in fixture non certificano tutti i club del sito pubblico.
 - Crescita Git: misurare una settimana di fotografie complete, non assumere −80% già ottenuto.
@@ -112,6 +113,7 @@ I gate offline precedenti restano risultati storici veri, **non prova di riprist
 
 ## Prossimo passo
 
-Completare suite/check della nuova PR correttiva e attendere il merge dell'utente.
-Poi verificare il nuovo daily fino al deploy. #114 resta aperta fino al ripristino reale;
-salvataggi e dati esteri archiviati ancora da dimostrare dal vivo.
+La correzione del singolare è in produzione: i run #271 e #272 hanno superato `verify_site`,
+parità, resa mobile e deploy; #114 è chiusa. Verificare la fotografia completa e l'archivio
+`nl`/`pt` al run serale. La PR #118 per Ruff 0.17.0 è ancora rossa su `RUF100`: rimuovere
+i due `noqa` obsoleti e rieseguire test/site/browser prima del merge.

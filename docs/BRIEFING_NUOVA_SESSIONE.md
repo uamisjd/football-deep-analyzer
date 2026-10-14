@@ -2,11 +2,27 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-13 (**PR #110 fusa dall'agente su ordine esplicito dell'utente (deroga una tantum)**; hotfix `daily` #109 in [`docs/99`](99_diagnosi_daily_109_hotfix_2026-10-13.md), filtro lingua V3 `149/149` in [`docs/98`](98_lingua_copertura_2026-10-13.md) §6, copertura e ricerca web di «Vita del club» in [`docs/100`](100_vita_club_ricerca_web_copertura_2026-10-13.md), e **mappa completa dei prossimi lavori** in [`docs/101`](101_handoff_prossima_sessione_2026-10-13.md)) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
+> **Ultimo aggiornamento:** 2026-10-14 (PR #119 e #117 fuse dall’utente; daily/deploy #271 e #272 riusciti; #114 chiusa; #115 chiusa senza merge; unica PR aperta #118) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
 
 ---
 
-## Aggiornamento operativo — 14/10/2026, PR #116
+## Stato operativo corrente — 14/10/2026
+
+**Produzione ripristinata e ridistribuita.** PR #119 (`abf75cf`) fusa dall'utente alle
+10:26:09 UTC; daily #271 [`38549550657`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38549550657)
+completato con `run` e `deploy` verdi, #114 chiusa automaticamente. PR #117 (`d171e48`)
+fusa alle 10:54:11 UTC; daily #272 [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38552807062)
+e `tests` verdi, nuovo deploy Pages riuscito. PR #115 chiusa senza merge: il ramo manteneva
+la vecchia regex `voci?` ed era diventato conflittuale. **PR ancora aperta: #118** (Ruff 0.17.0),
+CI rossa per due `noqa: DTZ001` inutilizzati in `tests/test_fotografia_dati.py`.
+
+La sessione sta aggiornando entrambi i pin Ruff a `0.17.0`, rimuovendo le soppressioni e
+provando la suite completa. L'ultimo commit dati su `main`, `26854ff`, modifica solo
+`prospettico.parquet`: è il comportamento atteso del run intermedio. Verificare al daily serale
+la fotografia completa e l'archivio nl/pt; non dichiarare quei Parquet salvati prima del commit.
+Per il checkpoint dettagliato, leggere la cima di [`docs/STATO.md`](STATO.md).
+
+## Cronologia — PR #116, prima della correzione #119
 
 L'audit indipendente ha trovato altri due difetti nel salvataggio, oltre all'oracolo [50].
 Sono corretti sul ramo `arena/7c92c1a2-football-deep-analyzer`, insieme ad allerta dopo deploy,
@@ -24,7 +40,7 @@ aperta **PR #119**, check da attendere. Il merge della nuova PR resta all'utente
 checkpoint del rilascio #116, non prova di successo del daily. Il sito pubblico conserva
 l'ultimo deploy valido; salvataggi/fotografia/news archiviate ancora da verificare dal vivo.
 
-## Handoff operativo corrente — 2026-10-13 (il più recente: leggere questo e `docs/101` per primi)
+## Handoff storico — 2026-10-13 (il checkpoint corrente è riportato in cima a questo file e in `docs/STATO.md`)
 
 **Stampa in lingua originale — [`docs/106`](106_stampa_in_lingua_originale_2026-10-13.md) (13/10, in PR #113).**
 Su domanda e decisione dell'utente («fonti estere + sintesi nostra»): NED1 e POR1 raccolgono anche

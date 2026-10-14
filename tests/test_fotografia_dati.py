@@ -66,9 +66,10 @@ def test_confine_delle_24_ore() -> None:
 def test_istante_ingenuo_viene_letto_come_utc() -> None:
     # le date dell'API e di git sono UTC con offset; un istante senza fuso non deve
     # cambiare la decisione (né far esplodere il confronto)
+    # Sono naïvi intenzionalmente: il test verifica che vengano interpretati come UTC.
     esito, _ = fd.decide(
-        datetime(2026, 10, 13, 21, 0),  # noqa: DTZ001 — l'istante ingenuo È il caso in prova
-        datetime(2026, 10, 12, 21, 30),  # noqa: DTZ001
+        datetime(2026, 10, 13, 21, 0),
+        datetime(2026, 10, 12, 21, 30),
     )
     assert esito is True
 
