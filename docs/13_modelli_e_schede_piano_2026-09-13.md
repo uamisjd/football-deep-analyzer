@@ -1629,4 +1629,21 @@ non eseguibile localmente: Chromium non scaricabile da `cdn.playwright.dev` per 
 La CI GitHub sullo SHA `431d2d2` è poi passata interamente: run PR
 [`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)
 con `test`, `site`, `browser` tutti SUCCESS (anche run push `38561546432` SUCCESS).
-**Nessun merge eseguito o autorizzato**; il merge resta all'utente.
+Esito della richiesta di merge e dei controlli post-merge: §9.34.
+
+### 9.34 — Fusione PR #120 e verifica post-merge (2026-10-14)
+
+Dopo la richiesta esplicita dell'utente («Please merge the pull request»), l'agente ha eseguito
+`gh pr merge 120 --merge`, solo dopo aver verificato il branch, worktree pulito, assenza di
+commit non pushati, PR mergeable e check verdi. Merge commit
+**`44df6a43604d07c0c858d26ca630963e75598a2a`**, alle **13:03:17 UTC** (15:03:17 CEST).
+
+La PR #118 di Dependabot è stata chiusa automaticamente alle **13:08:03 UTC**, senza merge
+(`mergedAt` nullo), dopo l'integrazione della correzione #120.
+
+**Verifica post-merge reale:** workflow `tests` `38568634353` verde (test, site, browser);
+daily `38568634387` verde con `run`, `deploy` e `notify` riusciti (deployment job
+`115876287520`, notifica `115876534387`). Il commit dati `190256d` alle 13:21 UTC aggiorna
+soltanto `prospettico.parquet`, comportamento previsto per un run intermedio. La fotografia
+completa e l'archivio `nl`/`pt` restano da verificare al run serale. Questa è una deroga
+all'esecuzione autonoma: autorizzazione esplicita dell'utente limitata alla PR #120.

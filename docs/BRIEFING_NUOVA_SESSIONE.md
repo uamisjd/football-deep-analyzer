@@ -2,32 +2,27 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-14 (PR #119 e #117 fuse dall’utente; daily/deploy #271 e #272 riusciti; #114 chiusa; #115 chiusa senza merge; unica PR aperta #118) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
+> **Ultimo aggiornamento:** 2026-10-14 (PR #120 fusa su richiesta esplicita; test/daily/deploy post-merge verdi; #118 chiusa automaticamente senza merge; fotografia completa ancora da verificare) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
 
 ---
 
 ## Stato operativo corrente — 14/10/2026
 
-**Produzione ripristinata e ridistribuita.** PR #119 (`abf75cf`) fusa dall'utente alle
-10:26:09 UTC; daily #271 [`38549550657`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38549550657)
-completato con `run` e `deploy` verdi, #114 chiusa automaticamente. PR #117 (`d171e48`)
-fusa alle 10:54:11 UTC; daily #272 [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38552807062)
-e `tests` verdi, nuovo deploy Pages riuscito. PR #115 chiusa senza merge: il ramo manteneva
-la vecchia regex `voci?` ed era diventato conflittuale. **#118 resta aperta** e la sua CI è rossa
-per due `noqa: DTZ001` inutilizzati; la correzione è stata pubblicata nella **PR #120**
-(commit `431d2d2`), che aggiorna entrambi i pin Ruff a `0.17.0` e rimuove le soppressioni.
+**PR #120** (`431d2d2`, pin Ruff 0.17.0 e rimozione dei `noqa` obsoleti) è stata fusa su
+richiesta esplicita dell'utente alle **13:03:17 UTC**, merge `44df6a4`. Prima del merge, i check
+`test`, `site`, `browser` erano verdi. Il post-merge `tests` [`38568634353`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38568634353)
+e daily [`38568634387`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38568634387)
+sono riusciti, compresi deploy e notify. La #118 Dependabot si è chiusa automaticamente alle
+13:08:03 UTC, senza merge separato; la #115 era già chiusa senza merge e #114 è chiusa.
 
-Gate locali #120: Ruff verde, **1.033 test passati**, `pip check` pulito, build 499 schede /
-2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli, zero problemi**; parità
-senza differenze e resa 375 px **28.766 misure, zero problemi**. Il browser locale non è stato
-avviato perché il download Chromium da `cdn.playwright.dev` è fallito per reset TLS; in GitHub
-CI, invece, tutti i gate `test`, `site`, `browser` sono passati su `431d2d2` (run PR
-[`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)).
-Nessun merge autorizzato: l'eventuale merge resta all'utente.
+Gate locali: Ruff verde, **1.033 test passati**, `pip check` pulito; build 499 schede / 2.364
+fixture / 7.600 giocatori; `verify_site` **242.503 controlli, zero problemi**; parità senza
+differenze e resa 375 px **28.766 misure, zero problemi**. Il browser locale non era eseguibile
+per reset TLS nel download Chromium, ma il check browser GitHub è passato.
 
-L'ultimo commit dati su `main`, `26854ff`, modifica solo `prospettico.parquet`: è il comportamento
-atteso del run intermedio. Verificare al daily serale la fotografia completa e l'archivio nl/pt;
-non dichiarare quei Parquet salvati prima del commit. Per il checkpoint dettagliato, leggere la
+L'ultimo commit dati su `main`, `190256d`, modifica solo `prospettico.parquet`: run intermedio,
+come atteso. Verificare al daily serale la fotografia completa e la persistenza nl/pt; non
+considerarle salvate finché non compare il commit. Per il checkpoint dettagliato, leggere la
 cima di [`docs/STATO.md`](STATO.md).
 
 ## Cronologia — PR #116, prima della correzione #119
