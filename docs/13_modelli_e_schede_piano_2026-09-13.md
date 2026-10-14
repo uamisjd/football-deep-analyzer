@@ -1613,3 +1613,20 @@ e `browser` sulla PR verdi.
 `run`, `deploy` e `notify` completati con successo. Deployment Pages `7063664494` riuscito.
 Il commit dati `26854ff` ha aggiornato soltanto `prospettico.parquet`, come previsto per il
 run intermedio. Nessuna deroga: il merge lo ha eseguito l'utente.
+
+### 9.33 — PR #120: Ruff 0.17.0 e rimozione dei `noqa` obsoleti (2026-10-14)
+
+PR #118 di Dependabot resta aperta e non è stata modificata direttamente. Dopo il fallimento
+`RUF100` causato dai due `noqa: DTZ001` non più necessari, aperta PR correttiva #120 dal ramo
+di sessione `arena/e6dd07a0-football-deep-analyzer`, commit `431d2d2`. Aggiornati i pin in
+`pyproject.toml` e `requirements-ci.txt`; nel test, il commento dichiara perché i datetime
+naïvi sono intenzionali.
+
+Gate locali: Ruff **0.17.0**, `ruff check .` verde; suite **1.033 passed**; `pip check` pulito;
+`fda build` 499 schede / 2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli,
+zero problemi**; parità senza differenze; resa 375 px **28.766 misure, zero problemi**. Browser
+non eseguibile localmente: Chromium non scaricabile da `cdn.playwright.dev` per reset TLS.
+La CI GitHub sullo SHA `431d2d2` è poi passata interamente: run PR
+[`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)
+con `test`, `site`, `browser` tutti SUCCESS (anche run push `38561546432` SUCCESS).
+**Nessun merge eseguito o autorizzato**; il merge resta all'utente.

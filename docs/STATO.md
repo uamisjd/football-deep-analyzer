@@ -1,4 +1,4 @@
-## 2026-10-14 — Produzione ripristinata dopo #119 e #117; unica PR aperta #118
+## 2026-10-14 — Produzione ripristinata (#119/#117); correzione Ruff in PR #120
 
 **PR #119** fusa dall'utente alle 10:26:09 UTC: merge `abf75cf`. Il daily post-merge
 [`38549550657`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38549550657)
@@ -14,16 +14,25 @@ Il daily [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actio
 Il sito è quindi stato nuovamente pubblicato dopo entrambi i merge; il run del merge #117 è
 un secondo riscontro end-to-end verde.
 
-**PR #115 chiusa dall'utente senza merge** il 11:47:26 UTC. Correttamente non fusa: dopo #119
-il suo ramo era `dirty` e manteneva la regex vecchia `voci?`. **Unica PR aperta: #118**,
-upgrade Ruff 0.16.10 → 0.17.0; la CI fallisce a `ruff check` per due `noqa: DTZ001`
-inutilizzati (`tests/test_fotografia_dati.py`). La correzione in questa PR rimuove le
-soppressioni e aggiorna i due pin alla 0.17.0; la PR #118 resta aperta fino alla decisione
-sull'eventuale PR sostitutiva.
+**PR #115 chiusa dall'utente senza merge** l'11:47:26 UTC. Dopo #119 il suo ramo era `dirty`
+e manteneva la regex vecchia `voci?`.
 
-**Prossimo operativo:** il prossimo daily serale (previsto dalle 20:00 UTC in poi) deve
-salvare la fotografia completa; verificare il commit dei Parquet e la persistenza dei dati
-`nl`/`pt`. Non fare dispatch duplicati né riaprire manualmente #114.
+**PR #118** resta aperta e rossa: l'upgrade Dependabot Ruff 0.16.10 → 0.17.0 segnala due
+`noqa: DTZ001` inutilizzati in `tests/test_fotografia_dati.py`. **Correzione sostitutiva aperta
+come PR #120** (`431d2d2`): aggiorna entrambi i pin a 0.17.0 e rimuove le soppressioni,
+spiegando nel test l'intenzionalità dei datetime naïvi.
+
+Gate locali #120: Ruff 0.17.0 **verde**; suite **1.033 passed**; `pip check` pulito; `fda build`
+499 schede / 2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli, zero problemi**;
+parità senza differenze; resa 375 px **28.766 misure, zero problemi**. Gate browser locale non
+eseguibile: download Chromium da `cdn.playwright.dev` fallito per reset TLS. CI GitHub sullo SHA
+`431d2d2` tutta verde: run PR [`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)
+`test`/`site`/`browser` SUCCESS; anche il run push `38561546432` SUCCESS. Nessuna proposta di merge.
+
+**Prossimo operativo:** comunicare all'utente che tutti i check `test`, `site`, `browser` della
+#120 sono verdi e attendere la sua decisione sul merge. Il prossimo daily serale (previsto dalle
+20:00 UTC in poi) deve salvare la fotografia completa: verificare il commit dei Parquet e la
+persistenza dei dati `nl`/`pt`. Non fare dispatch duplicati né riaprire manualmente #114.
 
 ## 2026-10-14 — Primo daily dopo #116 fallito: hotfix del singolare, produzione NON ripristinata
 

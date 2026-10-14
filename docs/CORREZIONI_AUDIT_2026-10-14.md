@@ -115,5 +115,8 @@ I gate offline precedenti restano risultati storici veri, **non prova di riprist
 
 La correzione del singolare è in produzione: i run #271 e #272 hanno superato `verify_site`,
 parità, resa mobile e deploy; #114 è chiusa. Verificare la fotografia completa e l'archivio
-`nl`/`pt` al run serale. La PR #118 per Ruff 0.17.0 è ancora rossa su `RUF100`: rimuovere
-i due `noqa` obsoleti e rieseguire test/site/browser prima del merge.
+`nl`/`pt` al run serale. La PR #118 per Ruff 0.17.0 resta rossa su `RUF100`; la correzione
+è ora nella PR #120. Ruff, 1.033 test e tutti i gate locali del sito sono verdi; anche la CI
+GitHub `test`, `site`, `browser` è passata sullo SHA `431d2d2` (run PR `38561578168`). Il
+browser locale non è stato eseguito perché il download Chromium da `cdn.playwright.dev` è
+fallito per reset TLS.

@@ -13,14 +13,22 @@
 completato con `run` e `deploy` verdi, #114 chiusa automaticamente. PR #117 (`d171e48`)
 fusa alle 10:54:11 UTC; daily #272 [`38552807062`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38552807062)
 e `tests` verdi, nuovo deploy Pages riuscito. PR #115 chiusa senza merge: il ramo manteneva
-la vecchia regex `voci?` ed era diventato conflittuale. **PR ancora aperta: #118** (Ruff 0.17.0),
-CI rossa per due `noqa: DTZ001` inutilizzati in `tests/test_fotografia_dati.py`.
+la vecchia regex `voci?` ed era diventato conflittuale. **#118 resta aperta** e la sua CI è rossa
+per due `noqa: DTZ001` inutilizzati; la correzione è stata pubblicata nella **PR #120**
+(commit `431d2d2`), che aggiorna entrambi i pin Ruff a `0.17.0` e rimuove le soppressioni.
 
-La sessione sta aggiornando entrambi i pin Ruff a `0.17.0`, rimuovendo le soppressioni e
-provando la suite completa. L'ultimo commit dati su `main`, `26854ff`, modifica solo
-`prospettico.parquet`: è il comportamento atteso del run intermedio. Verificare al daily serale
-la fotografia completa e l'archivio nl/pt; non dichiarare quei Parquet salvati prima del commit.
-Per il checkpoint dettagliato, leggere la cima di [`docs/STATO.md`](STATO.md).
+Gate locali #120: Ruff verde, **1.033 test passati**, `pip check` pulito, build 499 schede /
+2.364 fixture / 7.600 giocatori; `verify_site` **242.503 controlli, zero problemi**; parità
+senza differenze e resa 375 px **28.766 misure, zero problemi**. Il browser locale non è stato
+avviato perché il download Chromium da `cdn.playwright.dev` è fallito per reset TLS; in GitHub
+CI, invece, tutti i gate `test`, `site`, `browser` sono passati su `431d2d2` (run PR
+[`38561578168`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38561578168)).
+Nessun merge autorizzato: l'eventuale merge resta all'utente.
+
+L'ultimo commit dati su `main`, `26854ff`, modifica solo `prospettico.parquet`: è il comportamento
+atteso del run intermedio. Verificare al daily serale la fotografia completa e l'archivio nl/pt;
+non dichiarare quei Parquet salvati prima del commit. Per il checkpoint dettagliato, leggere la
+cima di [`docs/STATO.md`](STATO.md).
 
 ## Cronologia — PR #116, prima della correzione #119
 
