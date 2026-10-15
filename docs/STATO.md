@@ -1,3 +1,10 @@
+## 2026-10-15 — Previsione/Verifica misurate (docs/108): tolta la tendina vuota
+
+Build 499 schede. Sulle 59 pre: previsione/laboratorio/fascia/posizione/primo-gol **59/59**,
+1X2 somma 100, coperture esatti 41–74/100. **211/440** finite avevano `#verifica` vuota:
+template e indice ora la stampano solo con matrice o gol. Nessun cambio al modello.
+Dettaglio: [`docs/108`](108_previsione_e_verifica_misura_2026-10-15.md).
+
 ## 2026-10-14 — Revisione totale (docs/107): prodotto vivo, coda piccola
 
 Richiesta utente: vita/morte/miracoli. Relazione: [`docs/107`](107_revisione_totale_2026-10-14.md).

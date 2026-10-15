@@ -67,7 +67,7 @@
   {% if c.key_stats %}<a href="#statistiche">Statistiche</a>{% endif %}
   {% if c.status == 'finished' and c.timeline %}<a href="#cronaca">Cronaca essenziale</a>{% endif %}
   {% if p %}<a href="#previsione">Previsione</a>{% endif %}
-  <a href="#verifica">Verifica</a>
+  {% if c.score_matrix or c.goals %}<a href="#verifica">Verifica</a>{% endif %}
 </nav>
 
 <div class="card detail-card" id="lettura">
@@ -1134,7 +1134,11 @@
 
 {#- P1.4 (`docs/28` §2): la verifica dei numeri non occupa il primo schermo, ma il summary dice
     i due numeri di testa (moda e mediana dei gol totali) così il lettore sa se aprirla. Il
-    contenuto resta nel DOM: `verify_site` continua a leggerlo, Google pure. -#}
+    contenuto resta nel DOM: `verify_site` continua a leggerlo, Google pure.
+    Misura 15/10/2026 (`docs/108`): 211/440 schede finite stampavano questa tendina **vuota**
+    (niente matrice, niente gol) perché manca la previsione. Senza numeri la card mente:
+    si stampa solo se c'è almeno la matrice o la distribuzione. -#}
+{% if c.score_matrix or c.goals %}
 <details class="card detail-card" id="verifica">
   <summary><h2 style="margin:0">Verifica approfondita: risultati esatti e distribuzione gol</h2>
   <span class="mut small" style="margin-left:auto">{% if c.goals %}<b>moda {{ c.goals.moda }} gol · mediana {{ c.goals.mediana }}</b> · {% endif %}per chi vuole controllare i numeri</span></summary>
@@ -1185,5 +1189,6 @@
   </div>
   <p class="small mut" style="margin-top:12px">Matrice e istogramma sono la stessa previsione letta in due modi; la scomposizione resta sopra nella sezione “Come nasce questa probabilità”. Tutto è ricalcolabile: a ogni generazione del sito <code>scripts/verify_site.py</code> rilegge i numeri pubblicati e li confronta con i dati e con il modello (barre 1X2, matrice, distribuzione dei gol, catena della probabilità, calendario, accuratezza e backtest); un numero che non torna blocca la risposta dell'audit.</p>
 </details>
+{% endif %}
 <p class="small mut">Pagina generata automaticamente il {{ c.generated_at|it_utc }} (ora italiana). Fonti: FotMob (statistiche, formazioni, indisponibili, arbitro, meteo, classifica), Understat (xG di stagione), football-data.co.uk (storico dei modelli).</p>
 {% endblock %}
