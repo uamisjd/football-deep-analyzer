@@ -1664,3 +1664,14 @@ su `45c6102` (3m14s · 6m21s · 4m34s), PR `MERGEABLE`/`CLEAN`, `git status --po
 12:12:55 UTC. Contenuto: `docs/13` §9.35 e cima di `STATO.md` (solo documenti; il push non avvia
 run perché `tests.yml`/`daily.yml` hanno `paths-ignore: docs/**`). Autorizzazione limitata alle
 PR #123 e #124 di quel giro.
+
+### 9.37 — PR #124: revisione 15/10 + misura della crescita (2026-10-15, deroga esplicita)
+
+Stesso ordine dell'utente («ok procedi») della §9.36, proposta esplicita di chiudere **entrambe**
+le PR aperte. Dopo la fusione della #123, il ramo è stato **riallineato** su `6b45631` con rebase
+(conflitto su `docs/STATO.md` risolto tenendo **entrambi** i blocchi e aggiungendo la
+registrazione della #123 in questa stessa PR, così da non aprire una PR separata solo per quella).
+Prima del merge: `test`/`site`/`browser` SUCCESS su `6c9f8d8`, `MERGEABLE`/`CLEAN`, `git status`
+vuoto, tre commit. `gh pr merge 124 --merge` → merge **`79a97c4222158eb22dea559d8423f50b64eb3414`**,
+15/10 12:39:54 UTC. Il push ha avviato `tests` e `daily` su `main` (il contenuto non è di soli
+documenti). Autorizzazione limitata alle PR #123 e #124 di quel giro.

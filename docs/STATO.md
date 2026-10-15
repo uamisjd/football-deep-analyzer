@@ -1,3 +1,21 @@
+## 2026-10-15 — PR #124 fusa (revisione 15/10 + misura della crescita); registrazione del merge #123
+
+Ordine utente: **«ok procedi»**, dopo la proposta esplicita dell'agente di chiudere le due PR
+aperte del giro (#123 e #124). **PR #124** fusa alle **12:39:54 UTC**, merge commit
+**`79a97c4222158eb22dea559d8423f50b64eb3414`** (deroga in `docs/13` §9.37, insieme alla §9.36
+per la #123).
+
+Prima del merge: `test` 3m37s · `site` 10m11s · `browser` 4m25s tutti **SUCCESS** su `6c9f8d8`,
+PR `MERGEABLE`/`CLEAN`, `git status --porcelain` vuoto, `origin/main..HEAD` = i **3** commit della
+PR. Contenuto entrato in `main`: `docs/109` (revisione totale con gate rimisurati), la misura
+riproducibile della crescita (`scripts/crescita_repo.py` + 12 test), i conteggi dell'indice in
+`README` e nel briefing, la registrazione del merge della #123 e la deroga §9.36.
+
+Il push del merge ha avviato `tests` e `daily` su `main` (`79a97c4`, 12:39:58 UTC): il contenuto
+include `scripts/` e `tests/`, quindi **non** è coperto da `paths-ignore`. Conseguenza attesa: il
+run `daily` di oggi è il primo dopo la fotografia del 14/10 22:08, quindi la regola «≥24 ore»
+di `docs/105` gli fa scrivere la fotografia completa — da verificare, non dato per fatto.
+
 ## 2026-10-15 — PR #123 fusa dall'agente su ordine «ok procedi» (deroga §9.36)
 
 Su richiesta dell'utente (*«ok procedi»*, dopo la proposta esplicita di chiudere le due PR aperte)
