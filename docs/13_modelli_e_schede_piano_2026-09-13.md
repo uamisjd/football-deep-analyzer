@@ -1654,3 +1654,13 @@ Ordine utente: «ok fai merge». `gh pr merge 122 --merge` dopo check `test`/`si
 SUCCESS e PR MERGEABLE. Merge **`7366ae5470b2604d5da9fb357298532055c20c6c`**, 15/10 10:18:48 UTC.
 Contenuto: `docs/107`, misura `docs/108`, template che non stampa `#verifica` senza modello.
 Autorizzazione limitata a questa PR.
+
+### 9.36 — PR #123: registrazione del merge #122 (2026-10-15, deroga esplicita)
+
+Ordine utente: «ok procedi», dopo la proposta esplicita dell'agente di chiudere **le due PR
+aperte** (#123 e #124). Prima del merge: `gh pr checks 123` con `test`/`site`/`browser` SUCCESS
+su `45c6102` (3m14s · 6m21s · 4m34s), PR `MERGEABLE`/`CLEAN`, `git status --porcelain` vuoto.
+`gh pr merge 123 --merge` → merge **`6b456319543c604f8fd77cdd2f6f68666c0d27f5`**, 15/10
+12:12:55 UTC. Contenuto: `docs/13` §9.35 e cima di `STATO.md` (solo documenti; il push non avvia
+run perché `tests.yml`/`daily.yml` hanno `paths-ignore: docs/**`). Autorizzazione limitata alle
+PR #123 e #124 di quel giro.
