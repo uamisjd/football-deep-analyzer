@@ -1647,3 +1647,10 @@ daily `38568634387` verde con `run`, `deploy` e `notify` riusciti (deployment jo
 soltanto `prospettico.parquet`, comportamento previsto per un run intermedio. La fotografia
 completa e l'archivio `nl`/`pt` restano da verificare al run serale. Questa è una deroga
 all'esecuzione autonoma: autorizzazione esplicita dell'utente limitata alla PR #120.
+
+### 9.35 — PR #122: revisione 14/10 + Verifica vuota (2026-10-15, deroga esplicita)
+
+Ordine utente: «ok fai merge». `gh pr merge 122 --merge` dopo check `test`/`site`/`browser`
+SUCCESS e PR MERGEABLE. Merge **`7366ae5470b2604d5da9fb357298532055c20c6c`**, 15/10 10:18:48 UTC.
+Contenuto: `docs/107`, misura `docs/108`, template che non stampa `#verifica` senza modello.
+Autorizzazione limitata a questa PR.
