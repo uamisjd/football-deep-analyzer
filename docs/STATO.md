@@ -1,3 +1,11 @@
+## 2026-10-15 — PR #122 fusa su ordine dell'utente
+
+L'utente ha scritto **«ok fai merge»**. Prima: `git status --porcelain` vuoto; `origin/main..HEAD`
+= `191c559` + `eaeb8f1`; PR MERGEABLE; `test`/`site`/`browser` SUCCESS su entrambi i run.
+**Merge:** `gh pr merge 122 --merge`, exit 0; commit **`7366ae5`**, **15/10 10:18:48 UTC**.
+Deroga in `docs/13` §9.35. Il sito pubblico si aggiorna al daily post-merge, non in questo
+istante. Nessun dispatch extra.
+
 ## 2026-10-15 — Previsione/Verifica misurate (docs/108): tolta la tendina vuota
 
 Build 499 schede. Sulle 59 pre: previsione/laboratorio/fascia/posizione/primo-gol **59/59**,
