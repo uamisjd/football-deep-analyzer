@@ -51,7 +51,7 @@ Sito live: <https://uamisjd.github.io/football-deep-analyzer/>
 | Resa 375 px | **28.597 misure · 0 problemi** | verificato in locale |
 | Sito pubblicato | 4.344 file · 157 MB · 4.328 URL in `sitemap.xml` (limite Pages consigliato: 1 GB) | verificato in locale |
 | Dimensione repo GitHub | **750.155 KB ≈ 732,6 MiB** | verificato API |
-| Fotografia dei dati | 1 completa al giorno (13/10 20:13 `27639e6` 4,6 MiB; 14/10 22:08 `7d80ab9` 5,3 MiB); oggi attesa al run ≥20 UTC | verificato `git log` |
+| Fotografia dei dati | 1 completa al giorno (13/10 20:13 `27639e6` 4,6 MiB; 14/10 22:08 `7d80ab9` 5,3 MiB); il run delle 12:58 UTC (**12h50m** dopo) ha committato **solo il registro** (`332817e`), come da regola; la fotografia di oggi è attesa al run **≥20 UTC** | verificato `git log` |
 | Registro prospettico | 1.928 partite registrate, **5 valutate**, ΔRPS γ1,12 **+0,0059** (IC −0,0052…+0,0164), 1 lega su 4 → **nessuna promozione** | verificato in locale |
 
 Confronto con i gate di `docs/107` (citati): i controlli del verificatore passano da 242.503 a

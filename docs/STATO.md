@@ -1,3 +1,26 @@
+## 2026-10-15 — PR #124 fusa (revisione 15/10 + misura della crescita); registrazione del merge #123
+
+Ordine utente: **«ok procedi»**, dopo la proposta esplicita dell'agente di chiudere le due PR
+aperte del giro (#123 e #124). **PR #124** fusa alle **12:39:54 UTC**, merge commit
+**`79a97c4222158eb22dea559d8423f50b64eb3414`** (deroga in `docs/13` §9.37, insieme alla §9.36
+per la #123).
+
+Prima del merge: `test` 3m37s · `site` 10m11s · `browser` 4m25s tutti **SUCCESS** su `6c9f8d8`,
+PR `MERGEABLE`/`CLEAN`, `git status --porcelain` vuoto, `origin/main..HEAD` = i **3** commit della
+PR. Contenuto entrato in `main`: `docs/109` (revisione totale con gate rimisurati), la misura
+riproducibile della crescita (`scripts/crescita_repo.py` + 12 test), i conteggi dell'indice in
+`README` e nel briefing, la registrazione del merge della #123 e la deroga §9.36.
+
+Il push del merge ha avviato `tests` e `daily` su `main` (`79a97c4`, 12:39:58 UTC): il contenuto
+include `scripts/` e `tests/`, quindi **non** è coperto da `paths-ignore`.
+**Esito misurato:** `tests` verde e `daily` [`38736379599`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38736379599)
+**success** con `run`/`deploy`/`notify` riusciti (12:39:58 → 12:59:18 UTC). Il run ha committato
+**solo il registro** (`332817e`, 12:58 UTC): è il comportamento corretto della politica di
+`docs/105`, perché erano passate **14h50m** dalla fotografia del 14/10 22:08 (< 24 ore) e l'ora UTC
+era 12 (< 20). La fotografia completa di oggi resta attesa al **run ≥20 UTC**, non a questo.
+Nessuna previsione è stata scritta come fatto: la prima stesura di questo blocco la dava per
+probabile e la misura l'ha smentita, quindi è stata corretta prima del merge.
+
 ## 2026-10-15 — PR #123 fusa dall'agente su ordine «ok procedi» (deroga §9.36)
 
 Su richiesta dell'utente (*«ok procedi»*, dopo la proposta esplicita di chiudere le due PR aperte)
