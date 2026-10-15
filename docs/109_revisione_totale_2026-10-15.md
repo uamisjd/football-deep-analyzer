@@ -55,8 +55,11 @@ Sito live: <https://uamisjd.github.io/football-deep-analyzer/>
 | Registro prospettico | 1.928 partite registrate, **5 valutate**, ΔRPS γ1,12 **+0,0059** (IC −0,0052…+0,0164), 1 lega su 4 → **nessuna promozione** | verificato in locale |
 
 Confronto con i gate di `docs/107` (citati): i controlli del verificatore passano da 242.503 a
-**242.987**, la resa da 28.766 a **28.597** misure, i test da 1.033 a **1.034**, i giocatori da
-7.600 a **7.626**: sono crescite di contenuto, non regressioni.
+**242.987**, i giocatori da 7.600 a **7.626**, i test da 1.033 a **1.034** d'ingresso e a
+**1.046** col contributo di questo giro. La resa a 375 px misura **28.597** elementi invece di
+28.766: la differenza (−179) è coerente con le tendine `#verifica` vuote tolte da `docs/108`
+(211 schede), ma **non è stata riconciliata elemento per elemento** — resta un numero, non una
+spiegazione.
 
 ## 3. Il ciclo di revisione delle schede è **chiuso**
 
@@ -64,7 +67,9 @@ Confronto con i gate di `docs/107` (citati): i controlli del verificatore passan
 
 1. **«Precedenti»** → `docs/103` (13/10), con fallback dichiarato sulle gare senza h2h (`docs/62`).
 2. **«Previsione ensemble»** (`#previsione`, scomposizione, laboratorio, fascia, posizione, primo gol).
-3. **«Verifica approfondita»** → entrambe in `docs/108`, fuse stamattina con la **PR #122**.
+3. **«Verifica approfondita»** (matrice + gol totali).
+
+I blocchi 2 e 3 sono chiusi da `docs/108`, fuso stamattina con la **PR #122**.
 
 Verifica indipendente fatta qui sulle 499 schede costruite:
 
