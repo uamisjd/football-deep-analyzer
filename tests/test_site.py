@@ -1263,6 +1263,26 @@ def test_verifica_approfondita_chiusa_e_annunciata(tmp_path):
     st.close()
 
 
+def test_verifica_assente_senza_previsione(tmp_path):
+    """docs/108: senza modello la tendina «Verifica» non si stampa vuota.
+
+    Misura sul sito reale (15/10): 211/440 schede finite avevano `#verifica` con
+    griglia interna vuota. L'indice puntava a una sezione senza numeri.
+    """
+    st = _seed(tmp_path)
+    pr = st.read("predictions")
+    st.write("predictions", pr[pr["match_id"] != 5749645].reset_index(drop=True))
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749645})
+    h = (out / "partite" / "5749645.html").read_text(encoding="utf-8")
+    assert 'id="verifica"' not in h
+    assert "Matrice dei punteggi" not in h
+    nav = h.split('class="match-jump"', 1)[1].split("</nav>", 1)[0]
+    assert 'href="#verifica"' not in nav
+    assert 'id="lettura"' in h
+    st.close()
+
+
 def test_status_page_warns_espn_standings(tmp_path):
     """ESPN standings 403 (cronico, coperto da FotMob) → AVVISO, non ERRORE."""
     st = _seed(tmp_path, espn_cls=FakeEspnNoStandings)

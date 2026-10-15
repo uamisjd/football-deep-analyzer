@@ -2,7 +2,7 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-14 (PR #120 fusa su richiesta esplicita; test/daily/deploy post-merge verdi; #118 chiusa automaticamente senza merge; fotografia completa ancora da verificare) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
+> **Ultimo aggiornamento:** 2026-10-14 sera sessione `262421ee` — revisione totale [`docs/107`](107_revisione_totale_2026-10-14.md); sito live OK, 0 issue/PR, 3 daily verdi; foto serale ancora da verificare · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
 
 ---
 
