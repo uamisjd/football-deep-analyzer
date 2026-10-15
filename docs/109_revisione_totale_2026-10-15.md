@@ -37,7 +37,7 @@ Sito live: <https://uamisjd.github.io/football-deep-analyzer/>
 | Voce | Stato | Classe |
 |---|---|---|
 | `main` | `11186b6` (solo registro prospettico; ultimo commit di contenuto `eaeb8f1`, merge `7366ae5`) | verificato `gh` |
-| PR aperte | **1** — #123, solo documenti (`+15` righe, 2 file), `MERGEABLE`/`clean`, `test`+`site`+`browser` **SUCCESS** | verificato `gh` |
+| PR aperte (al momento delle misure) | **1** — #123, solo documenti (`+15` righe, 2 file), `MERGEABLE`/`clean`, `test`+`site`+`browser` **SUCCESS**. La PR **#124** nasce da questa sessione, dopo le misure | verificato `gh` |
 | Issue aperte | **0** | verificato `gh` |
 | Daily | **7 successi consecutivi** (dal 14/10 13:03 al 15/10 10:18); ultimi 3 giorni: 0 rossi | verificato `gh` |
 | Deploy Pages | ultimo `7366ae5`, 15/10 10:30:45 UTC, job `run`/`deploy`/`notify` tutti `success` | verificato `gh` |
