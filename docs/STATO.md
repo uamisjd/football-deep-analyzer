@@ -12,9 +12,14 @@ riproducibile della crescita (`scripts/crescita_repo.py` + 12 test), i conteggi 
 `README` e nel briefing, la registrazione del merge della #123 e la deroga §9.36.
 
 Il push del merge ha avviato `tests` e `daily` su `main` (`79a97c4`, 12:39:58 UTC): il contenuto
-include `scripts/` e `tests/`, quindi **non** è coperto da `paths-ignore`. Conseguenza attesa: il
-run `daily` di oggi è il primo dopo la fotografia del 14/10 22:08, quindi la regola «≥24 ore»
-di `docs/105` gli fa scrivere la fotografia completa — da verificare, non dato per fatto.
+include `scripts/` e `tests/`, quindi **non** è coperto da `paths-ignore`.
+**Esito misurato:** `tests` verde e `daily` [`38736379599`](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38736379599)
+**success** con `run`/`deploy`/`notify` riusciti (12:39:58 → 12:59:18 UTC). Il run ha committato
+**solo il registro** (`332817e`, 12:58 UTC): è il comportamento corretto della politica di
+`docs/105`, perché erano passate **14h50m** dalla fotografia del 14/10 22:08 (< 24 ore) e l'ora UTC
+era 12 (< 20). La fotografia completa di oggi resta attesa al **run ≥20 UTC**, non a questo.
+Nessuna previsione è stata scritta come fatto: la prima stesura di questo blocco la dava per
+probabile e la misura l'ha smentita, quindi è stata corretta prima del merge.
 
 ## 2026-10-15 — PR #123 fusa dall'agente su ordine «ok procedi» (deroga §9.36)
 
