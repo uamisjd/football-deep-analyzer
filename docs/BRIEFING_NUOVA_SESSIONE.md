@@ -2,11 +2,40 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-14 sera sessione `262421ee` — revisione totale [`docs/107`](107_revisione_totale_2026-10-14.md); sito live OK, 0 issue/PR, 3 daily verdi; foto serale ancora da verificare · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
+> **Ultimo aggiornamento:** 2026-10-15, sessione `4bd4709a` — revisione totale [`docs/109`](109_revisione_totale_2026-10-15.md): gate rimisurati da zero (**1.046 test**, `verify_site` **242.987 · 0**, parità 59 schede, resa 375 px 28.597 · 0), 7 daily verdi di fila, **PR #123 aperta** (solo documenti, check verdi) e politica «una fotografia al giorno» **misurata** (−77% di byte scritti) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
 
 ---
 
-## Stato operativo corrente — 14/10/2026
+## Stato operativo corrente — 15/10/2026
+
+**La revisione totale del 15/10 è in [`docs/109`](109_revisione_totale_2026-10-15.md)** (misure
+proprie, non citate: 1.046 test, Ruff 0, build 499 schede / 2.364 fixture / 7.626 giocatori,
+`verify_site` **242.987 controlli · 0 problemi**, parità **59 schede senza differenze**, resa 375 px
+**28.597 misure · 0 problemi**). `main` è a `11186b6` (solo registro prospettico); il sito live è
+aggiornato e dice il vero sulla giornata vuota (sosta nazionali: 0 partite il 15/10, **5 il 16/10**,
+24 il 17/10 e il 18/10).
+
+**GitHub:** 0 issue aperte, **1 PR aperta — #123**, solo documenti (+15 righe, 2 file), `MERGEABLE`
+con `test`/`site`/`browser` **SUCCESS**; il merge resta dell'utente (regola D). Daily: **7 successi
+consecutivi** dal 14/10 13:03; ultimo deploy `7366ae5` del 15/10 10:30:45 UTC con `run`/`deploy`/
+`notify` verdi. Sito pubblicato: 4.344 file, 157 MB, 4.328 URL.
+
+**Il ciclo di revisione delle schede partita è chiuso**: `docs/103` (Precedenti) e `docs/108`
+(Previsione + Verifica, fusi con la PR #122) chiudono i tre blocchi elencati in `docs/101` §4.
+Verificato qui sulle 499 schede: **59/59** pre-partita con tutte e 8 le sezioni, **288** schede con
+sezione `#verifica` **e** voce d'indice (`0` disallineate, invariante [33]), `0` «Arbitro da
+definire», stampa in lingua originale **9/9** NED1 e **1/1** POR1 (44 titoli citati).
+
+**Crescita del repository (novità misurata):** una fotografia completa al giorno (4,6 e 5,3 MiB),
+registro a ogni run; byte scritti al giorno da 33–39 MB (12–13/10) a **10,8 MB** (14/10) e 1,3 MB
+(15/10, parziale); dimensione GitHub **732,6 MiB** (750.155 KB). A questo ritmo i 1 GB
+(raccomandati, non bloccanti) arrivano **a inizio dicembre**: le opzioni B/C/D sono in `docs/109`
+§4 e **attendono una decisione dell'utente**.
+
+**Prossimo passo:** daily ≥20 UTC di oggi (fotografia completa) e la decisione sulla crescita; il
+test prospettico γ 1,12 ha 5 gare valutate su 200 (riparte dal 16/10, ~inizio novembre).
+
+## Cronologia — 14/10 sera, sessione `262421ee` (checkpoint precedente)
 
 **PR #120** (`431d2d2`, pin Ruff 0.17.0 e rimozione dei `noqa` obsoleti) è stata fusa su
 richiesta esplicita dell'utente alle **13:03:17 UTC**, merge `44df6a4`. Prima del merge, i check
@@ -423,9 +452,10 @@ Massima accuratezza, precisione, profondità e qualità su ogni deliverable: num
 | `config/leagues.yaml` | Le 7 leghe + coppe; aggiungere una lega = aggiungere una voce qui (`datahub_base` per i mirror). |
 | `config/sources.yaml` | Budget di richieste per fonte. |
 | `.github/workflows/` | `daily.yml` (cron 5x/giorno: collect → calibrate → predict → backtest → simulate → build → gate → commit dati → Pages), `tests.yml` (Ruff + pytest su push/PR; Ruff aggiunto in questa sessione), `lab.yml` (lunedì 05:30 IT + sonda dei fallback), `benchmark.yml` (mensile: modello vs chiusura), `diag-fetch-log.yml` (log dei run → branch **`diag-logs`**). |
-| `tests/` | **988 test** in 60 file, eseguiti offline (parser su fixture JSON, config, modelli, sito, store/collect, backoff, contrasto dei temi, integrità del pacchetto). |
+| `tests/` | **1.046 test** in 63 file, eseguiti offline (parser su fixture JSON, config, modelli, sito, store/collect, backoff, contrasto dei temi, integrità del pacchetto). |
 | `data/processed/` | **32 Parquet** versionati, committati dai run daily. `fda.duckdb` è una vista derivata e **non** è versionato (`docs/26` §5). |
 | `diag/trigger.txt` | Interruttore del workflow `diag`: scrivici `run_id=<id>` e pusha su un branch `arena/**`. |
+| `scripts/fotografia_dati.py` · `scripts/pubblica_dati.py` | La crescita dei dati in Git: `fotografia_dati.decide()` salva **una fotografia completa al giorno** (registro prospettico a ogni run) e `pubblica_dati.py` committa da un **worktree isolato** (commit/rebase/push non toccano il checkout della build). Misure e opzioni: [`docs/109`](109_revisione_totale_2026-10-15.md) §4. |
 
 ## 7. Limitazioni note (per non ri-verificare a vuoto)
 

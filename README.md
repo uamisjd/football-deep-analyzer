@@ -49,8 +49,10 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/104_revisione_totale_2026-10-13.md`](docs/104_revisione_totale_2026-10-13.md) — **revisione totale del 13/10**: salute misurata da zero (943 test e 241.754 controlli **al momento della revisione**; 988 e 241.774 dopo `docs/105`-`docs/106`), copertura della rassegna per lega, crescita del repository con le opzioni di contenimento.
 - [`docs/105_una_fotografia_al_giorno_2026-10-13.md`](docs/105_una_fotografia_al_giorno_2026-10-13.md) — **politica adottata**: i dati entrano in `main` una volta al giorno (−80% di crescita, sito invariato), con il registro preregistrato fuori dalla regola.
 - [`docs/107_revisione_totale_2026-10-14.md`](docs/107_revisione_totale_2026-10-14.md) — revisione totale del 14/10: sito live, GitHub, coda residua.
+- [`docs/108_previsione_e_verifica_misura_2026-10-15.md`](docs/108_previsione_e_verifica_misura_2026-10-15.md) — chiusura del ciclo schede: le 59 pre-partita complete su tutte e 8 le sezioni e la tendina `#verifica` tolta dalle 211 finite senza previsione (misura prima/dopo).
+- [`docs/109_revisione_totale_2026-10-15.md`](docs/109_revisione_totale_2026-10-15.md) — **revisione totale del 15/10**: gate rimisurati da zero (1.034 test · 242.987 controlli · 0 problemi), politica di crescita «una fotografia al giorno» **misurata** (−77% di byte scritti), confronto con la letteratura sull'RPS, coda e decisioni aperte.
 
-> `docs/` ha **121** file `.md` (**108** documenti numerati, da `00` a `107` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 2 audit datati e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione indipendente più recente è [docs/107](docs/107_revisione_totale_2026-10-14.md), dopo [audit 13/10](docs/AUDIT_COMPLETO_2026-10-13_7c92c1a2.md) e [correzioni 14/10](docs/CORREZIONI_AUDIT_2026-10-14.md).
+> `docs/` ha **123** file `.md` (**110** documenti numerati, da `00` a `109` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 5 fra audit e correzioni datate e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione indipendente più recente è [docs/109](docs/109_revisione_totale_2026-10-15.md), dopo [revisione 14/10](docs/107_revisione_totale_2026-10-14.md), [audit 13/10](docs/AUDIT_COMPLETO_2026-10-13_7c92c1a2.md) e [correzioni 14/10](docs/CORREZIONI_AUDIT_2026-10-14.md).
 
 ## Avvio rapido (sviluppo)
 
@@ -99,6 +101,8 @@ fda build
 python scripts/verify_site.py --site site --data data/processed
 python scripts/parita_schede.py site
 python -m scripts.resa_375
+# Crescita del repository: byte scritti al giorno e proiezione (docs/105, docs/109 §4)
+python -m scripts.crescita_repo --days 10 --da 2026-10-14 --repo uamisjd/football-deep-analyzer
 # Opzionale in locale, obbligatorio nella CI PR: browser vero e axe WCAG AA
 npm ci
 npx playwright install --with-deps chromium

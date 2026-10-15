@@ -1,3 +1,53 @@
+## 2026-10-15 — PR #123 fusa dall'agente su ordine «ok procedi» (deroga §9.36)
+
+Su richiesta dell'utente (*«ok procedi»*, dopo la proposta esplicita di chiudere le due PR aperte)
+e con **tutti i check verdi** su `45c6102` (`test` 3m14s · `site` 6m21s · `browser` 4m34s, tutti
+SUCCESS), PR `MERGEABLE`/`CLEAN`, `git status --porcelain` vuoto, eseguito
+`gh pr merge 123 --merge`: **PR #123 fusa il 2026-10-15 alle 12:12:55 UTC**, merge commit
+**`6b456319543c604f8fd77cdd2f6f68666c0d27f5`**. Contenuto: registrazione del merge di #122
+(`docs/13` §9.35) e cima di `STATO.md`. Deroga registrata in `docs/13` §9.36, limitata a questa PR.
+Il push del merge **non** avvia run su `main`: il commit è di soli documenti e `tests.yml` e
+`daily.yml` hanno `paths-ignore: docs/**`.
+**Prossimo:** fusione della **#124** (questa sessione), poi daily serale ≥20 UTC.
+
+## 2026-10-15 — Revisione totale `docs/109`: gate rimisurati da zero, crescita misurata
+
+Richiesta utente: *«controlla vita morte e miracoli del progetto e del sito… c'è una pr aperta
+controlla»*. Relazione completa: [`docs/109`](109_revisione_totale_2026-10-15.md).
+
+**Verificato dal vivo (`gh` + pagine):** `main` `11186b6` alle 10:38 UTC (poi `6b45631` col
+merge della #123); **0 issue**, **1 PR (#123**, solo documenti, `MERGEABLE`, `test`/`site`/
+`browser` SUCCESS — fusa alle 12:12:55, vedi il blocco sopra; la PR di questo giro è la **#124**);
+**7 daily verdi di fila** dal 14/10 13:03;
+ultimo deploy `7366ae5` del 15/10 10:30:45 UTC con `run`/`deploy`/`notify` verdi; home coerente con
+la sosta (0 partite il 15/10, **5 il 16/10**, 24 il 17/10 e 18/10); repo GitHub **750.155 KB
+(≈732,6 MiB)**.
+
+**Verificato in locale (rimisurato, non citato):** **1.034 test** in 141,95 s (= **1.046** con i 12 test di `scripts/crescita_repo.py` aggiunti nel giro) · Ruff 0 · `pip check`
+ok · build **499 / 2.364 / 7.626** · `verify_site` **242.987 controlli · 0 problemi** (55 oracoli:
+32 indipendenti, 20 misti, 3 specchi) · parità **59 schede, nessuna differenza** · resa 375 px
+**28.597 misure · 0 problemi** · sito 4.344 file / 157 MB / 4.328 URL. Verifiche indipendenti:
+**59/59** pre con tutte e 8 le sezioni, **288** schede con `#verifica` **e** voce d'indice
+(**0** disallineate → invariante [33] regge, la correzione di `docs/108`/PR #122 è live), **0**
+«Arbitro da definire» sulle pre, stampa in lingua originale **9/9** NED1 + **1/1** POR1 (44 titoli),
+archivio notizie con **484 `pt`** e **444 `nl`** → la voce di coda di `docs/107` è chiusa.
+
+**Crescita (prima misura della politica A):** una fotografia completa al giorno (4,6 e 5,3 MiB),
+registro a ogni run; byte scritti al giorno 33–39 MB (12–13/10) → **10,8 MB** (14/10) → 1,3 MB
+(15/10, parziale); dimensione GitHub **+5,8 MiB in 24 h (−77%** contro i 24,8 MB/giorno di
+`docs/105`). I 1 GB raccomandati (non bloccanti) arrivano **a inizio dicembre**; opzioni B/C/D in
+`docs/109` §4, **decisione dell'utente**. Il peso della storia è `data/processed` (798,6 MiB su
+911,3 = 87,6%); i 18 rami `arena/*` non fusi pesano solo 3,2 MiB.
+
+**Modelli:** test prospettico γ 1,12 con **5 gare valutate** su 200 (ΔRPS +0,0059, IC a cavallo
+dello zero, 1 lega su 4) — si accumula dal 16/10. Confronto con la letteratura: il nostro RPS
+0,1987/0,1990 è nella banda attesa per un Dixon-Coles ben costruito (0,177–0,199) e ~0,007 sopra
+il mercato. Nessuna promozione.
+
+**Aggiornati in questo giro:** conteggi dell'indice in `README` (erano 121/108, ora **123/110**) e
+cima del briefing (15/10). Nessun codice di produzione toccato, nessun dato modificato, nessun
+merge autonomo.
+
 ## 2026-10-15 — PR #122 fusa su ordine dell'utente
 
 L'utente ha scritto **«ok fai merge»**. Prima: `git status --porcelain` vuoto; `origin/main..HEAD`
