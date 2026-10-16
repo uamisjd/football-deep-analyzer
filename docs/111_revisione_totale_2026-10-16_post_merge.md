@@ -200,8 +200,11 @@ risolvere prima di riattivare il fallback, non un problema di forecast presenti 
 ## 8. Esito e limiti del follow-up
 
 **Stato produzione:** il daily/deploy di produzione è attivo e l’ultimo run verificato (#38968833035)
-è verde; il sito è online ma lo stato live non è affidabile. **Stato PR #128:** i due check `site`
-più recenti sono rossi (dettagli nei §§9–10), quindi non si può descrivere l’intera CI come verde. Le
+è verde; il sito è online ma lo stato live non è affidabile. **Stato PR #128:** i due run `site`
+intermedi #38968370499 e #38971973093 sono falliti (dettagli nei §§9–10), ma il successivo run
+[#38975278301](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38975278301) sul
+head `bbe6c52` è verde per `test`, `site` e `browser` (§11). La causa dei due fallimenti precedenti
+resta ignota. Le
 autorizzazioni di alcune fonti sono da decidere; il modello va monitorato senza modifiche. Il fix
 #127 ha ripristinato la produzione, ma non risolve la freschezza delle fixture. Il documento
 distingue osservazione live, fotografia locale e condizioni storiche/esterne. Non prova l’ora precisa
@@ -264,7 +267,22 @@ i check `test`, `site` e `browser` sono passati. La PR resta aperta: nessun merg
 - La homepage fetchata alle 22:05 UTC mostra ancora `AGGIORNATO 23:26` CEST, 5 gare / 5 campionati /
   5 su 5 modellate, ma 1 in corso / 4 in programma e Heerenveen–Excelsior 0–0. Non risulta un nuovo
   deploy dopo il daily #38968833035.
-- Al controllo GitHub, PR #128 è aperta; l’API riporta `MERGEABLE`, ma il check `site` è rosso:
-  il dato di mergeability non equivale a gate verdi. Nessun merge eseguito. La failure ripetuta non
-  va trattata come un singolo hiccup; l’utente deve leggere i raw logs nel browser GitHub o
-  richiedere l’intervento sul job prima di decidere il merge.
+- **Fotografia alle 22:05 UTC:** PR #128 era aperta; l’API riportava `MERGEABLE`, ma il check
+  `site` era rosso. Il dato di mergeability non equivale a gate verdi. Nessun merge eseguito allora.
+  La failure ripetuta non andava trattata come un singolo hiccup; l’utente poteva leggere i raw
+  logs nel browser GitHub o richiedere l’intervento sul job. Il successivo esito è in §11.
+
+## 11. Gate PR nuovamente verdi — 16/10/2026, 22:41 UTC / 17/10, 00:41 CEST
+
+- Il commit documentale `bbe6c52` ha avviato il run PR
+  [#38975278301](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38975278301)
+  alle 22:21:43 UTC; completato alle 22:40:38 UTC con `test`, `site` e `browser` tutti **pass**
+  (rispettivamente 3m44s, 10m51s e 4m13s). Il check `site` ha superato la stessa suite che era
+  fallita nei due run precedenti.
+- La PR [#128](https://github.com/uamisjd/football-deep-analyzer/pull/128) è tuttora `OPEN`; l’API
+  riporta `MERGEABLE` e tutti i check richiesti sono verdi sull’head `bbe6c52`. I due fallimenti
+  intermedi restano senza diagnosi perché i log sono terminati in `EOF`; il successo attuale
+  conferma il gate sull’head corrente ma non identifica retroattivamente quale sottocomando avesse
+  fallito.
+- Nessun merge eseguito: resta responsabilità dell’utente. Lo stato live del sito è separato dalla
+  CI della PR; l’ultima homepage fetchata (§10, 22:05 UTC) era ancora stale.
