@@ -2,38 +2,47 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-15, sessione `4bd4709a` — revisione totale [`docs/109`](109_revisione_totale_2026-10-15.md): gate rimisurati da zero (**1.046 test**, `verify_site` **242.987 · 0**, parità 59 schede, resa 375 px 28.597 · 0), 7 daily verdi di fila, **PR #123 aperta** (solo documenti, check verdi) e politica «una fotografia al giorno» **misurata** (−77% di byte scritti) · **Scopo:** rendere ogni nuovo agente (nuova sessione Arena) operativo in 2 minuti e senza ripetere verifiche già fatte. Questo file è la **porta d'ingresso**: leggi subito la sezione qui sotto e [`docs/101_handoff_prossima_sessione_2026-10-13.md`](101_handoff_prossima_sessione_2026-10-13.md), poi `docs/00_regole_di_lavoro.md` e la cima di `docs/STATO.md`.
+> **Ultimo aggiornamento:** 2026-10-16 — revisione totale [`docs/110`](110_revisione_totale_2026-10-16.md): 1.047 test, `verify_site` 247.419 controlli e 0 problemi, build 506/2.364/7.598, 66 schede pre-partita e 28.857 misure responsive. Il daily #286 è fallito al gate [49], ha lasciato aperta l’issue #126 e non ha ridistribuito il sito; la causa strutturale è riprodotta e corretta sul branch con regressione. Questa porta d’ingresso distingue le misure di oggi dai dati storici; leggere prima lo stato corrente qui sotto, [`docs/110`](110_revisione_totale_2026-10-16.md), [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md) e la cima di [`docs/STATO.md`](STATO.md). Il merge è sempre dell’utente (regola D).
 
 ---
 
-## Stato operativo corrente — 15/10/2026
+## Stato operativo corrente — 16/10/2026
 
-**La revisione totale del 15/10 è in [`docs/109`](109_revisione_totale_2026-10-15.md)** (misure
-proprie, non citate: 1.046 test, Ruff 0, build 499 schede / 2.364 fixture / 7.626 giocatori,
-`verify_site` **242.987 controlli · 0 problemi**, parità **59 schede senza differenze**, resa 375 px
-**28.597 misure · 0 problemi**). `main` è a `11186b6` (solo registro prospettico); il sito live è
-aggiornato e dice il vero sulla giornata vuota (sosta nazionali: 0 partite il 15/10, **5 il 16/10**,
-24 il 17/10 e il 18/10).
+**Revisione totale di oggi:** [`docs/110`](110_revisione_totale_2026-10-16.md). Misure locali dopo
+il fix: **1.047 test**, Ruff 0, `pip check` pulito, build **506 / 2.364 / 7.598**, `verify_site`
+**247.419 controlli · 0 problemi**, parità **66 schede**, resa 375 px **28.857 · 0 problemi**.
+Playwright locale non eseguito: qui non c’è un browser installato; attendere il gate GitHub della PR.
 
-**GitHub:** 0 issue aperte, **1 PR aperta — #123**, solo documenti (+15 righe, 2 file), `MERGEABLE`
-con `test`/`site`/`browser` **SUCCESS**; il merge resta dell'utente (regola D). Daily: **7 successi
-consecutivi** dal 14/10 13:03; ultimo deploy `7366ae5` del 15/10 10:30:45 UTC con `run`/`deploy`/
-`notify` verdi. Sito pubblicato: 4.344 file, 157 MB, 4.328 URL.
+**Incidente in produzione:** daily [run #38918710431](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38918710431)
+(#286) fallito il 16/10 alle 15:06 UTC su `verify_site` [49]; deploy saltato. Issue
+[#126](https://github.com/uamisjd/football-deep-analyzer/issues/126) aperta. Ultimo deploy riuscito
+alle 09:19:54 UTC su `c348074`; homepage consultata oggi ancora aggiornata al 16/10 11:07 CEST,
+5 partite e 5/5 con modello, fonti aggiornate fino a circa 11:01 CEST. Il payload esatto del run
+fallito non è recuperabile; il fix riproduce e corregge la classe di disallineamento tra «Vita del
+club» deduplicata sulla pagina e set `visti` separati per i due Climi.
 
-**Il ciclo di revisione delle schede partita è chiuso**: `docs/103` (Precedenti) e `docs/108`
-(Previsione + Verifica, fusi con la PR #122) chiudono i tre blocchi elencati in `docs/101` §4.
-Verificato qui sulle 499 schede: **59/59** pre-partita con tutte e 8 le sezioni, **288** schede con
-sezione `#verifica` **e** voce d'indice (`0` disallineate, invariante [33]), `0` «Arbitro da
-definire», stampa in lingua originale **9/9** NED1 e **1/1** POR1 (44 titoli citati).
+**GitHub al controllo:** `main`/base `8715a41`, 0 PR aperte e 1 issue (#126). Questo branch contiene
+la regressione e la correzione candidate; il merge resta sempre dell’utente (regola D). Il prossimo
+cron è nominalmente alle **18:17 UTC** (20:17 CEST) e può partire in ritardo: se il fix non è in
+`main`, il daily può ricadere sullo stesso difetto.
 
-**Crescita del repository (novità misurata):** una fotografia completa al giorno (4,6 e 5,3 MiB),
-registro a ogni run; byte scritti al giorno da 33–39 MB (12–13/10) a **10,8 MB** (14/10) e 1,3 MB
-(15/10, parziale); dimensione GitHub **732,6 MiB** (750.155 KB). A questo ritmo i 1 GB
-(raccomandati, non bloccanti) arrivano **a inizio dicembre**: le opzioni B/C/D sono in `docs/109`
-§4 e **attendono una decisione dell'utente**.
+**Rischio fonti da decidere:** FAQ FotMob contraria a servizi automatici e uso sistematico; Understat
+`robots.txt` disallowa tutti i crawler; Football-Data.co.uk dichiara l’uso per privati e non per
+prodotti di training automatizzato. Nessun collettore è stato disattivato; alternative e limiti
+sono documentati in `docs/110` §4. Non è un parere legale.
 
-**Prossimo passo:** daily ≥20 UTC di oggi (fotografia completa) e la decisione sulla crescita; il
-test prospettico γ 1,12 ha 5 gare valutate su 200 (riparte dal 16/10, ~inizio novembre).
+**Repo:** `diskUsage` 754.275 KB, +4.120 KB rispetto alla misura riportata il 15/10; una sola
+differenza giornaliera non basta per una proiezione. Gli alert Dependabot risultano disabilitati
+via API; lo stato di branch protection/secret scanning/code scanning non è verificabile con i
+permessi dell’integrazione.
+
+**Modello:** su Parquet versionati, γ 1,12 è a **5/200**: ΔRPS +0,005851, IC 95%
+[−0,005229; +0,016406], 1/4 leghe; nessuna promozione. `verdetto_lab.py`: nessun candidato passa
+insieme entrambe le soglie, produzione resta `dc_elo_prod`.
+
+**Prossimo passo:** PR del fix con riferimento a #126, gate `test`/`site`/`browser`, merge a cura
+utente; poi verificare run completo, deploy, timestamp live e chiusura issue. Prima di espandere i
+fetch, decisione dell’utente sulle condizioni delle fonti.
 
 ## Cronologia — 14/10 sera, sessione `262421ee` (checkpoint precedente)
 

@@ -1238,6 +1238,38 @@ def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
     st.close()
 
 
+def test_clima_marca_la_voce_pubblicata_nel_bollettino_dell_altra_squadra(tmp_path):
+    """Un titolo condiviso tra i due club è in «Vita» una volta e marcato su entrambi i lati."""
+    st = _seed(tmp_path)
+    fixture = st.read("fixtures").set_index("match_id").loc[5749669]
+    title = "Udinese-Lazio, gli ultras protestano contro la dirigenza"
+    published = pd.Timestamp.now(tz="UTC").floor("s") - pd.Timedelta(hours=1)
+    st.upsert("news", [
+        {"team_id": int(fixture.home_id), "published_at": published, "title": title,
+         "url": "https://example.org/udinese-lazio-protesta", "source": "ANSA",
+         "description": ""},
+        {"team_id": int(fixture.away_id), "published_at": published, "title": title,
+         "url": "https://example.org/udinese-lazio-protesta", "source": "ANSA",
+         "description": ""},
+    ])
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    html = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    clima = html.split('<div class="card" id="clima">', 1)[1].split(
+        '<div class="card" id="notizie">', 1)[0]
+    notizie = html.split('<div class="card" id="notizie">', 1)[1].split(
+        '<div class="card"', 1)[0]
+
+    # Il titolo è nella rassegna una sola volta (dedup tra le squadre), ma anche nel clima
+    # di entrambe: il verificatore della pagina controlla l'insieme dei titoli visibili.
+    assert notizie.count(title) == 1
+    # Per lato il titolo compare nel richiamo «fatto della settimana» e nell'elenco delle voci.
+    assert clima.count(title) == 4
+    assert clima.count("anche in «Vita del club»") == 2
+    st.close()
+
+
 def test_verifica_approfondita_chiusa_e_annunciata(tmp_path):
     """P1.4 (docs/28 §2): la verifica dei numeri non occupa il primo schermo.
 

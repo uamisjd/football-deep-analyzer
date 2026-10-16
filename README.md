@@ -25,7 +25,7 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md`](docs/50_sito_fermo_e_sezioni_perse_2026-10-05.md) — incidente del daily, sezioni delle schede e misure del costo delle fonti.
 - [`docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md`](docs/51_sblocco_daily_concordanza_assenti_e_sportmediaset_2026-10-07.md) — fix che ha sbloccato il daily e rimosso il feed RSS 404.
 - [`docs/52_verifica_stato_costi_e_gate_2026-10-07.md`](docs/52_verifica_stato_costi_e_gate_2026-10-07.md) — gate ripetuti, limiti/costi delle fonti e misure delle cache.
-- [`docs/53_revisione_totale_qualita_quantita_2026-10-07.md`](docs/53_revisione_totale_qualita_quantita_2026-10-07.md) — **revisione più recente**: salute della pipeline, quantità dei contenuti e decisioni dell'utente.
+- [`docs/53_revisione_totale_qualita_quantita_2026-10-07.md`](docs/53_revisione_totale_qualita_quantita_2026-10-07.md) — revisione totale del 07/10: salute della pipeline, quantità dei contenuti e decisioni dell'utente.
 - [`docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md`](docs/54_pr84_conflitto_e_registrazione_pr83_2026-10-07.md) — perché la PR #84 è in conflitto e superata, e cosa è stato registrato al suo posto.
 - [`docs/55_revisione_schede_prossime_partite_2026-10-07.md`](docs/55_revisione_schede_prossime_partite_2026-10-07.md) — revisione delle schede delle prossime partite, sezione per sezione, con i tre difetti misurati (Mercato ×1,8, EPV, meteo) e la coda.
 - [`docs/56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md`](docs/56_lotto_p0_mercato_meteo_epv_m1_m4_2026-10-07.md) — i due P0 (Mercato, Meteo) con le misure prima/dopo, l'EPV declassato a riga di contesto, M1–M4, le due invarianti nuove e i residui dichiarati.
@@ -50,9 +50,10 @@ Fase 0–7b concluse e live su `main` (collettori, modelli, sito, automazione gi
 - [`docs/105_una_fotografia_al_giorno_2026-10-13.md`](docs/105_una_fotografia_al_giorno_2026-10-13.md) — **politica adottata**: i dati entrano in `main` una volta al giorno (−80% di crescita, sito invariato), con il registro preregistrato fuori dalla regola.
 - [`docs/107_revisione_totale_2026-10-14.md`](docs/107_revisione_totale_2026-10-14.md) — revisione totale del 14/10: sito live, GitHub, coda residua.
 - [`docs/108_previsione_e_verifica_misura_2026-10-15.md`](docs/108_previsione_e_verifica_misura_2026-10-15.md) — chiusura del ciclo schede: le 59 pre-partita complete su tutte e 8 le sezioni e la tendina `#verifica` tolta dalle 211 finite senza previsione (misura prima/dopo).
-- [`docs/109_revisione_totale_2026-10-15.md`](docs/109_revisione_totale_2026-10-15.md) — **revisione totale del 15/10**: gate rimisurati da zero (1.034 test · 242.987 controlli · 0 problemi), politica di crescita «una fotografia al giorno» **misurata** (−77% di byte scritti), confronto con la letteratura sull'RPS, coda e decisioni aperte.
+- [`docs/109_revisione_totale_2026-10-15.md`](docs/109_revisione_totale_2026-10-15.md) — revisione totale del 15/10: gate rimisurati da zero, politica di crescita «una fotografia al giorno» misurata, confronto con la letteratura sull'RPS e coda.
+- [`docs/110_revisione_totale_2026-10-16.md`](docs/110_revisione_totale_2026-10-16.md) — **revisione totale del 16/10**: incidente daily #286 e fix riprodotto per la PR; gate locali (1.047 test, 247.419 controlli, 0 problemi); stato live; verifica delle condizioni FotMob/Understat/Football-Data.co.uk e alternative parziali.
 
-> `docs/` ha **123** file `.md` (**110** documenti numerati, da `00` a `109` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 5 fra audit e correzioni datate e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione indipendente più recente è [docs/109](docs/109_revisione_totale_2026-10-15.md), dopo [revisione 14/10](docs/107_revisione_totale_2026-10-14.md), [audit 13/10](docs/AUDIT_COMPLETO_2026-10-13_7c92c1a2.md) e [correzioni 14/10](docs/CORREZIONI_AUDIT_2026-10-14.md).
+> `docs/` ha **124** file `.md` (**111** documenti numerati, da `00` a `110` — il 09 non è mai esistito, il 58 è duplicato: collisione nota, `docs/63` §8 — più briefing, `STATO.md`, 6 archivi, 5 fra audit e correzioni datate e 6 file `.json` di audit). L'**albero essenziale** con la descrizione dei documenti è nel briefing, sezione 6 (arriva fino a `docs/69`): l'elenco completo dei file è `ls docs/`, e i lavori più recenti stanno nella cima di `docs/STATO.md` e in `docs/101`. La revisione indipendente più recente è [docs/110](docs/110_revisione_totale_2026-10-16.md), dopo [docs/109](docs/109_revisione_totale_2026-10-15.md), [revisione 14/10](docs/107_revisione_totale_2026-10-14.md), [audit 13/10](docs/AUDIT_COMPLETO_2026-10-13_7c92c1a2.md) e [correzioni 14/10](docs/CORREZIONI_AUDIT_2026-10-14.md).
 
 ## Avvio rapido (sviluppo)
 
@@ -83,15 +84,15 @@ fda lab-xg --data data/cache/lab_xg_input
 
 ## Come funziona (in breve)
 
-`fda daily` = `collect` (FotMob, Understat, ESPN, Google News → `data/processed/*.parquet`) → `calibrate` → `predict` (Dixon-Coles + Elo) → `backtest` → `mercati-monitor` → `simulate` (Monte Carlo stagione) → `build` (sito in `site/`, incluse le schede giocatore). Ogni passo dopo `collect` è isolato: se cade, il run degrada e pubblica comunque.
-GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), committa i dati e pubblica il sito su GitHub Pages.
+`fda daily` = `collect` (FotMob, Understat, ESPN, Google News → `data/processed/*.parquet`) → `calibrate` → `predict` (Dixon-Coles + Elo) → `backtest` → `mercati-monitor` → `simulate` (Monte Carlo stagione) → `build` (sito in `site/`, incluse le schede giocatore). I passi analitici opzionali sono isolati dove previsto; le verifiche editoriali/di integrità sono gate: se falliscono, il deploy viene bloccato e il run notificato.
+GitHub Actions lo esegue 5 volte al giorno (`.github/workflows/daily.yml`), salva i dati secondo la politica di `docs/105` e pubblica il sito su GitHub Pages quando i gate critici passano.
 
 ### Attivazione (una volta sola, dal ramo `main`)
 1. Settings → Pages → *Build and deployment* → Source: **GitHub Actions**.
 2. Actions → *daily* → **Run workflow** (primo run manuale; poi parte da solo con il cron).
-3. **Nessun secret**: tutte le fonti usate sono gratuite e senza chiave. Le quote di mercato non sono pubblicate (decisione del 19/09/2026, `docs/38`).
+3. **Nessun secret richiesto dai collettori attuali**: i loro endpoint sono accessibili senza chiave, ma l’accesso gratuito non concede automaticamente diritti di raccolta o riuso (vedi revisione fonti in [`docs/110`](docs/110_revisione_totale_2026-10-16.md)). Le quote di mercato non sono pubblicate (decisione del 19/09/2026, `docs/38`).
 
-## Verifiche riproducibili e pubblicazione (14/10/2026)
+## Verifiche riproducibili e pubblicazione (ultima revisione 16/10/2026)
 
 ```bash
 pip install -c requirements-ci.txt -e ".[dev]"

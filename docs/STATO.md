@@ -1,3 +1,36 @@
+## 2026-10-16 — Revisione totale (docs/110) e fix del daily #286
+
+Verifica da zero il 16/10, base `main` `8715a41`. Daily [#38918710431](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38918710431)
+fallito alle 15:06 UTC al gate [49] sulla scheda 5749704; deploy saltato, issue
+[#126](https://github.com/uamisjd/football-deep-analyzer/issues/126) aperta. Ultimo deploy riuscito
+alle 09:19:54 UTC (`c348074`); homepage pubblica alle 11:07 CEST con 5 partite, 5/5 modellate;
+fonti fino a circa 11:01 CEST. L’artifact completo del run ha restituito `EOF`; l’issue contiene
+le due discrepanze esatte (sommario Sassuolo senza il conteggio dei marcatori; voce della Curva
+non marcata).
+
+**Causa riprodotta:** il dedup «Vita del club» è condiviso fra casa/trasferta, ma i titoli `visti`
+per i due Climi erano separati; la verifica [49] usa invece i titoli della pagina intera. Fix in
+`src/fda/site/analysis.py`: unione dei titoli primari di entrambi i bollettini per entrambi i
+Climi; regressione in `tests/test_site.py`, rossa prima del fix (un marcatore invece di due), verde
+dopo. Dati/collettori non modificati.
+
+**Gate locali dopo il fix:** Ruff e `pip check` verdi; **1.047 test**; build 506 / 2.364 / 7.598;
+`verify_site` **247.419 controlli, 0 problemi**; parità 66 schede; resa 375 px **28.857, 0**.
+Browser Playwright non eseguito localmente perché manca Chromium; il check CI resta necessario.
+Modello: γ 1,12 su 5 risultati, ΔRPS +0,005851, IC [−0,005229; +0,016406], 1/4 leghe; nessuna
+promozione, `dc_elo_prod` invariato.
+
+**Ricerca fonti:** FAQ FotMob contro servizi automatici/uso sistematico; Understat `robots.txt`
+`Disallow: /`; pagina Football-Data.co.uk limita l’uso previsto a individui privati e dichiara
+contro prodotti di data-training basati su bot/scraper/AI. Nessun collettore disattivato; alternative
+solo parziali, decisione utente aperta. Dettagli e link in [`docs/110`](110_revisione_totale_2026-10-16.md).
+
+**Stato al momento della revisione:** 0 PR aperte, 1 issue (#126); branch di sessione con fix e
+documentazione, PR ancora da aprire. Prossimo cron nominale 18:17 UTC; il merge è sempre
+responsabilità dell’utente. Repository 754.275 KB (+4.120 KB sulla misura del 15/10; differenza
+singola, non proiezione); alert Dependabot disabilitati secondo API, stato branch protection e
+scansioni non verificabile con i permessi dell’integrazione.
+
 ## 2026-10-15 — PR #124 fusa (revisione 15/10 + misura della crescita); registrazione del merge #123
 
 Ordine utente: **«ok procedi»**, dopo la proposta esplicita dell'agente di chiudere le due PR
