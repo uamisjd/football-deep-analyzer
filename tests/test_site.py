@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from bs4 import BeautifulSoup
 
 from fda.collect import collect_league
 from fda.config import league
@@ -1235,6 +1236,40 @@ def test_p22_assenze_in_un_posto_solo_e_clima_sempre_presente(tmp_path):
                       if "è indisponibile" in r)
         assert "Infermeria" in avviso and 'href="#infermeria-' in avviso
         assert "infortunio" not in avviso, avviso      # il motivo sta nella tabella
+    st.close()
+
+
+def test_clima_marca_la_voce_pubblicata_nel_bollettino_dell_altra_squadra(tmp_path):
+    """Un titolo condiviso tra i due club è in «Vita» una volta e marcato su entrambi i lati."""
+    st = _seed(tmp_path)
+    fixture = st.read("fixtures").set_index("match_id").loc[5749669]
+    title = "Udinese-Lazio, gli ultras protestano contro la dirigenza"
+    published = pd.Timestamp.now(tz="UTC").floor("s") - pd.Timedelta(hours=1)
+    st.upsert("news", [
+        {"team_id": int(fixture.home_id), "published_at": published, "title": title,
+         "url": "https://example.org/udinese-lazio-protesta", "source": "ANSA",
+         "description": ""},
+        {"team_id": int(fixture.away_id), "published_at": published, "title": title,
+         "url": "https://example.org/udinese-lazio-protesta", "source": "ANSA",
+         "description": ""},
+    ])
+
+    out = tmp_path / "sito"
+    SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
+    html = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
+    soup = BeautifulSoup(html, "html.parser")
+    notizie = soup.select_one("#notizie")
+    clima_sides = soup.select("#clima > div[style*='grid'] > div")
+
+    # Il titolo è nella rassegna una sola volta (dedup tra le squadre), ma ogni lato del
+    # Clima deve marcare la propria voce contata: un totale di due non basta se cade sullo stesso lato.
+    assert notizie.get_text(" ", strip=True).count(title) == 1
+    assert len(clima_sides) == 2
+    for side in clima_sides:
+        shared = [item for item in side.select("details.news-more ul.news-list > li")
+                  if title in item.get_text(" ", strip=True)]
+        assert len(shared) == 1
+        assert "anche in «Vita del club»" in shared[0].get_text(" ", strip=True)
     st.close()
 
 

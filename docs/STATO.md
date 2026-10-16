@@ -1,3 +1,51 @@
+## 2026-10-16 — Revisione totale (docs/110) e fix del daily #286/#287
+
+Verifica da zero il 16/10, base `main` `8715a41`; aggiornamento live alle **18:32 UTC / 20:32 CEST**.
+I daily [#286](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38918710431) e
+[#287](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38944906063) sono entrambi
+falliti al gate [49] sulla scheda 5749704; il #287 si è concluso alle 18:24 UTC con `verify_site`
+fallito e il deploy saltato. Il commento automatico più recente sull’issue
+[#126](https://github.com/uamisjd/football-deep-analyzer/issues/126) riporta le stesse due
+anomalie: sommario Sassuolo senza conteggio dei marcatori e voce «Frosinone-Sassuolo, protesta
+della Curva» non marcata contro l’atteso.
+
+Ultimo deploy Pages: 09:19:39 UTC (`c348074`); homepage ferma alle 11:07 CEST, 5 partite, 5/5
+modellate, fonti fino a circa 11:01. Alle 20:32 CEST la homepage indica 0 partite in corso e 5 in
+programma, ma Heerenveen–Excelsior (orario previsto 20:00, già trascorso) risulta ancora «In
+programma» e la scheda «Analisi pre-partita»: stato pubblico non aggiornato rispetto all’orario.
+
+**Causa riprodotta:** il dedup «Vita del club» è condiviso fra casa/trasferta, ma i titoli `visti`
+per i due Climi erano separati; la verifica [49] usa invece i titoli della pagina intera. Fix in
+`src/fda/site/analysis.py`: unione dei titoli primari di entrambi i bollettini per entrambi i
+Climi; regressione in `tests/test_site.py`, rossa prima del fix (un marcatore invece di due), verde
+dopo. Dati/collettori non modificati. Il run #287 ripete gli stessi messaggi su Sassuolo: il fix
+non è ancora su `main`.
+
+**Gate locali dopo il fix:** Ruff e `pip check` verdi; **1.047 test**; build 506 / 2.364 / 7.598;
+`verify_site` **247.419 controlli, 0 problemi**; parità 66 schede; resa 375 px **28.857, 0**.
+Browser Playwright non eseguito localmente perché manca Chromium. La CI della PR sul head
+`4ef6f133a355f0f794b2407efbc76455b43792a7` è verde per `test`, `site` e `browser` (run
+[#38941239498](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38941239498) e
+#38941230956). PR #127 aperta/`MERGEABLE`; nessun merge eseguito. Modello: γ 1,12 su 5 risultati,
+ΔRPS +0,005851, IC [−0,005229; +0,016406], 1/4 leghe; nessuna promozione, `dc_elo_prod` invariato.
+
+**Ricerca fonti:** FAQ FotMob contro servizi automatici/uso sistematico; Understat `robots.txt`
+`Disallow: /`; pagina Football-Data.co.uk limita l’uso previsto a individui privati e dichiara
+contro prodotti di data-training basati su bot/scraper/AI. Nessun collettore disattivato; alternative
+solo parziali, decisione utente aperta. Dettagli e link in [`docs/110`](110_revisione_totale_2026-10-16.md).
+
+**Copertura meteo:** `stato.html` segna OpenMeteo `OK` per tutte le leghe ma mostra 0 coordinate,
+0 richieste e 0 righe previsionali; FotMob fornisce il meteo delle gare. La sonda settimanale testa
+una sola località (45,48 N / 9,12 E) e non prova la copertura degli stadi. Migliorare coordinate e
+misura di copertura, senza disattivare il meteo primario.
+
+Il cron configurato è 04:07, 10:11, 14:17, 18:23 e 21:30 UTC; il #287 è partito alle 18:07,
+prima del nominale 18:23. Prossimo cron nominale 21:30 UTC, non garanzia d’avvio puntuale.
+Repository `diskUsage` 754.435 KB (+160 KB rispetto alla misura precedente 754.275 KB; differenza
+singola, non proiezione); alert Dependabot disabilitati secondo API, stato branch protection e
+scansioni non verificabile con i permessi dell’integrazione. Il merge resta responsabilità
+esclusiva dell’utente.
+
 ## 2026-10-15 — PR #124 fusa (revisione 15/10 + misura della crescita); registrazione del merge #123
 
 Ordine utente: **«ok procedi»**, dopo la proposta esplicita dell'agente di chiudere le due PR

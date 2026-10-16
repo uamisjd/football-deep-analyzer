@@ -7237,8 +7237,18 @@ class MatchAnalysis:
                                           squad=self.match_squad(match_id, away_id),
                                           coach=away_coach, now=news_as_of)
                        if status != "finished" else _no_estera())
-        visti_home = {news_title_key(str(n.get("title") or "")) for n in home_news["notizie"]}
-        visti_away = {news_title_key(str(n.get("title") or "")) for n in away_news["notizie"]}
+        # `team_news` deduplica le due squadre con `news_seen`; il marcatore deve però
+        # seguire gli stessi titoli globali che il verificatore e la card «Clima» vedono
+        # nella scheda, non solo quelli attribuiti alla stessa squadra. Un articolo condiviso
+        # (es. Frosinone–Sassuolo) può essere pubblicato una volta nel bollettino di casa
+        # e contare anche nel clima dell'ospite: il marcatore «già in Vita» deve seguire
+        # la pagina intera, altrimenti i due lati raccontano lo stesso articolo in modo
+        # contraddittorio e il gate [49] fallisce.
+        visti_pagina = {
+            news_title_key(str(n.get("title") or ""))
+            for bollettino in (home_news, away_news)
+            for n in bollettino["notizie"]
+        }
         # P2.5 (`docs/28` §3): la forma sale in testa alla scheda — serie e punti in un micro-badge
         # sotto il nome di ogni squadra, con le stesse classi della pagina «Oggi» (`_matchlist.html`).
         # Calcolata una volta sola: la riusa anche la narrativa, che non ripete più la serie per
@@ -7313,10 +7323,10 @@ class MatchAnalysis:
             # clima del club, secondo blocco (`docs/82` §5): la settimana secondo la stampa
             # (conteggi, mai titoli) e la pressione da aspettative dai nostri dati
             "home_clima": self.club_climate(home_id, f["home_name"], kickoff,
-                                             visti=visti_home)
+                                             visti=visti_pagina)
                           if status != "finished" else None,
             "away_clima": self.club_climate(away_id, f["away_name"], kickoff,
-                                            visti=visti_away)
+                                            visti=visti_pagina)
                           if status != "finished" else None,
             # mercato (docs/21 P2-7, rifatto in docs/24 §4): finestra ricavata dai dati,
             # arrivi collegati alla distinta di questa partita
