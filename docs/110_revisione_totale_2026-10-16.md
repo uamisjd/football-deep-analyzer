@@ -23,9 +23,11 @@ da FotMob, Understat e Football-Data.co.uk sono in tensione con gli accessi auto
 e con l’addestramento/uso modellistico che il progetto effettua. Non ho fermato i collettori e non
 traggo conclusioni legali: serve una decisione documentata, un’autorizzazione o una migrazione
 mirata. Le alternative gratuite individuate coprono solo una parte dei dati, non sono un rimpiazzo
-integrale immediato. Nuovo rilievo operativo: OpenMeteo ha **zero coordinate e zero righe previsionali
-per tutte e sette le leghe**; la sonda settimanale su una sola località non misura la copertura
-meteo delle partite.
+integrale immediato. **Rettifica post-merge:** nel run osservato Open-Meteo ha 0 richieste e 0 righe
+previsionali perché il meteo FotMob era già presente per le gare future. Il dettaglio `coordinate 0`
+conta le gare saltate per coordinate mancanti (quindi zero in questo caso), non indica zero coordinate
+disponibili. La conclusione sulla copertura meteo della prima stesura è superata; vedere la rettifica
+misurata in [`docs/111`](111_revisione_totale_2026-10-16_post_merge.md) §5.
 
 ## 1. Stato GitHub e sito pubblico — verificato oggi
 
@@ -161,9 +163,9 @@ si confronta con il codice. È un rilievo operativo, **non una conclusione sulla
 - **football-data.org** (servizio distinto da football-data.co.uk): la pagina ufficiale di [registrazione e condizioni](https://www.football-data.org/client/register) descrive un tier gratuito con 12 competizioni, dati base e 10 richieste/minuto; richiede attribuzione visibile. Le condizioni pubblicate risultano datate 2018 e vanno riconfermate prima di un’adozione; non sostituisce le statistiche avanzate/xG o lo storico quote richiesti dal modello.
 - **StatsBomb Open Data**: subset gratuito per ricerca e competizioni/seasons selezionate. Il [README](https://github.com/hudl/open-data) e il [Public Data User Agreement](https://github.com/hudl/open-data/raw/refs/heads/master/LICENSE.pdf) richiedono attribuzione/logo e vietano la redistribuzione dei dati grezzi e lo sfruttamento commerciale dei dati o delle analisi derivate. È un possibile dataset di ricerca separato, non una fonte live completa per sette leghe.
 
-### Copertura meteo: il fallback non copre le partite
+### Copertura meteo: rettifica post-merge
 
-Nella [pagina stato pubblicata](https://uamisjd.github.io/football-deep-analyzer/stato.html), tutte e sette le righe `openmeteo:*` sono marcate `OK`, ma hanno **0 richieste, 0 righe e 0 coordinate**. Per le 2–12 gare future per lega il meteo FotMob è invece presente. La sonda settimanale OpenMeteo verifica una sola località (45,48 N / 9,12 E): prova che il servizio risponde lì, non che le coordinate degli stadi siano disponibili né che ci sia copertura delle fixture. Priorità: reperire/associare coordinate stadio con provenienza, misurare la copertura per gara e rendere esplicito «nessuna copertura» nello stato; non disattivare il meteo primario FotMob senza alternativa validata.
+**Rettifica 16/10, 20:38 UTC:** nel run del 16/10 le sette righe `openmeteo:*` hanno 0 richieste e 0 righe perché il meteo FotMob è già presente per le gare future. Il dettaglio riporta `meteo FotMob N · coordinate 0 · previsione assente 0`: `coordinate 0` è il numero di gare saltate per coordinate mancanti, non il numero di coordinate disponibili. La fotografia locale `match_info.parquet` ha latitudine e longitudine in 507/507 righe. La sonda settimanale Open-Meteo verifica una sola località (45,48 N / 9,12 E), non la copertura generale; in questo run, però, il fallback non era necessario e non c’è evidenza di un difetto di coordinate. Vedere i conteggi e la condizione di attribuzione in [`docs/111`](111_revisione_totale_2026-10-16_post_merge.md) §5.
 
 **Decisione non presa:** in questo audit non ho disattivato FotMob, Understat o i feed storici. Proposta: prima di aumentare i fetch, decidere se chiedere autorizzazione scritta o sospendere i collettori che non risultano utilizzabili; quindi mappare fonte per campo, licenza, frequenza, attribuzione e piano di fallback. Le fonti gratuite reperite sostituiscono solo sottoinsiemi.
 
@@ -179,7 +181,7 @@ Nella [pagina stato pubblicata](https://uamisjd.github.io/football-deep-analyzer
 1. **P0 — codice e produzione:** la PR #127 è già aperta, `MERGEABLE` e con `test`/`site`/`browser` verdi sul head `4ef6f13`. Il merge spetta all’utente. Dopo il merge, verificare un `daily` completo, il superamento di [49], il deploy Pages e l’eventuale chiusura di #126.
 2. **P0 — decisione sulle fonti:** decidere con l’utente come gestire FotMob/Understat/Football-Data.co.uk. Finché non c’è decisione, non aggiungere richieste né nuovi campi da queste fonti; non interpretare la nota come parere legale.
 3. **P1 — stato sito:** dopo il deploy, ricontrollare timestamp e stato in homepage, la pagina fonti e le schede 5749704 e 5781769; la pagina Heerenveen–Excelsior era ancora pre-partita 32 minuti dopo il calcio d’inizio. Annotare lo SHA effettivamente pubblicato.
-4. **P1 — meteo:** coprire le fixture con coordinate stadio verificabili e una metrica esplicita di copertura OpenMeteo; la sonda su una sola città non basta. Mantenere FotMob primario finché un fallback non è validato.
+4. **P2 — meteo:** non reperire nuove coordinate per risolvere un problema che in questo run non c’è; il meteo FotMob copre le gare future e `match_info` ha coordinate in 507/507 righe. Se Open-Meteo viene usato in futuro, verificare copertura per gara e attribuzione CC BY 4.0 prima della pubblicazione (vedi `docs/111` §5).
 5. **P1 — repository:** ripetere la misura di `diskUsage` e dei byte delle fotografie dopo alcuni giorni completi; valutare le opzioni di `docs/109` §4 se la curva risale verso 1 GB.
 6. **P1 — controllo accessi sicurezza:** chiedere all’amministratore di verificare branch protection e scansioni nella UI GitHub; valutare l’attivazione degli alert Dependabot (distinti dagli aggiornamenti settimanali già configurati).
 7. **P2 — audit dati/provenienza:** aggiungere una tabella mantenuta per fonte/campo: titolare, endpoint, modalità, condizioni, cache, attribuzione, retention, sostituto e data dell’ultima verifica.

@@ -1,4 +1,26 @@
-## 2026-10-16 — Revisione totale (docs/110) e fix del daily #286/#287
+## 2026-10-16 — Revisione post-merge (docs/111), aggiornata alle 20:38 UTC / 22:38 CEST
+
+**Stato attuale:** pipeline e sito attivi; stato live pubblicato non affidabile; autorizzazioni di alcune fonti ancora da decidere. Audit completo: [`docs/111`](111_revisione_totale_2026-10-16_post_merge.md). La precedente [`docs/110`](110_revisione_totale_2026-10-16.md) è stata corretta sul meteo; nessuna modifica a codice o dati.
+
+**GitHub e produzione (controllati dal vivo):** PR #127 fusa alle 19:48:51 UTC, merge commit `0ae98bc`; daily [#38957677291](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38957677291) riuscito (run/deploy/notify), CI [#38957677296](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38957677296) verde per `test`, `site`, `browser`. Commit dati `main` osservato: `0e9b864`. Issue #126 chiusa. Le query `gh` prima della PR di documentazione non mostravano altre PR o issue aperte.
+
+La homepage Pages, fetchata alle 20:38 UTC, dice ancora `AGGIORNATO 21:54` ora italiana, **1 partita in corso / 4 in programma**, mostra Heerenveen–Excelsior **0–0** in corso e presenta Frankfurt–Köln (calcio d’inizio 20:30) come prossimo avvio, benché già trascorso. È uno snapshot statico, non un feed live. Il dettaglio della verifica e la tabella dei cinque incontri sono in docs/111 §2.
+
+**Discordanza fra fonti, P1:** nel run delle 19:49–19:50 UTC ESPN aveva cinque eventi in corso: Heerenveen–Excelsior 4–0 al 90′, Frankfurt–Köln 0–0 al 59′, Frosinone–Sassuolo 3–2 all’intervallo, Le Mans–Toulouse 0–1 al 48′, Deportivo–Levante 0–0 all’intervallo. `fixtures.parquet` ne mostrava uno live (Heerenveen 0–0) e quattro programmati; il builder usa `fixtures.status`, mentre `espn_events` è una tabella separata e non riconciliata.
+
+**Causa tecnica più probabile, ma non timestampata per file:** TTL fixture FotMob **6 h**, TTL scoreboard ESPN **1 h**; la cache Actions `fda-http-38944906063` è stata creata alle 18:20:42 e riutilizzata alle 19:49:41. Il `source_status` del daily registra FotMob **0 richieste HTTP** e ESPN scoreboard **3 per lega**. Il cache JSON non espone `last_fetched_at`: l’evidenza supporta fortemente la cache FotMob come causa dello stato stale, ma non prova l’età precisa di ogni payload. Non aumentare il polling e non usare ESPN come fallback finché la licenza non è chiarita.
+
+**Gate locali sulla fotografia corrente:** 1.047 test passati, Ruff e `pip check` puliti; build 506 pagine partita / 2.364 fixture / 7.602 giocatori; `verify_site` 247.770 controlli, 0 problemi; parità 66 schede; resa 375 px 28.886 misure, 0 problemi. Cartella sito locale 154.168.061 byte (4.324 HTML / 4.339 file). Repository API `size=754527 KB` al controllo delle 20:06 UTC: delta +92 KB rispetto al dato di docs/110, non un trend.
+
+**Rettifica meteo:** nel run le righe `openmeteo:*` hanno 0 richieste/0 righe perché FotMob aveva già fornito il meteo delle gare future. `coordinate 0` conta le gare saltate per coordinate mancanti, quindi qui nessuna; `match_info` ha coordinate, descrizione, temperatura e vento in 507/507 righe, precipitazione in 90/507. Open-Meteo non è stato usato come fallback nel run. Vedi docs/111 §5.
+
+**Modello:** accuratezza live 218 gare, 137 con ricetta corrente, RPS 0,1990 vs naive 0,2267; walk-forward 5.960 gare, 0,1987 vs 0,2313. Over 2,5, Over 3,5 e BTTS fuori dall’intervallo al 95% nel campione live: monitorare, non ritoccare sulla sola base di 218 gare.
+
+**Rischio fonti / decisione utente:** FotMob FAQ vieta servizi automatici/uso sistematico; `understat.com/robots.txt` disallowa i crawler; i termini Disney italiani (2014, includono ESPN) vietano accessi automatizzati senza permesso scritto, ma l’applicabilità allo specifico endpoint ESPN resta incerta; Football-Data.co.uk limita l’uso dichiarato. Non è un parere legale. Alternative (OpenLigaDB ODbL comunitaria, Football-Data.org gratuito ma ritardato, OpenFootball CC0 per calendari) non sono un sostituto live 7/7 validato. Rispettare il vincolo di costo zero; non ampliare i fetch prima di autorizzazione o migrazione decisa.
+
+**Prossimo:** decisione documentata sulle fonti e sul requisito live. Poi, solo su autorizzazione, misurare `last_fetched_at`/`cache_age`, rendere visibile sul sito l’età dei dati e coprire la discordanza con test/gate misurabili (regola B.10). Verificare in UI GitHub le protezioni e le scansioni, che non risultano verificabili via API. Nessun merge eseguito; resta all’utente.
+
+## 2026-10-16, 18:32 UTC — Revisione pre-merge (docs/110; snapshot storico) e fix del daily #286/#287
 
 Verifica da zero il 16/10, base `main` `8715a41`; aggiornamento live alle **18:32 UTC / 20:32 CEST**.
 I daily [#286](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38918710431) e
@@ -34,10 +56,7 @@ Browser Playwright non eseguito localmente perché manca Chromium. La CI della P
 contro prodotti di data-training basati su bot/scraper/AI. Nessun collettore disattivato; alternative
 solo parziali, decisione utente aperta. Dettagli e link in [`docs/110`](110_revisione_totale_2026-10-16.md).
 
-**Copertura meteo:** `stato.html` segna OpenMeteo `OK` per tutte le leghe ma mostra 0 coordinate,
-0 richieste e 0 righe previsionali; FotMob fornisce il meteo delle gare. La sonda settimanale testa
-una sola località (45,48 N / 9,12 E) e non prova la copertura degli stadi. Migliorare coordinate e
-misura di copertura, senza disattivare il meteo primario.
+**Copertura meteo — rettifica post-merge:** le righe `openmeteo:*` hanno 0 richieste/righe perché FotMob fornisce già il meteo delle gare future. `coordinate 0` significa zero gare saltate per coordinate mancanti, non zero coordinate disponibili; la fotografia `match_info` successiva ha lat/lon in 507/507 righe. La precedente raccomandazione di reperire coordinate per questo motivo è ritirata; la sonda settimanale su un punto non misura la copertura generale. Dettagli in [`docs/111`](111_revisione_totale_2026-10-16_post_merge.md) §5.
 
 Il cron configurato è 04:07, 10:11, 14:17, 18:23 e 21:30 UTC; il #287 è partito alle 18:07,
 prima del nominale 18:23. Prossimo cron nominale 21:30 UTC, non garanzia d’avvio puntuale.
