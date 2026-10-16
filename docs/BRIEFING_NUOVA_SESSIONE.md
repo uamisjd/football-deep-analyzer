@@ -2,7 +2,7 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-16 — revisione totale [`docs/110`](110_revisione_totale_2026-10-16.md): 1.047 test, `verify_site` 247.419 controlli e 0 problemi, build 506/2.364/7.598, 66 schede pre-partita e 28.857 misure responsive. Il daily #286 è fallito al gate [49], ha lasciato aperta l’issue #126 e non ha ridistribuito il sito; la causa strutturale è riprodotta e corretta sul branch con regressione. Questa porta d’ingresso distingue le misure di oggi dai dati storici; leggere prima lo stato corrente qui sotto, [`docs/110`](110_revisione_totale_2026-10-16.md), [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md) e la cima di [`docs/STATO.md`](STATO.md). Il merge è sempre dell’utente (regola D).
+> **Ultimo aggiornamento:** 2026-10-16 — revisione totale [`docs/110`](110_revisione_totale_2026-10-16.md): 1.047 test, `verify_site` 247.419 controlli e 0 problemi, build 506/2.364/7.598, 66 schede pre-partita e 28.857 misure responsive. Il daily #286 è fallito al gate [49], ha lasciato aperta l’issue #126 e non ha ridistribuito il sito; la causa strutturale è riprodotta e corretta nella **PR #127**, con regressione. CI della PR appena avviata. Questa porta d’ingresso distingue le misure di oggi dai dati storici; leggere prima lo stato corrente qui sotto, [`docs/110`](110_revisione_totale_2026-10-16.md), [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md) e la cima di [`docs/STATO.md`](STATO.md). Il merge è sempre dell’utente (regola D).
 
 ---
 
@@ -21,10 +21,11 @@ alle 09:19:54 UTC su `c348074`; homepage consultata oggi ancora aggiornata al 16
 fallito non è recuperabile; il fix riproduce e corregge la classe di disallineamento tra «Vita del
 club» deduplicata sulla pagina e set `visti` separati per i due Climi.
 
-**GitHub al controllo:** `main`/base `8715a41`, 0 PR aperte e 1 issue (#126). Questo branch contiene
-la regressione e la correzione candidate; il merge resta sempre dell’utente (regola D). Il prossimo
-cron è nominalmente alle **18:17 UTC** (20:17 CEST) e può partire in ritardo: se il fix non è in
-`main`, il daily può ricadere sullo stesso difetto.
+**GitHub al controllo:** `main`/base `8715a41`, PR [#127](https://github.com/uamisjd/football-deep-analyzer/pull/127)
+**aperta e MERGEABLE**, issue #126 ancora aperta; il check `test` è in corso e gli altri gate sono
+ancora da confermare. Il merge resta sempre dell’utente (regola D). Il prossimo cron è
+nominalmente alle **18:17 UTC** (20:17 CEST) e può partire in ritardo: se il fix non è in `main`,
+il daily può ricadere sullo stesso difetto.
 
 **Rischio fonti da decidere:** FAQ FotMob contraria a servizi automatici e uso sistematico; Understat
 `robots.txt` disallowa tutti i crawler; Football-Data.co.uk dichiara l’uso per privati e non per
@@ -40,9 +41,9 @@ permessi dell’integrazione.
 [−0,005229; +0,016406], 1/4 leghe; nessuna promozione. `verdetto_lab.py`: nessun candidato passa
 insieme entrambe le soglie, produzione resta `dc_elo_prod`.
 
-**Prossimo passo:** PR del fix con riferimento a #126, gate `test`/`site`/`browser`, merge a cura
-utente; poi verificare run completo, deploy, timestamp live e chiusura issue. Prima di espandere i
-fetch, decisione dell’utente sulle condizioni delle fonti.
+**Prossimo passo:** attendere i gate `test`/`site`/`browser` della PR #127; se verdi, avvisare
+l’utente e attendere il suo merge. Poi verificare run completo, deploy, timestamp live e chiusura
+issue #126. Prima di espandere i fetch, decisione dell’utente sulle condizioni delle fonti.
 
 ## Cronologia — 14/10 sera, sessione `262421ee` (checkpoint precedente)
 

@@ -25,11 +25,13 @@ promozione, `dc_elo_prod` invariato.
 contro prodotti di data-training basati su bot/scraper/AI. Nessun collettore disattivato; alternative
 solo parziali, decisione utente aperta. Dettagli e link in [`docs/110`](110_revisione_totale_2026-10-16.md).
 
-**Stato al momento della revisione:** 0 PR aperte, 1 issue (#126); branch di sessione con fix e
-documentazione, PR ancora da aprire. Prossimo cron nominale 18:17 UTC; il merge è sempre
-responsabilità dell’utente. Repository 754.275 KB (+4.120 KB sulla misura del 15/10; differenza
-singola, non proiezione); alert Dependabot disabilitati secondo API, stato branch protection e
-scansioni non verificabile con i permessi dell’integrazione.
+**Aggiornamento dopo l’audit:** PR [#127](https://github.com/uamisjd/football-deep-analyzer/pull/127)
+aperta alle 17:17 UTC dalla branch di sessione, head `34d07d2`; `MERGEABLE`, issue #126 ancora
+aperta. Alla prima lettura GitHub aveva il check `test` in corso; `site` e `browser` da confermare.
+Prossimo cron nominale 18:17 UTC; il merge è sempre responsabilità dell’utente. Repository
+754.275 KB (+4.120 KB sulla misura del 15/10; differenza singola, non proiezione); alert
+Dependabot disabilitati secondo API, stato branch protection e scansioni non verificabile con i
+permessi dell’integrazione.
 
 ## 2026-10-15 — PR #124 fusa (revisione 15/10 + misura della crescita); registrazione del merge #123
 
