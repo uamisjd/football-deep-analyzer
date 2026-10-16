@@ -199,17 +199,47 @@ risolvere prima di riattivare il fallback, non un problema di forecast presenti 
 
 ## 8. Esito e limiti del follow-up
 
-**Stato complessivo: pipeline attiva e verde; sito online; stato live non affidabile; autorizzazioni di
-alcune fonti da decidere; modello da monitorare senza modifiche.** Il fix #127 ha ripristinato la
-produzione, ma non risolve la freschezza delle fixture. Il documento distingue osservazione live,
-fotografia locale e condizioni storiche/esterne. Non prova l’ora precisa del payload FotMob in cache,
-non certifica la correttezza assoluta di ESPN e non costituisce consulenza legale.
+**Stato produzione:** il daily/deploy di produzione è attivo e l’ultimo run verificato (#38968833035)
+è verde; il sito è online ma lo stato live non è affidabile. **Stato PR #128:** il check `site` più
+recente è rosso (dettagli nel §9), quindi non si può descrivere l’intera CI come verde. Le
+autorizzazioni di alcune fonti sono da decidere; il modello va monitorato senza modifiche. Il fix
+#127 ha ripristinato la produzione, ma non risolve la freschezza delle fixture. Il documento
+distingue osservazione live, fotografia locale e condizioni storiche/esterne. Non prova l’ora precisa
+del payload FotMob in cache, non certifica la correttezza assoluta di ESPN e non costituisce
+consulenza legale.
 
 L’unico lavoro proposto in questa sessione è documentale: questo report, il checkpoint e le rettifiche
 collegate. Ogni merge della PR documentale resta riservato all’utente.
 
 **Aggiornamento procedurale — 21:16 UTC / 23:16 CEST:** il documento e i checkpoint sono stati
 committati e pubblicati sul branch Arena; PR documentale [#128](https://github.com/uamisjd/football-deep-analyzer/pull/128)
-aperta alle 20:55 UTC. I check `test`, `site` e `browser` sono tutti passati nel run
-[#38965719880](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38965719880). La PR
-resta aperta: nessun merge eseguito.
+aperta alle 20:55 UTC. Nel primo run [#38965719880](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38965719880)
+i check `test`, `site` e `browser` sono passati. La PR resta aperta: nessun merge eseguito.
+
+## 9. Follow-up live — 16/10/2026, 21:33 UTC / 23:33 CEST
+
+- Il daily schedulato [#38968833035](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38968833035)
+  è riuscito, inclusi `run`, `deploy` e `notify` (21:21:48–21:33:08 UTC). La [homepage Pages](https://uamisjd.github.io/football-deep-analyzer/)
+  fetchata dopo il deploy mostra `AGGIORNATO 23:26` (ora italiana) e conferma la riga richiesta:
+  **5 gare / 5 campionati / 5 su 5 modellate**. Lo stato è però **ancora 1 in corso / 4 in
+  programma**, Heerenveen–Excelsior **0–0** e Frankfurt–Köln delle 20:30 come prossimo avvio. Il
+  refresh del sito da solo non ha corretto lo stato.
+- La [pagina stato](https://uamisjd.github.io/football-deep-analyzer/stato.html) riporta il run
+  delle 23:22–23:24 CEST: scoreboard ESPN ha 3 richieste per lega; le righe aggregate `fotmob:*`
+  hanno 10–12 richieste per lega. Questo totale include più endpoint (fixture, dettagli,
+  classifiche/backfill) e **non permette di sapere se l’endpoint fixture sia stato ricaricato**.
+  La cache `fda-http-38957677291` è stata riutilizzata alle 21:22:19 UTC (archivio creato alle
+  20:01:03); il nuovo archivio `fda-http-38968833035` è stato creato alle 21:29:52. Con TTL
+  fixture di 6 h e mtime per file, il riuso del payload fixture resta plausibile; manca ancora il
+  `last_fetched_at` per singolo endpoint. Il follow-up rafforza la diagnosi di staleness, ma non
+  prova il timestamp o l’esatta risposta FotMob.
+- **Check della PR #128:** dopo l’aggiornamento documentale, il run
+  [#38968370499](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38968370499)
+  sul commit `633d138` ha `test` **pass**, `site` **fail** allo step «Tutti i gate prima del merge»
+  (exit 1) e `browser` **skipped**. Il primo run #38965719880 era invece tutto verde. Ho
+  ripetuto in locale dopo il fallimento `fda build`, `verify_site`, `parita_schede` e `resa_375`:
+  **247.771 controlli, 0 problemi; 66 schede senza differenze; 28.886 misure responsive, 0
+  problemi**. La failure CI non è riprodotta localmente e la causa resta ignota: i log grezzi
+  Actions terminano in `EOF`, la pagina GitHub non mostra i log senza sessione browser autenticata
+  e il rerun del job non è stato consentito. Non dichiarare la PR pronta al merge finché l’utente
+  non controlla il dettaglio del job o il gate torna verde. Nessun merge eseguito.
