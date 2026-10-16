@@ -7237,8 +7237,9 @@ class MatchAnalysis:
                                           squad=self.match_squad(match_id, away_id),
                                           coach=away_coach, now=news_as_of)
                        if status != "finished" else _no_estera())
-        # Il verificatore e la card «Clima» confrontano tutti i titoli visibili nella
-        # scheda, non solo quelli attribuiti alla stessa squadra. Un articolo condiviso
+        # `team_news` deduplica le due squadre con `news_seen`; il marcatore deve però
+        # seguire gli stessi titoli globali che il verificatore e la card «Clima» vedono
+        # nella scheda, non solo quelli attribuiti alla stessa squadra. Un articolo condiviso
         # (es. Frosinone–Sassuolo) può essere pubblicato una volta nel bollettino di casa
         # e contare anche nel clima dell'ospite: il marcatore «già in Vita» deve seguire
         # la pagina intera, altrimenti i due lati raccontano lo stesso articolo in modo
