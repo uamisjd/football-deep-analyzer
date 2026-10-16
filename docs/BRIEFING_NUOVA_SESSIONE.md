@@ -2,50 +2,63 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-16 — revisione totale [`docs/110`](110_revisione_totale_2026-10-16.md): 1.047 test, `verify_site` 247.419 controlli e 0 problemi, build 506/2.364/7.598, 66 schede pre-partita e 28.857 misure responsive. Il daily #286 è fallito al gate [49], ha lasciato aperta l’issue #126 e non ha ridistribuito il sito; la causa strutturale è riprodotta e corretta nella **PR #127**, con regressione per entrambi i lati. Stato dei check e SHA corrente si leggono nella [PR](https://github.com/uamisjd/football-deep-analyzer/pull/127): questo briefing non sostituisce il risultato live della CI. Questa porta d’ingresso distingue le misure di oggi dai dati storici; leggere prima lo stato corrente qui sotto, [`docs/110`](110_revisione_totale_2026-10-16.md), [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md) e la cima di [`docs/STATO.md`](STATO.md). Il merge è sempre dell’utente (regola D).
+> **Ultimo aggiornamento:** 2026-10-16, 18:32 UTC (20:32 CEST) — revisione totale [`docs/110`](110_revisione_totale_2026-10-16.md) e riverifica live. Gate locali: 1.047 test, `verify_site` 247.419 controlli/0 problemi, build 506/2.364/7.598, 66 schede e 28.857 misure responsive. Due daily consecutivi (#286/#287) hanno fallito al gate [49] su `main`; l’ultimo deploy è delle 09:19 UTC. **PR #127 è aperta e tutti i check `test`/`site`/`browser` sono verdi sul head `4ef6f13`; non è ancora fusa.** Il sito pubblico è fermo alle 11:07 CEST e alle 20:32 CEST segna ancora «in programma» Heerenveen–Excelsior, il cui calcio d’inizio era alle 20:00. Nuovo rilievo: OpenMeteo ha 0 coordinate e 0 righe su tutte le sette leghe. Questa porta d’ingresso distingue i dati locali dal live; leggere anche [`docs/110`](110_revisione_totale_2026-10-16.md), [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md) e la cima di [`docs/STATO.md`](STATO.md). Il merge è sempre dell’utente (regola D).
 
 ---
 
-## Stato operativo corrente — 16/10/2026
+## Stato operativo corrente — 16/10/2026, aggiornato alle 18:32 UTC
 
-**Revisione totale di oggi:** [`docs/110`](110_revisione_totale_2026-10-16.md). Misure locali dopo
-il fix: **1.047 test**, Ruff 0, `pip check` pulito, build **506 / 2.364 / 7.598**, `verify_site`
+**Revisione totale:** [`docs/110`](110_revisione_totale_2026-10-16.md). Misure locali dopo il fix:
+**1.047 test**, Ruff 0, `pip check` pulito, build **506 / 2.364 / 7.598**, `verify_site`
 **247.419 controlli · 0 problemi**, parità **66 schede**, resa 375 px **28.857 · 0 problemi**.
-Playwright locale non eseguito: qui non c’è un browser installato; attendere il gate GitHub della PR.
+Playwright non è stato eseguito localmente perché qui manca un browser; la CI GitHub è invece verde.
 
-**Incidente in produzione:** daily [run #38918710431](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38918710431)
-(#286) fallito il 16/10 alle 15:06 UTC su `verify_site` [49]; deploy saltato. Issue
-[#126](https://github.com/uamisjd/football-deep-analyzer/issues/126) aperta. Ultimo deploy riuscito
-alle 09:19:54 UTC su `c348074`; homepage consultata oggi ancora aggiornata al 16/10 11:07 CEST,
-5 partite e 5/5 con modello, fonti aggiornate fino a circa 11:01 CEST. Il payload esatto del run
-fallito non è recuperabile; il fix riproduce e corregge la classe di disallineamento tra «Vita del
-club» deduplicata sulla pagina e set `visti` separati per i due Climi.
+**Incidente in produzione:** daily [#286](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38918710431)
+(14:48–15:06 UTC) e [#287](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38944906063)
+(18:07–18:24 UTC) falliti entrambi al gate `verify_site` [49] su `main` `8715a41`; deploy
+saltato in entrambi. Il commento automatico più recente sull’issue
+[#126](https://github.com/uamisjd/football-deep-analyzer/issues/126) riporta per #287 gli stessi
+errori su Sassuolo/Frosinone: riepilogo senza conteggio del marcatore e notizia della Curva non
+marcata come già presente in «Vita». La produzione non ha il fix.
 
-**GitHub:** base `main` `8715a41`, PR [#127](https://github.com/uamisjd/football-deep-analyzer/pull/127)
-aperta; issue #126 ancora aperta. Consultare lì i check sullo SHA corrente prima del merge;
-l’ultimo ciclo completo era verde su `74c7589`, poi la regressione è stata rafforzata per verificare
-separatamente ciascun lato del Clima. Il merge resta sempre dell’utente (regola D). Il prossimo
-cron è nominalmente alle **18:17 UTC** (20:17 CEST) e può partire in ritardo: se il fix non è in
-`main`, il daily può ricadere sullo stesso difetto.
+L’ultimo deploy Pages resta quello delle 09:19:39 UTC, SHA `c348074`; homepage ferma alle 11:07
+CEST, 5 partite e 5/5 modellate, fonti ferme a circa 11:01. Alle 20:32 CEST mostra ancora
+**0 in corso / 5 in programma**; SC Heerenveen–Excelsior, calcio d’inizio alle 20:00, è ancora
+«In programma» e la scheda è «Analisi pre-partita». È uno stato partita concretamente obsoleto,
+non solo una pagina con dati non aggiornati.
+
+**GitHub / PR:** base `main` `8715a41`; PR [#127](https://github.com/uamisjd/football-deep-analyzer/pull/127)
+`MERGEABLE`, head `4ef6f133a355f0f794b2407efbc76455b43792a7`; `test`, `site` e `browser` tutti verdi
+(`#38941239498` e `#38941230956`). Issue #126 ancora aperta. Il fix è la condivisione, tra i due
+Climi, dei titoli Vita di pagina; il test rafforzato verifica il marcatore su ciascun lato. Il merge
+resta sempre dell’utente (regola D).
+
+**Orari:** `.github/workflows/daily.yml` elenca cron nominali 04:07, 10:11, 14:17, 18:23 e 21:30
+UTC. Il #287 è partito alle 18:07, prima del 18:23; il #286 era partito dopo il 14:17. Il prossimo
+nominale configurato è 21:30 UTC (23:30 CEST), ma non garantisce l’ora effettiva di avvio.
 
 **Rischio fonti da decidere:** FAQ FotMob contraria a servizi automatici e uso sistematico; Understat
 `robots.txt` disallowa tutti i crawler; Football-Data.co.uk dichiara l’uso per privati e non per
 prodotti di training automatizzato. Nessun collettore è stato disattivato; alternative e limiti
 sono documentati in `docs/110` §4. Non è un parere legale.
 
-**Repo:** `diskUsage` 754.275 KB, +4.120 KB rispetto alla misura riportata il 15/10; una sola
-differenza giornaliera non basta per una proiezione. Gli alert Dependabot risultano disabilitati
-via API; lo stato di branch protection/secret scanning/code scanning non è verificabile con i
-permessi dell’integrazione.
+**Copertura meteo:** `stato.html` mostra OpenMeteo `OK` ma **0 coordinate, 0 richieste e 0 righe**
+per tutte e sette le leghe; il meteo primario FotMob è presente. La sonda settimanale su 45,48 N /
+9,12 E testa un singolo punto, non la copertura degli stadi. Migliorare coordinate e metrica di
+copertura prima di giudicare il fallback utile.
+
+**Repo:** `diskUsage` **754.435 KB**, +160 KB rispetto alla precedente misura 754.275 KB; un
+intervallo breve non è una proiezione. Gli alert Dependabot risultano disabilitati via API; lo
+stato di branch protection/secret scanning/code scanning non è verificabile con i permessi
+dell’integrazione.
 
 **Modello:** su Parquet versionati, γ 1,12 è a **5/200**: ΔRPS +0,005851, IC 95%
 [−0,005229; +0,016406], 1/4 leghe; nessuna promozione. `verdetto_lab.py`: nessun candidato passa
 insieme entrambe le soglie, produzione resta `dc_elo_prod`.
 
-**Prossimo passo:** controllare i gate `test`/`site`/`browser` sullo SHA corrente della PR #127;
-se verdi, avvisare l’utente e attendere il suo merge. Poi verificare run completo, deploy, timestamp
-live e chiusura issue #126. Prima di espandere i fetch, decisione dell’utente sulle condizioni delle
-fonti.
+**Prossimo passo:** il merge della PR #127 spetta all’utente. Dopo il merge verificare il daily
+successivo, il deploy, lo stato live della homepage e della scheda Heerenveen–Excelsior, e la
+chiusura di #126. Prima di espandere i fetch, decisione dell’utente sulle condizioni delle fonti.
 
 ## Cronologia — 14/10 sera, sessione `262421ee` (checkpoint precedente)
 
