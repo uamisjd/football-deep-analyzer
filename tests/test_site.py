@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+from bs4 import BeautifulSoup
 
 from fda.collect import collect_league
 from fda.config import league
@@ -1256,17 +1257,19 @@ def test_clima_marca_la_voce_pubblicata_nel_bollettino_dell_altra_squadra(tmp_pa
     out = tmp_path / "sito"
     SiteBuilder(store=st, out_dir=out).build_match_pages({5749669})
     html = (out / "partite" / "5749669.html").read_text(encoding="utf-8")
-    clima = html.split('<div class="card" id="clima">', 1)[1].split(
-        '<div class="card" id="notizie">', 1)[0]
-    notizie = html.split('<div class="card" id="notizie">', 1)[1].split(
-        '<div class="card"', 1)[0]
+    soup = BeautifulSoup(html, "html.parser")
+    notizie = soup.select_one("#notizie")
+    clima_sides = soup.select("#clima > div[style*='grid'] > div")
 
-    # Il titolo è nella rassegna una sola volta (dedup tra le squadre), ma anche nel clima
-    # di entrambe: il verificatore della pagina controlla l'insieme dei titoli visibili.
-    assert notizie.count(title) == 1
-    # Per lato il titolo compare nel richiamo «fatto della settimana» e nell'elenco delle voci.
-    assert clima.count(title) == 4
-    assert clima.count("anche in «Vita del club»") == 2
+    # Il titolo è nella rassegna una sola volta (dedup tra le squadre), ma ogni lato del
+    # Clima deve marcare la propria voce contata: un totale di due non basta se cade sullo stesso lato.
+    assert notizie.get_text(" ", strip=True).count(title) == 1
+    assert len(clima_sides) == 2
+    for side in clima_sides:
+        shared = [item for item in side.select("details.news-more ul.news-list > li")
+                  if title in item.get_text(" ", strip=True)]
+        assert len(shared) == 1
+        assert "anche in «Vita del club»" in shared[0].get_text(" ", strip=True)
     st.close()
 
 

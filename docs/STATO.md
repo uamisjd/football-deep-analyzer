@@ -26,8 +26,11 @@ contro prodotti di data-training basati su bot/scraper/AI. Nessun collettore dis
 solo parziali, decisione utente aperta. Dettagli e link in [`docs/110`](110_revisione_totale_2026-10-16.md).
 
 **Aggiornamento dopo l’audit:** PR [#127](https://github.com/uamisjd/football-deep-analyzer/pull/127)
-aperta alle 17:17 UTC dalla branch di sessione, head `34d07d2`; `MERGEABLE`, issue #126 ancora
-aperta. Alla prima lettura GitHub aveva il check `test` in corso; `site` e `browser` da confermare.
+aperta alle 17:17 UTC dalla branch di sessione; issue #126 ancora aperta. Un ciclo completo
+`test`/`site`/`browser` è passato su `74c7589` (run push #38938811766 e run PR
+[#38938848213](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38938848213)); dopo
+quel check è stata rafforzata la regressione per asserire il marcatore **su ciascun lato**. Per il
+merge verificare sempre l’esito sullo SHA corrente nella PR, non riutilizzare il vecchio risultato.
 Prossimo cron nominale 18:17 UTC; il merge è sempre responsabilità dell’utente. Repository
 754.275 KB (+4.120 KB sulla misura del 15/10; differenza singola, non proiezione); alert
 Dependabot disabilitati secondo API, stato branch protection e scansioni non verificabile con i
