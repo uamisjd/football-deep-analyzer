@@ -200,8 +200,8 @@ risolvere prima di riattivare il fallback, non un problema di forecast presenti 
 ## 8. Esito e limiti del follow-up
 
 **Stato produzione:** il daily/deploy di produzione è attivo e l’ultimo run verificato (#38968833035)
-è verde; il sito è online ma lo stato live non è affidabile. **Stato PR #128:** il check `site` più
-recente è rosso (dettagli nel §9), quindi non si può descrivere l’intera CI come verde. Le
+è verde; il sito è online ma lo stato live non è affidabile. **Stato PR #128:** i due check `site`
+più recenti sono rossi (dettagli nei §§9–10), quindi non si può descrivere l’intera CI come verde. Le
 autorizzazioni di alcune fonti sono da decidere; il modello va monitorato senza modifiche. Il fix
 #127 ha ripristinato la produzione, ma non risolve la freschezza delle fixture. Il documento
 distingue osservazione live, fotografia locale e condizioni storiche/esterne. Non prova l’ora precisa
@@ -243,3 +243,28 @@ i check `test`, `site` e `browser` sono passati. La PR resta aperta: nessun merg
   Actions terminano in `EOF`, la pagina GitHub non mostra i log senza sessione browser autenticata
   e il rerun del job non è stato consentito. Non dichiarare la PR pronta al merge finché l’utente
   non controlla il dettaglio del job o il gate torna verde. Nessun merge eseguito.
+
+## 10. Secondo check CI e confronto locale — 16/10/2026, 22:05 UTC / 17/10, 00:05 CEST
+
+- Il commit solo documentale `95334e6` ha avviato il run PR
+  [#38971973093](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38971973093),
+  concluso alle 22:03:03 UTC. `test` **pass** (2m11s); `site` **fail** dopo 10m53s allo stesso
+  step «Tutti i gate prima del merge»; `browser` **skipped**. È la seconda failure consecutiva del
+  job `site` (la prima è #38968370499 sul commit `633d138`). L’annotazione è solo «Process
+  completed with exit code 1»; il nuovo tentativo di scaricare i log termina ancora in `EOF`.
+- Il workflow esegue in quel singolo step `verify_site.py`, `parita_schede.py` e `resa_375` con
+  `set -euo pipefail`; senza log non è noto quale comando abbia restituito 1. Il `fda build` remoto
+  è passato. Il rerun GitHub non è stato consentito nella run precedente.
+- Per rendere il confronto locale più vicino alla base attuale del PR ho fetchato `origin/main`
+  (`b3d0cc8`, unico cambiamento da `0e9b864`: `prospettico.parquet`) e rieseguito build e tre gate
+  con quel file. Esito locale: build **527 / 2.364 / 7.602**; `verify_site` **260.765 controlli,
+  0 problemi**; parità **87 schede, nessuna differenza**; resa 375 px **29.738 misure, 0 problemi**.
+  Il file `prospettico.parquet` di `HEAD` è stato ripristinato dopo il test: nessuna modifica dati
+  rimasta nel branch. Anche con i dati aggiornati di `main`, la failure CI non si riproduce.
+- La homepage fetchata alle 22:05 UTC mostra ancora `AGGIORNATO 23:26` CEST, 5 gare / 5 campionati /
+  5 su 5 modellate, ma 1 in corso / 4 in programma e Heerenveen–Excelsior 0–0. Non risulta un nuovo
+  deploy dopo il daily #38968833035.
+- Al controllo GitHub, PR #128 è aperta; l’API riporta `MERGEABLE`, ma il check `site` è rosso:
+  il dato di mergeability non equivale a gate verdi. Nessun merge eseguito. La failure ripetuta non
+  va trattata come un singolo hiccup; l’utente deve leggere i raw logs nel browser GitHub o
+  richiedere l’intervento sul job prima di decidere il merge.
