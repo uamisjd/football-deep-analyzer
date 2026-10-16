@@ -207,3 +207,9 @@ non certifica la correttezza assoluta di ESPN e non costituisce consulenza legal
 
 L’unico lavoro proposto in questa sessione è documentale: questo report, il checkpoint e le rettifiche
 collegate. Ogni merge della PR documentale resta riservato all’utente.
+
+**Aggiornamento procedurale — 21:16 UTC / 23:16 CEST:** il documento e i checkpoint sono stati
+committati e pubblicati sul branch Arena; PR documentale [#128](https://github.com/uamisjd/football-deep-analyzer/pull/128)
+aperta alle 20:55 UTC. I check `test`, `site` e `browser` sono tutti passati nel run
+[#38965719880](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38965719880). La PR
+resta aperta: nessun merge eseguito.
