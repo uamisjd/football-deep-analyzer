@@ -57,6 +57,20 @@
   </div>
 </div>
 
+{% if p.pending %}
+<div class="card">
+  <h2>Da verificare <span class="tag">{{ p.pending|length }}</span></h2>
+  <p class="small mut" style="margin:0 0 8px">Gare già iniziate per cui nessuna fonte ha ancora dichiarato il risultato finale.
+    Non pubblichiamo un punteggio parziale né le trattiamo come concluse: la classifica ufficiale di questa pagina può già contarle.</p>
+  <ul class="news-list">
+    {% for m in p.pending %}
+    <li>{% if m.link %}<a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }} – {{ m.away_name }}</a>{% else %}{{ m.home_name }} – {{ m.away_name }}{% endif %}
+      <span class="small mut">· {{ m.when }} (ora italiana) · {{ 'in casa' if m.is_home else 'in trasferta' }}</span></li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if p.standing %}
 <div class="card">
   <h2>Classifica e rendimento per sede</h2>
@@ -94,7 +108,7 @@
 <div class="card">
   <h2>Formazione <span class="tag">{{ p.lineup.kind }}</span></h2>
   <p class="small mut" style="margin:0 0 8px">{{ p.lineup.formation or 'modulo non pubblicato' }} · contro {{ p.lineup.opponent }} · {{ p.lineup.when }}.
-    La distinta «probabile» è quella della fonte a ridosso della gara; quella «ufficiale» arriva con le formazioni confermate.</p>
+    {{ p.lineup.explain }}</p>
   {% if p.lineup.starters %}
   <div class="tablewrap"><table>
     <tr><th scope="col" class="r">N°</th><th scope="col">Giocatore</th><th scope="col">Ruolo</th><th scope="col" class="r">Voto medio</th></tr>
@@ -197,7 +211,7 @@
 
 {% if p.history %}
 <div class="card">
-  <h2>Stagioni precedenti</h2>
+  <h2>Stagioni</h2>
   <div class="tablewrap"><table>
     <tr><th scope="col">Stagione</th><th scope="col" class="r">Gare</th><th scope="col" class="r">V–N–P</th><th scope="col" class="r">Punti</th><th scope="col" class="r">Gol</th><th scope="col" class="r">Posizione</th></tr>
     {% for h in p.history %}
@@ -206,7 +220,7 @@
       <td class="r">{{ h.rank }}ª</td></tr>
     {% endfor %}
   </table></div>
-  <p class="small mut" style="margin:8px 0 0">Calcolate dall'archivio storico del progetto (stesso metodo di punti e posizione della classifica): la stagione in corso è parziale e cresce a ogni giornata.</p>
+  <p class="small mut" style="margin:8px 0 0">La stagione in corso usa la classifica ufficiale (gare, punti e posizione della testata); le precedenti vengono dall'archivio storico del progetto, ordinate per punti, differenza reti e gol fatti. La riga «in corso» cresce a ogni giornata.</p>
 </div>
 {% endif %}
 

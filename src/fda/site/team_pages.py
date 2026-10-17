@@ -279,6 +279,21 @@ class TeamCatalog:
             out.append(row)
         return out
 
+    def pending(self, team_id: int, built: set[int] | None = None) -> list[dict[str, Any]]:
+        """Gare **iniziate ma senza risultato verificato** (stesso stato della home).
+
+        :func:`fda.site.analysis.effective_match_state` marca ``unverified`` una gara il cui
+        calcio d'inizio è passato da più di mezz'ora senza un finale dichiarato. Senza questo
+        blocco la gara spariva dalla pagina: non era «prossima» (kickoff passato) né
+        «conclusa» (nessun risultato), e la classifica ufficiale poteva già contarla. Il 17/10
+        2026 succedeva a 17 gare, fra cui Heerenveen–Excelsior e Frosinone–Sassuolo.
+        """
+        if self.fixtures.empty:
+            return []
+        fx = self._team_matches(self.fixtures, team_id)
+        fx = fx[fx["status"] == "unverified"].sort_values("utc_kickoff")
+        return [self._match_row(r, team_id, built) for r in fx.itertuples(index=False)]
+
     def recent(self, team_id: int, n: int = N_MATCHES,
                built: set[int] | None = None) -> list[dict[str, Any]]:
         """Ultime gare concluse, dalla più recente."""
@@ -309,10 +324,15 @@ class TeamCatalog:
                 "over25": _float(r.get("p_over25"))}
 
     def lineup(self, team_id: int) -> dict[str, Any] | None:
-        """Formazione (probabile o ufficiale) dell'impegno più vicino, con la sua etichetta.
+        """Formazione dell'impegno più vicino, con l'etichetta del **tipo dichiarato**.
 
-        La distinta viene pubblicata a ridosso del calcio d'inizio: senza, il blocco mostra il
-        segnaposto onesto invece di una formazione inventata.
+        Fino al 17/10/2026 la pagina trattava ogni distinta di una gara futura come
+        «ufficiale» tranne il caso ``predicted``: per 18 squadre su 132 (misurate sui dati di
+        quel giorno) mostrava «Formazione ufficiale» quando la fonte aveva dato
+        ``lastStarting11`` o ``unavailable``, cioè l'ultima formazione disponibile o una
+        distinta incompleta — non quella della partita. La mappa ora è quella di
+        :meth:`MatchAnalysis.transfer_lineup_origin`, la stessa usata altrove nel sito, e la
+        pagina spiega che cosa significa quel tipo.
         """
         if self.info.empty:
             return None
@@ -321,28 +341,49 @@ class TeamCatalog:
         if info.empty:
             return None
         upcoming = info[info["utc_kickoff"] > self.now].sort_values("utc_kickoff")
+        past_match = False
         if not upcoming.empty:
             match = upcoming.iloc[0]
-            kind = "probabile" if str(match.get("lineup_type", "")).lower() in {"predicted", ""} else "ufficiale"
         else:
             past = info[info["utc_kickoff"] <= self.now].sort_values("utc_kickoff", ascending=False)
             if past.empty:
                 return None
             match = past.iloc[0]
-            kind = "ultima gara"
+            past_match = True
         mid = int(match["match_id"])
         is_home = int(match["home_id"]) == team_id
         starters = self.analysis.starters(mid, team_id)
         formation = match.get("home_formation") if is_home else match.get("away_formation")
         if not starters and (formation is None or pd.isna(formation)):
             return None
+        origin = self.analysis.transfer_lineup_origin(mid)
+        if past_match:
+            kind, explain = "ultima gara", (
+                "La gara è già stata giocata: questa è l'ultima distinta raccolta per la squadra.")
+        else:
+            kind, explain = self._lineup_label(origin)
         # `match_info` non porta i nomi: arrivano dal calendario, la stessa riga che
         # pubblica il nome della squadra nel resto del sito.
         opponent = self._opponent_name(mid, team_id)
-        return {"match_id": mid, "kind": kind, "formation": None if pd.isna(formation) else str(formation),
+        return {"match_id": mid, "kind": kind, "origin": origin, "explain": explain,
+                "formation": None if pd.isna(formation) else str(formation),
                 "opponent": opponent, "is_home": is_home,
                 "when": it_day_time(pd.Timestamp(match["utc_kickoff"]), self.tz),
                 "starters": starters}
+
+    @staticmethod
+    def _lineup_label(origin: str) -> tuple[str, str]:
+        """Etichetta breve e spiegazione per il tipo di distinta dichiarato dalla fonte."""
+        return {
+            "official": ("ufficiale", "Distinta confermata dalla fonte per questa gara."),
+            "predicted": ("prevista", "Formazione prevista dalla fonte: non è una conferma."),
+            "previous": ("ultima distinta", (
+                "La fonte non ha pubblicato una distinta per questa gara: gli undici sono "
+                "l'ultima formazione disponibile, non quella di questa partita.")),
+            "unknown": ("tipo non dichiarato", (
+                "La fonte ha una distinta ma non ne dichiara il tipo: non la trattiamo "
+                "come ufficiale.")),
+        }.get(origin, ("tipo non dichiarato", "Tipo di distinta non riconosciuto."))
 
     def unavailable(self, team_id: int) -> list[dict[str, Any]]:
         """Indisponibili come li pubblica la scheda partita (tipo e rientro tradotti).
@@ -441,6 +482,9 @@ class TeamCatalog:
             if len(out) >= n:
                 break
         if out:
+            # l'ordine di selezione è per rilevanza editoriale (pensato per la vigilia);
+            # su una pagina che vive tutto l'anno il lettore si aspetta la più recente in cima
+            out.sort(key=lambda x: x["published_at"], reverse=True)
             return {"items": out, "fallback": False}
         # ripiego: stessi filtri di base della scheda partita, applicati a tutte le voci raccolte
         from ..sources.news import (
@@ -480,6 +524,7 @@ class TeamCatalog:
                         "kind_label": "", "why": "", "published_at": pd.Timestamp(r.published)})
             if len(out) >= n:
                 break
+        out.sort(key=lambda x: x["published_at"], reverse=True)
         return {"items": out, "fallback": bool(out)}
 
     def projection(self, team_id: int) -> dict[str, Any] | None:
@@ -517,48 +562,74 @@ class TeamCatalog:
 
     # ---- storico ----------------------------------------------------------------------
     def _build_season_tables(self) -> dict[tuple[str, str], pd.Series]:
-        """Punti per squadra e (lega, stagione) dallo storico: serve al rango di stagione.
+        """Rango per (lega, stagione) dallo storico, con i criteri di una classifica vera.
 
-        Una passata sola sull'archivio (7.532 gare): il rango di una stagione passata è
-        calcolato sui **punti di quella stagione**, non sulla posizione di oggi.
+        Una passata sola sull'archivio (7.532 gare). Fino al 17/10/2026 il rango contava
+        **solo i punti**: 46 squadre su 132 mostravano nella tabella dello storico una
+        posizione diversa da quella ufficiale della stessa stagione (es. Bournemouth 19ª
+        contro 18ª della classifica), perché a parità di punti decide la differenza reti.
+        Qui l'ordine è punti → differenza reti → gol fatti → nome, e la stagione in corso
+        non passa più da questa tabella (vedi :meth:`season_history`).
         """
         h = self.history
-        if h.empty or not {"league_key", "season", "home", "away", "home_goals", "away_goals"} <= set(h.columns):
+        need = {"league_key", "season", "home", "away", "home_goals", "away_goals"}
+        if h.empty or not need <= set(h.columns):
             return {}
-        pts: dict[tuple[str, str, str], int] = {}
+        acc: dict[tuple[str, str, str], dict[str, int]] = {}
         for r in h.itertuples(index=False):
             hg, ag = int(r.home_goals), int(r.away_goals)
             for name, gf, ga in ((str(r.home), hg, ag), (str(r.away), ag, hg)):
                 key = (str(r.league_key), str(r.season), canonical(name))
-                pts[key] = pts.get(key, 0) + (3 if gf > ga else 1 if gf == ga else 0)
-        table: dict[tuple[str, str, str], int] = {}
-        for (lg, season, team), p in pts.items():
-            table[(lg, season, team)] = p
+                row = acc.setdefault(key, {"points": 0, "gf": 0, "ga": 0})
+                row["points"] += 3 if gf > ga else 1 if gf == ga else 0
+                row["gf"] += gf
+                row["ga"] += ga
         ranks: dict[tuple[str, str], pd.Series] = {}
-        df = pd.Series(table, dtype="int64")
-        df.index.names = ["league_key", "season", "team"]
-        for (lg, season), grp in df.groupby(level=[0, 1]):
-            ranks[(str(lg), str(season))] = grp.droplevel([0, 1]).sort_values(ascending=False)
+        by_season: dict[tuple[str, str], list[tuple[str, int, int]]] = {}
+        for (lg, season, team), v in acc.items():
+            by_season.setdefault((lg, season), []).append(
+                (team, v["points"], v["gf"] - v["ga"], v["gf"]))
+        for key, rows in by_season.items():
+            # punti, differenza reti, gol fatti: i criteri delle sette leghe seguite;
+            # il nome chiude i pareggi residui in modo deterministico
+            rows.sort(key=lambda x: (-x[1], -x[2], -x[3], x[0]))
+            ranks[key] = pd.Series({team: pts for team, pts, _, _ in rows},
+                                   name="points", dtype="int64")
         return ranks
 
     def season_history(self, team_id: int) -> list[dict[str, Any]]:
-        """Ultime stagioni dell'archivio: punti, posizione finale e gol."""
+        """Stagioni dell'archivio + la stagione in corso presa dalla **classifica ufficiale**.
+
+        Le due fonti non dicono la stessa cosa nello stesso istante: lo storico è una copia
+        aggiornata a un certo run e può essere indietro di una giornata (misurato il
+        17/10/2026: Excelsior e Heerenveen con 8 gare archiviate contro 9 della classifica,
+        perché la gara in corso non è ancora un risultato verificato). Per la stagione in
+        corso quindi punti, gare e posizione vengono da :meth:`standing` — la stessa riga
+        che la pagina mostra in testa — e non da un ricalcolo; le stagioni passate restano
+        dall'archivio, con il rango di :meth:`_build_season_tables`.
+        """
         h = self.history
-        if h.empty or "season" not in h.columns:
-            return []
+        current = str(load_leagues_config().get("season", ""))
         name = canonical(self.team_names.get(team_id, ""))
         if not name:
             return []
+        out: list[dict[str, Any]] = []
+        cur = self.standing(team_id)
+        if cur is not None:
+            out.append({"season": current, "played": cur["played"], "points": cur["points"],
+                        "wins": cur["wins"], "draws": cur["draws"], "losses": cur["losses"],
+                        "goals_for": cur["goals_for"], "goals_against": cur["goals_against"],
+                        "rank": cur["rank"], "in_corso": True})
+        if h.empty or "season" not in h.columns:
+            return out
         sub = h[(h["home"].map(canonical) == name) | (h["away"].map(canonical) == name)]
-        if sub.empty:
-            return []
-        current = str(load_leagues_config().get("season", ""))
-        out = []
+        sub = sub[sub["season"].astype(str) != current]
         for season, grp in sub.groupby("season"):
             points = wins = draws = losses = gf = ga = 0
             for r in grp.itertuples(index=False):
                 is_home = canonical(str(r.home)) == name
-                f, a = (int(r.home_goals), int(r.away_goals)) if is_home else (int(r.away_goals), int(r.home_goals))
+                f, a = ((int(r.home_goals), int(r.away_goals)) if is_home
+                        else (int(r.away_goals), int(r.home_goals)))
                 gf, ga = gf + f, ga + a
                 wins += f > a
                 draws += f == a
@@ -571,9 +642,11 @@ class TeamCatalog:
                 rank = int(list(table.index).index(name) + 1)
             out.append({"season": str(season), "played": len(grp), "points": points,
                         "wins": int(wins), "draws": int(draws), "losses": int(losses),
-                        "goals_for": gf, "goals_against": ga, "rank": rank,
-                        "in_corso": str(season) == current})
+                        "goals_for": gf, "goals_against": ga, "rank": rank, "in_corso": False})
         out.sort(key=lambda x: x["season"], reverse=True)
+        # la stagione in corso resta sempre in cima, anche se il formato dell'etichetta
+        # («2026/2027») non ordinasse come le altre
+        out.sort(key=lambda x: not x["in_corso"])
         return out[:N_SEASONS]
 
     # ---- assemblaggio -----------------------------------------------------------------
@@ -598,6 +671,7 @@ class TeamCatalog:
             "next": (self.upcoming(team_id, 1, built) or [None])[0],
             "upcoming": self.upcoming(team_id, built=built),
             "recent": self.recent(team_id, built=built),
+            "pending": self.pending(team_id, built),
             "lineup": self.lineup(team_id),
             "unavailable": self.unavailable(team_id),
             "squad": {"rows": squad_rows, "bench": bench},

@@ -865,6 +865,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
     "52": ("I", "pagine squadra: una per ogni riga di classifica, nome/lega/posizione/punti ↔ FotMob"),
     "53": ("I", "1X2 della prossima gara ↔ barra della scheda partita collegata"),
     "54": ("I", "proiezione di fine stagione ↔ `season_sim` (posizione media e punti attesi)"),
+    "55": ("I", "menu: la sezione «Squadre» è quella corrente su indice e schede"),
 }
 
 
@@ -6214,8 +6215,10 @@ def check_team_pages(site: Path, data: Path | None) -> tuple[list[str], int]:
         sim = pd.read_parquet(data / "season_sim.parquet")
     except (OSError, ValueError) as exc:
         return [f"[52] dati delle squadre non leggibili: {exc}"], 0
-    from fda.config import leagues
+    from fda.config import leagues, load_leagues_config
     from fda.teams import canonical
+
+    stagione_corrente = str(load_leagues_config().get("season", ""))
 
     by_country = {lg.country: lg for lg in leagues()}
     idx_html = idx.read_text(encoding="utf-8")
@@ -6250,6 +6253,25 @@ def check_team_pages(site: Path, data: Path | None) -> tuple[list[str], int]:
         checks += 3
         n52 += 3
         rank, pts, played = int(pos.group(1)), _int_it(pos.group(2)), _int_it(pos.group(3))
+        # la stagione in corso nello storico deve ripetere la testata, non ricalcolarla:
+        # gare, punti e posizione sono tre cifre che il lettore confronta a occhio
+        riga_st = re.search(
+            r"<tr><td>" + re.escape(stagione_corrente) + r" <span class=\"tag\">in corso</span></td>"
+            r"<td class=\"r\">(\d+)</td>\s*<td class=\"r\">\d+–\d+–\d+</td>"
+            r"<td class=\"r\"><b>(\d+)</b></td><td class=\"r\">\d+–\d+</td>\s*"
+            r"<td class=\"r\">(\d+)ª</td>", html)
+        checks += 1
+        n52 += 1
+        if not riga_st:
+            fails.append(f"[52] squadre/{tid}.html: riga «{stagione_corrente} in corso» non leggibile")
+        else:
+            checks += 2
+            n52 += 2
+            gare_st, punti_st, pos_st = (int(x) for x in riga_st.groups())
+            if (gare_st, punti_st, pos_st) != (played, pts, rank):
+                fails.append(f"[52] squadre/{tid}.html: storico in corso "
+                             f"({gare_st} gare, {punti_st} pt, {pos_st}ª) ≠ testata "
+                             f"({played} gare, {pts} pt, {rank}ª)")
         if (rank, pts, played) != (int(r.rank), int(r.points), int(r.played)):
             fails.append(f"[52] squadre/{tid}.html: «{rank}°, {pts} pt, {played} gare» ≠ "
                          f"classifica «{int(r.rank)}°, {int(r.points)} pt, {int(r.played)} gare»")
@@ -6296,6 +6318,21 @@ def check_team_pages(site: Path, data: Path | None) -> tuple[list[str], int]:
     print(f"[52] schede squadra: {n52} cifre verificate su {len(attese)} squadre")
     print(f"[53] 1X2 della prossima gara ↔ scheda partita: {n53} gare confrontate")
     print(f"[54] proiezioni di stagione ↔ season_sim: {n54} stringhe ricalcolate")
+    # [55] la sezione «Squadre» del menu deve essere accesa sulle pagine che le appartengono:
+    # indice e schede. Il gate [33] confronta voce ed etichetta, non lo stato aria-current.
+    n55 = 0
+    for tid in sorted(attese):
+        pg = site / "squadre" / f"{tid}.html"
+        if not pg.exists():
+            continue
+        checks += 1
+        n55 += 1
+        if '<a href="../squadre/index.html" aria-current="page">Squadre</a>' not in pg.read_text(encoding="utf-8"):
+            fails.append(f"[55] squadre/{tid}.html: la voce «Squadre» del menu non è quella corrente")
+    # l'indice sta in `squadre/`, quindi la sua root relativa è `../` (come le schede)
+    if '<a href="../squadre/index.html" aria-current="page">Squadre</a>' not in idx_html:
+        fails.append("[55] squadre/index.html: la voce «Squadre» del menu non è quella corrente")
+    print(f"[55] menu «Squadre» acceso su indice e schede: {n55} pagine")
     return fails, checks
 
 

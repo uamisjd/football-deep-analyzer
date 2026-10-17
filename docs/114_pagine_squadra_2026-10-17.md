@@ -188,6 +188,36 @@ del workflow.
 
 ---
 
+
+## 4bis. Correzioni del 17/10 pomeriggio (trovate controllando le pagine)
+
+Dopo il primo merge della PR #130 ho ricontrollato le schede una per una sui dati correnti.
+Cinque difetti reali, tutti corretti con un test o un gate che li avrebbe fermati:
+
+1. **Menu**: le pagine `squadre/` non accendevano la voce «Squadre» (`NAV_SECTIONS` /
+   `NAV_PREFIXES` non le contenevano). Nessun test lo copriva; ora c'è il gate `[55]`.
+2. **Distinta chiamata «ufficiale» per sbaglio**: la pagina trattava come ufficiale ogni tipo
+   diverso da `predicted`, quindi anche `lastStarting11` (l'ultima formazione disponibile) e
+   `unavailable`. Misurate **18 squadre su 132** con l'etichetta sbagliata. Ora l'etichetta e
+   la spiegazione vengono da `transfer_lineup_origin`, la stessa mappa usata altrove nel sito:
+   «ufficiale», «prevista», «ultima distinta», «tipo non dichiarato».
+3. **Storico contro testata**: la riga «in corso» era ricalcolata su `history`, che può essere
+   indietro di una giornata (Excelsior e Heerenveen: 8 gare archiviate contro 9 in classifica),
+   e il rango contava **solo i punti**: **46 squadre su 132** mostravano una posizione diversa
+   da quella ufficiale. Ora la stagione in corso usa la classifica (la stessa riga della
+   testata) e le stagioni passate sono ordinate per punti, differenza reti e gol fatti.
+4. **Gare sparite**: una partita iniziata senza finale (`unverified`) non era né «prossima» né
+   «conclusa», quindi non compariva in nessuna lista della squadra anche se la classifica
+   ufficiale poteva già contarla. Nuova card «Da verificare» (17 gare il 17/10, fra cui
+   Heerenveen–Excelsior e Frosinone–Sassuolo).
+5. **Notizie fuori ordine**: la selezione è per rilevanza editoriale (pensata per la vigilia),
+   quindi in pagina poteva comparire prima una notizia del 13/10 e poi una del 15/10. Ora la
+   lista è ordinata per data decrescente, a parità di filtri.
+
+Il gate `[52]` è stato esteso: per ogni squadra la riga «in corso» dello storico deve ripetere
+gare, punti e posizione della testata (396 cifre in più, 1.056 totali). `[55]` verifica che la
+voce «Squadre» sia quella corrente su indice e 132 schede.
+
 ## 5. Limiti dichiarati
 
 1. **Notizie**: 69 squadre su 132 non hanno una voce italiana che parli della prima squadra

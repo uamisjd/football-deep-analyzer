@@ -313,9 +313,10 @@ class SiteBuilder:
         "index.html": "oggi", "prossime.html": "prossime", "risultati.html": "risultati",
         "accuratezza.html": "accuratezza", "laboratorio.html": "accuratezza",
         "stagione.html": "stagione", "stato.html": "stato",
-        "info.html": "info",
+        "info.html": "info", "squadre/index.html": "squadre",
     }
-    NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori")]
+    NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori"),
+                                                      ("squadre/", "squadre")]
 
     def _render(self, template: str, rel_path: str, **ctx: Any) -> None:
         if not self._assets_done:
