@@ -1235,8 +1235,49 @@ class SiteBuilder:
             cal = from_store(self.store)
             bt = backtest_summary(calibrate_rows(bt_rows, cal))
             bt["grezzo"] = backtest_summary(bt_rows)
+        # Monitor dei mercati (P3-b): stabilità nelle due metà e accordo fra leghe. Il file è
+        # prodotto da `fda mercati-monitor` nello stesso daily; finché non c'è, la card non
+        # compare — nessun numero inventato e nessuna data presunta.
+        monitor = None
+        mdf = self.store.read("mercati_monitor")
+        if not mdf.empty and {"label", "n", "prev", "obs", "verdict"} <= set(mdf.columns):
+            from ..models.backtest import MIN_LEAGUE_N_MARKETS
+
+            def half(v: Any) -> tuple[str, bool]:
+                """Etichetta della metà cronologica e «scarto ripetuto nello stesso verso».
+
+                Nel Parquet ``NaN`` significa **compatibile** (la previsione cade dentro
+                l'intervallo di Wilson di quella metà, vedi `market_monitor`), non «dato
+                mancante»: la pagina non deve trasformare un'assenza di segnale in un allarme.
+                """
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    return "compatibile", False
+                if pd.isna(f) or f == 0:
+                    return "compatibile", False
+                return ("sopra la previsione" if f > 0 else "sotto la previsione"), True
+
+            rows_mon = []
+            for r in mdf.itertuples(index=False):
+                l1, b1 = half(getattr(r, "half1", None))
+                l2, b2 = half(getattr(r, "half2", None))
+                rows_mon.append({
+                    "label": str(r.label), "n": int(r.n),
+                    "scarto_pp": round((float(r.obs) - float(r.prev)) * 100, 1),
+                    "outside": bool(getattr(r, "outside", False)),
+                    "half1": l1, "half2": l2, "half1_label": l1, "half2_label": l2,
+                    "half1_bad": b1, "half2_bad": b2,
+                    "leagues_out": int(getattr(r, "leagues_out", 0) or 0),
+                    "verdict_label": "strutturale" if str(r.verdict) == "strutturale" else "monitora",
+                })
+            bt_all = self.store.read("backtest")
+            n_leagues = int(bt_all["league_key"].nunique()) if "league_key" in bt_all.columns else 7
+            monitor = {"rows": rows_mon, "min_league_n": MIN_LEAGUE_N_MARKETS,
+                       "n_leagues": n_leagues,
+                       "n_outside": sum(1 for x in rows_mon if x["outside"])}
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
-                     markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
+                     markets=markets, monitor=monitor, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
                      composizione=composizione if 'composizione' in locals() else {},
                      copertura=copertura, lead_stats=lead_stats if 'lead_stats' in locals() else None,
                      grafico=grafico_mercati(markets), model_version=MODEL_VERSION)
