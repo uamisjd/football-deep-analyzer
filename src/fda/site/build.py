@@ -919,8 +919,16 @@ class SiteBuilder:
         return built
 
     def build_players(self, built_match_ids: set[int]) -> int:
-        """Pagine `giocatori/`: hub, tabellone per lega e scheda di ogni giocatore (fase 3)."""
+        """Pagine `giocatori/`: hub, tabellone per lega e scheda di ogni giocatore (fase 3).
+
+        Ritorna il numero di **schede giocatore** generate. Fino al 2026-10-17 il contatore
+        sommava anche le righe dei tabelloni di lega e delle panchine (``rows + bench``): il
+        build stampava «7.602 giocatori» mentre le schede erano 3.801 e i tabelloni 7, e
+        quel numero era finito in cinque documenti (`docs/114` §5). Il conteggio pubblicato
+        ora è quello che si può verificare contando i file di ``site/giocatori/``.
+        """
         cat = PlayerCatalog(self.store)
+        self.player_catalog = cat
         lg_by_id = {lg.fotmob_id: lg for lg in leagues()}
         blocks = []
         for lg in leagues():
@@ -941,7 +949,6 @@ class SiteBuilder:
                          bench=bench, league_name=lg.name, season=cat.season,
                          positions=[("Portieri", "Portiere"), ("Difensori", "Difensore"),
                                     ("Centrocampisti", "Centrocampista"), ("Attaccanti", "Attaccante")])
-            n += len(rows) + len(bench)
         for pid in cat.player_ids():
             page = cat.player_page(pid, built_match_ids)
             if page is None:
@@ -1440,6 +1447,9 @@ class SiteBuilder:
             self._write_seo_files(built)
         except Exception as exc:  # mai bloccare il build per la sitemap
             log.warning("sitemap non scritta: %s", exc)
+        # `players` = schede giocatore generate (una per file in `site/giocatori/`), non le
+        # righe dei tabelloni: il contatore sommava schede e righe e stampava 7.602 dove le
+        # schede erano 3.801 (docs/114 §5).
         return {"matches": len(built), "fixtures": len(fx), "players": n_players}
 
 
