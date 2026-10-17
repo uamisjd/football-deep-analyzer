@@ -95,7 +95,9 @@ try {
       if (changed === original) failures.push({file,width,theme,type:'theme-toggle'});
       await page.locator('#themeToggle').click();
       if (file === 'accuratezza.html') {
-        const link = page.locator('main a[href="laboratorio.html"]');
+        // dal 17/10/2026 i link sono più di uno (linguetta + nota della card del monitor):
+        // il gate vuole che il laboratorio sia raggiungibile, non che il link sia unico
+        const link = page.locator('main a[href="laboratorio.html"]').first();
         if (!await link.isVisible()) failures.push({file,width,theme,type:'laboratory-link'});
       }
       if (width === 375 && ['index.html','accuratezza.html',pages[7]].includes(file))
