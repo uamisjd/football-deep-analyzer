@@ -1,3 +1,62 @@
+## 2026-10-17 pomeriggio — Controllo delle schede squadra: cinque difetti corretti
+
+Ricontrollando le 132 schede sui dati correnti sono emersi cinque difetti reali, tutti
+corretti nello stesso intervento (dettaglio in `docs/114` §4bis):
+
+1. le pagine `squadre/` non accendevano la voce «Squadre» nel menu (nuovo gate `[55]`);
+2. la distinta veniva chiamata «ufficiale» anche per `lastStarting11`/`unavailable`:
+   **18 squadre su 132** con l'etichetta sbagliata, ora «ultima distinta» con la spiegazione;
+3. la riga «in corso» dello storico non coincideva con la testata (fino a 9 gare contro 8)
+   e il rango contava solo i punti (**46 squadre su 132** con posizione diversa da quella
+   ufficiale): ora la stagione in corso viene dalla classifica e le passate ordinano per
+   punti, differenza reti e gol fatti;
+4. una gara iniziata senza finale non compariva in nessuna lista della squadra: nuova card
+   «Da verificare» (17 gare il 17/10);
+5. le notizie non erano in ordine di data: ora la più recente sta in cima.
+
+`[52]` ora verifica anche la coerenza storico↔testata (1.056 cifre su 132 squadre), `[55]`
+verifica il menu. Gate locali dopo le correzioni: `pytest` **1.063** · Ruff pulito · build
+532 / 2.364 / 3.801 / 132 · `verify_site` **269.577 controlli · 0 problemi** (60 oracoli) ·
+`parita_schede` nessuna differenza · `resa_375` 31.286 misure · 0 problemi.
+
+## 2026-10-17 — Pagine squadra, contatore dei giocatori corretto e Accuratezza a linguette
+
+**Cosa è cambiato (dettaglio e misure in [`docs/114`](114_pagine_squadra_2026-10-17.md)).**
+
+1. **132 schede squadra + indice** (`squadre/<id>.html`, `squadre/index.html`): classifica, forma,
+   rendimento casa/trasferta, proiezione di stagione, indisponibili, formazione, rosa e panchina,
+   mercato, notizie, prossime gare, storico. Nessuna fonte nuova: stessi Parquet e stesse
+   funzioni della scheda partita (`MatchAnalysis`, `PlayerCatalog`, `season_sim`). Link solo
+   verso le schede gara realmente generate. Voci in menu e footer; nomi delle squadre cliccabili
+   nell'hero delle schede gara e nelle schede giocatore; 133 URL in sitemap.
+2. **Contatore dei giocatori** corretto: il build sommava righe dei tabelloni e schede
+   (`3.801 + 3.801`) e stampava «7.602 giocatori»; ora stampa **3.801**, cioè i file in
+   `site/giocatori/` meno 7 tabelloni di lega e indice. Le occorrenze storiche di 7.602 nei
+   documenti datati restano come erano (erano il numero stampato), il briefing è aggiornato.
+3. **Accuratezza a linguette**: `accuratezza.html` e `laboratorio.html` hanno la stessa barra di
+   sezione con `aria-current`; il laboratorio è anche nel footer. Nuova card «Stabilità dei
+   mercati nel tempo» con i nove mercati di `mercati_monitor` (5.960 gare fuori campione, due
+   metà, leghe in accordo, verdetto): 2 mercati fuori intervallo, 0 «strutturali» al 17/10 — il
+   modello non si tocca. La card sparisce se il Parquet manca.
+4. **Gate**: `[52]` schede squadra ↔ `fotmob_standings` (660 cifre su 132 squadre), `[53]` 1X2
+   della prossima gara ↔ barra della scheda partita (120 gare), `[54]` proiezioni ↔ `season_sim`
+   (264 stringhe), tutti indipendenti; `[34]` aggiornato all'hero con il nome-link.
+
+**Misure locali (dati del 17/10/2026).** `pytest` **1.059** (+5 di pagina squadra) · Ruff pulito ·
+build **532 partite / 2.364 fixture / 3.801 schede giocatore / 132 squadre** in 8m16 ·
+**4.483 HTML / 167 MB** · `verify_site` **269.056 controlli · 0 problemi** (59 oracoli, 36
+indipendenti) · `parita_schede` nessuna differenza · `resa_375` **31.288 misure · 0 problemi**.
+Il gate browser non è eseguibile in questa sandbox (nessun Chromium scaricabile): le nuove
+pagine sono state aggiunte a `scripts/browser_smoke.mjs` e la CI della PR le ha verificate
+(`test`/`site`/`browser` verdi su head `051c370`, PR
+[#130](https://github.com/uamisjd/football-deep-analyzer/pull/130), MERGEABLE/CLEAN).
+
+**Limiti dichiarati.** Le notizie italiane della prima squadra coprono 63 squadre su 132: 42
+hanno il bollettino con i criteri della scheda gara, 21 la rassegna più larga (dichiarata in
+pagina), 69 nessuna voce — è copertura delle fonti, non una quiete dimostrata. Nessun fetch
+nuovo, diritti delle fonti invariati. 👉 La PR unica di sessione è [#130](https://github.com/uamisjd/football-deep-analyzer/pull/130),
+con tutti i check verdi; il merge resta esclusivamente al committente.
+
 ## 2026-10-17 — PR #129 completa, audit docs/112 e correzione prudenziale dello stato gara (00:50 UTC)
 
 **Stato GitHub dal vivo:** PR tecnica [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129), head `2f10d42`, OPEN e MERGEABLE. Sul suo head i run #38987085075 hanno `test`, `site` e `browser` tutti SUCCESS; il run duplicato #38985411806 sul precedente head `1000469` è anch’esso tutto verde. Nessun merge eseguito: resta al committente. La PR documentale #128 è fusa. Daily/deploy #38983052624 riuscito alle 23:58 UTC.

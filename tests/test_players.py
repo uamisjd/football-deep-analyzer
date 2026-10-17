@@ -329,3 +329,28 @@ def test_nessun_template_arrotonda_a_milioni_interi():
         assert "fee_it" in testo, f"{nome}: importo di mercato senza il formattatore comune"
         assert "/ 1000000" not in testo and "/1e6" not in testo, \
             f"{nome}: arrotondamento a milioni interi (sotto il milione stampa zero)"
+
+
+def test_contatore_giocatori_conta_le_schede_non_le_righe(tmp_path):
+    """`docs/114` §1: il build stampa le schede generate, non righe + panchina + schede.
+
+    Il 17/10/2026 `build_players` sommava `len(rows)+len(bench)` per lega e poi `+1` per
+    ogni scheda: su dati reali stampava 7.602 dove le schede erano 3.801.
+    """
+    lineup = [
+        {"match_id": 1, "team_id": 10, "player_id": 501, "player_name": "Titolare", "role": "starter",
+         "shirt_number": 1, "position_id": None, "usual_position_id": 0, "age": 25,
+         "country": "ITA", "market_value_eur": None, "rating": 6.5, "season_rating": 6.5,
+         "is_captain": False, "unavailability_type": None, "expected_return": None},
+        {"match_id": 1, "team_id": 10, "player_id": 502, "player_name": "Riserva", "role": "sub",
+         "shirt_number": 12, "position_id": None, "usual_position_id": 3, "age": 22,
+         "country": "ITA", "market_value_eur": None, "rating": None, "season_rating": None,
+         "is_captain": False, "unavailability_type": "injured", "expected_return": None},
+    ]
+    st = _store(tmp_path, lineup, [], FX)
+    out = tmp_path / "sito"
+    n = SiteBuilder(store=st, out_dir=out).build_players(set())
+    schede = len(list((out / "giocatori").glob("*.html")))
+    assert n == 2
+    assert schede > n, "i tabelloni di lega e l'indice non sono schede giocatore"
+    assert PlayerCatalog(st).player_ids(), "il catalogo continua a elencare gli id"

@@ -21,7 +21,17 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
-const pages = ['index.html','prossime.html','risultati.html','accuratezza.html','stato.html','laboratorio.html','giocatori/index.html'];
+const pages = ['index.html','prossime.html','risultati.html','accuratezza.html','stato.html','laboratorio.html','giocatori/index.html','squadre/index.html'];
+// una scheda squadra per lega: 132 pagine non stanno in un gate da minuti, ma una per
+// campionato copre i sette casi di dati (tabella, rosa, mercato, notizie, proiezione).
+// L'indice è diviso in blocchi `<h2>` (una lega ciascuno): si prende la prima squadra di ogni blocco.
+{
+  const idx = await readFile(join(root,'squadre','index.html'),'utf8');
+  for (const blocco of idx.split(/<h2/).slice(1)) {
+    const m = /squadre\/(\d+)\.html/.exec(blocco);
+    if (m) pages.push(`squadre/${m[1]}.html`);
+  }
+}
 const seen = new Set();
 for (const name of (await readdir(join(root,'partite'))).sort()) {
   if (!name.endsWith('.html')) continue;
@@ -85,7 +95,9 @@ try {
       if (changed === original) failures.push({file,width,theme,type:'theme-toggle'});
       await page.locator('#themeToggle').click();
       if (file === 'accuratezza.html') {
-        const link = page.locator('main a[href="laboratorio.html"]');
+        // dal 17/10/2026 i link sono più di uno (linguetta + nota della card del monitor):
+        // il gate vuole che il laboratorio sia raggiungibile, non che il link sia unico
+        const link = page.locator('main a[href="laboratorio.html"]').first();
         if (!await link.isVisible()) failures.push({file,width,theme,type:'laboratory-link'});
       }
       if (width === 375 && ['index.html','accuratezza.html',pages[7]].includes(file))
@@ -103,4 +115,14 @@ try {
 }
 await writeFile(join(output,'report.json'),JSON.stringify({pages,checks,failures},null,2));
 console.log(`${checks.length} visite (${pages.length} pagine × 2 viewport × 2 temi), ${failures.length} problemi`);
-if (failures.length) { console.log(JSON.stringify(failures.slice(0,6),null,2)); process.exitCode=1; }
+if (failures.length) {
+  console.log(JSON.stringify(failures.slice(0,6),null,2));
+  // Annotazioni GitHub Actions: quando i log non sono scaricabili (EOF dal blob store,
+  // vedi docs/112) restano leggibili via API `check-runs/<id>/annotations`. Il messaggio
+  // è il JSON del guasto, troncato al limite dell'annotazione.
+  for (const f of failures.slice(0,20)) {
+    const msg = JSON.stringify(f).replaceAll('%','%25').replaceAll('\r','').replaceAll('\n',' ').slice(0,900);
+    console.log(`::error title=browser smoke::${msg}`);
+  }
+  process.exitCode=1;
+}

@@ -3,6 +3,10 @@
 {% block content %}
 <p class="crumb"><a href="{{ root }}index.html">Oggi</a> · <a href="{{ root }}accuratezza.html">Accuratezza</a> · Laboratorio</p>
 <h1>Laboratorio dei <span class="mut2">modelli</span></h1>
+<nav class="cal-nav" aria-label="Sezioni di accuratezza">
+  <a href="{{ root }}accuratezza.html">Accuratezza</a>
+  <a href="{{ root }}laboratorio.html" aria-current="page">Laboratorio dei modelli</a>
+</nav>
 <p class="mut" style="font-size:17px;max-width:760px">Ogni variante del modello viene addestrata solo sulle partite precedenti e valutata su quelle successive (walk-forward). Il confronto usa lo stesso insieme di partite per tutti, e misura la differenza con la ricetta in produzione con un intervallo di confidenza al 95%.</p>
 
 {% if lab %}

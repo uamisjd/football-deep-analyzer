@@ -1135,8 +1135,12 @@ def test_p25_badge_della_forma_in_testa_alla_scheda(tmp_path):
         pts = sum(3 if r["res"] == "V" else 1 if r["res"] == "N" else 0 for r in rows)
         assert (seq, pts) == attesi[name], (name, seq, pts)
         punti = f"{pts} punto" if pts == 1 else f"{pts} punti"
-        # il badge sta sotto il nome della squadra, non in mezzo alla pagina
-        assert f'<div class="match-hero-team {"home" if name == fr.home_name else "away"}">{name}<span class="form-line"' in pre
+        # il badge sta sotto il nome della squadra, non in mezzo alla pagina; dal 17/10/2026
+        # il nome nell'hero è un link alla pagina squadra (`docs/114`), quindi il badge segue
+        # il link invece del testo nudo — la posizione non cambia
+        side = "home" if name == fr.home_name else "away"
+        assert f'<div class="match-hero-team {side}"><a href="../squadre/{tid}.html"' in pre
+        assert re.search(rf">{re.escape(name)}</a><span class=\"form-line\"", pre)
         # serie e punti sono quelli del calendario, non copiati a mano nel template
         assert (f'aria-label="Forma di {name}: {seq} nelle ultime {len(rows)} partite, {punti}. '
                 f'V=vittoria, N=pareggio, P=sconfitta"') in hero_pre

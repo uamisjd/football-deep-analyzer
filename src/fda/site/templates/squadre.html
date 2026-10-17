@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}Squadre — CalcioMetro{% endblock %}
+{% block content %}
+<h1>Squadre</h1>
+<p class="small mut">Le {{ n_teams|it_num }} squadre delle {{ blocks|length }} leghe seguite, con classifica, forma, rosa, indisponibili,
+  formazione, mercato, notizie, proiezione di stagione e storico. Ogni nome apre la scheda della squadra; ogni cifra nasce
+  dai dati raccolti e si aggiorna a ogni run del sito.</p>
+{% if not blocks %}
+<div class="card"><p class="mut">Nessuna squadra ancora raccolta: le schede compaiono dal primo run con il calendario.</p></div>
+{% endif %}
+{% for lg in blocks %}
+<div class="card">
+  <h2>{{ lg.name }} <span class="tag">{{ lg.teams|length }} squadre</span></h2>
+  <div class="tablewrap"><table>
+    <tr><th scope="col" class="r">Pos.</th><th scope="col">Squadra</th><th scope="col" class="r">Gare</th><th scope="col" class="r">Punti</th></tr>
+    {% for t in lg.teams %}
+    <tr><td class="r mut">{{ t.rank if t.rank else '—' }}</td>
+      <td><a href="{{ root }}squadre/{{ t.team_id }}.html">{{ t.name }}</a></td>
+      <td class="r">{{ t.played if t.played is not none else '—' }}</td>
+      <td class="r">{{ t.points if t.points is not none else '—' }}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endfor %}
+<p class="small mut" style="margin-top:18px">La posizione e i punti sono la classifica FotMob di oggi (riserva dichiarata: ESPN).
+  Una squadra senza classifica pubblicata mostra «—»: non viene inventata una posizione.</p>
+{% endblock %}
