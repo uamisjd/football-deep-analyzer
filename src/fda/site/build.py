@@ -40,6 +40,7 @@ from .fmt import (
     ucl_label,
 )
 from .players import PlayerCatalog
+from .team_pages import TeamCatalog
 
 log = logging.getLogger(__name__)
 
@@ -270,6 +271,10 @@ class SiteBuilder:
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
         self.analysis = MatchAnalysis(self.store)
         self.audit_rows: list[dict[str, Any]] = []
+        # catalogo giocatori e ids delle squadre: costruiti una volta per build e riusati da
+        # `build_teams` (evita di ricaricare due volte lineup e statistiche, ~15 s per build)
+        self.player_catalog: PlayerCatalog | None = None
+        self.team_ids: list[int] = []
         self._assets_done = False
 
     # ---- assets -------------------------------------------------------------------------------
@@ -960,6 +965,54 @@ class SiteBuilder:
             n += 1
         return n
 
+    def build_teams(self, built_match_ids: set[int]) -> int:
+        """Pagine `squadre/`: indice e una scheda per ciascuna squadra (`docs/114`).
+
+        Le 132 schede non aggiungono alcuna richiesta HTTP: mettono in un solo indirizzo i
+        dati che la raccolta già produce (classifica, forma, rosa, indisponibili, distinta,
+        mercato, notizie, proiezioni, storico). Il catalogo giocatori è quello di
+        :meth:`build_players`, riusato invece di ricaricare lineup e statistiche.
+        """
+        cat = TeamCatalog(self.store, analysis=self.analysis, players=self.player_catalog,
+                          now=pd.Timestamp(self.now))
+        self.team_ids = list(cat.teams)
+        if not self.team_ids:
+            return 0
+        self._render("squadre.html", "squadre/index.html", blocks=cat.league_blocks(),
+                     n_teams=len(self.team_ids), title="Squadre")
+        n = 0
+        for tid in self.team_ids:
+            page = cat.page(tid, built_match_ids)
+            json_ld = self._json_ld_team(page)
+            self._render("squadra.html", f"squadre/{tid}.html", p=page, json_ld=json_ld,
+                         page_description=(
+                             f"{page['name']} · {page['league_name']}: classifica, forma, rosa, "
+                             "indisponibili, formazione, mercato, notizie e proiezione di stagione."
+                         ))
+            n += 1
+        log.info("pagine squadra: %d (indice + squadre)", n)
+        return n
+
+    @staticmethod
+    def _json_ld_team(page: dict[str, Any]) -> str:
+        """JSON-LD `SportsTeam`: solo dati visibili nella pagina (nome, lega, URL).
+
+        Niente ``athlete``/``coach``: la pagina li mostra, ma il markup strutturato qui
+        dichiara l'entità, non l'intera rosa — un elenco che invecchia a ogni mercato è
+        la prima cosa che i motori segnalano come incoerente con la pagina.
+        """
+        import json
+        data = {
+            "@context": "https://schema.org",
+            "@type": "SportsTeam",
+            "name": page["name"],
+            "sport": "Soccer",
+            "url": f"{SITE_BASE_URL}/squadre/{page['team_id']}.html",
+        }
+        if page.get("league_name"):
+            data["memberOf"] = {"@type": "SportsOrganization", "name": page["league_name"]}
+        return json.dumps(data, ensure_ascii=False)
+
     def build_stagione(self) -> None:
         """Pagina «Proiezioni di stagione» dalla tabella `season_sim`.
 
@@ -1362,8 +1415,12 @@ class SiteBuilder:
             ("", build_date), ("prossime.html", build_date), ("risultati.html", build_date),
             ("accuratezza.html", build_date), ("laboratorio.html", build_date), ("stagione.html", build_date),
             ("stato.html", build_date), ("info.html", build_date),
-            ("giocatori/index.html", build_date),
+            ("giocatori/index.html", build_date), ("squadre/index.html", build_date),
         ]
+        # pagine squadra: lastmod = data di build (la scheda cambia a ogni raccolta, come
+        # le liste; le partite invece hanno la data della gara)
+        for tid in getattr(self, "team_ids", []):
+            urls.append((f"squadre/{tid}.html", build_date))
         # le pagine di lega del tabellone giocatori (7 leghe = 7 URL in più)
         try:
             for lg in leagues():
@@ -1440,6 +1497,7 @@ class SiteBuilder:
             ids |= fin & fx_fin
         built = self.build_match_pages(ids)
         n_players = self.build_players(built)
+        n_teams = self.build_teams(built)
         self.build_accuracy(fx)
         self.build_laboratorio()
         self.build_stagione()
@@ -1491,7 +1549,8 @@ class SiteBuilder:
         # `players` = schede giocatore generate (una per file in `site/giocatori/`), non le
         # righe dei tabelloni: il contatore sommava schede e righe e stampava 7.602 dove le
         # schede erano 3.801 (docs/114 §5).
-        return {"matches": len(built), "fixtures": len(fx), "players": n_players}
+        return {"matches": len(built), "fixtures": len(fx), "players": n_players,
+                "teams": n_teams}
 
 
 def _rps(probs: np.ndarray, outcomes: np.ndarray) -> float:

@@ -21,7 +21,17 @@ const server = createServer(async (req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const base = `http://127.0.0.1:${server.address().port}`;
-const pages = ['index.html','prossime.html','risultati.html','accuratezza.html','stato.html','laboratorio.html','giocatori/index.html'];
+const pages = ['index.html','prossime.html','risultati.html','accuratezza.html','stato.html','laboratorio.html','giocatori/index.html','squadre/index.html'];
+// una scheda squadra per lega: 132 pagine non stanno in un gate da minuti, ma una per
+// campionato copre i sette casi di dati (tabella, rosa, mercato, notizie, proiezione).
+// L'indice è diviso in blocchi `<h2>` (una lega ciascuno): si prende la prima squadra di ogni blocco.
+{
+  const idx = await readFile(join(root,'squadre','index.html'),'utf8');
+  for (const blocco of idx.split(/<h2/).slice(1)) {
+    const m = /squadre\/(\d+)\.html/.exec(blocco);
+    if (m) pages.push(`squadre/${m[1]}.html`);
+  }
+}
 const seen = new Set();
 for (const name of (await readdir(join(root,'partite'))).sort()) {
   if (!name.endsWith('.html')) continue;

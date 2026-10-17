@@ -2,25 +2,44 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-17, 00:50 UTC — audit [`docs/112`](112_revisione_totale_2026-10-16.md) + correzione di stato sul branch Arena. PR #128 è stata fusa alle 23:08 UTC; il daily/deploy #38983052624 è poi riuscito alle 23:58 UTC. Homepage live ora indica sabato 17/10, 24 partite/6 campionati/24 su 24 modellate, nessuna live, 24 in programma. La pagina Risultati non include ancora i cinque match del 16/10 (lista pubblica ferma visibilmente al 10–12/10), quindi il caso di stato/result stale resta concreto. Il branch Arena contiene correzione prudenziale `unverified`, allerta e gate [51] card↔scheda: 1.052 test, build 532/2.364/7.602, verify_site 264.436/0, parità 92, resa 375 px 29.965/0; PR [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129) OPEN/MERGEABLE; CI `test/site/browser` verde su head `2f10d42`. Merge riservato al committente. Diritti/permessi delle fonti ancora da decidere; nessun nuovo fetch o fonte aggiunta. Nessun merge autonomo.
+> **Ultimo aggiornamento:** 2026-10-17, 11:30 UTC — pacchetto «squadre + contatore + Accuratezza a linguette» completato sul branch Arena. PR [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129) è stata fusa alle 07:31 UTC e il daily è verde; il branch contiene ora 132 schede squadra, il contatore giocatori corretto (3.801, non 7.602) e il laboratorio raggiungibile da Accuratezza e dal footer. Misure: 1.059 test, build 532/2.364/3.801/132, 4.483 HTML, `verify_site` 269.056/0, parità 0 differenze, resa 375 px 31.288/0. Report: [`docs/114`](114_pagine_squadra_2026-10-17.md). Diritti delle fonti invariati; nessun fetch aggiunto; merge riservato al committente.
 
 ---
 
-## Stato operativo corrente — 17/10/2026, aggiornato alle 00:50 UTC
+## Stato operativo corrente — 17/10/2026, aggiornato alle 11:30 UTC
 
-**Report di riferimento:** [`docs/112`](112_revisione_totale_2026-10-16.md). PR tecnica [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129) è OPEN/MERGEABLE; run #38987085075 ha `test`/`site`/`browser` tutti SUCCESS sull’head `2f10d42`. Nessun merge eseguito. Regole e checkpoint: [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md), cima di [`docs/STATO.md`](STATO.md).
+**Report di riferimento:** [`docs/114`](114_pagine_squadra_2026-10-17.md) (intervento corrente) e
+[`docs/112`](112_revisione_totale_2026-10-16.md) (audit). La PR #129 è fusa; non ci sono altre PR o
+issue aperte. Regole e checkpoint: [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md), cima di
+[`docs/STATO.md`](STATO.md).
 
-**GitHub dal vivo:** PR #128 fusa alle 23:08 UTC. Daily [#38983052624](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38983052624) verde (run/deploy/notify), deploy Pages 23:58 UTC. Nessuna PR o issue aperta. Main ha ricevuto poi il normale commit dati `a2a5d36` (solo registro prospettico). Non modificare altri rami; la correzione di questo turno va sul branch Arena fissato.
+**Cosa c'è di nuovo sul branch Arena (non ancora in PR):**
 
-**Sito dal vivo dopo il deploy:** homepage sabato 17/10, 24 gare / 6 campionati / 24 su 24 con modello, 0 live / 24 in programma. La pagina Risultati non mostra i cinque incontri di venerdì 16/10; gli ultimi gruppi visibili sono del 10–12/10. Il deploy riuscito non prova che risultati e stati delle gare precedenti siano completi o aggiornati.
+1. **132 schede squadra** (`squadre/<id>.html`) + indice per lega: classifica, forma, split
+   casa/trasferta, proiezione, indisponibili, distinta, rosa, mercato, notizie, prossime gare,
+   storico. Stessi Parquet e stesse funzioni delle schede partita; nessuna richiesta HTTP nuova.
+   Link solo alle schede gara realmente generate; voci in menu e footer; 133 URL in sitemap.
+2. **Contatore giocatori**: il build stampava righe dei tabelloni + schede (7.602); ora stampa
+   **3.801**, il numero dei file-scheda. Il test fissa la regola; i documenti datati restano
+   storici, questo briefing e `STATO` sono aggiornati.
+3. **Accuratezza a linguette**: barra di sezione uguale su Accuratezza e Laboratorio; il
+   laboratorio è anche nel footer; card «Stabilità dei mercati nel tempo» da `mercati_monitor`
+   (9 mercati, 5.960 gare, 2 fuori intervallo, 0 strutturali al 17/10).
 
-**Codice già modificato localmente, non ancora committato/pushato:** stato e punteggio riconciliati tra fixtures e match_info; dopo kickoff +30 min con stato ancora programmato o +105 min con stato live/intervallo senza finale → `unverified`, niente score, avviso in pagina e lista Risultati. Gate indipendente [51] card/scheda. Nessuna fonte nuova, più polling o modifica al modello.
+**Gate locali:** `pytest` **1.059** · Ruff pulito · build **532 / 2.364 / 3.801 / 132** in 8m16 ·
+**4.483 HTML / 167 MB** · `verify_site` **269.056 controlli · 0 problemi** (59 oracoli, 36
+indipendenti; nuovi [52] 660 cifre, [53] 120 gare, [54] 264 stringhe) · `parita_schede` nessuna
+differenza · `resa_375` **31.288 misure · 0 problemi**. Browser Chromium non disponibile nella
+sandbox: il gate browser (con le nuove pagine `squadre/`) va verificato dalla CI della PR.
 
-**Gate finali locali:** 1.052 test; Ruff/pip check puliti; pip-audit dei vincoli e npm audit zero vulnerabilità note; build 532/2.364/7.602; sito 4.365 file / 157.890.385 byte; `verify_site` 264.436 controlli, 0 problemi, gate [51] 151 card; parità 92 schede; resa 375 px 29.965 misure, 0 problemi. Browser Chromium non eseguito localmente: va verificato dalla CI PR.
+**Fonti e modello:** diritti/permessi di FotMob, Understat, ESPN e Football-Data.co.uk/mirror
+ancora da decidere; niente espansione della raccolta. Accuratezza: 218 gare valutate, RPS 0,1990
+vs naive 0,2267; backtest 5.960, 0,1987 vs 0,2313. Over 2,5/3,5 e BTTS restano fuori intervallo
+nel campione live: monitorare, non ritoccare senza protocollo.
 
-**Fonti e modello:** diritti/permessi di FotMob, Understat, ESPN e Football-Data.co.uk/mirror ancora da decidere; niente espansione della raccolta. Accuratezza pubblicata: 218 gare valutate, 137 ricetta corrente, RPS 0,1990 vs naive 0,2267; backtest walk-forward 5.960, 0,1987 vs 0,2313. Monitorare Over 2,5, Over 3,5 e BTTS fuori intervallo, nessun tuning senza protocollo.
-
-**Prossimo:** 👉 Tutto verde: è il momento di fare Merge (PR #129). Il merge resta al committente. Separatamente, chiedere la scelta sulle autorizzazioni delle fonti e il requisito live; non ampliare fetch finché è aperta. Branch protection/code scanning non verificabili via API (403), da controllare nella UI GitHub.
+**Prossimo:** aprire la PR unica di sessione quando i gate sono verdi e la CI conferma il browser;
+poi 👉 il merge resta esclusivamente al committente. Prima di ampliare le fonti serve una
+decisione esplicita su autorizzazioni e requisito live.
 
 ## Cronologia — 14/10 sera, sessione `262421ee` (checkpoint precedente)
 

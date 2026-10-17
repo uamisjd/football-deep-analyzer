@@ -1,0 +1,215 @@
+{% extends "base.html" %}
+{% from "_matchlist.html" import form_pills %}
+{% block title %}{{ p.name }} — squadra · CalcioMetro{% endblock %}
+{% block content %}
+<p class="crumb"><a href="{{ root }}index.html">← Oggi</a><span aria-hidden="true">·</span><a href="{{ root }}squadre/index.html">Squadre</a><span aria-hidden="true">·</span><span>{{ p.league_name }}</span></p>
+<h1>{{ p.name }}{% if p.league_name %} <span class="tag">{{ p.league_name }}</span>{% endif %}</h1>
+<p class="small mut" style="margin-top:-6px">
+  {%- if p.standing %}{{ p.standing.rank }}ª posizione · {{ p.standing.points|it_plural('punto','punti') }} in {{ p.standing.played|it_plural('gara') }} ({{ p.standing.ppg|dec }} a gara) · {% endif -%}
+  {%- if p.projection %}proiezione di fine stagione: {{ p.projection.pos_mean|dec(1) }}º posto in media, {{ p.projection.exp_points|dec(1) }} punti attesi · {% endif -%}
+  scheda costruita dai dati raccolti, aggiornata a ogni run del sito.
+</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>Prossima partita</h2>
+    {% if p.next %}
+      {% set n = p.next %}
+      <p style="margin:0 0 2px;font-size:17px">
+        {% if n.link %}<a href="{{ root }}partite/{{ n.match_id }}.html">{{ n.home_name }} – {{ n.away_name }}</a>{% else %}{{ n.home_name }} – {{ n.away_name }}{% endif %}
+      </p>
+      <p class="small mut" style="margin:0">{{ n.when }} (ora italiana) · {{ 'in casa' if n.is_home else 'in trasferta' }}</p>
+      {% if n.prediction %}
+      {% set b = (n.prediction.p_home, n.prediction.p_draw, n.prediction.p_away)|pct3 %}
+      {% set fav_i = b.index(b|max) %}
+      <div class="bar" role="img" aria-label="Probabilità: 1 {{ b[0] }}%, pareggio {{ b[1] }}%, 2 {{ b[2] }}%" style="margin-top:10px">
+        <span class="h" style="width:{{ b[0] }}%"></span><span class="d" style="width:{{ b[1] }}%"></span><span class="a" style="width:{{ b[2] }}%"></span>
+      </div>
+      <div class="prob-labels"><span{% if fav_i==0 %} class="is-fav"{% endif %}>1 {{ b[0] }}%</span><span{% if fav_i==1 %} class="is-fav"{% endif %}>X {{ b[1] }}%</span><span{% if fav_i==2 %} class="is-fav"{% endif %}>2 {{ b[2] }}%</span></div>
+      <p class="small mut" style="margin:8px 0 0">{% if n.prediction.lambda_home is not none %}Gol attesi {{ n.prediction.lambda_home|dec }} + {{ n.prediction.lambda_away|dec }} ({{ n.prediction.lambda_home|dec_sum(n.prediction.lambda_away) }} totali){% endif %}{% if n.prediction.over25 is not none %} · Over 2,5 <b>{{ (n.prediction.over25 * 100)|round|int }}%</b>{% endif %}{% if not n.link %} · la scheda completa arriva nella finestra dei 7 giorni{% endif %}</p>
+      {% else %}
+      <p class="small mut" style="margin:8px 0 0">Previsione non ancora pubblicata per questa gara: compare nella scheda partita quando il modello la calcola.</p>
+      {% endif %}
+    {% else %}
+      <p class="mut">Nessun impegno di campionato in programma nel calendario raccolto.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h2>Ultime gare</h2>
+    {% if p.form %}
+    <p style="margin:0 0 6px">{{ form_pills({"form": p.form}, p.name) }}</p>
+    <div class="tablewrap"><table>
+      <tr><th scope="col">Data</th><th scope="col">Gara</th><th scope="col" class="r">Risultato</th><th scope="col" class="r">Esito</th></tr>
+      {% for m in p.recent %}
+      <tr>
+        <td class="mut small">{{ m.date_short }}</td>
+        <td class="small">{% if m.link %}<a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }} – {{ m.away_name }}</a>{% else %}{{ m.home_name }} – {{ m.away_name }}{% endif %}</td>
+        <td class="r"><b>{{ m.home_goals }}–{{ m.away_goals }}</b></td>
+        <td class="r"><span class="pill {{ m.res }}" title="{{ m.home_name }} {{ m.home_goals }}–{{ m.away_goals }} {{ m.away_name }} — esito {{ p.name }}">{{ m.res }}</span></td>
+      </tr>
+      {% endfor %}
+    </table></div>
+    <p class="small mut" style="margin:8px 0 0">Le ultime {{ p.recent|length }} gare finite. V = vittoria, N = pareggio, P = sconfitta, sempre dal punto di vista di {{ p.name }}.</p>
+    {% else %}
+    <p class="mut">Nessuna gara conclusa in archivio: la forma compare dalla prima partita giocata.</p>
+    {% endif %}
+  </div>
+</div>
+
+{% if p.standing %}
+<div class="card">
+  <h2>Classifica e rendimento per sede</h2>
+  <p class="small mut" style="margin:0 0 8px">Classifica FotMob di oggi: {{ p.standing.wins }}V {{ p.standing.draws }}N {{ p.standing.losses }}P,
+    {{ p.standing.goals_for }} gol fatti e {{ p.standing.goals_against }} subiti, differenza reti {{ p.standing.goal_diff|dec(0, true) }}.
+    Il rendimento per sede conta le sole gare finite di questa stagione nel nostro archivio.</p>
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Sede</th><th scope="col" class="r">Gare</th><th scope="col" class="r">V</th><th scope="col" class="r">N</th><th scope="col" class="r">P</th><th scope="col" class="r">Punti</th><th scope="col" class="r">Pt/gara</th><th scope="col" class="r">Gol fatti</th><th scope="col" class="r">Gol subiti</th></tr>
+    {% for side, label in (('home', 'In casa'), ('away', 'In trasferta')) %}{% set s = p.splits[side] %}
+    <tr><td>{{ label }}</td><td class="r">{{ s.played }}</td><td class="r">{{ s.wins }}</td><td class="r">{{ s.draws }}</td><td class="r">{{ s.losses }}</td>
+      <td class="r"><b>{{ s.points }}</b></td><td class="r">{{ s.ppg|dec }}</td><td class="r">{{ s.goals_for }}</td><td class="r">{{ s.goals_against }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if p.projection %}
+  <p class="small" style="margin:10px 0 0"><b>Proiezione di stagione:</b> titolo {{ p.projection.p_title_pct }}%{% if p.projection.p_top_n_pct is not none and p.projection.top_n %} · {{ p.projection.top_n|ucl_label }} {{ p.projection.p_top_n_pct }}%{% endif %} · retrocessione {{ p.projection.p_rel_pct }}%
+    <span class="mut">(Monte Carlo su {{ p.projection.n_sims|it_num }} stagioni; le stesse cifre della pagina <a href="{{ root }}stagione.html">Proiezioni</a>)</span></p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if p.unavailable %}
+<div class="card">
+  <h2>Indisponibili <span class="tag">{{ p.unavailable|length }}</span></h2>
+  <p class="small mut" style="margin:0 0 8px">Dall'ultima distinta pubblicata dalla fonte per questa squadra. Tipo e rientro previsto sono quelli dichiarati; «non nota» = la fonte non lo indica. L'elenco cambia con la distinta della prossima gara.</p>
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Giocatore</th><th scope="col">Tipo</th><th scope="col">Rientro previsto</th></tr>
+    {% for u in p.unavailable %}
+    <tr><td>{{ u.name }}</td><td>{{ u.type }}</td><td class="mut">{{ u.ret or 'non noto' }}</td></tr>
+    {% endfor %}
+  </table></div>
+</div>
+{% endif %}
+
+{% if p.lineup %}
+<div class="card">
+  <h2>Formazione <span class="tag">{{ p.lineup.kind }}</span></h2>
+  <p class="small mut" style="margin:0 0 8px">{{ p.lineup.formation or 'modulo non pubblicato' }} · contro {{ p.lineup.opponent }} · {{ p.lineup.when }}.
+    La distinta «probabile» è quella della fonte a ridosso della gara; quella «ufficiale» arriva con le formazioni confermate.</p>
+  {% if p.lineup.starters %}
+  <div class="tablewrap"><table>
+    <tr><th scope="col" class="r">N°</th><th scope="col">Giocatore</th><th scope="col">Ruolo</th><th scope="col" class="r">Voto medio</th></tr>
+    {% for s in p.lineup.starters %}
+    <tr><td class="r mut">{{ s.num if s.num is not none else '—' }}</td>
+      <td>{% if s.id %}<a href="{{ root }}giocatori/{{ s.id }}.html">{{ s.name }}</a>{% else %}{{ s.name }}{% endif %}{% if s.captain %} <span class="pill v" title="capitano">C</span>{% endif %}</td>
+      <td class="mut small">{{ s.pos or 'n.d.' }}</td>
+      <td class="r">{% if s.rating_avg is not none %}{{ s.rating_avg|dec }}{% else %}—{% endif %}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% else %}
+  <p class="mut small">Formazione non ancora pubblicata dalla fonte per questo impegno.</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="card">
+  <h2>Rosa <span class="tag">{{ (p.squad.rows|length + p.squad.bench|length)|it_plural('giocatore','giocatori') }}</span></h2>
+  {% if p.squad.rows %}
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Giocatore</th><th scope="col">Ruolo</th><th scope="col" class="r">Età</th><th scope="col" class="r">Presenze</th><th scope="col" class="r">Minuti</th><th scope="col" class="r">Voto</th><th scope="col" class="r">Gol</th><th scope="col" class="r">xG</th><th scope="col" class="r">Assist</th><th scope="col" class="r">xA</th></tr>
+    {% for r in p.squad.rows %}
+    <tr><td><a href="{{ root }}giocatori/{{ r.id }}.html">{{ r.name }}</a></td><td class="mut small">{{ r.pos or 'n.d.' }}</td>
+      <td class="r mut">{{ r.age if r.age else '—' }}</td><td class="r">{{ r.matches }}</td><td class="r">{{ r.minutes|it_num }}</td>
+      <td class="r">{% if r.rating is not none %}{{ r.rating|dec }}{% else %}—{% endif %}</td>
+      <td class="r">{{ r.goals|int }}</td><td class="r">{{ r.xg|dec }}</td><td class="r">{{ r.assists|int }}</td><td class="r">{{ r.xa|dec }}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="small mut" style="margin:8px 0 0">Statistiche di stagione dalla fonte, ordinate per media voto (ponderata sui minuti). Percentili e radar di ruolo nella scheda di ogni giocatore.</p>
+  {% else %}
+  <p class="mut small">Nessun giocatore con minuti in questa stagione.</p>
+  {% endif %}
+  {% if p.squad.bench %}
+  <p class="small" style="margin:10px 0 0"><b>In rosa, ancora senza minuti ({{ p.squad.bench|length }}):</b>
+    {% for b in p.squad.bench %}<a href="{{ root }}giocatori/{{ b.id }}.html">{{ b.name }}</a>{% if b.unavail %} <span class="pill p" title="indisponibile">⚠</span>{% endif %}<span class="mut"> ({{ b.pos or 'n.d.' }}{% if b.age %} · {{ b.age }} anni{% endif %})</span>{{ ' · ' if not loop.last }}{% endfor %}</p>
+  {% endif %}
+</div>
+
+{% if p.market %}
+<div class="card">
+  <h2>Mercato</h2>
+  <p class="small mut" style="margin:0 0 8px">{{ p.market.n_in }} arrivi e {{ p.market.n_out }} partenze nell'archivio della fonte; qui gli ultimi movimenti per data. Gli importi sono quelli dichiarati, «importo non noto» quando la fonte non lo pubblica.</p>
+  <div class="grid">
+    {% for title, rows in (('Arrivi', p.market.arrivi), ('Partenze', p.market.partenze)) %}
+    <div>
+      <h3>{{ title }} <span class="tag">{{ rows|length }}</span></h3>
+      {% if rows %}
+      <div class="tablewrap"><table>
+        <tr><th scope="col">Giocatore</th><th scope="col">Da / a</th><th scope="col">Importo</th><th scope="col" class="r">Data</th></tr>
+        {% for m in rows %}
+        <tr><td>{{ m.name }}</td><td class="mut small">{{ m.counterpart or '—' }}</td><td class="small">{{ m.fee }}{% if m.type %} <span class="mut">({{ m.type }})</span>{% endif %}</td><td class="r mut small">{{ m.date or '—' }}</td></tr>
+        {% endfor %}
+      </table></div>
+      {% else %}<p class="mut small">Nessun movimento registrato in questa direzione.</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if p.news %}
+<div class="card">
+  <h2>Notizie</h2>
+  <ul class="news-list">
+    {% for n in p.news %}
+    <li>{% if n.kind_label %}<span class="news-kind small">{{ n.kind_label }}</span> {% endif %}<a href="{{ n.url }}" rel="noopener noreferrer nofollow">{{ n.title }}</a>
+      <br><span class="small mut"><time datetime="{{ n.published_at.isoformat() }}">{{ n.date }}</time> · {{ n.source or 'fonte non indicata' }}</span>
+      {% if n.why %}<br><span class="small"><b>Collegamento ai dati:</b> {{ n.why }}</span>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  <p class="small mut" style="margin:8px 0 0">{% if p.news_fallback %}Rassegna più larga del bollettino: le ultime voci italiane raccolte che parlano della squadra, con gli stessi filtri di base della scheda partita (lingua verificata sul titolo, categoria, valore, soggetto, dedup). La data accanto al titolo dice quanto è recente: non tutte le squadre hanno stampa italiana fresca ogni settimana.{% else %}Titoli in italiano scelti con gli stessi filtri del bollettino stampa delle schede partita (lingua, categoria, soggetto, dedup), con testata, data e link alla fonte. Qui l'ancora è «adesso», non il fischio di una gara: la notizia è della squadra, non dell'incontro.{% endif %} Non è una verifica giornalistica. Settore giovanile e formazioni femminili restano fuori; infortuni, squalifiche e mercato hanno le loro card più in alto.</p>
+</div>
+{% else %}
+<div class="card">
+  <h2>Notizie</h2>
+  <p class="small mut" style="margin:0">Nessuna voce italiana raccolta che parli della prima squadra con i criteri dichiarati. Non è la prova che non ci siano notizie: è la copertura delle fonti che abbiamo, e non abbassiamo la soglia per riempire la pagina.</p>
+</div>
+{% endif %}
+
+{% if p.upcoming|length > 1 %}
+<div class="card">
+  <h2>Prossime partite</h2>
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Data</th><th scope="col">Gara</th><th scope="col" class="r">1X2</th><th scope="col" class="r">Gol attesi</th><th scope="col" class="r">Over 2,5</th></tr>
+    {% for m in p.upcoming %}
+    <tr><td class="small mut">{{ m.date_short }}</td>
+      <td>{% if m.link %}<a href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }} – {{ m.away_name }}</a>{% else %}{{ m.home_name }} – {{ m.away_name }}{% endif %}
+        <span class="small mut">· {{ 'casa' if m.is_home else 'trasferta' }}</span></td>
+      {% if m.prediction %}{% set b = (m.prediction.p_home, m.prediction.p_draw, m.prediction.p_away)|pct3 %}
+      <td class="r">{{ b[0] }} / {{ b[1] }} / {{ b[2] }}</td>
+      <td class="r">{% if m.prediction.lambda_home is not none %}{{ m.prediction.lambda_home|dec_sum(m.prediction.lambda_away) }}{% else %}—{% endif %}</td>
+      <td class="r">{% if m.prediction.over25 is not none %}{{ (m.prediction.over25 * 100)|round|int }}%{% else %}—{% endif %}</td>
+      {% else %}<td class="r mut">—</td><td class="r mut">—</td><td class="r mut">—</td>{% endif %}
+    </tr>
+    {% endfor %}
+  </table></div>
+  <p class="small mut" style="margin:8px 0 0">Calendario di campionato; la scheda completa si apre nella finestra dei 7 giorni. Coppe e altri impegni restano nel calendario generale della pagina <a href="{{ root }}prossime.html">Prossime</a>.</p>
+</div>
+{% endif %}
+
+{% if p.history %}
+<div class="card">
+  <h2>Stagioni precedenti</h2>
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Stagione</th><th scope="col" class="r">Gare</th><th scope="col" class="r">V–N–P</th><th scope="col" class="r">Punti</th><th scope="col" class="r">Gol</th><th scope="col" class="r">Posizione</th></tr>
+    {% for h in p.history %}
+    <tr><td>{{ h.season }}{% if h.in_corso %} <span class="tag">in corso</span>{% endif %}</td><td class="r">{{ h.played }}</td>
+      <td class="r">{{ h.wins }}–{{ h.draws }}–{{ h.losses }}</td><td class="r"><b>{{ h.points }}</b></td><td class="r">{{ h.goals_for }}–{{ h.goals_against }}</td>
+      <td class="r">{{ h.rank }}ª</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="small mut" style="margin:8px 0 0">Calcolate dall'archivio storico del progetto (stesso metodo di punti e posizione della classifica): la stagione in corso è parziale e cresce a ogni giornata.</p>
+</div>
+{% endif %}
+
+<p class="small mut" style="margin-top:18px">Dati: FotMob, Understat, ESPN come riserva, Google News e stampa italiana, Open-Meteo, football-data.co.uk per lo storico.
+  Nomi e marchi appartengono ai rispettivi proprietari. Le probabilità sono stime di un modello matematico, non consigli.</p>
+{% endblock %}
