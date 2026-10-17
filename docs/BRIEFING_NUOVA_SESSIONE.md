@@ -2,13 +2,13 @@
 
 > ⚠️ **Policy merge (decisione utente, 2026-09-08):** il merge delle PR lo esegue **SEMPRE l'utente, MAI l'agente**. L'agente apre la PR quando serve (sezione D di `00_regole_di_lavoro.md`), monitora i check e avvisa con la frase fissa **"👉 Tutto verde: è il momento di fare Merge (PR #N)."** — poi aspetta l'utente, senza eseguire il merge.
 
-> **Ultimo aggiornamento:** 2026-10-16, 23:59 UTC — audit [`docs/112`](112_revisione_totale_2026-10-16.md) + correzione di stato sul branch Arena. PR #128 è stata fusa alle 23:08 UTC; il daily/deploy #38983052624 è poi riuscito alle 23:58 UTC. Homepage live ora indica sabato 17/10, 24 partite/6 campionati/24 su 24 modellate, nessuna live, 24 in programma. La pagina Risultati non include ancora i cinque match del 16/10 (lista pubblica ferma visibilmente al 10–12/10), quindi il caso di stato/result stale resta concreto. Il branch Arena contiene correzione prudenziale `unverified`, allerta e gate [51] card↔scheda: 1.052 test, build 532/2.364/7.602, verify_site 264.436/0, parità 92, resa 375 px 29.965/0; da aprire in PR e attendere CI `test/site/browser`. Diritti/permessi delle fonti ancora da decidere; nessun nuovo fetch o fonte aggiunta. Nessun merge autonomo.
+> **Ultimo aggiornamento:** 2026-10-17, 00:50 UTC — audit [`docs/112`](112_revisione_totale_2026-10-16.md) + correzione di stato sul branch Arena. PR #128 è stata fusa alle 23:08 UTC; il daily/deploy #38983052624 è poi riuscito alle 23:58 UTC. Homepage live ora indica sabato 17/10, 24 partite/6 campionati/24 su 24 modellate, nessuna live, 24 in programma. La pagina Risultati non include ancora i cinque match del 16/10 (lista pubblica ferma visibilmente al 10–12/10), quindi il caso di stato/result stale resta concreto. Il branch Arena contiene correzione prudenziale `unverified`, allerta e gate [51] card↔scheda: 1.052 test, build 532/2.364/7.602, verify_site 264.436/0, parità 92, resa 375 px 29.965/0; PR [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129) OPEN/MERGEABLE; CI `test/site/browser` verde su head `2f10d42`. Merge riservato al committente. Diritti/permessi delle fonti ancora da decidere; nessun nuovo fetch o fonte aggiunta. Nessun merge autonomo.
 
 ---
 
-## Stato operativo corrente — 16/10/2026, aggiornato alle 23:59 UTC
+## Stato operativo corrente — 17/10/2026, aggiornato alle 00:50 UTC
 
-**Report di riferimento:** [`docs/112`](112_revisione_totale_2026-10-16.md). Regole e checkpoint: [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md), cima di [`docs/STATO.md`](STATO.md).
+**Report di riferimento:** [`docs/112`](112_revisione_totale_2026-10-16.md). PR tecnica [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129) è OPEN/MERGEABLE; run #38987085075 ha `test`/`site`/`browser` tutti SUCCESS sull’head `2f10d42`. Nessun merge eseguito. Regole e checkpoint: [`docs/00_regole_di_lavoro.md`](00_regole_di_lavoro.md), cima di [`docs/STATO.md`](STATO.md).
 
 **GitHub dal vivo:** PR #128 fusa alle 23:08 UTC. Daily [#38983052624](https://github.com/uamisjd/football-deep-analyzer/actions/runs/38983052624) verde (run/deploy/notify), deploy Pages 23:58 UTC. Nessuna PR o issue aperta. Main ha ricevuto poi il normale commit dati `a2a5d36` (solo registro prospettico). Non modificare altri rami; la correzione di questo turno va sul branch Arena fissato.
 
@@ -20,7 +20,7 @@
 
 **Fonti e modello:** diritti/permessi di FotMob, Understat, ESPN e Football-Data.co.uk/mirror ancora da decidere; niente espansione della raccolta. Accuratezza pubblicata: 218 gare valutate, 137 ricetta corrente, RPS 0,1990 vs naive 0,2267; backtest walk-forward 5.960, 0,1987 vs 0,2313. Monitorare Over 2,5, Over 3,5 e BTTS fuori intervallo, nessun tuning senza protocollo.
 
-**Prossimo:** rifare ruff/test/gate dopo l’aggiornamento documentale, commit e push sul solo `arena/f7263728-football-deep-analyzer`, poi aprire PR tecnica e attendere `test/site/browser`. Nessun merge autonomo. Resta da chiedere al committente la scelta su autorizzazioni fonti/requisito live; verificare branch protection/code scanning in UI GitHub, perché l’API risponde 403.
+**Prossimo:** 👉 Tutto verde: è il momento di fare Merge (PR #129). Il merge resta al committente. Separatamente, chiedere la scelta sulle autorizzazioni delle fonti e il requisito live; non ampliare fetch finché è aperta. Branch protection/code scanning non verificabili via API (403), da controllare nella UI GitHub.
 
 ## Cronologia — 14/10 sera, sessione `262421ee` (checkpoint precedente)
 

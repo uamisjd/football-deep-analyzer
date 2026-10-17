@@ -118,4 +118,4 @@ La ricerca è stata usata per trovare il perimetro operativo, non per esprimere 
 
 ## Prossimo passo
 
-Aspettare gli esiti della suite/build/gate completi sul branch, aggiornare `docs/STATO.md` e il briefing, poi aprire una PR tecnica con il fix di stato e il gate [51]. Non fare merge automaticamente. In parallelo chiedere al committente una decisione sulle autorizzazioni delle fonti e sul significato desiderato di «live» entro il vincolo di costo zero.
+La PR tecnica [#129](https://github.com/uamisjd/football-deep-analyzer/pull/129) è stata aperta sul branch Arena; il head `2f10d42` ha superato `test`, `site` e `browser` (run #38987085075). La decisione di merge resta al committente. In parallelo serve una scelta sulle autorizzazioni delle fonti e sul significato di «live» entro il vincolo di costo zero.
