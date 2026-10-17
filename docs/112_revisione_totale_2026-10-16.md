@@ -1,6 +1,6 @@
 # Revisione totale del progetto e del sito — 16 ottobre 2026
 
-**Richiesta:** controllare il progetto «vita, morte e miracoli», verificare dove siamo, cercare le criticità e migliorare l’efficacia del portale.  
+**Richiesta:** controllare il progetto «vita, morte e miracoli», verificare dove siamo, cercare le criticità e migliorare l’efficacia del portale.
 **Perimetro di questa revisione:** repository e test, build statica, sito pubblicato, workflow GitHub, modelli/dati committati e condizioni pubbliche delle fonti. I risultati sono distinti fra verifica dal vivo, verifica locale e valutazione/rischio; non è una consulenza legale.
 
 ## Verdetto in breve
