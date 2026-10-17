@@ -25,15 +25,16 @@
 build **532 partite / 2.364 fixture / 3.801 schede giocatore / 132 squadre** in 8m16 ·
 **4.483 HTML / 167 MB** · `verify_site` **269.056 controlli · 0 problemi** (59 oracoli, 36
 indipendenti) · `parita_schede` nessuna differenza · `resa_375` **31.288 misure · 0 problemi**.
-Il gate browser non è eseguibile in questa sandbox (nessun Chromium scaricabile): la nuova
-pagina indice e una scheda per lega sono state aggiunte a `scripts/browser_smoke.mjs` e
-saranno verificate dalla CI della PR.
+Il gate browser non è eseguibile in questa sandbox (nessun Chromium scaricabile): le nuove
+pagine sono state aggiunte a `scripts/browser_smoke.mjs` e la CI della PR le ha verificate
+(`test`/`site`/`browser` verdi su head `051c370`, PR
+[#130](https://github.com/uamisjd/football-deep-analyzer/pull/130), MERGEABLE/CLEAN).
 
 **Limiti dichiarati.** Le notizie italiane della prima squadra coprono 63 squadre su 132: 42
 hanno il bollettino con i criteri della scheda gara, 21 la rassegna più larga (dichiarata in
 pagina), 69 nessuna voce — è copertura delle fonti, non una quiete dimostrata. Nessun fetch
-nuovo, diritti delle fonti invariati. 👉 Il lavoro è pronto per la PR unica di sessione; il
-merge resta esclusivamente al committente.
+nuovo, diritti delle fonti invariati. 👉 La PR unica di sessione è [#130](https://github.com/uamisjd/football-deep-analyzer/pull/130),
+con tutti i check verdi; il merge resta esclusivamente al committente.
 
 ## 2026-10-17 — PR #129 completa, audit docs/112 e correzione prudenziale dello stato gara (00:50 UTC)
 

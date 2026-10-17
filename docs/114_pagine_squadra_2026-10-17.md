@@ -204,7 +204,15 @@ del workflow.
 
 ---
 
-## 6. File toccati
+## 6. Commit della PR #130
+
+1. `acadc2a` — contatore dei giocatori;
+2. `d5cbf70` — Accuratezza a linguette e card del monitor;
+3. `0cf1c7c` — pagine squadra, indice, collegamenti, gate;
+4. `e2cc297` — i guasti del gate browser diventano annotazioni leggibili via API;
+5. `051c370` — il gate browser usa `.first()` per il link al Laboratorio.
+
+## 7. File toccati
 
 - `src/fda/site/team_pages.py` (nuovo): `TeamCatalog`, `league_blocks`, `page`;
 - `src/fda/site/templates/squadra.html`, `squadre.html` (nuovi);
