@@ -113,4 +113,14 @@ try {
 }
 await writeFile(join(output,'report.json'),JSON.stringify({pages,checks,failures},null,2));
 console.log(`${checks.length} visite (${pages.length} pagine × 2 viewport × 2 temi), ${failures.length} problemi`);
-if (failures.length) { console.log(JSON.stringify(failures.slice(0,6),null,2)); process.exitCode=1; }
+if (failures.length) {
+  console.log(JSON.stringify(failures.slice(0,6),null,2));
+  // Annotazioni GitHub Actions: quando i log non sono scaricabili (EOF dal blob store,
+  // vedi docs/112) restano leggibili via API `check-runs/<id>/annotations`. Il messaggio
+  // è il JSON del guasto, troncato al limite dell'annotazione.
+  for (const f of failures.slice(0,20)) {
+    const msg = JSON.stringify(f).replaceAll('%','%25').replaceAll('\r','').replaceAll('\n',' ').slice(0,900);
+    console.log(`::error title=browser smoke::${msg}`);
+  }
+  process.exitCode=1;
+}
