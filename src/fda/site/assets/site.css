@@ -242,7 +242,8 @@ td.best{font-weight:800;color:var(--accent)}td.best::after{content:" ▲";font-s
 .match-card-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:12px}
 .match-meta{display:flex;align-items:center;gap:9px;flex-wrap:wrap;color:var(--mut);font-size:12px}
 .status{display:inline-flex;align-items:center;gap:6px;font-weight:700;color:var(--txt2)}
-.status-live{color:var(--lose)}.status-paused{color:var(--amber)}.status-finished{color:var(--mut)}.status-scheduled{color:var(--accent)}.status-postponed{color:var(--amber)}.status-suspended{color:var(--amber)}
+.status-live{color:var(--lose)}.status-paused{color:var(--amber)}.status-finished{color:var(--mut)}.status-scheduled{color:var(--accent)}.status-postponed{color:var(--amber)}.status-suspended{color:var(--amber)}.status-unverified{color:var(--amber)}
+.status-dot-unverified{background:var(--amber);box-shadow:0 0 0 3px rgba(230,179,74,.15)}
 .kickoff{font:700 14px var(--font-head);font-variant-numeric:tabular-nums;color:var(--txt)}
 .match-open{font-size:12px;font-weight:700;white-space:nowrap}
 .match-teams{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:15px;align-items:center;padding:2px 4px 14px}
