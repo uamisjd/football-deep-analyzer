@@ -19,12 +19,12 @@
 <div class="match-hero" id="sintesi">
   <h1 class="sr-only">{{ c.home_name }} - {{ c.away_name }}{% if mostra_punteggio %}, {{ c.home_goals }} - {{ c.away_goals }}{% endif %}</h1>
   <div class="match-hero-meta">
-    <span class="hero-status"><span class="status-dot status-dot-{{ 'finished' if c.status == 'finished' else 'scheduled' }}" aria-hidden="true"></span>{% if c.status == 'finished' %}Finale{% else %}Analisi pre-partita{% endif %}</span>
+    <span class="hero-status"><span class="status-dot status-dot-{{ 'finished' if c.status == 'finished' else 'unverified' if c.status == 'unverified' else 'scheduled' }}" aria-hidden="true"></span>{% if c.status == 'finished' %}Finale{% elif c.status == 'unverified' %}Stato non verificato{% else %}Analisi pre-partita{% endif %}</span>
     <span>{{ c.utc_kickoff|it_dt }} (ora italiana){% if c.stadium.name %} · {{ c.stadium.name }}{% if c.stadium.city %}, {{ c.stadium.city }}{% endif %}{% endif %}</span>
   </div>
   <div class="match-scoreline">
     <div class="match-hero-team home">{{ c.home_name }}{% if c.status != 'finished' %}{{ hero_form(c.home_form_badge, c.home_name) }}{% endif %}</div>
-    <div class="match-hero-center"><span class="result">{% if mostra_punteggio %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
+    <div class="match-hero-center"><span class="result">{% if mostra_punteggio %}{{ c.home_goals }}–{{ c.away_goals }}{% else %}vs{% endif %}</span><span class="date">{% if c.status == 'finished' %}risultato finale{% elif c.status == 'unverified' %}stato non verificato · calcio d'inizio previsto {{ c.utc_kickoff.strftime('%H:%M') }}{% elif c.status|didascalia_punteggio == 'calcio d\'inizio' %}calcio d'inizio · {{ c.utc_kickoff.strftime('%H:%M') }}{% else %}{{ c.status|didascalia_punteggio }} · calcio d'inizio {{ c.utc_kickoff.strftime('%H:%M') }}{% endif %}</span></div>
     <div class="match-hero-team away">{{ c.away_name }}{% if c.status != 'finished' %}{{ hero_form(c.away_form_badge, c.away_name) }}{% endif %}</div>
   </div>
   {% if c.status in ('postponed','suspended','cancelled','abandoned') %}<div style="margin-top:12px;padding:10px 14px;background:rgba(230,179,74,.12);border:1px solid rgba(230,179,74,.35);border-radius:10px;color:var(--amber);font-weight:700;font-size:13px">⚠ Partita {{ 'rinviata' if c.status == 'postponed' else 'sospesa' if c.status in ('suspended','abandoned') else 'annullata' }} — orario da confermare. La previsione resta quella dell'ultimo calcolo prima del rinvio.</div>{% endif %}
@@ -41,6 +41,7 @@
   </div>
   {% elif p %}<p class="small mut" style="margin:0">Probabilità del modello disponibili nella scheda qui sotto.</p>{% endif %}
 </div>
+{% if c.status == 'unverified' %}<div class="card" role="status" style="margin:12px 0;border-color:rgba(230,179,74,.45);background:rgba(230,179,74,.08)"><b style="color:var(--amber)">Stato non verificato</b><p class="small mut" style="margin:6px 0 0">L’orario previsto è passato, ma i dati raccolti non confermano se la partita sia iniziata o terminata. Nessun punteggio live viene mostrato. La previsione qui sotto è una stima pre-partita salvata, non un aggiornamento in tempo reale.</p></div>{% endif %}
 {% if c.status == 'finished' and c.home_xg_match is not none %}<p class="mut small match-result-note">xG {{ c.home_xg_match|dec }} - {{ c.away_xg_match|dec }}{% if c.home_xgot_match is not none %} · xGOT {{ c.home_xgot_match|dec }} - {{ c.away_xgot_match|dec }}{% endif %}{% if c.stadium.attendance %} · spettatori {{ c.stadium.attendance|it_num }}{% endif %}</p>{% endif %}
 {#- P1.3 (`docs/28` §2): l'indice dice i titoli veri delle sezioni che questa pagina ha davvero,
     con le stesse guardie con cui le sezioni si stampano. Prima prometteva quattro voci: «Dati e

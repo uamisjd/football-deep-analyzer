@@ -859,6 +859,7 @@ ORACOLI: dict[str, tuple[str, str]] = {
                  "per quella squadra **e in quella lingua**, l'etichetta italiana appartiene al "
                  "vocabolario chiuso, la prova citata è dentro il titolo originale e i conteggi "
                  "dell'intestazione sono quelli della lista")),
+    "51": ("I", "stato e punteggio della card coincidono con la scheda partita collegata"),
 }
 
 
@@ -4701,6 +4702,7 @@ def check_tavole(site: Path) -> tuple[list[str], int]:
 DIDASCALIA_ATTESA = {
     "finished": "finale",
     "live": "in corso",
+    "unverified": "stato da verificare",
     "paused": "intervallo",
     "postponed": "rinviata",
     "suspended": "sospesa",
@@ -4745,6 +4747,82 @@ def check_didascalie_punteggio(site: Path) -> tuple[list[str], int]:
                 elif punteggio.endswith("–") or punteggio.startswith("–"):
                     fails.append(f"{rel}: hero con punteggio incompleto «{punteggio}»")
     print(f"[37] didascalie del punteggio verificate: {checks}")
+    return fails, checks
+
+
+def check_match_state_parity(site: Path) -> tuple[list[str], int]:
+    """[51] stato e risultato coincidono fra card delle liste e scheda partita collegata."""
+    from bs4 import BeautifulSoup
+
+    fails: list[str] = []
+    checks = 0
+    caption_bucket = {
+        "risultato finale": "finished",
+        "in corso": "live",
+        "stato da verificare": "unverified",
+        "stato non verificato": "unverified",
+        "intervallo": "paused",
+        "calcio d'inizio": "scheduled",
+        "rinviata": "postponed",
+        "sospesa": "suspended",
+        "annullata": "cancelled",
+    }
+    aliases = {
+        "ft": "finished", "full_time": "finished",
+        "in_progress": "live", "started": "live", "started_live": "live",
+        "half_time": "paused", "halftime": "paused", "break": "paused",
+        "canceled": "cancelled", "abandoned": "suspended",
+    }
+
+    def normalize_bucket(value: str) -> str:
+        value = value.strip().lower()
+        return aliases.get(value, value)
+
+    def hero_bucket(value: str) -> str | None:
+        value = re.sub(r"\s+", " ", value).strip().lower()
+        for label, bucket in caption_bucket.items():
+            if value.startswith(label):
+                return bucket
+        return None
+
+    for name in ("index.html", "prossime.html", "risultati.html"):
+        page = site / name
+        if not page.exists():
+            continue
+        soup = BeautifulSoup(page.read_text(encoding="utf-8"), "html.parser")
+        for card in soup.select("article.match-card[data-status]"):
+            checks += 1
+            link = card.select_one('a[href*="partite/"]')
+            href = str(link.get("href", "")) if link else ""
+            match = re.search(r"(?:^|/)partite/(\d+)\.html(?:[?#].*)?$", href)
+            if not match:
+                fails.append(f"{name}: card senza link a una scheda partita valida ({href!r})")
+                continue
+            match_id = match.group(1)
+            detail = site / "partite" / f"{match_id}.html"
+            if not detail.exists():
+                fails.append(f"{name}: la card {match_id} punta a una scheda inesistente")
+                continue
+            status = normalize_bucket(str(card.get("data-status", "")))
+            score_node = card.select_one(".match-score strong")
+            card_score = score_node.get_text(strip=True) if score_node else ""
+            detail_soup = BeautifulSoup(detail.read_text(encoding="utf-8"), "html.parser")
+            hero_score_node = detail_soup.select_one(".match-hero .result")
+            hero_date_node = detail_soup.select_one(".match-hero .date")
+            if not score_node or not hero_score_node or not hero_date_node:
+                fails.append(f"{name}: card/scheda {match_id} senza stato o punteggio leggibile")
+                continue
+            hero_score = hero_score_node.get_text(strip=True)
+            detail_status = hero_bucket(hero_date_node.get_text(" ", strip=True))
+            if detail_status is None:
+                fails.append(f"partite/{match_id}.html: stato hero non riconosciuto")
+            elif status != detail_status:
+                fails.append(f"partite/{match_id}.html: card «{status}» ma scheda «{detail_status}»")
+            if card_score != hero_score:
+                fails.append(f"partite/{match_id}.html: card «{card_score}» ma hero «{hero_score}»")
+            if status == "scheduled" and card_score != "vs":
+                fails.append(f"{name}: card {match_id} programmata con punteggio «{card_score}»")
+    print(f"[51] stato e punteggio coerenti fra liste e schede: {checks}")
     return fails, checks
 
 
@@ -6144,6 +6222,9 @@ def main() -> int:
     didascalie, didascalie_checks = check_didascalie_punteggio(site)
     fails += didascalie
     checks += didascalie_checks
+    parita_stati, parita_stati_checks = check_match_state_parity(site)
+    fails += parita_stati
+    checks += parita_stati_checks
     importi, importi_checks = check_importi_mercato(site)
     fails += importi
     checks += importi_checks

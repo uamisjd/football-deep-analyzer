@@ -20,6 +20,9 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from bs4 import BeautifulSoup
+
+from fda.site.analysis import effective_match_state
 from fda.site.build import SiteBuilder
 from tests.test_site import _seed
 
@@ -37,6 +40,7 @@ def test_ogni_stato_ha_la_sua_didascalia():
     casi = {
         "finished": "finale", "full_time": "finale", "ft": "finale",
         "live": "in corso", "in_progress": "in corso", "started": "in corso",
+        "unverified": "stato da verificare",
         "halftime": "intervallo", "half_time": "intervallo", "paused": "intervallo",
         "postponed": "rinviata", "suspended": "sospesa", "abandoned": "sospesa",
         "cancelled": "annullata", "canceled": "annullata",
@@ -44,6 +48,114 @@ def test_ogni_stato_ha_la_sua_didascalia():
     }
     for stato, attesa in casi.items():
         assert SiteBuilder.score_caption(stato) == attesa, stato
+
+
+def test_stato_e_punteggio_finale_prevalgono_sulla_fotografia_non_finale():
+    """Un finale in una delle due tabelle non regredisce a live/scheduled nell'altra."""
+    da_dettagli = effective_match_state(
+        {"status": "scheduled", "home_goals": None, "away_goals": None},
+        {"status": "FT", "home_goals": 4, "away_goals": 0},
+    )
+    assert da_dettagli == {"status": "finished", "home_goals": 4, "away_goals": 0}
+
+    da_fixture = effective_match_state(
+        {"status": "finished", "home_goals": 2, "away_goals": 1},
+        {"status": "live", "home_goals": 0, "away_goals": 0},
+    )
+    assert da_fixture == {"status": "finished", "home_goals": 2, "away_goals": 1}
+
+
+def test_stato_in_cache_dopo_calcio_d_inizio_diventa_non_verificato():
+    """Una pagina statica non deve spacciare stato programmato/live vecchio per dato attuale."""
+    now = datetime(2026, 10, 16, 20, 0, tzinfo=UTC)
+    def fixture(status: str, elapsed_minutes: int, goals=(0, 0)):
+        kickoff = now - timedelta(minutes=elapsed_minutes)
+        return {"status": status, "utc_kickoff": kickoff,
+                "home_goals": goals[0], "away_goals": goals[1]}
+
+    assert effective_match_state(fixture("scheduled", 29), now=now)["status"] == "scheduled"
+    stale = effective_match_state(fixture("scheduled", 31), now=now)
+    assert stale == {"status": "unverified", "home_goals": None, "away_goals": None}
+    assert effective_match_state(fixture("live", 104), now=now)["status"] == "live"
+    stale_live = effective_match_state(fixture("live", 106), now=now)
+    assert stale_live == {"status": "unverified", "home_goals": None, "away_goals": None}
+
+
+def test_build_marca_in_verifica_i_dati_partita_scaduti(tmp_path):
+    """Punteggi e stati non aggiornati dopo il kickoff non appaiono come live o in programma."""
+    st = _seed(tmp_path)
+    match_id = 5749669
+    now = datetime(2026, 10, 16, 12, 0, tzinfo=UTC)
+    fx = st.read("fixtures")
+    mask = fx.match_id == match_id
+    fx.loc[mask, "utc_kickoff"] = now - timedelta(hours=2)
+    fx.loc[mask, "status"] = "scheduled"
+    fx.loc[mask, "home_goals"] = None
+    fx.loc[mask, "away_goals"] = None
+    st.write("fixtures", fx)
+    mi = st.read("match_info")
+    mi.loc[mi.match_id == match_id, "utc_kickoff"] = now - timedelta(hours=2)
+    mi.loc[mi.match_id == match_id, "status"] = "scheduled"
+    mi.loc[mi.match_id == match_id, "home_goals"] = 0
+    mi.loc[mi.match_id == match_id, "away_goals"] = 0
+    st.write("match_info", mi)
+
+    out = tmp_path / "sito"
+    builder = SiteBuilder(store=st, out_dir=out)
+    builder.now = now
+    ids = builder.build_indexes(st.read("fixtures"))
+    assert match_id in ids
+    today = BeautifulSoup((out / "index.html").read_text(encoding="utf-8"), "html.parser")
+    card = today.select_one(f'article.match-card[data-match-card] a[href="partite/{match_id}.html"]')
+    assert card is not None
+    article = card.find_parent("article")
+    assert article["data-status"] == "unverified"
+    assert article.select_one(".match-score strong").get_text(strip=True) == "vs"
+    assert article.select_one(".match-score span").get_text(strip=True) == "stato da verificare"
+    assert SiteBuilder._status_bucket("scheduled") == "scheduled"
+
+    builder.build_match_pages({match_id})
+    scheda = BeautifulSoup((out / "partite" / f"{match_id}.html").read_text(encoding="utf-8"), "html.parser")
+    assert scheda.select_one(".match-hero .result").get_text(strip=True) == "vs"
+    assert scheda.select_one(".match-hero .date").get_text(strip=True).startswith("stato non verificato")
+    avviso = scheda.select_one('[role="status"]')
+    assert avviso is not None and "Nessun punteggio live viene mostrato" in avviso.get_text(" ", strip=True)
+    st.close()
+
+
+def test_lista_risultati_e_scheda_usano_la_stessa_fotografia_finale(tmp_path):
+    """Regressione del disaccordo fixture/details: la lista non può contraddire la scheda."""
+    st = _seed(tmp_path)
+    match_id = 5749669
+    fx = st.read("fixtures")
+    mask = fx.match_id == match_id
+    fx.loc[mask, "utc_kickoff"] = datetime.now(UTC) - timedelta(days=1)
+    fx.loc[mask, "status"] = "scheduled"
+    fx.loc[mask, "home_goals"] = None
+    fx.loc[mask, "away_goals"] = None
+    st.write("fixtures", fx)
+    mi = st.read("match_info")
+    mi.loc[mi.match_id == match_id, "status"] = "finished"
+    mi.loc[mi.match_id == match_id, "home_goals"] = 4
+    mi.loc[mi.match_id == match_id, "away_goals"] = 0
+    st.write("match_info", mi)
+
+    out = tmp_path / "sito"
+    builder = SiteBuilder(store=st, out_dir=out)
+    ids = builder.build_indexes(st.read("fixtures"))
+    assert match_id in ids
+    builder.build_match_pages({match_id})
+
+    risultati = BeautifulSoup((out / "risultati.html").read_text(encoding="utf-8"), "html.parser")
+    card = risultati.find("a", href=f"partite/{match_id}.html").find_parent("article")
+    assert card["data-status"] == "finished"
+    assert card.select_one(".match-score strong").get_text(strip=True) == "4–0"
+    assert card.select_one(".match-score span").get_text(strip=True) == "finale"
+
+    scheda = BeautifulSoup((out / "partite" / f"{match_id}.html").read_text(encoding="utf-8"), "html.parser")
+    assert scheda.select_one(".match-hero .result").get_text(strip=True) == "4–0"
+    assert scheda.select_one(".match-hero .date").get_text(strip=True) == "risultato finale"
+    st.close()
 
 
 def test_gara_in_corso_non_dice_calcio_d_inizio(tmp_path):
@@ -149,6 +261,33 @@ def test_verify_site_ferma_la_didascalia_sbagliata(tmp_path):
         encoding="utf-8")
     fails, checks = vs.check_didascalie_punteggio(site)
     assert checks == 4 and fails == []
+
+
+def test_verify_site_ferma_la_discordanza_fra_card_e_scheda(tmp_path):
+    """Il nuovo gate [51] intercetta stati o punteggi diversi attraversando un link."""
+    vs = _site_module()
+    site = tmp_path / "site"
+    (site / "partite").mkdir(parents=True)
+    (site / "index.html").write_text(
+        '<article class="match-card" data-status="finished">'
+        '<a href="partite/1.html">Apri</a>'
+        '<div class="match-score"><strong>4–0</strong><span>finale</span></div></article>',
+        encoding="utf-8",
+    )
+    detail = site / "partite" / "1.html"
+    detail.write_text(
+        '<div class="match-hero"><span class="result">4–0</span>'
+        '<span class="date">risultato finale</span></div>', encoding="utf-8")
+    fails, checks = vs.check_match_state_parity(site)
+    assert checks == 1 and fails == []
+
+    detail.write_text(
+        '<div class="match-hero"><span class="result">0–0</span>'
+        '<span class="date">calcio d\'inizio · 15:00</span></div>', encoding="utf-8")
+    fails, checks = vs.check_match_state_parity(site)
+    assert checks == 1
+    assert any("card «finished» ma scheda «scheduled»" in f for f in fails), fails
+    assert any("card «4–0» ma hero «0–0»" in f for f in fails), fails
 
 
 def test_percentile_ids_ordine_dichiarato_su_ogni_hash_seed():

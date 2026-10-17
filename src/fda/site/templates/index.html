@@ -22,6 +22,7 @@
   <span><i class="status-dot status-dot-live" aria-hidden="true"></i><b>{{ summary.live }}</b> in corso</span>
   <span><i class="status-dot status-dot-scheduled" aria-hidden="true"></i><b>{{ summary.scheduled }}</b> in programma</span>
   <span><i class="status-dot status-dot-finished" aria-hidden="true"></i><b>{{ summary.finished }}</b> terminate</span>
+  {% if summary.unverified %}<span><i class="status-dot status-dot-unverified" aria-hidden="true"></i><b>{{ summary.unverified }}</b> da verificare</span>{% endif %}
   <span class="mut">Dati e probabilità sono quelli dell'ultimo aggiornamento indicato in alto.</span>
 </div>
 
@@ -38,6 +39,14 @@
     {% for slot in today_timeline %}<span class="small" style="background:var(--surface2);border:1px solid var(--line);border-radius:8px;padding:3px 8px">{{ slot.slot }} <b>{{ slot.count }}</b> {{ 'partita' if slot.count == 1 else 'partite' }}</span>{% endfor %}
   </div>
   {% endif %}
+</div>
+{% endif %}
+
+{% if today_unverified %}
+<div class="card" style="margin:0 0 12px;border-color:rgba(230,179,74,.45);background:rgba(230,179,74,.08)">
+  <h2 style="margin:0 0 8px;font-size:14px;color:var(--amber)">⚠ Stato non aggiornato — {{ today_unverified|length }} {{ 'partita' if today_unverified|length == 1 else 'partite' }}</h2>
+  <p class="small mut" style="margin:0 0 8px">È passato l’orario previsto ma il dato disponibile non conferma il risultato. Non è un punteggio live: verifica le schede o la fonte ufficiale.</p>
+  <div style="display:flex;flex-wrap:wrap;gap:8px">{% for m in today_unverified %}<a class="tag" style="background:var(--surface);border:1px solid var(--line);padding:5px 9px" href="{{ root }}partite/{{ m.match_id }}.html">{{ m.home_name }} – {{ m.away_name }} · {{ m.utc_kickoff.strftime('%H:%M') }} · da verificare</a>{% endfor %}</div>
 </div>
 {% endif %}
 
@@ -184,6 +193,7 @@
     <button type="button" class="filter-button" data-status-filter="paused" aria-pressed="false">Intervallo</button>
     <button type="button" class="filter-button" data-status-filter="scheduled" aria-pressed="false">In programma</button>
     <button type="button" class="filter-button" data-status-filter="finished" aria-pressed="false">Terminate</button>
+    <button type="button" class="filter-button" data-status-filter="unverified" aria-pressed="false">Da verificare</button>
   </div>
   <div class="filter-buttons" role="group" aria-label="Filtri rapidi" style="margin-left:8px">
     <button type="button" class="filter-button small" data-over-filter aria-pressed="false" title="Mostra solo partite con Over 2,5 >=60%">🔥 Over &gt;60%</button>

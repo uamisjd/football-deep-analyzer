@@ -20,7 +20,13 @@ from ..config import CALENDAR_DAYS, DETAIL_WINDOW_DAYS, REPO_ROOT, leagues, load
 from ..models.predict import MODEL_VERSION, latest_per_match, outcome_index, wilson_interval
 from ..models.season_sim import mc_percent, mc_percent_str, mc_se
 from ..store import Store
-from .analysis import MatchAnalysis, allineamento_fonti, insight_drop_stats, prediction_meta
+from .analysis import (
+    MatchAnalysis,
+    allineamento_fonti,
+    insight_drop_stats,
+    is_finished_status,
+    prediction_meta,
+)
 from .audit import audit_match
 from .fmt import (
     ITALIAN_DAYS,
@@ -343,6 +349,8 @@ class SiteBuilder:
     def _status_bucket(status: Any) -> str:
         """Stato stabile per i filtri client-side della lista."""
         value = str(status or "").lower().strip()
+        if value in {"unverified", "stale", "unknown"}:
+            return "unverified"
         if value in {"in_progress", "live", "started", "started_live"}:
             return "live"
         if value in {"halftime", "half_time", "paused", "break"}:
@@ -360,6 +368,7 @@ class SiteBuilder:
         bucket = SiteBuilder._status_bucket(status)
         return {
             "live": "In corso",
+            "unverified": "Stato da verificare",
             "paused": "Intervallo",
             "finished": "Terminata",
             "postponed": "Rinviata",
@@ -386,6 +395,7 @@ class SiteBuilder:
         return {
             "finished": "finale",
             "live": "in corso",
+            "unverified": "stato da verificare",
             "paused": "intervallo",
             "postponed": "rinviata",
             "suspended": "sospesa",
@@ -409,11 +419,14 @@ class SiteBuilder:
                 prediction["meta"] = prediction_meta(prediction, r.home_name, r.away_name)
             league_key = self.league_keys.get(int(r.league_id), str(r.league_id))
             bucket = self._status_bucket(r.status)
+            # Una fixture programmata non ha ancora un punteggio da mostrare, anche se una
+            # fotografia di dettagli contiene valori sentinella (per esempio 0–0).
+            mostra_gol = bucket != "scheduled"
             rows.append({
                 "match_id": int(r.match_id), "league_name": self.league_names.get(int(r.league_id), str(r.league_id)),
                 "league_key": league_key, "utc_kickoff": local, "home_name": r.home_name, "away_name": r.away_name,
-                "home_goals": None if pd.isna(r.home_goals) else int(r.home_goals),
-                "away_goals": None if pd.isna(r.away_goals) else int(r.away_goals),
+                "home_goals": (None if not mostra_gol or pd.isna(r.home_goals) else int(r.home_goals)),
+                "away_goals": (None if not mostra_gol or pd.isna(r.away_goals) else int(r.away_goals)),
                 "status": r.status, "status_bucket": bucket, "status_label": self._status_label(r.status),
                 "prediction": prediction, "context": context,
                 "abs_home": absent.get((int(r.match_id), home_id), 0),
@@ -431,6 +444,7 @@ class SiteBuilder:
         live = sum(row["status_bucket"] == "live" for row in rows)
         scheduled = sum(row["status_bucket"] == "scheduled" for row in rows)
         finished = sum(row["status_bucket"] == "finished" for row in rows)
+        unverified = sum(row["status_bucket"] == "unverified" for row in rows)
         predicted = sum(row["prediction"] is not None for row in rows)
         # prossimo calcio: ordinato per orario, solo scheduled
         sorted_sched = sorted([r for r in rows if r["status_bucket"] == "scheduled"], key=lambda item: item["utc_kickoff"])
@@ -438,6 +452,7 @@ class SiteBuilder:
         return {
             "matches": len(rows), "leagues": len({row["league_key"] for row in rows}),
             "live": live, "scheduled": scheduled, "finished": finished,
+            "unverified": unverified,
             "predicted": predicted, "prediction_total": len(rows),
             "next_time": next_match["utc_kickoff"].strftime("%H:%M") if next_match else None,
             "next_match": (f'{next_match["home_name"]} – {next_match["away_name"]}'
@@ -449,7 +464,8 @@ class SiteBuilder:
     @staticmethod
     def _sort_today_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Ordina Oggi: live prima, poi pausa, poi scheduled per orario, poi finite."""
-        order = {"live": 0, "paused": 1, "scheduled": 2, "postponed": 3, "suspended": 4, "finished": 5}
+        order = {"live": 0, "paused": 1, "unverified": 2, "scheduled": 3,
+                 "postponed": 4, "suspended": 5, "finished": 6}
         return sorted(rows, key=lambda r: (order.get(r.get("status_bucket"), 9), r.get("utc_kickoff")))
 
     def _calendar_rows(self, fx: pd.DataFrame, preds: pd.DataFrame,
@@ -540,7 +556,7 @@ class SiteBuilder:
         """
         from collections import Counter
         out: dict[str, Any] = {"summary": None, "highlights": [], "leagues": [], "calendar_picks": [],
-                               "live": [], "finished": [], "timeline": [], "finished_summary": None}
+                               "live": [], "unverified": [], "finished": [], "timeline": [], "finished_summary": None}
 
         # ---- riassunto 7gg ----
         if rows:
@@ -614,6 +630,10 @@ class SiteBuilder:
             try:
                 live = [r for r in rows if r.get("status_bucket") == "live"]
                 out["live"] = sorted(live, key=lambda x: x["utc_kickoff"])[:6]
+                out["unverified"] = sorted(
+                    (r for r in rows if r.get("status_bucket") == "unverified"),
+                    key=lambda x: x["utc_kickoff"],
+                )[:10]
             except Exception:
                 out["live"] = []
             try:
@@ -733,13 +753,14 @@ class SiteBuilder:
 
     def build_indexes(self, fx: pd.DataFrame) -> set[int]:
         today_local = self.now.astimezone(self.tz).date()
+        fx = self.analysis.effective_fixtures(fx, now=self.now)
         fx = fx[fx.status != "cancelled"].copy()
         fx["local_date"] = pd.to_datetime(fx.utc_kickoff).dt.tz_convert(self.tz).dt.date
         today = fx[fx.local_date == today_local]
         upcoming = fx[(fx.local_date > today_local)
                       & (fx.local_date <= today_local + timedelta(days=DETAIL_WINDOW_DAYS))]
         results = fx[(fx.local_date < today_local) & (fx.local_date >= today_local - timedelta(days=7))
-                     & (fx.status == "finished")]
+                     & (fx.status.isin(["finished", "unverified"]))]
         today_rows = self._match_rows(today)
         upcoming_rows = self._match_rows(upcoming)
         result_rows = self._match_rows(results)
@@ -798,6 +819,7 @@ class SiteBuilder:
                      today_highlights=today_extra.get("highlights"),
                      today_leagues=today_extra.get("leagues"),
                      today_live=today_extra.get("live"),
+                     today_unverified=today_extra.get("unverified"),
                      today_finished=today_extra.get("finished"),
                      today_timeline=today_extra.get("timeline"),
                      today_finished_summary=today_extra.get("finished_summary"))
@@ -820,7 +842,7 @@ class SiteBuilder:
                      upcoming_leagues=upcoming_extra.get("leagues"),
                      calendar_picks=upcoming_extra.get("calendar_picks"))
         self._render("index.html", "risultati.html", title="Risultati degli ultimi 7 giorni",
-                     subtitle="Con lettura post-partita: xG, occasioni, cronaca e cosa aveva detto il modello.",
+                     subtitle="Risultati conclusi e gare con stato da verificare; lettura post-partita solo dove il finale è confermato.",
                      page_title="Risultati recenti e analisi post-partita · CalcioMetro",
                      page_description="Risultati degli ultimi 7 giorni con lettura post-partita: xG, occasioni, cronaca e verifica delle previsioni.",
                      days=self._group_by_day(result_rows), view_kind="results", summary=None,
@@ -1348,7 +1370,7 @@ class SiteBuilder:
         (self.out / "robots.txt").write_text(
             "User-agent: *\nAllow: /\nSitemap: " + SITE_BASE_URL + "/sitemap.xml\n"
         )
-        fx = self.store.read("fixtures")
+        fx = self.analysis.effective_fixtures(self.store.read("fixtures"), now=self.now)
         if fx.empty:
             self._render("index.html", "index.html", title="Nessun dato",
                          subtitle="Esegui `fda collect` per popolare il database.", days=[],
@@ -1361,8 +1383,11 @@ class SiteBuilder:
         # tutte le partite finite con dati raccolti hanno la loro pagina (archivio:
         # backfill completo di stagione dal 2026-09-09), oltre alla finestra oggi/7 giorni
         mi = self.store.read("match_info")
-        if not mi.empty:
-            fin = set(mi.loc[mi["status"] == "finished", "match_id"].astype(int))
+        if not mi.empty and {"match_id", "status"}.issubset(mi.columns):
+            fin = {
+                int(row.match_id) for row in mi.itertuples(index=False)
+                if not pd.isna(row.match_id) and is_finished_status(row.status)
+            }
             fx_fin = set(fx.loc[fx["status"] == "finished", "match_id"].astype(int))
             ids |= fin & fx_fin
         built = self.build_match_pages(ids)

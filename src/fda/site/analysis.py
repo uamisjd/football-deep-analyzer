@@ -210,6 +210,59 @@ def _goals(info: dict, key: str, fixture: dict) -> int | None:
     return None if v is None else int(v)
 
 
+def is_finished_status(status: Any) -> bool:
+    """Riconosce gli alias di stato finale usati dai provider."""
+    try:
+        if status is None or pd.isna(status):
+            return False
+    except (TypeError, ValueError):
+        if status is None:
+            return False
+    return str(status).strip().lower() in {"finished", "full_time", "ft"}
+
+
+def effective_match_state(
+    fixture: dict[str, Any],
+    info: dict[str, Any] | None = None,
+    now: Any | None = None,
+) -> dict[str, Any]:
+    """Unifica stato e gol delle due fotografie senza far regredire un risultato finale.
+
+    Se una delle due fonti dichiara la partita conclusa, lo stato è finale. Per il punteggio
+    prevale la fonte che dichiara il finale; negli altri casi prevalgono i dettagli, con i
+    valori fixture come fallback. In questo modo le liste e la scheda applicano la stessa
+    regola anche quando le tabelle non sono state aggiornate nello stesso momento.
+    """
+    info = info or {}
+    fixture_status = _val(fixture, "status")
+    info_status = _val(info, "status")
+    fixture_finished = is_finished_status(fixture_status)
+    info_finished = is_finished_status(info_status)
+    status = "finished" if fixture_finished or info_finished else info_status or fixture_status
+    score_info = info if info_finished or not fixture_finished else {}
+    home_goals = _goals(score_info, "home_goals", fixture)
+    away_goals = _goals(score_info, "away_goals", fixture)
+
+    # Il builder produce pagine statiche; l'ora di generazione non certifica l'ora di fetch
+    # del payload. Se il calcio d'inizio è passato da un po' ma nessuna fotografia dichiara
+    # il finale, non pubblicare «in programma/in corso» né un parziale come se fosse attuale.
+    if not fixture_finished and not info_finished:
+        kickoff = pd.to_datetime(_val(fixture, "utc_kickoff"), utc=True, errors="coerce")
+        clock = pd.to_datetime(now if now is not None else datetime.now(UTC), utc=True, errors="coerce")
+        if pd.notna(kickoff) and pd.notna(clock):
+            elapsed = clock - kickoff
+            status_key = str(status or "").strip().lower()
+            stale_scheduled = status_key in {"scheduled", "not_started"} and elapsed > pd.Timedelta(minutes=30)
+            stale_live = status_key in {
+                "live", "in_progress", "started", "started_live", "halftime", "half_time", "paused", "break",
+            } and elapsed > pd.Timedelta(minutes=105)
+            if stale_scheduled or stale_live:
+                status = "unverified"
+                home_goals = away_goals = None
+
+    return {"status": status, "home_goals": home_goals, "away_goals": away_goals}
+
+
 def _on_target(s: pd.DataFrame) -> pd.Series:
     """Maschera «tiro in porta» a partire dalla lista tiri FotMob.
 
@@ -1273,6 +1326,36 @@ class MatchAnalysis:
         self.risultati_uniti = self._risultati_uniti()
         self._pools_cache: dict[tuple[int | None, int | None], dict[str, Pool]] | None = None
         self._hist_venue_df: pd.DataFrame | None = None
+
+    def effective_fixtures(self, fixtures: pd.DataFrame, now: Any | None = None) -> pd.DataFrame:
+        """Vista delle fixture con stato e punteggio riconciliati a ``match_info``.
+
+        Le righe originali nello store restano intatte. La stessa funzione di riconciliazione
+        viene usata da ``build()`` per le schede: una lista non deve pubblicare una fotografia
+        diversa dalla pagina partita collegata.
+        """
+        out = fixtures.copy()
+        required = {"match_id", "status", "home_goals", "away_goals"}
+        if out.empty or not required.issubset(out.columns):
+            return out
+        out["status"] = out["status"].astype(object)
+        info_by_id: dict[int, dict[str, Any]] = {}
+        if not self.info.empty and "match_id" in self.info.columns:
+            for row in self.info.itertuples(index=False):
+                match_id = getattr(row, "match_id", None)
+                try:
+                    if match_id is not None and not pd.isna(match_id):
+                        info_by_id.setdefault(int(match_id), row._asdict())
+                except (TypeError, ValueError):
+                    continue
+        for index, row in out.iterrows():
+            state = effective_match_state(
+                row.to_dict(), info_by_id.get(int(row["match_id"])), now=now
+            )
+            out.at[index, "status"] = state["status"]
+            out.at[index, "home_goals"] = state["home_goals"]
+            out.at[index, "away_goals"] = state["away_goals"]
+        return out
 
     # ---- quando arriva il primo gol (ritmo a due tempi calibrato sullo storico) -------------
     def first_goal_clock(self, prediction: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -7190,15 +7273,12 @@ class MatchAnalysis:
         info = _first(self.info[self.info.match_id == match_id]) if not self.info.empty else {}
         kickoff = pd.Timestamp(f["utc_kickoff"])
         home_id, away_id = int(f["home_id"]), int(f["away_id"])
-        # Una partita finita lo resta anche se i suoi dettagli sono un'istantanea vecchia:
-        # il calendario (`fixtures`) si riaggiorna a ogni run, i dettagli (`match_info`)
-        # vivono in una finestra a budget e possono restare a «scheduled»/«live» per ore.
-        # Fidarsi dei dettagli, come si faceva, faceva nascere schede «Analisi pre-partita»
-        # per gare già giocate — 22 nella build del 2026-10-11 (`docs/78` §8) — e la card
-        # «Panchina e posta in gioco» contava quella stessa gara fra i «precedenti».
-        # Regola: basta che **una** delle due fonti dica «finita».
-        status = ("finished" if str(f["status"]) == "finished"
-                  else (_val(info, "status") or f["status"]))
+        # Le due tabelle possono essere fotografie discordanti. Una partita è finita se lo
+        # dichiara una delle due fonti; per il punteggio si preferisce la fonte che dichiara il
+        # finale, altrimenti i dettagli con fallback alle fixture. La stessa regola alimenta le
+        # liste, così status e risultato non cambiano attraversando il link della card.
+        state = effective_match_state(f, info)
+        status = state["status"]
         weather = self._weather(match_id, _val(info, "weather_desc"),
                                 _val(info, "weather_temp_c"), _val(info, "weather_precip_chance"))
         weather["wind"] = _val(info, "weather_wind")
@@ -7262,7 +7342,7 @@ class MatchAnalysis:
             "utc_kickoff": kickoff, "status": status,
             "home_id": home_id, "away_id": away_id,
             "home_name": f["home_name"], "away_name": f["away_name"],
-            "home_goals": _goals(info, "home_goals", f), "away_goals": _goals(info, "away_goals", f),
+            "home_goals": state["home_goals"], "away_goals": state["away_goals"],
             "home_form": home_form, "away_form": away_form,
             "home_form_strength": home_strength, "away_form_strength": away_strength,
             "home_form_badge": self.form_summary(home_form) if len(home_form) >= 3 else None,
