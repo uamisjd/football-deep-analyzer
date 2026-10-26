@@ -23,6 +23,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
+
 # ---- residui che non devono mai arrivare a schermo -----------------------------------------
 BAD_TOKENS = re.compile(r"(?<![\w.])(nan|NaN|None|NaT|inf|-inf|numpy\.|Timestamp\()(?![\w.])")
 TH_SCOPE = re.compile(r"<th(?=[ >])[^>]*>")   # celle d'intestazione: [27] vuole scope su ognuna
@@ -860,6 +862,10 @@ ORACOLI: dict[str, tuple[str, str]] = {
                  "vocabolario chiuso, la prova citata è dentro il titolo originale e i conteggi "
                  "dell'intestazione sono quelli della lista")),
     "51": ("I", "stato e punteggio della card coincidono con la scheda partita collegata"),
+    "52": ("I", "pagine squadra: una per ogni riga di classifica, nome/lega/posizione/punti ↔ FotMob"),
+    "53": ("I", "1X2 della prossima gara ↔ barra della scheda partita collegata"),
+    "54": ("I", "proiezione di fine stagione ↔ `season_sim` (posizione media e punti attesi)"),
+    "55": ("I", "menu: la sezione «Squadre» è quella corrente su indice e schede"),
 }
 
 
@@ -3127,18 +3133,22 @@ def check_numbers(site: Path, data: Path | None) -> tuple[list[str], int]:
                     pts += 3 if res == "V" else 1 if res == "N" else 0
                 seq = "".join(seq)
                 checks += 1
+                # dal 17/10/2026 il nome nell'hero è un link alla scheda squadra (`docs/114`):
+                # il badge resta attaccato al nome, dentro o fuori dall'ancora, e il controllo
+                # continua a ricalcolare serie e punti dal calendario
+                nome = rf'(?:<a [^>]*>)?{re.escape(tname)}(?:</a>)?'
                 if len(seq) < 3:
-                    if f'>{tname}<span class="form-line"' in hero:
+                    if re.search(rf'<div class="match-hero-team {lato}">{nome}<span class="form-line"', hero):
                         fails.append(f"{pg.name}: badge della forma di {tname[:20]} con "
                                      f"{len(seq)} gare (la soglia è 3)")
                     continue
                 n_form += 1
                 pallini += len(seq)
                 punti = f"{pts} punto" if pts == 1 else f"{pts} punti"
-                attesi.append(f'<div class="match-hero-team {lato}">{tname}<span class="form-line" '
-                              f'aria-label="Forma di {tname}: {seq} nelle ultime {len(seq)} partite, '
-                              f'{punti}. V=vittoria, N=pareggio, P=sconfitta"')
-                if attesi[-1] not in hero:
+                atteso = (rf'<div class="match-hero-team {lato}">{nome}<span class="form-line" '
+                          rf'aria-label="Forma di {re.escape(tname)}: {seq} nelle ultime {len(seq)} partite, '
+                          rf'{punti}\. V=vittoria, N=pareggio, P=sconfitta"')
+                if not re.search(atteso, hero):
                     fails.append(f"{pg.name}: badge della forma di {tname[:20]} assente o diverso "
                                  f"dal calendario ({seq})")
                 if f'<span class="fact-value">{pts} pt</span>' not in hero:
@@ -6179,6 +6189,153 @@ def check_confronto_stagione(site: Path, data: Path | None) -> tuple[list[str], 
     return fails, checks
 
 
+# ---- pagine squadra (`docs/114`) ---------------------------------------------------------
+# Il rischio di una pagina nuova è il numero che vive in due posti: la classifica scritta a
+# mano nel template, la previsione ricalcolata con un'altra funzione. Questi tre controlli
+# legano la scheda squadra alle fonti che già alimentano le altre pagine.
+TEAM_POS = re.compile(r"(\d+)ª posizione · ([\d.]+) punt[oi] in ([\d.]+) gare")
+TEAM_PROJ = re.compile(r"proiezione di fine stagione: ([\d,]+)º posto in media, ([\d,]+) punti attesi")
+TEAM_PROB = re.compile(r'<div class="prob-labels"><span[^>]*>1 (\d+)%</span><span[^>]*>X (\d+)%</span>'
+                       r'<span[^>]*>2 (\d+)%</span></div>')
+HERO_PROB = re.compile(r'aria-label="Probabilità: [^"]*?(\d+) per cento, pareggio (\d+) per cento, '
+                       r'[^"]*?(\d+) per cento"')
+
+
+def check_team_pages(site: Path, data: Path | None) -> tuple[list[str], int]:
+    """[52]-[54] le schede squadra devono dire le stesse cifre delle pagine che le precedono."""
+    fails: list[str] = []
+    checks = 0
+    n52 = n53 = n54 = 0
+    idx = site / "squadre" / "index.html"
+    if not idx.exists():
+        return ["squadre/index.html assente: le schede squadra non sono state generate"], 0
+    data = data or Path("data/processed")
+    try:
+        std = pd.read_parquet(data / "fotmob_standings.parquet")
+        sim = pd.read_parquet(data / "season_sim.parquet")
+    except (OSError, ValueError) as exc:
+        return [f"[52] dati delle squadre non leggibili: {exc}"], 0
+    from fda.config import leagues, load_leagues_config
+    from fda.teams import canonical
+
+    stagione_corrente = str(load_leagues_config().get("season", ""))
+
+    by_country = {lg.country: lg for lg in leagues()}
+    idx_html = idx.read_text(encoding="utf-8")
+    linked = set(re.findall(r'squadre/(\d+)\.html', idx_html))
+    # la classifica è la fonte: ogni squadra della tabella deve avere una scheda, e viceversa
+    attese = {int(r.team_id) for r in std.itertuples(index=False)}
+    mancanti = attese - {int(x) for x in linked}
+    if mancanti:
+        fails.append(f"[52] squadre/index.html non elenca {len(mancanti)} squadre: {sorted(mancanti)[:5]}")
+    for r in std.itertuples(index=False):
+        tid = int(r.team_id)
+        pg = site / "squadre" / f"{tid}.html"
+        if not pg.exists():
+            fails.append(f"[52] squadre/{tid}.html assente")
+            continue
+        html = pg.read_text(encoding="utf-8")
+        checks += 2
+        n52 += 2
+        m = re.search(r"<h1>(.*?)</h1>", html, re.DOTALL)
+        # l'h1 porta anche il tag della lega («Chelsea <span class="tag">Premier League</span>»)
+        testa = m.group(1).split("<span", 1)[0] if m else ""
+        nome_pag = html_unescape(re.sub(r"<[^>]+>", "", testa)).strip()
+        if canonical(nome_pag) != canonical(str(r.team_name)):
+            fails.append(f"[52] squadre/{tid}.html: nome «{nome_pag}» ≠ classifica «{r.team_name}»")
+        lg = by_country.get(str(r.league_code))
+        if lg and f'<span class="tag">{lg.name}</span>' not in html:
+            fails.append(f"[52] squadre/{tid}.html: manca la lega {lg.name}")
+        pos = TEAM_POS.search(html)
+        if not pos:
+            fails.append(f"[52] squadre/{tid}.html: riga di posizione non leggibile")
+            continue
+        checks += 3
+        n52 += 3
+        rank, pts, played = int(pos.group(1)), _int_it(pos.group(2)), _int_it(pos.group(3))
+        # la stagione in corso nello storico deve ripetere la testata, non ricalcolarla:
+        # gare, punti e posizione sono tre cifre che il lettore confronta a occhio
+        riga_st = re.search(
+            r"<tr><td>" + re.escape(stagione_corrente) + r" <span class=\"tag\">in corso</span></td>"
+            r"<td class=\"r\">(\d+)</td>\s*<td class=\"r\">\d+–\d+–\d+</td>"
+            r"<td class=\"r\"><b>(\d+)</b></td><td class=\"r\">\d+–\d+</td>\s*"
+            r"<td class=\"r\">(\d+)ª</td>", html)
+        checks += 1
+        n52 += 1
+        if not riga_st:
+            fails.append(f"[52] squadre/{tid}.html: riga «{stagione_corrente} in corso» non leggibile")
+        else:
+            checks += 2
+            n52 += 2
+            gare_st, punti_st, pos_st = (int(x) for x in riga_st.groups())
+            if (gare_st, punti_st, pos_st) != (played, pts, rank):
+                fails.append(f"[52] squadre/{tid}.html: storico in corso "
+                             f"({gare_st} gare, {punti_st} pt, {pos_st}ª) ≠ testata "
+                             f"({played} gare, {pts} pt, {rank}ª)")
+        if (rank, pts, played) != (int(r.rank), int(r.points), int(r.played)):
+            fails.append(f"[52] squadre/{tid}.html: «{rank}°, {pts} pt, {played} gare» ≠ "
+                         f"classifica «{int(r.rank)}°, {int(r.points)} pt, {int(r.played)} gare»")
+        # [53] 1X2 della prossima gara = barra della scheda partita (se la scheda esiste)
+        prob = TEAM_PROB.search(html)
+        # il match id utile è **quello della card** della prossima gara: cercare il primo
+        # `partite/…` della pagina prendeva la prima riga di «Prossime partite» quando la
+        # prossima gara non aveva ancora la scheda (12 squadre su 132, misurate il 17/10/2026)
+        mp = None
+        if prob:
+            for cand in re.finditer(r'partite/(\d+)\.html', html):
+                if cand.start() > prob.start():
+                    break
+                mp = cand
+        if mp and prob:
+            mfile = site / "partite" / f"{mp.group(1)}.html"
+            hero = HERO_PROB.search(mfile.read_text(encoding="utf-8")) if mfile.exists() else None
+            if hero:
+                checks += 1
+                n53 += 1
+                a = tuple(int(x) for x in prob.groups())
+                b = tuple(int(x) for x in hero.groups())
+                if sum(a) != 100:
+                    fails.append(f"[53] squadre/{tid}.html: 1X2 {a} non somma 100")
+                if a != b:
+                    fails.append(f"[53] squadre/{tid}.html: 1X2 {a} ≠ scheda {mp.group(1)} {b}")
+        # [54] proiezione: la stessa cifra di `season_sim`, formattata qui in modo indipendente
+        pr = TEAM_PROJ.search(html)
+        riga = sim[sim["team"].map(canonical) == canonical(str(r.team_name))]
+        if riga.empty:
+            if pr:
+                fails.append(f"[54] squadre/{tid}.html pubblica una proiezione ma season_sim non ha la squadra")
+            continue
+        riga = riga.sort_values("made_at").iloc[-1]
+        if not pr:
+            fails.append(f"[54] squadre/{tid}.html: proiezione assente")
+            continue
+        checks += 2
+        n54 += 2
+        atteso = (_stamp_it(float(riga.pos_mean), 1), _stamp_it(float(riga.exp_points), 1))
+        if (pr.group(1), pr.group(2)) != atteso:
+            fails.append(f"[54] squadre/{tid}.html: proiezione {(pr.group(1), pr.group(2))} ≠ "
+                         f"season_sim {atteso}")
+    print(f"[52] schede squadra: {n52} cifre verificate su {len(attese)} squadre")
+    print(f"[53] 1X2 della prossima gara ↔ scheda partita: {n53} gare confrontate")
+    print(f"[54] proiezioni di stagione ↔ season_sim: {n54} stringhe ricalcolate")
+    # [55] la sezione «Squadre» del menu deve essere accesa sulle pagine che le appartengono:
+    # indice e schede. Il gate [33] confronta voce ed etichetta, non lo stato aria-current.
+    n55 = 0
+    for tid in sorted(attese):
+        pg = site / "squadre" / f"{tid}.html"
+        if not pg.exists():
+            continue
+        checks += 1
+        n55 += 1
+        if '<a href="../squadre/index.html" aria-current="page">Squadre</a>' not in pg.read_text(encoding="utf-8"):
+            fails.append(f"[55] squadre/{tid}.html: la voce «Squadre» del menu non è quella corrente")
+    # l'indice sta in `squadre/`, quindi la sua root relativa è `../` (come le schede)
+    if '<a href="../squadre/index.html" aria-current="page">Squadre</a>' not in idx_html:
+        fails.append("[55] squadre/index.html: la voce «Squadre» del menu non è quella corrente")
+    print(f"[55] menu «Squadre» acceso su indice e schede: {n55} pagine")
+    return fails, checks
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--site", default="site", help="cartella del sito generato")
@@ -6258,6 +6415,9 @@ def main() -> int:
             site, Path(args.data) if args.data else None)
         fails += confronto
         checks += confronto_checks
+        tp, tp_checks = check_team_pages(site, Path(args.data) if args.data else None)
+        fails += tp
+        checks += tp_checks
         estera, estera_checks = check_stampa_estera(site, Path(args.data) if args.data else None)
         fails += estera
         checks += estera_checks

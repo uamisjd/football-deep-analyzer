@@ -662,7 +662,22 @@ class PlayerCatalog:
         """(giocatori con minuti, in rosa senza minuti) per la pagina di lega."""
         if self.empty:
             return [], []
-        sub = self.players[self.players["league_id"] == league_id].copy()
+        return self._rows(self.players[self.players["league_id"] == league_id])
+
+    def team_rows(self, team_id: int) -> tuple[list[dict], list[dict]]:
+        """(giocatori con minuti, in rosa senza minuti) di **una squadra**.
+
+        Stessa riga pubblica del tabellone di lega — stessi campi e stesso ordinamento —
+        così la pagina squadra e quella di lega non possono divergere: la selezione cambia,
+        la definizione di una riga no (docs/114 §3).
+        """
+        if self.empty or pd.isna(team_id):
+            return [], []
+        return self._rows(self.players[self.players["team_id"] == team_id])
+
+    def _rows(self, sub: pd.DataFrame) -> tuple[list[dict], list[dict]]:
+        """Righe pubbliche per un sottoinsieme di ``self.players`` (squadra o lega)."""
+        sub = sub.copy()
         played = sub[sub["minutes"] > 0].sort_values(["rating", "minutes"], ascending=False)
         rows = [{
             "id": int(i), "name": r["name"], "team": r["team_name"],

@@ -2,7 +2,10 @@
 {% block title %}Accuratezza del modello — CalcioMetro{% endblock %}
 {% block content %}
 <h1>Accuratezza</h1>
-<p class="small mut">Come si confrontano le varianti del modello con la produzione: <a href="{{ root }}laboratorio.html">Laboratorio dei modelli</a>.</p>
+<nav class="cal-nav" aria-label="Sezioni di accuratezza">
+  <a href="{{ root }}accuratezza.html" aria-current="page">Accuratezza</a>
+  <a href="{{ root }}laboratorio.html">Laboratorio dei modelli</a>
+</nav>
 <p class="mut">Ogni previsione viene salvata prima della partita e valutata dopo. RPS (Ranked Probability Score): 0 = perfetto,
 0,25 ≈ tirare a caso con le frequenze medie; i bookmaker si attestano intorno a 0,19–0,20. Brier multiclasse: più basso è, meglio è.</p>
 {% if summary %}
@@ -78,6 +81,30 @@ Con poche gare valutate per campionato i valori restano indicativi: servono ~30 
   valore «previsto» cade al suo interno la differenza è compatibile con il caso e <b>non</b> giustifica
   una correzione del modello; la riga è marcata «fuori intervallo» solo quando il previsto resta fuori,
   cioè quando il segnale è statisticamente distinguibile dal rumore.</p>
+</div>
+{% endif %}
+{% if monitor %}
+<div class="card"><h2>Stabilità dei mercati nel tempo</h2>
+  <p class="small mut" style="margin:0 0 8px">Lo stesso controllo della tabella qui sopra, letto come <b>tenuta</b> invece che come
+  fotografia: lo scarto osservato−previsto deve ripetersi nelle due metà cronologiche dello storico e in più campionati,
+  altrimenti è un episodio. «Leghe in accordo» conta i campionati (con almeno {{ monitor.min_league_n }} gare) in cui la
+  previsione è fuori dal proprio intervallo <b>nello stesso verso</b> dello scarto complessivo. Il verdetto «strutturale»
+  richiede tutte e tre le condizioni; qui nessuno lo è, quindi il modello non viene ritoccato su questo campione.</p>
+  <div class="tablewrap"><table>
+    <tr><th scope="col">Mercato</th><th scope="col" class="r">Gare</th><th scope="col" class="r">Scarto</th>
+      <th scope="col">Prima metà</th><th scope="col">Seconda metà</th><th scope="col" class="r">Leghe in accordo</th><th scope="col">Verdetto</th></tr>
+    {% for m in monitor.rows %}
+    <tr><td>{{ m.label }}</td><td class="r">{{ m.n|it_num }}</td>
+      <td class="r {{ 'bad' if m.outside else 'mut' }}">{{ m.scarto_pp|dec(1, true) }} pp</td>
+      <td class="{{ 'bad' if m.half1_bad else 'mut' }}">{{ m.half1_label }}</td>
+      <td class="{{ 'bad' if m.half2_bad else 'mut' }}">{{ m.half2_label }}</td>
+      <td class="r">{{ m.leagues_out }} su {{ monitor.n_leagues }}</td>
+      <td>{{ m.verdict_label }}</td></tr>
+    {% endfor %}
+  </table></div>
+  <p class="small mut" style="margin:8px 0 0">{{ monitor.n_outside }} mercati su {{ monitor.rows|length }} hanno la previsione fuori dall'intervallo 95% della frequenza osservata;
+    nessuno supera il criterio di struttura (intervallo, metà, leghe). Il verdetto «monitora» è una nota di controllo, non un permesso a cambiare il modello:
+    la regola di lavoro resta quella del <a href="{{ root }}laboratorio.html">Laboratorio</a> (nessuna promozione senza test prospettico).</p>
 </div>
 {% endif %}
 {% if bt and bt.n %}

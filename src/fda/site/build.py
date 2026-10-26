@@ -40,6 +40,7 @@ from .fmt import (
     ucl_label,
 )
 from .players import PlayerCatalog
+from .team_pages import TeamCatalog
 
 log = logging.getLogger(__name__)
 
@@ -270,6 +271,10 @@ class SiteBuilder:
         self.league_keys = {lg.fotmob_id: lg.key for lg in leagues()}
         self.analysis = MatchAnalysis(self.store)
         self.audit_rows: list[dict[str, Any]] = []
+        # catalogo giocatori e ids delle squadre: costruiti una volta per build e riusati da
+        # `build_teams` (evita di ricaricare due volte lineup e statistiche, ~15 s per build)
+        self.player_catalog: PlayerCatalog | None = None
+        self.team_ids: list[int] = []
         self._assets_done = False
 
     # ---- assets -------------------------------------------------------------------------------
@@ -308,9 +313,10 @@ class SiteBuilder:
         "index.html": "oggi", "prossime.html": "prossime", "risultati.html": "risultati",
         "accuratezza.html": "accuratezza", "laboratorio.html": "accuratezza",
         "stagione.html": "stagione", "stato.html": "stato",
-        "info.html": "info",
+        "info.html": "info", "squadre/index.html": "squadre",
     }
-    NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori")]
+    NAV_PREFIXES: ClassVar[list[tuple[str, str]]] = [("giocatori/", "giocatori"),
+                                                      ("squadre/", "squadre")]
 
     def _render(self, template: str, rel_path: str, **ctx: Any) -> None:
         if not self._assets_done:
@@ -919,8 +925,16 @@ class SiteBuilder:
         return built
 
     def build_players(self, built_match_ids: set[int]) -> int:
-        """Pagine `giocatori/`: hub, tabellone per lega e scheda di ogni giocatore (fase 3)."""
+        """Pagine `giocatori/`: hub, tabellone per lega e scheda di ogni giocatore (fase 3).
+
+        Ritorna il numero di **schede giocatore** generate. Fino al 2026-10-17 il contatore
+        sommava anche le righe dei tabelloni di lega e delle panchine (``rows + bench``): il
+        build stampava «7.602 giocatori» mentre le schede erano 3.801 e i tabelloni 7, e
+        quel numero era finito in cinque documenti (`docs/114` §5). Il conteggio pubblicato
+        ora è quello che si può verificare contando i file di ``site/giocatori/``.
+        """
         cat = PlayerCatalog(self.store)
+        self.player_catalog = cat
         lg_by_id = {lg.fotmob_id: lg for lg in leagues()}
         blocks = []
         for lg in leagues():
@@ -941,7 +955,6 @@ class SiteBuilder:
                          bench=bench, league_name=lg.name, season=cat.season,
                          positions=[("Portieri", "Portiere"), ("Difensori", "Difensore"),
                                     ("Centrocampisti", "Centrocampista"), ("Attaccanti", "Attaccante")])
-            n += len(rows) + len(bench)
         for pid in cat.player_ids():
             page = cat.player_page(pid, built_match_ids)
             if page is None:
@@ -952,6 +965,54 @@ class SiteBuilder:
                          league_key=lg.key if lg else None)
             n += 1
         return n
+
+    def build_teams(self, built_match_ids: set[int]) -> int:
+        """Pagine `squadre/`: indice e una scheda per ciascuna squadra (`docs/114`).
+
+        Le 132 schede non aggiungono alcuna richiesta HTTP: mettono in un solo indirizzo i
+        dati che la raccolta già produce (classifica, forma, rosa, indisponibili, distinta,
+        mercato, notizie, proiezioni, storico). Il catalogo giocatori è quello di
+        :meth:`build_players`, riusato invece di ricaricare lineup e statistiche.
+        """
+        cat = TeamCatalog(self.store, analysis=self.analysis, players=self.player_catalog,
+                          now=pd.Timestamp(self.now))
+        self.team_ids = list(cat.teams)
+        if not self.team_ids:
+            return 0
+        self._render("squadre.html", "squadre/index.html", blocks=cat.league_blocks(),
+                     n_teams=len(self.team_ids), title="Squadre")
+        n = 0
+        for tid in self.team_ids:
+            page = cat.page(tid, built_match_ids)
+            json_ld = self._json_ld_team(page)
+            self._render("squadra.html", f"squadre/{tid}.html", p=page, json_ld=json_ld,
+                         page_description=(
+                             f"{page['name']} · {page['league_name']}: classifica, forma, rosa, "
+                             "indisponibili, formazione, mercato, notizie e proiezione di stagione."
+                         ))
+            n += 1
+        log.info("pagine squadra: %d (indice + squadre)", n)
+        return n
+
+    @staticmethod
+    def _json_ld_team(page: dict[str, Any]) -> str:
+        """JSON-LD `SportsTeam`: solo dati visibili nella pagina (nome, lega, URL).
+
+        Niente ``athlete``/``coach``: la pagina li mostra, ma il markup strutturato qui
+        dichiara l'entità, non l'intera rosa — un elenco che invecchia a ogni mercato è
+        la prima cosa che i motori segnalano come incoerente con la pagina.
+        """
+        import json
+        data = {
+            "@context": "https://schema.org",
+            "@type": "SportsTeam",
+            "name": page["name"],
+            "sport": "Soccer",
+            "url": f"{SITE_BASE_URL}/squadre/{page['team_id']}.html",
+        }
+        if page.get("league_name"):
+            data["memberOf"] = {"@type": "SportsOrganization", "name": page["league_name"]}
+        return json.dumps(data, ensure_ascii=False)
 
     def build_stagione(self) -> None:
         """Pagina «Proiezioni di stagione» dalla tabella `season_sim`.
@@ -1228,8 +1289,49 @@ class SiteBuilder:
             cal = from_store(self.store)
             bt = backtest_summary(calibrate_rows(bt_rows, cal))
             bt["grezzo"] = backtest_summary(bt_rows)
+        # Monitor dei mercati (P3-b): stabilità nelle due metà e accordo fra leghe. Il file è
+        # prodotto da `fda mercati-monitor` nello stesso daily; finché non c'è, la card non
+        # compare — nessun numero inventato e nessuna data presunta.
+        monitor = None
+        mdf = self.store.read("mercati_monitor")
+        if not mdf.empty and {"label", "n", "prev", "obs", "verdict"} <= set(mdf.columns):
+            from ..models.backtest import MIN_LEAGUE_N_MARKETS
+
+            def half(v: Any) -> tuple[str, bool]:
+                """Etichetta della metà cronologica e «scarto ripetuto nello stesso verso».
+
+                Nel Parquet ``NaN`` significa **compatibile** (la previsione cade dentro
+                l'intervallo di Wilson di quella metà, vedi `market_monitor`), non «dato
+                mancante»: la pagina non deve trasformare un'assenza di segnale in un allarme.
+                """
+                try:
+                    f = float(v)
+                except (TypeError, ValueError):
+                    return "compatibile", False
+                if pd.isna(f) or f == 0:
+                    return "compatibile", False
+                return ("sopra la previsione" if f > 0 else "sotto la previsione"), True
+
+            rows_mon = []
+            for r in mdf.itertuples(index=False):
+                l1, b1 = half(getattr(r, "half1", None))
+                l2, b2 = half(getattr(r, "half2", None))
+                rows_mon.append({
+                    "label": str(r.label), "n": int(r.n),
+                    "scarto_pp": round((float(r.obs) - float(r.prev)) * 100, 1),
+                    "outside": bool(getattr(r, "outside", False)),
+                    "half1": l1, "half2": l2, "half1_label": l1, "half2_label": l2,
+                    "half1_bad": b1, "half2_bad": b2,
+                    "leagues_out": int(getattr(r, "leagues_out", 0) or 0),
+                    "verdict_label": "strutturale" if str(r.verdict) == "strutturale" else "monitora",
+                })
+            bt_all = self.store.read("backtest")
+            n_leagues = int(bt_all["league_key"].nunique()) if "league_key" in bt_all.columns else 7
+            monitor = {"rows": rows_mon, "min_league_n": MIN_LEAGUE_N_MARKETS,
+                       "n_leagues": n_leagues,
+                       "n_outside": sum(1 for x in rows_mon if x["outside"])}
         self._render("accuracy.html", "accuratezza.html", summary=summary, recent=recent, calib=calib,
-                     markets=markets, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
+                     markets=markets, monitor=monitor, bt=bt, lead_buckets=lead_buckets if 'lead_buckets' in locals() else [],
                      composizione=composizione if 'composizione' in locals() else {},
                      copertura=copertura, lead_stats=lead_stats if 'lead_stats' in locals() else None,
                      grafico=grafico_mercati(markets), model_version=MODEL_VERSION)
@@ -1314,8 +1416,12 @@ class SiteBuilder:
             ("", build_date), ("prossime.html", build_date), ("risultati.html", build_date),
             ("accuratezza.html", build_date), ("laboratorio.html", build_date), ("stagione.html", build_date),
             ("stato.html", build_date), ("info.html", build_date),
-            ("giocatori/index.html", build_date),
+            ("giocatori/index.html", build_date), ("squadre/index.html", build_date),
         ]
+        # pagine squadra: lastmod = data di build (la scheda cambia a ogni raccolta, come
+        # le liste; le partite invece hanno la data della gara)
+        for tid in getattr(self, "team_ids", []):
+            urls.append((f"squadre/{tid}.html", build_date))
         # le pagine di lega del tabellone giocatori (7 leghe = 7 URL in più)
         try:
             for lg in leagues():
@@ -1392,6 +1498,7 @@ class SiteBuilder:
             ids |= fin & fx_fin
         built = self.build_match_pages(ids)
         n_players = self.build_players(built)
+        n_teams = self.build_teams(built)
         self.build_accuracy(fx)
         self.build_laboratorio()
         self.build_stagione()
@@ -1440,7 +1547,11 @@ class SiteBuilder:
             self._write_seo_files(built)
         except Exception as exc:  # mai bloccare il build per la sitemap
             log.warning("sitemap non scritta: %s", exc)
-        return {"matches": len(built), "fixtures": len(fx), "players": n_players}
+        # `players` = schede giocatore generate (una per file in `site/giocatori/`), non le
+        # righe dei tabelloni: il contatore sommava schede e righe e stampava 7.602 dove le
+        # schede erano 3.801 (docs/114 §5).
+        return {"matches": len(built), "fixtures": len(fx), "players": n_players,
+                "teams": n_teams}
 
 
 def _rps(probs: np.ndarray, outcomes: np.ndarray) -> float:
