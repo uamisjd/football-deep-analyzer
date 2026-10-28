@@ -31,7 +31,7 @@ dependencies = [
 dev = [
     "pytest>=8",
     # Versione fissata per rendere ripetibile il gate `ruff check .` in CI.
-    "ruff==0.17.0",
+    "ruff==0.17.2",
     # scripts/render_preview.py disegna i PNG di docs/preview (P2-8b): senza libreria
     # di sistema, ma la dipendenza va dichiarata o il tool non gira in un ambiente nuovo
     "pillow>=10",
